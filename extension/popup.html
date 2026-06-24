@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Selenite</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --canvas:#1C1C1C;--surface:#242424;--card:#2C2C2C;--overlay:#3D3D3D;
+    --stroke:#444;--brand:#0078D4;--brand-h:#106EBE;
+    --fg1:#F0F0F0;--fg2:#AAAAAA;--fg3:#666;
+    --err:#F48771;--warn:#CCA700;--ok:#89D185;--info:#4FC1FF;
+    --radius:7px;
+  }
+  html,body{
+    width:420px;min-height:560px;max-height:600px;
+    background:var(--canvas);color:var(--fg1);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:13px;
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+
+  /* Header */
+  #hdr{background:var(--brand);padding:8px 14px;flex-shrink:0}
+  #hdr h1{font-size:17px;font-weight:700;color:#fff}
+  #hdr p{font-size:11px;color:#BFD9EF;margin-top:1px}
+
+  /* Tabs */
+  #tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--stroke);flex-shrink:0}
+  .tab{flex:1;padding:7px 0;text-align:center;cursor:pointer;font-size:12px;
+    color:var(--fg2);border-bottom:2px solid transparent;transition:color .15s,border .15s}
+  .tab.active{color:var(--fg1);border-bottom-color:var(--brand)}
+  .tab:hover:not(.active){color:var(--fg1)}
+
+  /* Panels */
+  #panels{flex:1;overflow-y:auto;padding:10px}
+  .panel{display:none;flex-direction:column;gap:8px}
+  .panel.active{display:flex}
+
+  /* Cards */
+  .card{background:var(--card);border-radius:var(--radius);border:1px solid var(--stroke);padding:10px 12px}
+  .card-title{font-size:12px;font-weight:600;color:var(--fg2);text-transform:uppercase;
+    letter-spacing:.4px;margin-bottom:8px}
+
+  /* Forms */
+  label.cap{font-size:10px;color:var(--fg2);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:3px}
+  input[type=text],input[type=url],select,textarea{
+    width:100%;background:var(--overlay);border:1px solid var(--stroke);border-radius:4px;
+    color:var(--fg1);padding:5px 8px;font-size:12px;outline:none;
+    font-family:inherit;transition:border .15s;
+  }
+  input:focus,select:focus{border-color:var(--brand)}
+  select{cursor:pointer}
+
+  /* Toggle radio */
+  .radio-group{display:flex;gap:5px;flex-wrap:wrap}
+  .radio-group input{display:none}
+  .radio-group label{
+    background:var(--overlay);color:var(--fg2);border:1px solid var(--stroke);
+    border-radius:4px;padding:4px 11px;cursor:pointer;font-size:12px;
+    transition:background .12s,color .12s;
+  }
+  .radio-group input:checked+label{background:var(--brand);color:#fff;border-color:var(--brand)}
+
+  /* Buttons */
+  .btn{background:var(--overlay);color:var(--fg1);border:1px solid var(--stroke);
+    border-radius:4px;padding:5px 11px;cursor:pointer;font-size:12px;font-family:inherit;
+    transition:background .1s;white-space:nowrap}
+  .btn:hover{background:var(--stroke)}
+  .btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .btn.primary:hover{background:var(--brand-h)}
+  .btn.primary:disabled,.btn.danger:disabled{background:#2a2a2a;color:#555;border-color:#333;cursor:not-allowed}
+  .btn.danger{background:#3A1010;color:var(--err);border-color:#5A2020}
+  .btn.danger:hover{background:#5A1A1A}
+  .btn.ghost{background:transparent;color:var(--fg2);border-color:transparent}
+  .btn.ghost:hover{background:var(--overlay)}
+  .btn.sm{padding:3px 8px;font-size:11px}
+  .btn-icon{background:transparent;color:var(--fg2);border:none;border-radius:3px;
+    padding:1px 5px;cursor:pointer;font-size:13px;transition:background .1s}
+  .btn-icon:hover{background:var(--overlay)}
+
+  /* Row helpers */
+  .row{display:flex;align-items:center;gap:6px}
+  .row-spread{display:flex;align-items:center;justify-content:space-between;gap:6px}
+
+  /* Script rows */
+  .script-row{display:flex;gap:6px;margin-top:3px}
+  .script-row input,.script-row select{flex:1}
+
+  /* Queue */
+  #q-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  #q-header-left{display:flex;align-items:center;gap:6px}
+  #step-count{font-size:10px;color:var(--fg2)}
+  #step-list{display:flex;flex-direction:column;gap:5px}
+  #empty-msg{color:var(--fg3);text-align:center;padding:16px 0;font-size:12px}
+
+  /* Step */
+  .step{background:var(--surface);border:1px solid var(--stroke);border-radius:5px;
+    padding:8px 10px;display:flex;gap:8px;align-items:flex-start}
+  .step-ctrl{display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0;padding-top:2px}
+  .step-ctrl input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--brand)}
+  .step-main{flex:1;min-width:0}
+  .step-fn-row{display:flex;align-items:center;gap:5px;margin-bottom:4px}
+  .step-fn-row select{flex:1}
+  .step-doc{font-size:10px;color:var(--fg3);margin-bottom:4px;min-height:12px}
+  .step-args{display:flex;flex-direction:column;gap:3px}
+  .arg-row{display:flex;align-items:center;gap:5px}
+  .arg-lbl{font-size:10px;color:var(--fg2);min-width:80px;text-align:right;flex-shrink:0}
+  .arg-row input{flex:1}
+  .no-args{font-size:11px;color:var(--fg3)}
+  .delay-row{display:flex;align-items:center;gap:5px;margin-top:4px}
+  .delay-row input{width:52px}
+
+  /* Console */
+  #console-wrap{display:flex;flex-direction:column;gap:5px}
+  #con-hdr{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+  #filter-btns{display:flex;gap:2px;margin-left:auto}
+  #log-out{height:200px;overflow-y:auto;background:#111;border-radius:4px;
+    font-family:'Cascadia Code','Menlo',monospace;font-size:11px;
+    padding:6px 8px;line-height:1.6;border:1px solid var(--stroke)}
+  .log-INFO{color:#89D185}.log-WARNING{color:#CCA700}
+  .log-ERROR{color:#F48771}.log-BROWSER{color:#4FC1FF}
+
+  /* Picker button */
+  .btn-pick{background:transparent;border:1px solid var(--stroke);color:var(--fg2);
+    border-radius:3px;padding:1px 5px;cursor:pointer;font-size:12px;flex-shrink:0;
+    transition:background .1s,border-color .1s}
+  .btn-pick:hover{background:var(--overlay);border-color:var(--brand);color:var(--brand)}
+  .btn-pick:disabled{opacity:.4;cursor:default}
+
+  /* Tooltip */
+  .tooltip-wrap{position:relative;display:inline-flex;align-items:center}
+  .tooltip-icon{color:var(--fg2);font-size:13px;cursor:default;line-height:1;padding:0 2px;
+    transition:color .15s}
+  .tooltip-icon:hover{color:var(--brand)}
+  .tooltip-box{
+    display:none;position:absolute;left:50%;bottom:calc(100% + 7px);
+    transform:translateX(-50%);
+    background:#1a1a1a;color:var(--fg1);border:1px solid var(--stroke);
+    border-radius:6px;padding:8px 11px;font-size:11px;line-height:1.55;
+    width:220px;white-space:normal;z-index:999;
+    box-shadow:0 4px 16px rgba(0,0,0,.5);
+    pointer-events:none;
+  }
+  .tooltip-box::after{
+    content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);
+    border:6px solid transparent;border-top-color:#1a1a1a;
+  }
+  .tooltip-wrap:hover .tooltip-box{display:block}
+
+  /* Active tab indicator dot */
+  .run-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);
+    display:inline-block;margin-left:4px;animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+</style>
+</head>
+<body>
+
+<div id="hdr">
+  <h1>Selenite</h1>
+  <p>No-Code QA Runner</p>
+</div>
+
+<div id="tabs">
+  <div class="tab active" data-tab="queue">Queue</div>
+  <div class="tab" data-tab="scripts">Scripts</div>
+  <div class="tab" data-tab="settings">Settings</div>
+  <div class="tab" data-tab="console">Console <span id="run-indicator" style="display:none" class="run-dot"></span></div>
+</div>
+
+<div id="panels">
+
+  <!-- Queue panel -->
+  <div class="panel active" id="panel-queue">
+    <div id="q-header">
+      <div id="q-header-left">
+        <span style="font-weight:600;font-size:13px">Function Queue</span>
+        <span id="step-count">0 steps</span>
+      </div>
+      <div class="row">
+        <button class="btn sm" id="btn-add-step">+ Add Step</button>
+        <button id="btn-run" class="btn primary sm">Execute</button>
+        <button id="btn-stop" class="btn danger sm" disabled>Stop</button>
+      </div>
+    </div>
+    <div id="step-list">
+      <div id="empty-msg">No steps yet — click + Add Step to begin</div>
+    </div>
+  </div>
+
+  <!-- Scripts panel -->
+  <div class="panel" id="panel-scripts">
+    <div class="card">
+      <div class="card-title">Save Script</div>
+      <div class="script-row">
+        <input type="text" id="save-name" placeholder="script name">
+        <button class="btn sm" id="btn-save-script">Save</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Load Script</div>
+      <div class="script-row">
+        <select id="script-select"><option>&lt;no scripts&gt;</option></select>
+        <button class="btn sm" id="btn-load-script">Load</button>
+        <button class="btn danger sm" id="btn-delete-script">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings panel -->
+  <div class="panel" id="panel-settings">
+    <div class="card">
+      <div class="card-title">Target</div>
+      <label class="cap">URL to open first (leave blank to use active tab)</label>
+      <input type="url" id="url-input" placeholder="https://example.com (optional)">
+      <div style="margin-top:10px">
+        <div class="card-title">Execution Mode</div>
+        <div class="radio-group">
+          <input type="radio" name="mode" id="mode-close" value="close" checked>
+          <label for="mode-close">Close after run</label>
+          <input type="radio" name="mode" id="mode-loop" value="loop">
+          <label for="mode-loop">Loop continuously</label>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Tab target</div>
+      <div class="radio-group">
+        <input type="radio" name="tabtarget" id="tt-active" value="active" checked>
+        <label for="tt-active">Active tab</label>
+        <input type="radio" name="tabtarget" id="tt-new" value="new">
+        <label for="tt-new">New tab</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Console panel -->
+  <div class="panel" id="panel-console">
+    <div id="console-wrap">
+      <div id="con-hdr">
+        <input type="text" id="filter-input" placeholder="Filter…"
+          style="flex:1;max-width:140px;padding:4px 7px;font-size:11px">
+        <div id="filter-btns">
+          <button class="btn-icon" id="fb-all" style="color:#fff;background:var(--brand)">ALL</button>
+          <button class="btn-icon" id="fb-info">INFO</button>
+          <button class="btn-icon" id="fb-warn">WARN</button>
+          <button class="btn-icon" id="fb-err">ERR</button>
+          <button class="btn ghost btn-icon" id="btn-clear-log">Clear</button>
+        </div>
+      </div>
+      <div id="log-out"></div>
+    </div>
+  </div>
+
+</div><!-- /panels -->
+
+<script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+#!/bin/bash
+/usr/bin/python3 "/Users/crometrics-ww/Documents/GitHub/qa-selenite-nocode-app/main.py" > /tmp/selenite.log 2>&1

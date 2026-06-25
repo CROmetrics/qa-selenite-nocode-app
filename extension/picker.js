@@ -38,18 +38,44 @@
 
   document.body.append(overlay, highlight, badge, hint);
 
+  // ── Interactive element preference ────────────────────────────────────────
+  const INTERACTIVE = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'LABEL', 'SUMMARY']);
+  const SKIP        = new Set(['HTML', 'BODY', 'MAIN', 'HEADER', 'FOOTER', 'NAV', 'SECTION', 'ARTICLE']);
+
+  // Walk up from el to find the nearest interactive ancestor (max 5 levels).
+  // Falls back to el itself if none found.
+  function preferInteractive(el) {
+    let cur = el;
+    for (let i = 0; i < 5; i++) {
+      if (!cur || cur === document.body) break;
+      if (INTERACTIVE.has(cur.tagName)) return cur;
+      cur = cur.parentElement;
+    }
+    return el;
+  }
+
   // ── Selector builder ───────────────────────────────────────────────────────
   function buildSelector(el) {
-    // Prefer id
     if (el.id) return { idValue: el.id, css: '#' + CSS.escape(el.id) };
+
+    // For <a> tags, try href-based selector first (very readable)
+    if (el.tagName === 'A' && el.getAttribute('href')) {
+      const href = el.getAttribute('href');
+      const sel = `a[href="${CSS.escape(href).replace(/\\"/g, '"')}"]`;
+      try {
+        if (document.querySelectorAll(`a[href="${href}"]`).length === 1) {
+          return { idValue: null, css: `a[href="${href}"]` };
+        }
+      } catch (_) {}
+    }
 
     // Walk up building a unique CSS path
     const parts = [];
     let cur = el;
     while (cur && cur.nodeType === 1 && cur !== document.documentElement) {
-      let seg = cur.tagName.toLowerCase();
       if (cur.id) { parts.unshift('#' + CSS.escape(cur.id)); break; }
-      const cls = [...cur.classList].filter(c => !/^\d/.test(c)).slice(0, 2);
+      let seg = cur.tagName.toLowerCase();
+      const cls = [...cur.classList].filter(c => !/^\d/.test(c) && c.length < 40).slice(0, 2);
       if (cls.length) seg += cls.map(c => '.' + CSS.escape(c)).join('');
       const siblings = cur.parentElement
         ? [...cur.parentElement.children].filter(c => c.tagName === cur.tagName)
@@ -58,7 +84,7 @@
         seg += ':nth-of-type(' + (siblings.indexOf(cur) + 1) + ')';
       }
       parts.unshift(seg);
-      if (document.querySelectorAll(parts.join(' > ')).length === 1) break;
+      if (!SKIP.has(cur.tagName) && document.querySelectorAll(parts.join(' > ')).length === 1) break;
       cur = cur.parentElement;
     }
     return { idValue: null, css: parts.join(' > ') };
@@ -67,9 +93,9 @@
   // ── Interaction ────────────────────────────────────────────────────────────
   function getTarget(e) {
     overlay.style.pointerEvents = 'none';
-    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const raw = document.elementFromPoint(e.clientX, e.clientY);
     overlay.style.pointerEvents = '';
-    return el;
+    return raw ? preferInteractive(raw) : null;
   }
 
   overlay.addEventListener('mousemove', (e) => {

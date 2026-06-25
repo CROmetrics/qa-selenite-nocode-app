@@ -120,6 +120,16 @@
   .log-INFO{color:#89D185}.log-WARNING{color:#CCA700}
   .log-ERROR{color:#F48771}.log-BROWSER{color:#4FC1FF}
 
+  /* Toggle switch */
+  .toggle-wrap{display:inline-flex;align-items:center;cursor:pointer;flex-shrink:0}
+  .toggle-wrap input{display:none}
+  .toggle-track{width:34px;height:18px;background:var(--overlay);border:1px solid var(--stroke);
+    border-radius:9px;position:relative;transition:background .2s,border-color .2s}
+  .toggle-thumb{position:absolute;top:2px;left:2px;width:12px;height:12px;
+    background:var(--fg3);border-radius:50%;transition:transform .2s,background .2s}
+  .toggle-wrap input:checked~.toggle-track{background:var(--brand);border-color:var(--brand)}
+  .toggle-wrap input:checked~.toggle-track .toggle-thumb{transform:translateX(16px);background:#fff}
+
   /* Picker button */
   .btn-pick{background:transparent;border:1px solid var(--stroke);color:var(--fg2);
     border-radius:3px;padding:1px 5px;cursor:pointer;font-size:12px;flex-shrink:0;
@@ -133,8 +143,7 @@
     transition:color .15s}
   .tooltip-icon:hover{color:var(--brand)}
   .tooltip-box{
-    display:none;position:absolute;left:50%;bottom:calc(100% + 7px);
-    transform:translateX(-50%);
+    display:none;position:absolute;right:0;bottom:calc(100% + 7px);
     background:#1a1a1a;color:var(--fg1);border:1px solid var(--stroke);
     border-radius:6px;padding:8px 11px;font-size:11px;line-height:1.55;
     width:220px;white-space:normal;z-index:999;
@@ -142,10 +151,25 @@
     pointer-events:none;
   }
   .tooltip-box::after{
-    content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);
+    content:'';position:absolute;top:100%;right:4px;
     border:6px solid transparent;border-top-color:#1a1a1a;
   }
   .tooltip-wrap:hover .tooltip-box{display:block}
+
+  /* Accordion */
+  .accordion{border:1px solid var(--stroke);border-radius:var(--radius);overflow:hidden;flex-shrink:0}
+  .acc-hdr{display:flex;align-items:center;justify-content:space-between;
+    padding:9px 12px;background:var(--card);cursor:pointer;user-select:none;
+    font-size:12px;font-weight:600;color:var(--fg1)}
+  .acc-hdr:hover{background:var(--overlay)}
+  .acc-chevron{color:var(--fg3);font-size:11px;transition:transform .2s;display:inline-block}
+  .accordion.open .acc-chevron{transform:rotate(90deg)}
+  .acc-body{background:var(--surface);padding:10px 12px;display:none;flex-direction:column;gap:8px}
+  .accordion.open .acc-body{display:flex}
+
+  /* Queue bar */
+  .queue-bar{display:flex;align-items:center;gap:5px;flex-wrap:wrap;
+    padding-top:4px;border-top:1px solid var(--stroke);margin-top:2px}
 
   /* Active tab indicator dot */
   .run-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);
@@ -161,77 +185,95 @@
 </div>
 
 <div id="tabs">
-  <div class="tab active" data-tab="queue">Queue</div>
-  <div class="tab" data-tab="scripts">Scripts</div>
-  <div class="tab" data-tab="settings">Settings</div>
+  <div class="tab active" data-tab="build">Build</div>
   <div class="tab" data-tab="console">Console <span id="run-indicator" style="display:none" class="run-dot"></span></div>
 </div>
 
 <div id="panels">
 
-  <!-- Queue panel -->
-  <div class="panel active" id="panel-queue">
-    <div id="q-header">
-      <div id="q-header-left">
-        <span style="font-weight:600;font-size:13px">Function Queue</span>
-        <span id="step-count">0 steps</span>
-      </div>
-      <div class="row">
-        <button class="btn sm" id="btn-add-step">+ Add Step</button>
-        <button id="btn-run" class="btn primary sm">Execute</button>
-        <button id="btn-stop" class="btn danger sm" disabled>Stop</button>
-      </div>
-    </div>
-    <div id="step-list">
-      <div id="empty-msg">No steps yet — click + Add Step to begin</div>
-    </div>
-  </div>
+  <!-- Build panel -->
+  <div class="panel active" id="panel-build">
 
-  <!-- Scripts panel -->
-  <div class="panel" id="panel-scripts">
-    <div class="card">
-      <div class="card-title">Save Script</div>
-      <div class="script-row">
-        <input type="text" id="save-name" placeholder="script name">
-        <button class="btn sm" id="btn-save-script">Save</button>
+    <!-- Accordion 1: Target -->
+    <div class="accordion" id="acc-target">
+      <div class="acc-hdr" data-acc="acc-target">
+        <span>Target</span>
+        <span class="acc-chevron">›</span>
       </div>
-    </div>
-    <div class="card">
-      <div class="card-title">Load Script</div>
-      <div class="script-row">
-        <select id="script-select"><option>&lt;no scripts&gt;</option></select>
-        <button class="btn sm" id="btn-load-script">Load</button>
-        <button class="btn danger sm" id="btn-delete-script">Delete</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Settings panel -->
-  <div class="panel" id="panel-settings">
-    <div class="card">
-      <div class="card-title">Target</div>
-      <label class="cap">URL to open first (leave blank to use active tab)</label>
-      <input type="url" id="url-input" placeholder="https://example.com (optional)">
-      <div style="margin-top:10px">
-        <div class="card-title">Execution Mode</div>
-        <div class="radio-group">
-          <input type="radio" name="mode" id="mode-close" value="close" checked>
-          <label for="mode-close">Close after run</label>
-          <input type="radio" name="mode" id="mode-loop" value="loop">
-          <label for="mode-loop">Loop continuously</label>
+      <div class="acc-body">
+        <div>
+          <label class="cap">URL to open first (leave blank to use active tab)</label>
+          <input type="url" id="url-input" placeholder="https://example.com (optional)">
+        </div>
+        <div>
+          <label class="cap">Execution Mode</label>
+          <div class="radio-group">
+            <input type="radio" name="mode" id="mode-close" value="close" checked>
+            <label for="mode-close">Close after run</label>
+            <input type="radio" name="mode" id="mode-loop" value="loop">
+            <label for="mode-loop">Loop continuously</label>
+          </div>
+        </div>
+        <div>
+          <label class="cap">Tab Target</label>
+          <div class="radio-group">
+            <input type="radio" name="tabtarget" id="tt-active" value="active" checked>
+            <label for="tt-active">Active tab</label>
+            <input type="radio" name="tabtarget" id="tt-new" value="new">
+            <label for="tt-new">New tab</label>
+          </div>
         </div>
       </div>
     </div>
-    <div class="card">
-      <div class="card-title">Tab target</div>
-      <div class="radio-group">
-        <input type="radio" name="tabtarget" id="tt-active" value="active" checked>
-        <label for="tt-active">Active tab</label>
-        <input type="radio" name="tabtarget" id="tt-new" value="new">
-        <label for="tt-new">New tab</label>
+
+    <!-- Accordion 2: Load Script -->
+    <div class="accordion" id="acc-scripts">
+      <div class="acc-hdr" data-acc="acc-scripts">
+        <span>Load Script</span>
+        <span class="acc-chevron">›</span>
+      </div>
+      <div class="acc-body">
+        <div class="row">
+          <select id="script-select" style="flex:1"><option>&lt;no scripts&gt;</option></select>
+          <button class="btn sm" id="btn-load-script">Load</button>
+          <button class="btn danger sm" id="btn-delete-script">Delete</button>
+        </div>
       </div>
     </div>
-  </div>
+
+    <!-- Accordion 3: Queue -->
+    <div class="accordion open" id="acc-queue">
+      <div class="acc-hdr" data-acc="acc-queue">
+        <span>Function Queue <span id="step-count" style="font-weight:400;color:var(--fg2);font-size:11px">0 steps</span></span>
+        <span class="acc-chevron">›</span>
+      </div>
+      <div class="acc-body">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <label class="toggle-wrap" title="Override every step's delay with a single value">
+            <input type="checkbox" id="udel-enabled">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+          <span style="font-size:12px;color:var(--fg2)">Universal delay</span>
+          <div id="udel-row" style="display:flex;align-items:center;gap:6px;opacity:.4;pointer-events:none">
+            <input type="text" id="udel-seconds" value="1" style="width:48px">
+            <span style="font-size:11px;color:var(--fg2)">sec</span>
+          </div>
+        </div>
+        <button class="btn sm" id="btn-add-step" style="align-self:flex-start">+ Add Step</button>
+        <div id="step-list">
+          <div id="empty-msg">No steps yet — click + Add Step to begin</div>
+        </div>
+        <div class="queue-bar">
+          <input type="text" id="save-name" placeholder="Script name…" style="flex:1;min-width:70px">
+          <button class="btn sm" id="btn-save-script">Save</button>
+          <div style="flex:1"></div>
+          <button id="btn-run" class="btn primary sm">Execute</button>
+          <button id="btn-stop" class="btn danger sm" disabled>Stop</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /panel-build -->
 
   <!-- Console panel -->
   <div class="panel" id="panel-console">

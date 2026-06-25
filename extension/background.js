@@ -103,87 +103,89 @@ const ACTIONS = {
     throw new Error(`Timed out waiting for: ${css_selector}`);
   },
 
-  click_by_id: async (tabId, { element_id }) => {
-    await exec(tabId, (id) => document.getElementById(id).click(), [element_id]);
+  click: async (tabId, { method, selector }) => {
+    switch (method) {
+      case 'id':
+        await exec(tabId, (v) => {
+          const el = document.getElementById(v);
+          if (!el) throw new Error(`ID not found: ${v}`);
+          el.click();
+        }, [selector]);
+        break;
+      case 'name':
+        await exec(tabId, (v) => {
+          const el = document.querySelector(`[name="${v}"]`);
+          if (!el) throw new Error(`Name not found: ${v}`);
+          el.click();
+        }, [selector]);
+        break;
+      case 'css':
+        await exec(tabId, (v) => {
+          const el = document.querySelector(v);
+          if (!el) throw new Error(`CSS selector not found: ${v}`);
+          el.click();
+        }, [selector]);
+        break;
+      case 'xpath':
+        await exec(tabId, (v) => {
+          const el = document.evaluate(v, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+          if (!el) throw new Error(`XPath not found: ${v}`);
+          el.click();
+        }, [selector]);
+        break;
+      case 'link_text':
+        await exec(tabId, (v) => {
+          const el = [...document.querySelectorAll('a')].find(a => a.textContent.trim() === v);
+          if (!el) throw new Error(`Link text not found: ${v}`);
+          el.click();
+        }, [selector]);
+        break;
+      default:
+        throw new Error(`Unknown click method: ${method}`);
+    }
   },
 
-  click_by_name: async (tabId, { name }) => {
-    await exec(tabId, (n) => document.querySelector(`[name="${n}"]`).click(), [name]);
-  },
-
-  click_by_xpath: async (tabId, { xpath }) => {
-    await exec(tabId, (xp) => {
-      const el = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-      if (!el) throw new Error(`XPath not found: ${xp}`);
-      el.click();
-    }, [xpath]);
-  },
-
-  click_by_css: async (tabId, { css }) => {
-    await exec(tabId, (sel) => {
-      const el = document.querySelector(sel);
-      if (!el) throw new Error(`CSS selector not found: ${sel}`);
-      el.click();
-    }, [css]);
-  },
-
-  click_by_link_text: async (tabId, { text }) => {
-    await exec(tabId, (txt) => {
-      const el = [...document.querySelectorAll('a')].find(a => a.textContent.trim() === txt);
-      if (!el) throw new Error(`Link text not found: ${txt}`);
-      el.click();
-    }, [text]);
-  },
-
-  fill_by_id: async (tabId, { element_id, text }) => {
-    await exec(tabId, (id, val) => {
-      const el = document.getElementById(id);
-      if (!el) throw new Error(`ID not found: ${id}`);
+  fill: async (tabId, { method, selector, text }) => {
+    const fn = (v, val) => {
+      let el;
+      if      (method === 'id')    el = document.getElementById(v);
+      else if (method === 'name')  el = document.querySelector(`[name="${v}"]`);
+      else if (method === 'css')   el = document.querySelector(v);
+      else if (method === 'xpath') el = document.evaluate(v, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+      if (!el) throw new Error(`Element not found (${method}): ${v}`);
       el.focus(); el.value = val;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('input',  { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
-    }, [element_id, text]);
+    };
+    await exec(tabId, fn, [selector, text]);
   },
 
-  fill_by_name: async (tabId, { name, text }) => {
-    await exec(tabId, (n, val) => {
-      const el = document.querySelector(`[name="${n}"]`);
-      if (!el) throw new Error(`Name not found: ${n}`);
-      el.focus(); el.value = val;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    }, [name, text]);
-  },
-
-  fill_by_xpath: async (tabId, { xpath, text }) => {
-    await exec(tabId, (xp, val) => {
-      const el = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-      if (!el) throw new Error(`XPath not found: ${xp}`);
-      el.focus(); el.value = val;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    }, [xpath, text]);
-  },
-
-  fill_by_css: async (tabId, { css, text }) => {
-    await exec(tabId, (sel, val) => {
-      const el = document.querySelector(sel);
-      if (!el) throw new Error(`CSS not found: ${sel}`);
-      el.focus(); el.value = val;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    }, [css, text]);
-  },
-
-  submit_by_id: async (tabId, { element_id }) => {
-    await exec(tabId, (id) => document.getElementById(id).closest('form').submit(), [element_id]);
-  },
-
-  submit_by_xpath: async (tabId, { xpath }) => {
-    await exec(tabId, (xp) => {
-      const el = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-      el.closest('form').submit();
-    }, [xpath]);
+  submit: async (tabId, { method, selector }) => {
+    switch (method) {
+      case 'id':
+        await exec(tabId, (v) => {
+          const el = document.getElementById(v);
+          if (!el) throw new Error(`ID not found: ${v}`);
+          el.closest('form').submit();
+        }, [selector]);
+        break;
+      case 'xpath':
+        await exec(tabId, (v) => {
+          const el = document.evaluate(v, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+          if (!el) throw new Error(`XPath not found: ${v}`);
+          el.closest('form').submit();
+        }, [selector]);
+        break;
+      case 'css':
+        await exec(tabId, (v) => {
+          const el = document.querySelector(v);
+          if (!el) throw new Error(`CSS not found: ${v}`);
+          el.closest('form').submit();
+        }, [selector]);
+        break;
+      default:
+        throw new Error(`Unknown submit method: ${method}`);
+    }
   },
 
   select_by_name: async (tabId, { name, value }) => {
@@ -202,37 +204,42 @@ const ACTIONS = {
     }, [keys_sequence]);
   },
 
-  switch_to_frame_by_name: async (tabId, { frame_name }) => {
-    // Extensions don't need frame switching — scripting API targets all frames
-    await addLog('INFO', `Note: frame switching not required in extension mode (targeting all frames). Frame: ${frame_name}`);
+  switch_to: async (_tabId, { target, value }) => {
+    switch (target) {
+      case 'frame':
+        await addLog('INFO', `Frame switching is not required in extension mode — scripting targets all frames. (Frame: ${value})`);
+        break;
+      case 'main':
+        await addLog('INFO', 'Switch to main page — no-op in extension mode.');
+        break;
+      case 'parent':
+        await addLog('INFO', 'Switch to parent frame — no-op in extension mode.');
+        break;
+      case 'window': {
+        const tabs = await chrome.tabs.query({ title: value });
+        if (tabs.length) await chrome.tabs.update(tabs[0].id, { active: true });
+        else throw new Error(`Window not found: ${value}`);
+        break;
+      }
+      default:
+        throw new Error(`Unknown switch target: ${target}`);
+    }
   },
 
-  switch_to_default_content: async () => {
-    await addLog('INFO', 'Switch to main page — no-op in extension mode.');
-  },
-
-  switch_to_parent_frame: async () => {
-    await addLog('INFO', 'Switch to parent frame — no-op in extension mode.');
-  },
-
-  switch_to_window: async (_tabId, { handle_or_name }) => {
-    const tabs = await chrome.tabs.query({ title: handle_or_name });
-    if (tabs.length) await chrome.tabs.update(tabs[0].id, { active: true });
-    else throw new Error(`Window not found: ${handle_or_name}`);
-  },
-
-  accept_alert: async (tabId) => {
-    // Override window.confirm/alert before it fires via content script
-    await addLog('WARNING', 'accept_alert: alerts are auto-dismissed in extensions. Use explicit_wait before this if timing is needed.');
-  },
-
-  dismiss_alert: async (tabId) => {
-    await addLog('WARNING', 'dismiss_alert: alerts are auto-dismissed in extensions.');
-  },
-
-  get_alert_text: async (tabId) => {
-    await addLog('WARNING', 'get_alert_text: not available in extensions (alerts are handled by the browser).');
-    return null;
+  alert: async (_tabId, { action }) => {
+    switch (action) {
+      case 'accept':
+        await addLog('WARNING', 'Accept alert: alerts are auto-dismissed in extensions. Use explicit_wait before this step if timing is needed.');
+        break;
+      case 'dismiss':
+        await addLog('WARNING', 'Dismiss alert: alerts are auto-dismissed in extensions.');
+        break;
+      case 'get_text':
+        await addLog('WARNING', 'Get alert text: not available in extensions — alerts are handled by the browser natively.');
+        break;
+      default:
+        throw new Error(`Unknown alert action: ${action}`);
+    }
   },
 
   close_browser: async (tabId) => {
@@ -245,7 +252,7 @@ const ACTIONS = {
 let _running = false;
 let _stopRequested = false;
 
-async function runQueue({ url, queue, mode, targetTabId }) {
+async function runQueue({ url, queue, mode, targetTabId, universalDelay }) {
   _running = true;
   _stopRequested = false;
   await chrome.storage.session.set({ running: true });
@@ -273,8 +280,10 @@ async function runQueue({ url, queue, mode, targetTabId }) {
         if (_stopRequested) break;
         if (!step.enabled) continue;
 
-        const delay = parseInt(step.delay, 10) || 0;
-        if (delay > 0) await new Promise(r => setTimeout(r, delay * 1000));
+        const delaySec = universalDelay?.enabled
+          ? parseFloat(universalDelay.seconds) || 0
+          : parseFloat(step.delay) || 0;
+        if (delaySec > 0) await new Promise(r => setTimeout(r, delaySec * 1000));
 
         const fn = ACTIONS[step.func];
         if (!fn) { await addLog('ERROR', `Unknown function: ${step.func}`); continue; }
@@ -313,21 +322,13 @@ const ARG_NAMES = {
   open_url:                  ['url'],
   implicit_wait:             ['seconds'],
   explicit_wait:             ['css_selector', 'timeout'],
-  click_by_id:               ['element_id'],
-  click_by_name:             ['name'],
-  click_by_xpath:            ['xpath'],
-  click_by_css:              ['css'],
-  click_by_link_text:        ['text'],
-  fill_by_id:                ['element_id', 'text'],
-  fill_by_name:              ['name', 'text'],
-  fill_by_xpath:             ['xpath', 'text'],
-  fill_by_css:               ['css', 'text'],
-  submit_by_id:              ['element_id'],
-  submit_by_xpath:           ['xpath'],
+  click:                     ['method', 'selector'],
+  fill:                      ['method', 'selector', 'text'],
+  submit:                    ['method', 'selector'],
   select_by_name:            ['name', 'value'],
   send_keys_action:          ['keys_sequence'],
-  switch_to_frame_by_name:   ['frame_name'],
-  switch_to_window:          ['handle_or_name'],
+  switch_to:                 ['target', 'value'],
+  alert:                     ['action'],
   wait_seconds:              ['seconds'],
 };
 
@@ -343,26 +344,13 @@ const DESCRIPTIONS = {
   minimize_window:           'Minimises the browser window to the taskbar.',
   implicit_wait:             'Pauses all subsequent steps by the given number of seconds before looking up any element.',
   explicit_wait:             'Waits up to "timeout" seconds until a CSS selector matches an element on the page. Fails if it never appears.',
-  click_by_id:               'Finds an element by its HTML id attribute and clicks it.',
-  click_by_name:             'Finds an element by its name attribute and clicks it.',
-  click_by_xpath:            'Finds an element using an XPath expression and clicks it.',
-  click_by_css:              'Finds an element using a CSS selector (e.g. ".btn-primary") and clicks it.',
-  click_by_link_text:        'Finds an <a> tag whose visible text exactly matches the value and clicks it.',
-  fill_by_id:                'Clears an input field found by id, then types the given text into it.',
-  fill_by_name:              'Clears an input field found by name attribute, then types the given text into it.',
-  fill_by_xpath:             'Clears an input field found by XPath, then types the given text into it.',
-  fill_by_css:               'Clears an input field found by CSS selector, then types the given text into it.',
-  submit_by_id:              'Submits the form that contains the element with the given id.',
-  submit_by_xpath:           'Submits the form that contains the element found by the given XPath.',
+  click:                     'Clicks an element on the page. Choose a method (CSS Selector, ID, Name, XPath, or Link Text) and enter the value, or use the picker (🎯) to select the element visually.',
+  fill:                      'Clears an input field and types text into it. Choose a method (CSS Selector, ID, Name, or XPath) and enter the value, or use the picker (🎯) to select the field visually.',
+  submit:                    'Submits the form containing the matched element. Choose a method (ID, CSS Selector, or XPath) and enter the value, or use the picker (🎯) to select any field inside the form.',
   select_by_name:            'Selects an option in a <select> dropdown found by name, matching by option value.',
   send_keys_action:          'Appends keystrokes to the currently focused element — useful for special keys or shortcuts.',
-  switch_to_frame_by_name:   'Switches the scripting context into an iframe identified by its name or id.',
-  switch_to_default_content: 'Exits any active iframe and returns to the main page context.',
-  switch_to_parent_frame:    'Moves the scripting context up one level from a nested iframe.',
-  switch_to_window:          'Switches focus to a different open browser window by its title.',
-  accept_alert:              'Accepts (clicks OK on) a JavaScript alert, confirm, or prompt dialog.',
-  dismiss_alert:             'Dismisses (clicks Cancel on) a JavaScript confirm or prompt dialog.',
-  get_alert_text:            'Reads and logs the message text displayed in the current alert dialog.',
+  switch_to:                 'Changes the active context. Choose Frame (by name), Main Page, Parent Frame, or Window (by title).',
+  alert:                     'Handles a JavaScript alert dialog. Choose Accept (OK), Dismiss (Cancel), or Get Text to log the message.',
   wait_seconds:              'Pauses execution for an exact number of seconds before running the next step.',
   close_browser:             'Closes the entire browser window and ends the session.',
 };
@@ -379,26 +367,13 @@ const DISPLAY_NAMES = {
   minimize_window:           'Minimize Window',
   implicit_wait:             'Set Implicit Wait',
   explicit_wait:             'Wait for Element (CSS)',
-  click_by_id:               'Click — By ID',
-  click_by_name:             'Click — By Name',
-  click_by_xpath:            'Click — By XPath',
-  click_by_css:              'Click — By CSS Selector',
-  click_by_link_text:        'Click — By Link Text',
-  fill_by_id:                'Fill Field — By ID',
-  fill_by_name:              'Fill Field — By Name',
-  fill_by_xpath:             'Fill Field — By XPath',
-  fill_by_css:               'Fill Field — By CSS Selector',
-  submit_by_id:              'Submit Form — By ID',
-  submit_by_xpath:           'Submit Form — By XPath',
+  click:                     'Click',
+  fill:                      'Fill Field',
+  submit:                    'Submit Form',
   select_by_name:            'Select Dropdown Option — By Name',
   send_keys_action:          'Send Keyboard Input',
-  switch_to_frame_by_name:   'Switch to Frame',
-  switch_to_default_content: 'Switch to Main Page',
-  switch_to_parent_frame:    'Switch to Parent Frame',
-  switch_to_window:          'Switch to Window',
-  accept_alert:              'Accept Alert',
-  dismiss_alert:             'Dismiss Alert',
-  get_alert_text:            'Get Alert Text',
+  switch_to:                 'Switch To',
+  alert:                     'Alert',
   wait_seconds:              'Wait (seconds)',
   close_browser:             'Close Browser',
 };

@@ -24,6 +24,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(syncLogs, 600);
   setInterval(syncRunState, 800);
 
+  await loadUniversalDelay();
+  initAccordions();
+
   // Tab clicks
   document.querySelectorAll('.tab[data-tab]').forEach(t => {
     t.addEventListener('click', () => showTab(t.dataset.tab));
@@ -39,6 +42,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-load-script').addEventListener('click', loadScript);
   document.getElementById('btn-delete-script').addEventListener('click', deleteScript);
 
+  // Universal delay toggle + input
+  document.getElementById('udel-enabled').addEventListener('change', saveUniversalDelay);
+  document.getElementById('udel-seconds').addEventListener('input', saveUniversalDelay);
+
   // Console filter input
   document.getElementById('filter-input').addEventListener('input', renderLog);
 
@@ -52,12 +59,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function showTab(name) {
-  document.querySelectorAll('.tab').forEach((t, i) => {
-    const panels = ['queue', 'scripts', 'settings', 'console'];
-    t.classList.toggle('active', panels[i] === name);
+  document.querySelectorAll('.tab[data-tab]').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('panel-' + name).classList.add('active');
+  document.getElementById('panel-' + name)?.classList.add('active');
+}
+
+// ── Accordions ────────────────────────────────────────────────────────────
+function toggleAccordion(id) {
+  document.getElementById(id)?.classList.toggle('open');
+}
+
+function openAccordion(id) {
+  document.getElementById(id)?.classList.add('open');
+}
+
+function initAccordions() {
+  document.querySelectorAll('.acc-hdr[data-acc]').forEach(hdr => {
+    hdr.addEventListener('click', () => toggleAccordion(hdr.dataset.acc));
+  });
 }
 
 // ── Run state sync ────────────────────────────────────────────────────────
@@ -111,6 +132,35 @@ async function clearLog() {
   document.getElementById('log-out').innerHTML = '';
 }
 
+// ── Universal Delay ───────────────────────────────────────────────────────
+function setUniversalDelayUI(enabled) {
+  const row = document.getElementById('udel-row');
+  if (!row) return;
+  row.style.opacity       = enabled ? '1'    : '.4';
+  row.style.pointerEvents = enabled ? 'auto' : 'none';
+}
+
+async function loadUniversalDelay() {
+  const { universalDelay = { enabled: false, seconds: '1' } } =
+    await chrome.storage.local.get('universalDelay');
+  const chk = document.getElementById('udel-enabled');
+  const inp = document.getElementById('udel-seconds');
+  if (!chk) return;
+  chk.checked = universalDelay.enabled;
+  inp.value   = universalDelay.seconds;
+  setUniversalDelayUI(universalDelay.enabled);
+}
+
+async function saveUniversalDelay() {
+  const chk     = document.getElementById('udel-enabled');
+  const inp     = document.getElementById('udel-seconds');
+  const enabled = chk.checked;
+  setUniversalDelayUI(enabled);
+  await chrome.storage.local.set({
+    universalDelay: { enabled, seconds: inp.value || '1' }
+  });
+}
+
 // ── Run / Stop ────────────────────────────────────────────────────────────
 async function runQueue() {
   const url        = document.getElementById('url-input').value.trim();
@@ -128,9 +178,12 @@ async function runQueue() {
     func: s.func, enabled: s.enabled, delay: s.delay, inputs: { ...s.inputs }
   }));
 
+  const { universalDelay = { enabled: false, seconds: '1' } } =
+    await chrome.storage.local.get('universalDelay');
+
   await chrome.runtime.sendMessage({
     action: 'run',
-    payload: { url, queue, mode, targetTabId }
+    payload: { url, queue, mode, targetTabId, universalDelay }
   });
 
   showTab('console');
@@ -174,6 +227,7 @@ async function loadScript() {
   steps = [];
   nextId = 1;
   data.forEach(s => addStep(s));
+  openAccordion('acc-queue');
 }
 
 async function deleteScript() {
@@ -270,7 +324,114 @@ function buildStepHTML(step, fnNames) {
 // Args that benefit from the element picker
 const PICKER_ARGS = new Set(['css', 'element_id', 'css_selector', 'xpath']);
 
+// Method options for consolidated click/fill functions
+const CLICK_METHODS = [
+  { value: 'css',       label: 'CSS Selector', doc: 'Finds the element using a CSS selector string, e.g. `.btn-primary` or `#submit-btn`. Use the 🎯 picker to generate one automatically.' },
+  { value: 'id',        label: 'ID',           doc: 'Finds the element by its `id` attribute — the fastest and most reliable method when an id is present.' },
+  { value: 'name',      label: 'Name',         doc: 'Finds the element by its `name` attribute — commonly used on form inputs and buttons.' },
+  { value: 'xpath',     label: 'XPath',        doc: 'Finds the element using an XPath expression — powerful and flexible, but more verbose than CSS.' },
+  { value: 'link_text', label: 'Link Text',    doc: 'Finds an <a> link whose visible text exactly matches the value you enter.' },
+];
+
+const FILL_METHODS = [
+  { value: 'css',   label: 'CSS Selector', doc: 'Finds the input using a CSS selector string, e.g. `input[name="email"]`. Use the 🎯 picker to generate one automatically.' },
+  { value: 'id',    label: 'ID',           doc: 'Finds the input by its `id` attribute — the fastest and most reliable method when an id is present.' },
+  { value: 'name',  label: 'Name',         doc: 'Finds the input by its `name` attribute — the most common way to target form fields.' },
+  { value: 'xpath', label: 'XPath',        doc: 'Finds the input using an XPath expression — useful when no id or name is available.' },
+];
+
+const SUBMIT_METHODS = [
+  { value: 'css',   label: 'CSS Selector', doc: 'Finds any element inside the form using a CSS selector, then submits that form.' },
+  { value: 'id',    label: 'ID',           doc: 'Finds an element by its `id` inside the target form, then submits that form.' },
+  { value: 'xpath', label: 'XPath',        doc: 'Finds an element using XPath inside the target form, then submits that form.' },
+];
+
+const SWITCH_TARGETS = [
+  { value: 'frame',  label: 'Frame (by Name)',  hasValue: true,  doc: 'Switches the scripting context into an iframe identified by its name or id attribute.' },
+  { value: 'main',   label: 'Main Page',         hasValue: false, doc: 'Returns to the top-level page context, exiting any active iframe.' },
+  { value: 'parent', label: 'Parent Frame',      hasValue: false, doc: 'Moves up one level from a nested iframe to its parent frame.' },
+  { value: 'window', label: 'Window (by Title)', hasValue: true,  doc: 'Switches focus to a different browser tab or window whose title matches the value.' },
+];
+
+const ALERT_ACTIONS = [
+  { value: 'accept',   label: 'Accept (OK)',      doc: 'Clicks the OK button on a JavaScript alert, confirm, or prompt dialog.' },
+  { value: 'dismiss',  label: 'Dismiss (Cancel)', doc: 'Clicks the Cancel button on a JavaScript confirm or prompt dialog.' },
+  { value: 'get_text', label: 'Get Text',         doc: 'Logs the message text from the current alert dialog to the console.' },
+];
+
+// Build a tooltip for a sub-option select based on the currently selected value
+function buildSubTooltipHTML(options, currentValue) {
+  const opt = options.find(o => o.value === currentValue) || options[0];
+  if (!opt?.doc) return '';
+  return `<span class="tooltip-wrap">
+    <span class="tooltip-icon">ⓘ</span>
+    <span class="tooltip-box">${esc(opt.doc)}</span>
+  </span>`;
+}
+
+function buildMethodArgsHTML(step, methods, hasText) {
+  const method   = step.inputs.method   || methods[0].value;
+  const selector = step.inputs.selector || '';
+  const methodOpts = methods.map(m =>
+    `<option value="${m.value}"${m.value === method ? ' selected' : ''}>${m.label}</option>`
+  ).join('');
+  const textRow = hasText ? `
+    <div class="arg-row">
+      <span class="arg-lbl">Text</span>
+      <input type="text" data-arg="text" value="${esc(step.inputs.text || '')}">
+    </div>` : '';
+  return `
+    <div class="arg-row">
+      <span class="arg-lbl">Method</span>
+      <select data-arg="method" class="method-select">${methodOpts}</select>
+      <span class="sub-tooltip-slot">${buildSubTooltipHTML(methods, method)}</span>
+    </div>
+    <div class="arg-row">
+      <span class="arg-lbl">Value</span>
+      <input type="text" data-arg="selector" value="${esc(selector)}">
+      <button class="btn-pick" data-pick-arg="selector" title="Pick element from page">&#x1F3AF;</button>
+    </div>${textRow}`;
+}
+
+function buildSwitchArgsHTML(step) {
+  const target     = step.inputs.target || 'frame';
+  const value      = step.inputs.value  || '';
+  const targetInfo = SWITCH_TARGETS.find(t => t.value === target) || SWITCH_TARGETS[0];
+  const targetOpts = SWITCH_TARGETS.map(t =>
+    `<option value="${t.value}"${t.value === target ? ' selected' : ''}>${t.label}</option>`
+  ).join('');
+  return `
+    <div class="arg-row">
+      <span class="arg-lbl">Target</span>
+      <select data-arg="target" class="method-select">${targetOpts}</select>
+      <span class="sub-tooltip-slot">${buildSubTooltipHTML(SWITCH_TARGETS, target)}</span>
+    </div>
+    <div class="arg-row switch-value-row" style="display:${targetInfo.hasValue ? 'flex' : 'none'}">
+      <span class="arg-lbl">Name / Title</span>
+      <input type="text" data-arg="value" value="${esc(value)}">
+    </div>`;
+}
+
+function buildAlertArgsHTML(step) {
+  const action     = step.inputs.action || 'accept';
+  const actionOpts = ALERT_ACTIONS.map(a =>
+    `<option value="${a.value}"${a.value === action ? ' selected' : ''}>${a.label}</option>`
+  ).join('');
+  return `
+    <div class="arg-row">
+      <span class="arg-lbl">Action</span>
+      <select data-arg="action" class="method-select">${actionOpts}</select>
+      <span class="sub-tooltip-slot">${buildSubTooltipHTML(ALERT_ACTIONS, action)}</span>
+    </div>`;
+}
+
 function buildArgsHTML(step) {
+  if (step.func === 'click')     return buildMethodArgsHTML(step, CLICK_METHODS,  false);
+  if (step.func === 'fill')      return buildMethodArgsHTML(step, FILL_METHODS,   true);
+  if (step.func === 'submit')    return buildMethodArgsHTML(step, SUBMIT_METHODS, false);
+  if (step.func === 'switch_to') return buildSwitchArgsHTML(step);
+  if (step.func === 'alert')     return buildAlertArgsHTML(step);
+
   const args = FN_META[step.func]?.args || [];
   if (!args.length) return '<div class="no-args">No arguments</div>';
   return args.map(a => {
@@ -287,23 +448,49 @@ function buildArgsHTML(step) {
 }
 
 function wireArgs(el, step) {
+  // Map each sub-select arg to its options list for tooltip updates
+  const SUB_OPTION_MAP = {
+    click:     { method:  CLICK_METHODS   },
+    fill:      { method:  FILL_METHODS    },
+    submit:    { method:  SUBMIT_METHODS  },
+    switch_to: { target:  SWITCH_TARGETS  },
+    alert:     { action:  ALERT_ACTIONS   },
+  };
+
   el.querySelectorAll('[data-arg]').forEach(inp => {
-    inp.addEventListener('input', e => {
+    const isSelect = inp.tagName === 'SELECT';
+    inp.addEventListener(isSelect ? 'change' : 'input', e => {
       step.inputs[inp.dataset.arg] = e.target.value;
+
+      // Update sub-tooltip when a method/target/action select changes
+      const subOpts = SUB_OPTION_MAP[step.func]?.[inp.dataset.arg];
+      if (subOpts) {
+        const slot = inp.closest('.arg-row')?.querySelector('.sub-tooltip-slot');
+        if (slot) slot.innerHTML = buildSubTooltipHTML(subOpts, e.target.value);
+      }
+
+      // For switch_to: show/hide value row based on target selection
+      if (step.func === 'switch_to' && inp.dataset.arg === 'target') {
+        const info = SWITCH_TARGETS.find(t => t.value === e.target.value);
+        const row  = el.querySelector('.switch-value-row');
+        if (row) row.style.display = info?.hasValue ? 'flex' : 'none';
+      }
+
       persistQueue();
     });
   });
 
   el.querySelectorAll('.btn-pick').forEach(btn => {
-    btn.addEventListener('click', () => startPicker(el, step, btn.dataset.pickArg));
+    const argName = btn.dataset.pickArg;
+    const onResult = ['click', 'fill', 'submit'].includes(step.func) ? applyPickerToMethod : null;
+    btn.addEventListener('click', () => startPicker(el, step, argName, onResult));
   });
 }
 
 // ── Element picker ────────────────────────────────────────────────────────────
 let _pickerPoller = null;
 
-async function startPicker(stepEl, step, argName) {
-  // Clear any old result
+async function startPicker(stepEl, step, argName, onResult) {
   await chrome.storage.session.remove('pickerResult');
 
   const btn = stepEl.querySelector(`.btn-pick[data-pick-arg="${argName}"]`);
@@ -312,11 +499,10 @@ async function startPicker(stepEl, step, argName) {
   const res = await chrome.runtime.sendMessage({ action: 'startPicker' });
   if (!res?.ok) {
     if (btn) { btn.textContent = '🎯'; btn.disabled = false; }
-    alert('Could not inject picker. Make sure you are on a regular webpage (not chrome:// pages).');
+    alert('Could not inject picker. Make sure you are on a regular webpage (not a chrome:// page).');
     return;
   }
 
-  // Poll session storage for the result
   _pickerPoller = setInterval(async () => {
     const { pickerResult } = await chrome.storage.session.get('pickerResult');
     if (!pickerResult) return;
@@ -328,19 +514,29 @@ async function startPicker(stepEl, step, argName) {
     if (btn) { btn.textContent = '🎯'; btn.disabled = false; }
     if (pickerResult.cancelled) return;
 
-    const { selector } = pickerResult;
-    // Fill the right value: id args get the raw id, css/css_selector args get the full CSS
-    const value = (argName === 'element_id' && selector.idValue)
-      ? selector.idValue
-      : selector.css;
-
-    const inp = stepEl.querySelector(`[data-arg="${argName}"]`);
-    if (inp) {
-      inp.value = value;
-      step.inputs[argName] = value;
-      persistQueue();
+    if (onResult) {
+      onResult(pickerResult.selector, stepEl, step);
+    } else {
+      const { selector } = pickerResult;
+      const value = (argName === 'element_id' && selector.idValue)
+        ? selector.idValue
+        : selector.css;
+      const inp = stepEl.querySelector(`[data-arg="${argName}"]`);
+      if (inp) { inp.value = value; step.inputs[argName] = value; persistQueue(); }
     }
   }, 300);
+}
+
+function applyPickerToMethod(selector, stepEl, step) {
+  const method = selector.idValue ? 'id' : 'css';
+  const value  = selector.idValue || selector.css;
+  step.inputs.method   = method;
+  step.inputs.selector = value;
+  const methodEl = stepEl.querySelector('[data-arg="method"]');
+  const valueEl  = stepEl.querySelector('[data-arg="selector"]');
+  if (methodEl) methodEl.value = method;
+  if (valueEl)  valueEl.value  = value;
+  persistQueue();
 }
 
 function removeStep(id) {

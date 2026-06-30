@@ -6,6 +6,7 @@ let nextId = 1;
 let logData = [];
 let filterLevel = null;
 let logOffset = 0;
+let _wasRunning = false;
 
 // ── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -25,12 +26,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(syncRunState, 800);
 
   await loadUniversalDelay();
+  await restoreCaptureState();
   initAccordions();
 
   // Tab clicks
   document.querySelectorAll('.tab[data-tab]').forEach(t => {
     t.addEventListener('click', () => showTab(t.dataset.tab));
   });
+
+  // Test Suites tab
+  document.getElementById('btn-run-a11y')?.addEventListener('click', runA11yAudit);
+  document.getElementById('btn-run-conv')?.addEventListener('click', runConversionAudit);
+  document.getElementById('btn-run-content')?.addEventListener('click', runContentAudit);
 
   // Queue buttons
   document.getElementById('btn-add-step').addEventListener('click', () => addStep());
@@ -42,6 +49,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-load-script').addEventListener('click', loadScript);
   document.getElementById('btn-delete-script').addEventListener('click', deleteScript);
 
+  // URL parameter fields
+  if (document.getElementById('param-list')) addParamField();
+  document.getElementById('btn-add-param')?.addEventListener('click', () => addParamField());
+
   // Universal delay toggle + input
   document.getElementById('udel-enabled').addEventListener('change', saveUniversalDelay);
   document.getElementById('udel-seconds').addEventListener('input', saveUniversalDelay);
@@ -50,11 +61,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('filter-input').addEventListener('input', renderLog);
 
   // Console filter buttons
-  document.getElementById('fb-all').addEventListener('click', function() { setFilter(null, this); });
-  document.getElementById('fb-info').addEventListener('click', function() { setFilter('INFO', this); });
-  document.getElementById('fb-warn').addEventListener('click', function() { setFilter('WARNING', this); });
-  document.getElementById('fb-err').addEventListener('click', function() { setFilter('ERROR', this); });
+  document.getElementById('fb-all').addEventListener('click',     function() { setFilter(null,      this); });
+  document.getElementById('fb-info').addEventListener('click',    function() { setFilter('INFO',    this); });
+  document.getElementById('fb-warn').addEventListener('click',    function() { setFilter('WARNING', this); });
+  document.getElementById('fb-err').addEventListener('click',     function() { setFilter('ERROR',   this); });
+  document.getElementById('fb-browser').addEventListener('click', function() { setFilter('BROWSER', this); });
   document.getElementById('btn-clear-log').addEventListener('click', clearLog);
+
+  // Console capture toggle + tab selector
+  document.getElementById('capture-enabled').addEventListener('change', onCaptureToggle);
+  document.getElementById('capture-tab-select').addEventListener('change', () => {
+    if (document.getElementById('capture-enabled').checked) onCaptureToggle();
+  });
+  document.getElementById('btn-refresh-tabs').addEventListener('click', loadTabList);
 });
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
@@ -87,6 +106,20 @@ async function syncRunState() {
   document.getElementById('btn-run').disabled  = !!running;
   document.getElementById('btn-stop').disabled = !running;
   document.getElementById('run-indicator').style.display = running ? 'inline-block' : 'none';
+
+  if (running && !_wasRunning) {
+    // Test just started — reset log view and update tab selector to show the test tab
+    logData = [];
+    document.getElementById('log-out').innerHTML = '';
+    const { captureTabId } = await chrome.storage.session.get('captureTabId');
+    if (captureTabId) {
+      await loadTabList();
+      const sel = document.getElementById('capture-tab-select');
+      if (sel) sel.value = String(captureTabId);
+      document.getElementById('capture-enabled').checked = true;
+    }
+  }
+  _wasRunning = !!running;
 }
 
 // ── Log sync ──────────────────────────────────────────────────────────────
@@ -125,6 +158,48 @@ function setFilter(lv, btn) {
   renderLog();
 }
 
+// ── Console capture ───────────────────────────────────────────────────────
+async function loadTabList() {
+  const res = await chrome.runtime.sendMessage({ action: 'getTabs' });
+  const tabs = res?.tabs || [];
+  const sel = document.getElementById('capture-tab-select');
+  if (!sel) return;
+  const prevVal = sel.value;
+  sel.innerHTML = tabs.length
+    ? tabs.map(t => {
+        const label = (t.title || t.url || 'Tab').substring(0, 50);
+        return `<option value="${t.id}">${label}</option>`;
+      }).join('')
+    : '<option value="">No tabs available</option>';
+  if (prevVal && [...sel.options].some(o => o.value === prevVal)) sel.value = prevVal;
+}
+
+async function restoreCaptureState() {
+  await loadTabList();
+  const { captureTabId } = await chrome.storage.session.get('captureTabId');
+  const chk = document.getElementById('capture-enabled');
+  if (chk) chk.checked = !!captureTabId;
+  if (captureTabId) {
+    const sel = document.getElementById('capture-tab-select');
+    if (sel) sel.value = String(captureTabId);
+  }
+}
+
+async function onCaptureToggle() {
+  const enabled = document.getElementById('capture-enabled').checked;
+  if (enabled) {
+    const tabId = parseInt(document.getElementById('capture-tab-select').value);
+    if (!tabId) { document.getElementById('capture-enabled').checked = false; return; }
+    const res = await chrome.runtime.sendMessage({ action: 'startCapture', tabId });
+    if (!res?.ok) {
+      document.getElementById('capture-enabled').checked = false;
+      alert('Could not inject console capture. Make sure the selected tab is a regular webpage.');
+    }
+  } else {
+    await chrome.runtime.sendMessage({ action: 'stopCapture' });
+  }
+}
+
 async function clearLog() {
   logData = [];
   logOffset = 0;
@@ -161,9 +236,36 @@ async function saveUniversalDelay() {
   });
 }
 
+// ── URL parameters ────────────────────────────────────────────────────────
+function addParamField(value = '') {
+  const list = document.getElementById('param-list');
+  const row  = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:4px;align-items:center';
+  row.innerHTML = `
+    <input type="text" class="url-param-input" placeholder="key=value" value="${esc(value)}"
+      style="flex:1">
+    <button class="btn-icon rm-param" title="Remove" style="color:var(--err);flex-shrink:0">✕</button>`;
+  row.querySelector('.rm-param').addEventListener('click', () => {
+    row.remove();
+    if (!document.querySelectorAll('.url-param-input').length) addParamField();
+  });
+  list.appendChild(row);
+}
+
+function collectParams() {
+  return [...document.querySelectorAll('.url-param-input')]
+    .map(i => i.value.trim())
+    .filter(Boolean);
+}
+
 // ── Run / Stop ────────────────────────────────────────────────────────────
 async function runQueue() {
-  const url        = document.getElementById('url-input').value.trim();
+  let url         = document.getElementById('url-input').value.trim();
+  const paramParts = collectParams();
+  if (url && paramParts.length) {
+    const sep = url.includes('?') ? '&' : '?';
+    url = url + sep + paramParts.join('&');
+  }
   const mode       = document.querySelector('input[name=mode]:checked').value;
   const tabTarget  = document.querySelector('input[name=tabtarget]:checked').value;
 
@@ -572,4 +674,145 @@ function persistQueue() {
       func: s.func, enabled: s.enabled, delay: s.delay, inputs: { ...s.inputs }
     }))
   });
+}
+
+// ── Test Suites shared renderer ───────────────────────────────────────────────
+function renderSuiteResults(containerId, results, order) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  let totalIssues = 0, totalChecks = 0, passed = 0;
+
+  const rows = order
+    .filter(k => results[k])
+    .map(k => {
+      const { label, issues, infoOnly } = results[k];
+      const count = issues.length;
+      totalChecks++;
+
+      let dotCls, countLabel, isOpen;
+      if (infoOnly) {
+        // Informational only — never counts as a failure
+        passed++;
+        dotCls = 'a11y-info-dot';
+        countLabel = 'Info';
+        isOpen = count > 0;
+      } else {
+        totalIssues += count;
+        if (count === 0) passed++;
+        dotCls = count === 0 ? 'a11y-pass-dot' : 'a11y-fail-dot';
+        countLabel = count === 0 ? 'Pass' : count + ' issue' + (count !== 1 ? 's' : '');
+        isOpen = count > 0;
+      }
+      const body = count > 0
+        ? issues.map(i => `<div class="a11y-issue">${esc(i)}</div>`).join('')
+        : '';
+
+      return `
+        <div class="a11y-row${isOpen ? ' open' : ''}" data-suite-row>
+          <div class="a11y-row-hdr">
+            <span class="a11y-dot ${dotCls}"></span>
+            <span class="a11y-row-label">${esc(label)}</span>
+            <span class="a11y-count">${countLabel}</span>
+            ${count > 0 ? '<span class="a11y-chevron">›</span>' : ''}
+          </div>
+          ${count > 0 ? `<div class="a11y-body">${body}</div>` : ''}
+        </div>`;
+    });
+
+  const failed = totalChecks - passed;
+  const summaryColor = failed === 0 ? 'var(--ok)' : 'var(--err)';
+  const summaryText = failed === 0
+    ? 'All checks passed'
+    : `${totalIssues} issue${totalIssues !== 1 ? 's' : ''} across ${failed} check${failed !== 1 ? 's' : ''}`;
+
+  el.innerHTML = `
+    <div class="a11y-summary-bar">
+      <span>${passed}/${totalChecks} checks passed</span>
+      <div class="row" style="gap:8px">
+        <span class="a11y-summary-total" style="color:${summaryColor}">${summaryText}</span>
+        <button class="btn ghost btn-icon" data-clear-results title="Clear results">Clear</button>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">${rows.join('')}</div>`;
+
+  el.querySelectorAll('[data-suite-row] .a11y-row-hdr').forEach(hdr => {
+    hdr.addEventListener('click', () => hdr.closest('[data-suite-row]').classList.toggle('open'));
+  });
+  el.querySelector('[data-clear-results]')?.addEventListener('click', () => { el.innerHTML = ''; });
+}
+
+// ── Test Suites: Accessibility audit ─────────────────────────────────────────
+async function runA11yAudit() {
+  const btn = document.getElementById('btn-run-a11y');
+  const resultsEl = document.getElementById('a11y-results');
+  if (!resultsEl) return;
+
+  const checks = [...document.querySelectorAll('input[name="a11y-check"]:checked')]
+    .map(cb => cb.value);
+
+  if (!checks.length) {
+    resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Select at least one check.</div>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Auditing page…</div>';
+
+  try {
+    const res = await chrome.runtime.sendMessage({ action: 'runA11yAudit', checks });
+    if (!res?.ok) throw new Error(res?.error || 'Audit failed');
+    renderA11yResults(res.results, checks);
+  } catch (e) {
+    resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Audit';
+  }
+}
+
+function renderA11yResults(results, checks) {
+  const ORDER = ['alt','labels','headings','landmarks','aria','links','contrast','touch','keyboard'];
+  renderSuiteResults('a11y-results', results, ORDER.filter(k => checks.includes(k)));
+}
+
+// ── Generic suite runner ──────────────────────────────────────────────────────
+async function runSuiteAudit({ action, checkName, btnId, resultsId }) {
+  const btn = document.getElementById(btnId);
+  const resultsEl = document.getElementById(resultsId);
+  if (!resultsEl) return;
+
+  const checks = [...document.querySelectorAll(`input[name="${checkName}"]:checked`)]
+    .map(cb => cb.value);
+
+  if (!checks.length) {
+    resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Select at least one check.</div>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Auditing page…</div>';
+
+  try {
+    const res = await chrome.runtime.sendMessage({ action, checks });
+    if (!res?.ok) throw new Error(res?.error || 'Audit failed');
+    renderSuiteResults(resultsId, res.results, checks);
+  } catch (e) {
+    resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Audit';
+  }
+}
+
+// ── Test Suites: Conversion / Friction audit ──────────────────────────────────
+function runConversionAudit() {
+  return runSuiteAudit({ action: 'runConversionAudit', checkName: 'conv-check', btnId: 'btn-run-conv', resultsId: 'conv-results' });
+}
+
+// ── Test Suites: Content & Copy audit ─────────────────────────────────────────
+function runContentAudit() {
+  return runSuiteAudit({ action: 'runContentAudit', checkName: 'content-check', btnId: 'btn-run-content', resultsId: 'content-results' });
 }

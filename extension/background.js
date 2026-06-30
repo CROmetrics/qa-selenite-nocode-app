@@ -4,13 +4,37 @@
 // ── Open side panel when toolbar icon is clicked ──────────────────────────
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
-  .catch(() => {}); // guard for older Chrome versions
+  .catch(() => {});
+
+// ── Persistent console capture ────────────────────────────────────────────
+// Re-inject both capture scripts whenever the captured tab finishes loading.
+// console-capture.js runs in MAIN world (can override console.*).
+// console-bridge.js runs in ISOLATED world (can call chrome.runtime.sendMessage).
+async function injectCapture(tabId) {
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['console-capture.js'], world: 'MAIN' });
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['console-bridge.js'] });
+}
+
+chrome.tabs.onUpdated.addListener(async (tabId, info) => {
+  if (info.status !== 'complete') return;
+  const { captureTabId } = await chrome.storage.session.get('captureTabId');
+  if (tabId !== captureTabId) return;
+  try { await injectCapture(tabId); } catch (_) {}
+});
 
 // ── Logging ───────────────────────────────────────────────────────────────
 async function addLog(level, text) {
   const { logs = [] } = await chrome.storage.session.get('logs');
   logs.push({ level, text, ts: new Date().toLocaleTimeString() });
   await chrome.storage.session.set({ logs });
+}
+
+// ── URL normalization ─────────────────────────────────────────────────────
+function normalizeUrl(url) {
+  if (!url) return url;
+  url = url.trim();
+  if (/^https?:\/\//i.test(url)) return url;
+  return 'https://' + url;
 }
 
 // ── Tab helpers ───────────────────────────────────────────────────────────
@@ -46,7 +70,7 @@ async function exec(tabId, fn, args) {
 const ACTIONS = {
 
   open_url: async (tabId, { url }) => {
-    await chrome.tabs.update(tabId, { url });
+    await chrome.tabs.update(tabId, { url: normalizeUrl(url) });
     await waitForLoad(tabId);
   },
 
@@ -123,6 +147,20 @@ const ACTIONS = {
         await exec(tabId, (v) => {
           const el = document.querySelector(v);
           if (!el) throw new Error(`CSS selector not found: ${v}`);
+          // Surface the common silent failure: a submit CTA still disabled
+          // because the form isn't valid yet (e.g. a field didn't register).
+          if (el.disabled || el.getAttribute('aria-disabled') === 'true') {
+            throw new Error(`Element is disabled, click ignored: ${v} — check that prior fields filled & validated`);
+          }
+          // Some CTAs only respond to a full pointer/mouse sequence (they listen
+          // on pointerdown/mousedown), not a bare programmatic click(). Fire the
+          // realistic sequence, then click() as the final trigger.
+          const opts = { bubbles: true, cancelable: true, view: window };
+          el.scrollIntoView({ block: 'center' });
+          el.focus();
+          for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
+            el.dispatchEvent(new MouseEvent(type, opts));
+          }
           el.click();
         }, [selector]);
         break;
@@ -146,18 +184,40 @@ const ACTIONS = {
   },
 
   fill: async (tabId, { method, selector, text }) => {
-    const fn = (v, val) => {
+    await exec(tabId, (m, v, val) => {
       let el;
-      if      (method === 'id')    el = document.getElementById(v);
-      else if (method === 'name')  el = document.querySelector(`[name="${v}"]`);
-      else if (method === 'css')   el = document.querySelector(v);
-      else if (method === 'xpath') el = document.evaluate(v, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-      if (!el) throw new Error(`Element not found (${method}): ${v}`);
-      el.focus(); el.value = val;
+      if      (m === 'id')    el = document.getElementById(v);
+      else if (m === 'name')  el = document.querySelector(`[name="${v}"]`);
+      else if (m === 'css')   el = document.querySelector(v);
+      else if (m === 'xpath') el = document.evaluate(v, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+      if (!el) throw new Error(`Element not found (${m}): ${v}`);
+      el.focus();
+      // Set the value through the *native* prototype setter. Frameworks like
+      // React override the element's value setter and track their own copy;
+      // assigning el.value directly leaves their state thinking the field is
+      // still empty, so the form stays invalid and its submit CTA won't fire.
+      const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) setter.call(el, val); else el.value = val;
+      // Fire keyboard events too, so keyboard-driven widgets (autocomplete,
+      // typeaheads) register the typing — input/change alone isn't enough.
+      const kbd = { bubbles: true, cancelable: true, key: 'a', keyCode: 65 };
+      el.dispatchEvent(new KeyboardEvent('keydown', kbd));
       el.dispatchEvent(new Event('input',  { bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keyup', kbd));
       el.dispatchEvent(new Event('change', { bubbles: true }));
-    };
-    await exec(tabId, fn, [selector, text]);
+      // Let any autocomplete dropdown render, then dismiss it with Escape so
+      // its overlay doesn't swallow the next step's click/submit. Escape keeps
+      // the typed value while closing the suggestion list.
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          const esc = { bubbles: true, cancelable: true, key: 'Escape', code: 'Escape', keyCode: 27, which: 27 };
+          el.dispatchEvent(new KeyboardEvent('keydown', esc));
+          el.dispatchEvent(new KeyboardEvent('keyup', esc));
+          resolve();
+        }, 150);
+      });
+    }, [method, selector, text]);
   },
 
   submit: async (tabId, { method, selector }) => {
@@ -260,15 +320,19 @@ async function runQueue({ url, queue, mode, targetTabId, universalDelay }) {
   // Resolve target tab — use provided tabId or open a new tab
   let tabId = targetTabId;
   if (!tabId) {
-    const tab = await chrome.tabs.create({ url: url || 'about:blank', active: true });
+    const tab = await chrome.tabs.create({ url: url ? normalizeUrl(url) : 'about:blank', active: true });
     tabId = tab.id;
     await waitForLoad(tabId);
   } else {
     if (url) {
-      await chrome.tabs.update(tabId, { url });
+      await chrome.tabs.update(tabId, { url: normalizeUrl(url) });
       await waitForLoad(tabId);
     }
   }
+
+  // Reset console feed and auto-attach capture to the test tab
+  await chrome.storage.session.set({ logs: [], captureTabId: tabId });
+  try { await injectCapture(tabId); } catch (_) {}
 
   await addLog('INFO', `Started on tab ${tabId}`);
 
@@ -402,6 +466,46 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     sendResponse({ functions: data });
 
+  } else if (msg.action === 'getTabs') {
+    chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] }, (tabs) => {
+      sendResponse({ tabs: tabs.map(t => ({ id: t.id, title: t.title || '', url: t.url || '' })) });
+    });
+    return true;
+
+  } else if (msg.action === 'startCapture') {
+    (async () => {
+      const tabId = msg.tabId;
+      if (!tabId) { sendResponse({ ok: false, error: 'No tab specified' }); return; }
+      try {
+        await injectCapture(tabId);
+        await chrome.storage.session.set({ captureTabId: tabId });
+        sendResponse({ ok: true, tabId });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'stopCapture') {
+    (async () => {
+      const { captureTabId } = await chrome.storage.session.get('captureTabId');
+      await chrome.storage.session.remove('captureTabId');
+      if (captureTabId) {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: captureTabId },
+            func: () => { if (window.__seleniteCaptureRestore) window.__seleniteCaptureRestore(); }
+          });
+        } catch (_) {}
+      }
+      sendResponse({ ok: true });
+    })();
+    return true;
+
+  } else if (msg.action === 'browserLog') {
+    addLog(msg.level, `[browser] ${msg.text}`);
+    sendResponse({ ok: true });
+
   } else if (msg.action === 'startPicker') {
     // Inject picker into the active tab
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
@@ -421,9 +525,521 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.storage.session.set({ pickerResult: { selector: msg.selector, ts: Date.now() } });
     sendResponse({ ok: true });
 
+  } else if (msg.action === 'runConversionAudit') {
+    (async () => {
+      const checks = msg.checks || [];
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tabId = tabs[0]?.id;
+      if (!tabId) { sendResponse({ ok: false, error: 'No active tab' }); return; }
+      try {
+        const results = await exec(tabId, function(checks) {
+
+          const CTA_SIGNALS = ['sign up','signup','get started','start free','start now','try free','try now','buy now','buy','subscribe','join now','join','create account','register','get access','start trial','free trial','request demo','book demo','get demo','donate','donate now','give now','shop now','order now','add to cart','checkout'];
+
+          function brief(el) {
+            if (el.id) return '#' + el.id;
+            const cls = [...el.classList].filter(c => c.length < 20).slice(0,2).join('.');
+            return el.tagName.toLowerCase() + (cls ? '.' + cls : '');
+          }
+
+          function isCTA(el) {
+            const text = (el.textContent || el.getAttribute('value') || el.getAttribute('aria-label') || '').trim().toLowerCase();
+            return CTA_SIGNALS.some(s => text === s || text.startsWith(s + ' ') || text.endsWith(' ' + s));
+          }
+
+          function absY(el) {
+            return el.getBoundingClientRect().top + window.scrollY;
+          }
+
+          const out = {};
+
+          // 1. Click-to-goal
+          if (checks.includes('ctg')) {
+            const vh = window.innerHeight;
+            const pageH = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, 1);
+            const ctaEls = [...document.querySelectorAll('a,button,[role="button"],[type="submit"]')]
+              .filter(el => el.offsetParent !== null && isCTA(el));
+            const issues = [];
+
+            if (ctaEls.length === 0) {
+              issues.push('No primary CTA detected — check that button/link text matches common patterns (Sign up, Get started, Buy, etc.)');
+            } else {
+              const firstCTA = ctaEls.reduce((a, b) => absY(a) < absY(b) ? a : b);
+              const firstY = absY(firstCTA);
+              const aboveFold = ctaEls.filter(el => absY(el) <= vh);
+
+              if (aboveFold.length === 0) {
+                const pct = Math.round((firstY / pageH) * 100);
+                issues.push('No CTA visible above fold — nearest "' + firstCTA.textContent.trim().slice(0,30) + '" is ' + Math.round(firstY) + 'px from top (' + pct + '% down page)');
+              }
+
+              const allInteractive = [...document.querySelectorAll('a[href],button')].filter(el => el.offsetParent !== null);
+              const distractors = allInteractive.filter(el => absY(el) < firstY && !isCTA(el)).length;
+              if (distractors > 7) {
+                issues.push(distractors + ' non-CTA interactive elements appear before the first CTA — high choice friction');
+              }
+            }
+
+            out.ctg = { label: 'Click-to-goal', issues };
+          }
+
+          // 2. Form usability
+          if (checks.includes('forms')) {
+            const issues = [];
+            const forms = [...document.querySelectorAll('form')];
+
+            if (forms.length === 0) {
+              const loose = [...document.querySelectorAll('input:not([type=hidden]):not([type=submit])')].filter(el => !el.closest('form'));
+              if (loose.length > 0) issues.push(loose.length + ' input(s) outside a <form> — submission handling unclear');
+            }
+
+            forms.forEach((form, i) => {
+              const lbl = form.id ? '#' + form.id : 'form[' + i + ']';
+
+              if (form.hasAttribute('novalidate')) {
+                const hasCustom = form.querySelector('[aria-describedby],[aria-errormessage],.error,.invalid,.field-error,.form-error');
+                if (!hasCustom) issues.push(lbl + ': novalidate set but no custom validation indicators found');
+              }
+
+              const required = [...form.querySelectorAll('[required]')];
+              const noError = required.filter(inp => {
+                const desc = inp.getAttribute('aria-describedby');
+                if (desc && document.getElementById(desc)) return false;
+                const err = inp.getAttribute('aria-errormessage');
+                if (err && document.getElementById(err)) return false;
+                return true;
+              });
+              if (noError.length > 0) issues.push(lbl + ': ' + noError.length + ' required field(s) have no linked error message element');
+
+              const textInputs = [...form.querySelectorAll('input[type=text],input[type=email],input[type=tel],input[type=password],textarea')];
+              if (textInputs.length > 0 && required.length === 0) {
+                issues.push(lbl + ': ' + textInputs.length + ' text input(s) with no required attributes — validation intent unclear');
+              }
+
+              if (!form.querySelector('[type=submit],button:not([type=button])')) {
+                issues.push(lbl + ': no submit button found');
+              }
+            });
+
+            out.forms = { label: 'Form usability', issues };
+          }
+
+          // 3. Dead-button detection
+          if (checks.includes('dead')) {
+            const issues = [];
+
+            [...document.querySelectorAll('a')]
+              .filter(a => a.offsetParent !== null && a.textContent.trim().length > 0)
+              .filter(a => {
+                const href = a.getAttribute('href');
+                return href === null || href === '' || href === '#' || /^javascript\s*:/i.test(href);
+              })
+              .slice(0, 10)
+              .forEach(a => {
+                const href = a.getAttribute('href');
+                issues.push('"' + a.textContent.trim().slice(0,30) + '" — ' + (href === null ? 'no href' : 'href="' + href + '"'));
+              });
+
+            [...document.querySelectorAll('button[type=button],button:not([type])')]
+              .filter(btn => btn.offsetParent !== null && !btn.closest('form'))
+              .filter(btn => {
+                if (btn.hasAttribute('onclick')) return false;
+                if ([...btn.attributes].some(a => a.name.startsWith('data-'))) return false;
+                if (btn.hasAttribute('aria-controls') || btn.hasAttribute('aria-expanded') || btn.hasAttribute('aria-haspopup')) return false;
+                return true;
+              })
+              .slice(0, 10)
+              .forEach(btn => {
+                issues.push(brief(btn) + ' "' + btn.textContent.trim().slice(0,30) + '" — no detectable handler (note: JS frameworks may bind externally)');
+              });
+
+            out.dead = { label: 'Dead-button detection', issues };
+          }
+
+          // 4. CTA above fold across breakpoints
+          if (checks.includes('fold')) {
+            const BREAKPOINTS = [
+              { name: 'Mobile (375×667)', h: 667 },
+              { name: 'Tablet (768×1024)', h: 1024 },
+              { name: 'Desktop (1280×800)', h: 800 },
+            ];
+            const ctaEls = [...document.querySelectorAll('a,button,[role="button"],[type="submit"]')]
+              .filter(el => el.offsetParent !== null && isCTA(el));
+            const issues = [];
+
+            if (ctaEls.length === 0) {
+              issues.push('No primary CTA detected on page');
+            } else {
+              ctaEls.slice(0, 4).forEach(el => {
+                const y = absY(el);
+                const text = '"' + el.textContent.trim().slice(0,25) + '"';
+                const hidden = BREAKPOINTS.filter(bp => y > bp.h).map(bp => bp.name);
+                if (hidden.length > 0) {
+                  issues.push(text + ' at ' + Math.round(y) + 'px — below fold at: ' + hidden.join(', '));
+                }
+              });
+            }
+
+            out.fold = { label: 'CTA above fold (breakpoints)', issues };
+          }
+
+          return out;
+        }, [checks]);
+
+        sendResponse({ ok: true, results });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'runContentAudit') {
+    (async () => {
+      const checks = msg.checks || [];
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tabId = tabs[0]?.id;
+      if (!tabId) { sendResponse({ ok: false, error: 'No active tab' }); return; }
+      try {
+        const results = await exec(tabId, function(checks) {
+
+          // Extract visible body text, skipping script/style/nav chrome
+          function visibleText() {
+            const skip = new Set(['SCRIPT','STYLE','NOSCRIPT','NAV','HEADER','FOOTER','SVG','CODE','PRE','TEXTAREA']);
+            let text = '';
+            const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+              acceptNode(node) {
+                const p = node.parentElement;
+                if (!p || skip.has(p.tagName)) return NodeFilter.FILTER_REJECT;
+                if (p.offsetParent === null && p.tagName !== 'BODY') return NodeFilter.FILTER_REJECT;
+                return node.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+              }
+            });
+            let n;
+            while ((n = walk.nextNode())) text += ' ' + n.textContent.trim();
+            return text.replace(/\s+/g, ' ').trim();
+          }
+
+          function countSyllables(word) {
+            word = word.toLowerCase().replace(/[^a-z]/g, '');
+            if (word.length <= 3) return word.length ? 1 : 0;
+            word = word.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '').replace(/^y/, '');
+            const m = word.match(/[aeiouy]{1,2}/g);
+            return m ? m.length : 1;
+          }
+
+          const out = {};
+          const text = visibleText();
+
+          // 1. Readability (Flesch Reading Ease)
+          if (checks.includes('readability')) {
+            const issues = [];
+            const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+            const words = text.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) || [];
+            if (words.length < 100) {
+              issues.push('Only ' + words.length + ' words of body copy — too little to score reliably');
+            } else {
+              const syllables = words.reduce((sum, w) => sum + countSyllables(w), 0);
+              const wps = words.length / Math.max(sentences.length, 1);
+              const spw = syllables / words.length;
+              const score = 206.835 - 1.015 * wps - 84.6 * spw;
+              let band;
+              if (score >= 70) band = 'easy';
+              else if (score >= 60) band = 'plain English';
+              else if (score >= 50) band = 'fairly difficult';
+              else if (score >= 30) band = 'difficult (college level)';
+              else band = 'very difficult (graduate level)';
+              const detail = 'Flesch ' + score.toFixed(0) + '/100 — ' + band + ' (' + wps.toFixed(1) + ' words/sentence, ' + words.length + ' words)';
+              if (score < 50) issues.push(detail + '. Aim for 60+ for general web audiences.');
+              else issues.push(detail);
+            }
+            out.readability = { label: 'Readability (Flesch)', issues, infoOnly: true };
+          }
+
+          // 2. Placeholder / Lorem ipsum
+          if (checks.includes('placeholder')) {
+            const issues = [];
+            const haystack = text.toLowerCase();
+            const patterns = [
+              ['lorem ipsum', /lorem ipsum/g],
+              ['dolor sit amet', /dolor sit amet/g],
+              ['"Lorem" filler', /\blorem\b/g],
+              ['placeholder text', /\bplaceholder text\b/g],
+              ['"insert ... here"', /insert\s+\w+\s+here/g],
+              ['TODO marker', /\btodo\b/g],
+              ['FIXME marker', /\bfixme\b/g],
+              ['XXX marker', /\bxxx\b/g],
+              ['Lighthouse "your text"', /\byour (?:text|content|headline|title) here\b/g],
+              ['"sample text"', /\bsample text\b/g],
+              ['dummy content', /\bdummy (?:text|content|data)\b/g],
+            ];
+            for (const [label, re] of patterns) {
+              const matches = haystack.match(re);
+              if (matches) issues.push(label + ' — ' + matches.length + ' occurrence' + (matches.length !== 1 ? 's' : ''));
+            }
+            // Attribute placeholders that look like dev leftovers
+            [...document.querySelectorAll('[alt],[title],[placeholder]')].forEach(el => {
+              ['alt','title','placeholder'].forEach(attr => {
+                const v = (el.getAttribute(attr) || '').toLowerCase();
+                if (/lorem|placeholder|todo|fixme|sample text|your text here/.test(v)) {
+                  issues.push(el.tagName.toLowerCase() + ' @' + attr + '="' + el.getAttribute(attr).slice(0,40) + '"');
+                }
+              });
+            });
+            out.placeholder = { label: 'Placeholder / Lorem ipsum', issues: issues.slice(0, 20) };
+          }
+
+          // 3. Title & meta description
+          if (checks.includes('meta')) {
+            const issues = [];
+            const titles = [...document.querySelectorAll('title')];
+            const title = (document.title || '').trim();
+
+            if (titles.length === 0 || !title) issues.push('Missing <title> — every page needs a unique, descriptive title');
+            else {
+              if (titles.length > 1) issues.push(titles.length + ' <title> elements found — there must be exactly one');
+              if (title.length < 10) issues.push('Title too short (' + title.length + ' chars): "' + title + '"');
+              if (title.length > 60) issues.push('Title too long (' + title.length + ' chars) — may truncate in search results');
+            }
+
+            const metaDescs = [...document.querySelectorAll('meta[name="description" i]')];
+            if (metaDescs.length === 0) issues.push('Missing <meta name="description"> — used for search/social snippets');
+            else {
+              if (metaDescs.length > 1) issues.push(metaDescs.length + ' meta descriptions found — there should be only one');
+              const desc = (metaDescs[0].getAttribute('content') || '').trim();
+              if (!desc) issues.push('Meta description is empty');
+              else if (desc.length < 50) issues.push('Meta description short (' + desc.length + ' chars) — aim for 120–160');
+              else if (desc.length > 160) issues.push('Meta description long (' + desc.length + ' chars) — may truncate around 160');
+            }
+            out.meta = { label: 'Title & meta description', issues };
+          }
+
+          // 4. Basic spellcheck (common-error dictionary)
+          if (checks.includes('spelling')) {
+            const COMMON = {
+              'teh':'the','adn':'and','recieve':'receive','recieved':'received','seperate':'separate',
+              'definately':'definitely','occured':'occurred','occurence':'occurrence','accomodate':'accommodate',
+              'untill':'until','wich':'which','thier':'their','alot':'a lot','arguement':'argument',
+              'begining':'beginning','beleive':'believe','calender':'calendar','catagory':'category',
+              'cemetary':'cemetery','collegue':'colleague','commitee':'committee','concious':'conscious',
+              'enviroment':'environment','existance':'existence','experiance':'experience','familar':'familiar',
+              'finaly':'finally','foriegn':'foreign','goverment':'government','grammer':'grammar',
+              'gaurd':'guard','harrass':'harass','independant':'independent','knowlege':'knowledge',
+              'liason':'liaison','maintainance':'maintenance','neccessary':'necessary','noticable':'noticeable',
+              'occassion':'occasion','persistant':'persistent','posession':'possession','prefered':'preferred',
+              'priviledge':'privilege','publically':'publicly','recomend':'recommend','refered':'referred',
+              'relevent':'relevant','succesful':'successful','sucessful':'successful','tommorow':'tomorrow',
+              'truely':'truly','unfortunatly':'unfortunately','usefull':'useful','wierd':'weird',
+              'writting':'writing','accross':'across','agressive':'aggressive','appearence':'appearance',
+              'basicly':'basically','buisness':'business','completly':'completely','embarass':'embarrass',
+              'guarentee':'guarantee','immediatly':'immediately','occuring':'occurring','paralel':'parallel',
+              'recieving':'receiving','reccomend':'recommend','succesfully':'successfully','wether':'whether'
+            };
+            const issues = [];
+            const seen = {};
+            const words = text.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) || [];
+            for (const w of words) {
+              const lower = w.toLowerCase();
+              if (COMMON[lower] && !seen[lower]) {
+                seen[lower] = true;
+                issues.push('"' + w + '" → did you mean "' + COMMON[lower] + '"?');
+              }
+            }
+            out.spelling = { label: 'Basic spellcheck', issues: issues.slice(0, 25) };
+          }
+
+          return out;
+        }, [checks]);
+
+        sendResponse({ ok: true, results });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+
   } else if (msg.action === 'pickerCancel') {
     chrome.storage.session.set({ pickerResult: { cancelled: true, ts: Date.now() } });
     sendResponse({ ok: true });
+
+  } else if (msg.action === 'runA11yAudit') {
+    (async () => {
+      const checks = msg.checks || [];
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tabId = tabs[0]?.id;
+      if (!tabId) { sendResponse({ ok: false, error: 'No active tab' }); return; }
+      try {
+        const results = await exec(tabId, function(checks) {
+
+          function brief(el) {
+            if (el.id) return '#' + el.id;
+            const name = el.getAttribute('name');
+            if (name) return '[name="' + name + '"]';
+            const cls = [...el.classList].slice(0,2).join('.');
+            return el.tagName.toLowerCase() + (cls ? '.' + cls : '');
+          }
+
+          const out = {};
+
+          // 1. Missing alt text
+          if (checks.includes('alt')) {
+            const issues = [...document.querySelectorAll('img')]
+              .filter(img => !img.hasAttribute('alt'))
+              .map(img => '<img src="' + ((img.getAttribute('src') || '').split('/').pop() || '?').slice(0,50) + '">');
+            out.alt = { label: 'Missing alt text', issues, wcag: '1.1.1' };
+          }
+
+          // 2. Unlabeled form inputs
+          if (checks.includes('labels')) {
+            const sel = 'input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([type=image]), select, textarea';
+            const issues = [...document.querySelectorAll(sel)]
+              .filter(inp => {
+                if (inp.id && document.querySelector('label[for="' + inp.id + '"]')) return false;
+                if ((inp.getAttribute('aria-label') || '').trim()) return false;
+                if (inp.getAttribute('aria-labelledby')) {
+                  const ids = inp.getAttribute('aria-labelledby').trim().split(/\s+/);
+                  if (ids.some(id => id && document.getElementById(id))) return false;
+                }
+                if (inp.closest('label')) return false;
+                if ((inp.getAttribute('title') || '').trim()) return false;
+                return true;
+              })
+              .map(inp => brief(inp));
+            out.labels = { label: 'Unlabeled form inputs', issues, wcag: '1.3.1' };
+          }
+
+          // 3. Heading hierarchy
+          if (checks.includes('headings')) {
+            const headings = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')]
+              .map(h => ({ level: parseInt(h.tagName[1]), text: h.textContent.trim().slice(0,50) }));
+            const issues = [];
+            const h1s = headings.filter(h => h.level === 1);
+            if (h1s.length === 0) issues.push('No <h1> found on page');
+            if (h1s.length > 1) issues.push(h1s.length + ' <h1> elements: ' + h1s.map(h => '"' + h.text + '"').join(', '));
+            for (let i = 1; i < headings.length; i++) {
+              if (headings[i].level > headings[i-1].level + 1) {
+                issues.push('h' + headings[i-1].level + '→h' + headings[i].level + ' skip after "' + headings[i-1].text.slice(0,30) + '"');
+              }
+            }
+            out.headings = { label: 'Heading hierarchy', issues, wcag: '1.3.1' };
+          }
+
+          // 4. Missing landmark regions
+          if (checks.includes('landmarks')) {
+            const issues = [];
+            if (!document.querySelector('main,[role="main"]'))        issues.push('No <main> or role="main"');
+            if (!document.querySelector('nav,[role="navigation"]'))   issues.push('No <nav> or role="navigation"');
+            if (!document.querySelector('header,[role="banner"]'))    issues.push('No <header> or role="banner"');
+            if (!document.querySelector('footer,[role="contentinfo"]')) issues.push('No <footer> or role="contentinfo"');
+            out.landmarks = { label: 'Missing landmark regions', issues, wcag: '1.3.6' };
+          }
+
+          // 5. Invalid ARIA roles
+          if (checks.includes('aria')) {
+            const valid = new Set(['alert','alertdialog','application','article','banner','button','cell','checkbox','columnheader','combobox','complementary','contentinfo','definition','dialog','directory','document','feed','figure','form','grid','gridcell','group','heading','img','link','list','listbox','listitem','log','main','marquee','math','menu','menubar','menuitem','menuitemcheckbox','menuitemradio','navigation','none','note','option','presentation','progressbar','radio','radiogroup','region','row','rowgroup','rowheader','scrollbar','search','searchbox','separator','slider','spinbutton','status','switch','tab','table','tablist','tabpanel','term','textbox','timer','toolbar','tooltip','tree','treegrid','treeitem']);
+            const issues = [...document.querySelectorAll('[role]')]
+              .filter(el => !valid.has(el.getAttribute('role')))
+              .map(el => brief(el) + ': role="' + el.getAttribute('role') + '"');
+            out.aria = { label: 'Invalid ARIA roles', issues, wcag: '4.1.2' };
+          }
+
+          // 6. Low-quality link text
+          if (checks.includes('links')) {
+            const bad = new Set(['click here','here','read more','more','link','this','click','learn more','details','more info','info','go','go here','this link','continue','see more']);
+            const issues = [...document.querySelectorAll('a[href]')]
+              .filter(a => !a.getAttribute('aria-label') && bad.has(a.textContent.trim().toLowerCase()))
+              .map(a => '"' + a.textContent.trim() + '" → ' + (a.href || '').slice(0,60));
+            out.links = { label: 'Low-quality link text', issues, wcag: '2.4.4' };
+          }
+
+          // 7. Color contrast (WCAG AA)
+          if (checks.includes('contrast')) {
+            function getBg(el) {
+              let cur = el;
+              while (cur && cur.tagName !== 'HTML') {
+                const bg = getComputedStyle(cur).backgroundColor;
+                if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg;
+                cur = cur.parentElement;
+              }
+              return 'rgb(255,255,255)';
+            }
+            function parseRGB(s) {
+              const m = s.match(/\d+/g);
+              return m ? [+m[0], +m[1], +m[2]] : null;
+            }
+            function lum(r,g,b) {
+              let t = 0;
+              const w = [0.2126,0.7152,0.0722];
+              [r,g,b].forEach((c,i) => {
+                const s = c/255;
+                t += (s <= 0.04045 ? s/12.92 : Math.pow((s+0.055)/1.055, 2.4)) * w[i];
+              });
+              return t;
+            }
+            function contrastRatio(c1,c2) {
+              const l1=lum(...c1), l2=lum(...c2);
+              return (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05);
+            }
+
+            const issues = [];
+            const seen = new Set();
+            const els = [...document.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,td,th,a,button,label')]
+              .filter(el => el.offsetParent !== null && el.textContent.trim().length > 1)
+              .slice(0, 80);
+
+            for (const el of els) {
+              const st = getComputedStyle(el);
+              const fg = parseRGB(st.color);
+              const bg = parseRGB(getBg(el));
+              if (!fg || !bg) continue;
+              const r = contrastRatio(fg, bg);
+              const fs = parseFloat(st.fontSize);
+              const bold = parseInt(st.fontWeight) >= 700;
+              const large = fs >= 18 || (bold && fs >= 14);
+              const minAA = large ? 3 : 4.5;
+              if (r < minAA) {
+                const key = brief(el) + st.color;
+                if (!seen.has(key)) {
+                  seen.add(key);
+                  issues.push(brief(el) + ': ' + r.toFixed(2) + ':1 (need ' + minAA + ':1' + (large ? ', large text' : '') + ')');
+                }
+              }
+            }
+            out.contrast = { label: 'Color contrast (WCAG AA)', issues: issues.slice(0,15), wcag: '1.4.3' };
+          }
+
+          // 8. Touch target size
+          if (checks.includes('touch')) {
+            const issues = [...document.querySelectorAll('a,button,input,select,textarea,[role="button"],[role="link"]')]
+              .filter(el => el.offsetParent !== null)
+              .filter(el => { const r = el.getBoundingClientRect(); return r.width < 44 || r.height < 44; })
+              .slice(0, 15)
+              .map(el => { const r = el.getBoundingClientRect(); return brief(el) + ': ' + Math.round(r.width) + '×' + Math.round(r.height) + 'px'; });
+            out.touch = { label: 'Touch targets <44×44px', issues, wcag: '2.5.5' };
+          }
+
+          // 9. Keyboard reachability
+          if (checks.includes('keyboard')) {
+            const issues = [];
+            [...document.querySelectorAll('a[href],button,input,select,textarea,[role="button"]')]
+              .filter(el => !el.hasAttribute('disabled') && el.getAttribute('tabindex') === '-1')
+              .slice(0, 10)
+              .forEach(el => issues.push(brief(el) + ' — tabindex="-1" (removed from tab order)'));
+            [...document.querySelectorAll('a[href],button,input,select,textarea')]
+              .filter(el => /outline\s*:\s*(none|0\b)/.test(el.getAttribute('style') || ''))
+              .slice(0, 10)
+              .forEach(el => issues.push(brief(el) + ' — inline outline:none (hides focus ring)'));
+            out.keyboard = { label: 'Keyboard reachability', issues, wcag: '2.1.1' };
+          }
+
+          return out;
+        }, [checks]);
+
+        sendResponse({ ok: true, results });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
   }
 
   return true; // keep channel open for async

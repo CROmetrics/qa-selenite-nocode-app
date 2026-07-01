@@ -11,15 +11,24 @@ let bcTagOnly = false;   // Browser Console "CRO" toggle: narrow the live mirror
 let logOffset = 0;
 let _wasRunning = false;
 
+// The queue always starts with this function, which carries the target URL
+// and its parameters. This first step cannot be removed or reassigned.
+const OPEN_URL_FUNC = 'open_url';
+
 // ── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   // Load function metadata from background
   const res = await chrome.runtime.sendMessage({ action: 'getFunctions' });
   FN_META = res.functions;
 
-  // Restore saved queue state
+  // Restore saved queue state. The first step is always the mandatory
+  // "Open URL" step; seed it from the saved state if present, otherwise
+  // create a fresh one.
   const { queueState } = await chrome.storage.session.get('queueState');
-  if (queueState?.length) queueState.forEach(s => addStep(s));
+  const rest = [...(queueState || [])];
+  const firstData = (rest[0]?.func === OPEN_URL_FUNC) ? rest.shift() : null;
+  ensureOpenUrlFirst(firstData);
+  rest.forEach(s => addStep(s));
 
   await refreshScripts();
   await syncLogs();
@@ -44,9 +53,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Test Suites tab
-  document.getElementById('btn-run-a11y')?.addEventListener('click', runA11yAudit);
-  document.getElementById('btn-run-conv')?.addEventListener('click', runConversionAudit);
-  document.getElementById('btn-run-content')?.addEventListener('click', runContentAudit);
+  document.getElementById('btn-run-wcag')?.addEventListener('click', runWcagAudit);
+  initSuiteTooltips();
 
   // Queue buttons
   document.getElementById('btn-add-step').addEventListener('click', () => addStep());
@@ -55,12 +63,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Script buttons
   document.getElementById('btn-save-script').addEventListener('click', saveScript);
+  document.getElementById('btn-append-script')?.addEventListener('click', appendScripts);
   document.getElementById('btn-load-script').addEventListener('click', loadScript);
   document.getElementById('btn-delete-script').addEventListener('click', deleteScript);
-
-  // URL parameter fields
-  if (document.getElementById('param-list')) addParamField();
-  document.getElementById('btn-add-param')?.addEventListener('click', () => addParamField());
 
   // Universal delay toggle + input
   document.getElementById('udel-enabled').addEventListener('change', saveUniversalDelay);
@@ -206,15 +211,26 @@ function renderBcLog() {
     .map(e => {
       const badge  = e.level === 'CMD' ? '&gt;' : (e.source === 'eval-result' ? '&#8626;' : e.level);
       const toggle = e.expandable ? `<button class="bc-expand-toggle" data-object-id="${e.objectId}">&#9656;</button>` : '';
+      const { tag, rest } = splitBcTag(e.text);
+      const tagHtml = tag ? `<span class="bc-tag">${esc(tag)}</span>` : '';
       return `<div class="bc-entry bc-${e.level}">
         <span class="bc-ts">${e.ts}</span>
         <span class="bc-badge">${badge}</span>
         ${toggle}
-        <span class="bc-text">${esc(e.text)}</span>
+        ${tagHtml}
+        <span class="bc-text">${esc(rest)}</span>
       </div>`;
     })
     .join('');
   if (atBottom) out.scrollTop = out.scrollHeight;
+}
+
+// Pulls a leading "[tag] " prefix (e.g. "[javascript]", "[network]", "[PJS]",
+// "[cro]") off a log line's text so it renders as its own label instead of
+// being embedded in the message text.
+function splitBcTag(text) {
+  const m = /^\[([^\]]+)\]\s*(.*)$/s.exec(text);
+  return m ? { tag: m[1], rest: m[2] } : { tag: null, rest: text };
 }
 
 // Lazily expands object/array values via Runtime.getProperties (bcExpand).
@@ -435,36 +451,43 @@ async function saveUniversalDelay() {
   });
 }
 
-// ── URL parameters ────────────────────────────────────────────────────────
-function addParamField(value = '') {
-  const list = document.getElementById('param-list');
-  const row  = document.createElement('div');
-  row.style.cssText = 'display:flex;gap:4px;align-items:center';
-  row.innerHTML = `
-    <input type="text" class="url-param-input" placeholder="key=value" value="${esc(value)}"
-      style="flex:1">
-    <button class="btn-icon rm-param" title="Remove" style="color:var(--err);flex-shrink:0">✕</button>`;
-  row.querySelector('.rm-param').addEventListener('click', () => {
-    row.remove();
-    if (!document.querySelectorAll('.url-param-input').length) addParamField();
-  });
-  list.appendChild(row);
+// ── Target info (execution mode + tab target) ───────────────────────────────
+// The target URL and its parameters now live on the mandatory leading
+// "Open URL" queue step (see OPEN_URL_FUNC below) rather than here.
+// Snapshot the current Target accordion so it can be persisted with a script.
+function collectTarget() {
+  return {
+    mode:      document.querySelector('input[name=mode]:checked')?.value || 'close',
+    tabTarget: document.querySelector('input[name=tabtarget]:checked')?.value || 'active',
+  };
 }
 
-function collectParams() {
-  return [...document.querySelectorAll('.url-param-input')]
-    .map(i => i.value.trim())
-    .filter(Boolean);
+// Restore a saved target snapshot back into the Target accordion.
+function applyTarget(target) {
+  if (!target) return;
+  if (target.mode) {
+    const m = document.querySelector(`input[name=mode][value="${target.mode}"]`);
+    if (m) m.checked = true;
+  }
+  if (target.tabTarget) {
+    const t = document.querySelector(`input[name=tabtarget][value="${target.tabTarget}"]`);
+    if (t) t.checked = true;
+  }
+}
+
+// Saved scripts are stored either as a bare step array (legacy format) or as
+// { steps, target } (current format). These normalize access across both.
+function scriptSteps(data) {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.steps)) return data.steps;
+  return [];
+}
+function scriptTarget(data) {
+  return (data && !Array.isArray(data) && data.target) ? data.target : null;
 }
 
 // ── Run / Stop ────────────────────────────────────────────────────────────
 async function runQueue() {
-  let url         = document.getElementById('url-input').value.trim();
-  const paramParts = collectParams();
-  if (url && paramParts.length) {
-    const sep = url.includes('?') ? '&' : '?';
-    url = url + sep + paramParts.join('&');
-  }
   const mode       = document.querySelector('input[name=mode]:checked').value;
   const tabTarget  = document.querySelector('input[name=tabtarget]:checked').value;
 
@@ -484,7 +507,7 @@ async function runQueue() {
 
   await chrome.runtime.sendMessage({
     action: 'run',
-    payload: { url, queue, mode, targetTabId, universalDelay }
+    payload: { queue, mode, targetTabId, universalDelay }
   });
 
   showTab('console');
@@ -501,39 +524,66 @@ async function refreshScripts() {
   const names = Object.keys(scripts).sort();
   const sel = document.getElementById('script-select');
   sel.innerHTML = names.length
-    ? names.map(n => `<option value="${n}">${n}</option>`).join('')
-    : '<option>&lt;no scripts&gt;</option>';
+    ? names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')
+    : '<option disabled>&lt;no scripts&gt;</option>';
+}
+
+// The single script name currently selected in the list, or '' if none.
+function getSelectedScriptName() {
+  const sel = document.getElementById('script-select');
+  return sel.value || '';
 }
 
 async function saveScript() {
   const name = document.getElementById('save-name').value.trim();
   if (!name) { alert('Enter a script name.'); return; }
   const { scripts = {} } = await chrome.storage.local.get('scripts');
-  scripts[name] = steps.map(s => ({
-    func: s.func, enabled: s.enabled, delay: s.delay, inputs: { ...s.inputs }
-  }));
+  scripts[name] = {
+    steps: steps.map(s => ({
+      func: s.func, enabled: s.enabled, delay: s.delay, inputs: { ...s.inputs }
+    })),
+    target: collectTarget(),
+  };
   await chrome.storage.local.set({ scripts });
   await refreshScripts();
   document.getElementById('save-name').value = '';
   alert(`"${name}" saved.`);
 }
 
-async function loadScript() {
-  const name = document.getElementById('script-select').value;
-  if (!name || name === '<no scripts>') return;
+// Append the selected script to the end of the current queue.
+async function appendScripts() {
+  const name = getSelectedScriptName();
+  if (!name) { alert('Select a saved script first.'); return; }
   const { scripts = {} } = await chrome.storage.local.get('scripts');
-  const data = scripts[name];
-  if (!data) { alert(`Script "${name}" not found.`); return; }
-  document.getElementById('step-list').innerHTML = '';
+  const stepArr = scriptSteps(scripts[name]);
+  if (!stepArr.length) { alert('The selected script had no steps.'); return; }
+  stepArr.forEach(s => addStep(s));
+  openAccordion('acc-queue');
+}
+
+// Replace the current queue with the selected script.
+async function loadScript() {
+  const name = getSelectedScriptName();
+  if (!name) { alert('Select a saved script first.'); return; }
+  const { scripts = {} } = await chrome.storage.local.get('scripts');
+  document.getElementById('step-list').innerHTML =
+    '<div id="empty-msg">No steps yet — click + Add Step to begin</div>';
   steps = [];
   nextId = 1;
-  data.forEach(s => addStep(s));
+  const rest = [...scriptSteps(scripts[name])];
+  const firstData = (rest[0]?.func === OPEN_URL_FUNC) ? rest.shift() : null;
+  ensureOpenUrlFirst(firstData);
+  rest.forEach(s => addStep(s));
+  // Restore Target info saved with the script, if any.
+  applyTarget(scriptTarget(scripts[name]));
+  updateCount();
+  persistQueue();
   openAccordion('acc-queue');
 }
 
 async function deleteScript() {
-  const name = document.getElementById('script-select').value;
-  if (!name || name === '<no scripts>') return;
+  const name = getSelectedScriptName();
+  if (!name) return;
   if (!confirm(`Delete "${name}"?`)) return;
   const { scripts = {} } = await chrome.storage.local.get('scripts');
   delete scripts[name];
@@ -542,36 +592,45 @@ async function deleteScript() {
 }
 
 // ── Queue steps ───────────────────────────────────────────────────────────
-function addStep(data) {
+// opts.locked marks the mandatory leading "Open URL" step — it cannot be
+// removed, reassigned to another function, or moved out of position 0.
+function addStep(data, opts = {}) {
+  const locked = !!opts.locked;
   const fnNames = Object.keys(FN_META).sort((a, b) =>
     (FN_META[a].label || a).localeCompare(FN_META[b].label || b)
   );
   const id   = nextId++;
-  const func = data?.func || fnNames[0];
+  const func = locked ? OPEN_URL_FUNC : (data?.func || fnNames[0]);
   const step = {
     id,
     enabled: data?.enabled ?? true,
     func,
     delay:  data?.delay ?? '0',
     inputs: { ...(data?.inputs || {}) },
+    locked,
   };
   steps.push(step);
 
   const el = document.createElement('div');
-  el.className = 'step';
+  el.className = 'step' + (locked ? ' step-locked' : '');
   el.id = 'step-' + id;
   el.innerHTML = buildStepHTML(step, fnNames);
   document.getElementById('step-list').appendChild(el);
 
   // Wire events
-  el.querySelector('.fn-select').addEventListener('change', e => {
-    step.func = e.target.value;
-    step.inputs = {};
-    el.querySelector('.step-args').innerHTML = buildArgsHTML(step);
-    el.querySelector('.step-tooltip-slot').innerHTML = buildTooltipHTML(step.func);
-    wireArgs(el, step);
-    persistQueue();
-  });
+  if (!locked) {
+    el.querySelector('.fn-select').addEventListener('change', e => {
+      step.func = e.target.value;
+      step.inputs = {};
+      el.querySelector('.step-args').innerHTML = buildArgsHTML(step);
+      el.querySelector('.step-tooltip-slot').innerHTML = buildTooltipHTML(step.func);
+      wireArgs(el, step);
+      persistQueue();
+    });
+    el.querySelector('.rm-btn').addEventListener('click', () => removeStep(id));
+    el.querySelector('.up-btn').addEventListener('click', () => moveStep(id, -1));
+    el.querySelector('.dn-btn').addEventListener('click', () => moveStep(id, 1));
+  }
   el.querySelector('.en-chk').addEventListener('change', e => {
     step.enabled = e.target.checked;
     persistQueue();
@@ -580,13 +639,18 @@ function addStep(data) {
     step.delay = e.target.value;
     persistQueue();
   });
-  el.querySelector('.rm-btn').addEventListener('click', () => removeStep(id));
-  el.querySelector('.up-btn').addEventListener('click', () => moveStep(id, -1));
-  el.querySelector('.dn-btn').addEventListener('click', () => moveStep(id, 1));
   wireArgs(el, step);
 
   updateCount();
   persistQueue();
+  return step;
+}
+
+// Guarantee the queue's first step is the locked "Open URL" step, seeding it
+// with previously-saved data (if any). Must be called before any other
+// addStep() calls populate the (currently empty) queue.
+function ensureOpenUrlFirst(data) {
+  return addStep(data, { locked: true });
 }
 
 function buildTooltipHTML(func) {
@@ -599,20 +663,29 @@ function buildTooltipHTML(func) {
 }
 
 function buildStepHTML(step, fnNames) {
-  const opts = fnNames
-    .map(n => `<option value="${n}"${n === step.func ? ' selected' : ''}>${FN_META[n]?.label || n}</option>`)
-    .join('');
+  const locked = !!step.locked;
+
+  const fnControl = locked
+    ? `<span class="fn-locked" title="This step always runs first and can't be removed">🔒 ${esc(FN_META[step.func]?.label || step.func)}</span>`
+    : `<select class="fn-select">${fnNames
+        .map(n => `<option value="${n}"${n === step.func ? ' selected' : ''}>${FN_META[n]?.label || n}</option>`)
+        .join('')}</select>`;
+
+  const moveButtons = locked ? '' : `
+      <button class="btn-icon up-btn" title="Move up">↑</button>
+      <button class="btn-icon dn-btn" title="Move down">↓</button>`;
+
+  const rmButton = locked ? '' : `<button class="btn-icon rm-btn" style="color:var(--err)" title="Remove">✕</button>`;
+
   return `
     <div class="step-ctrl">
-      <input type="checkbox" class="en-chk"${step.enabled ? ' checked' : ''}>
-      <button class="btn-icon up-btn" title="Move up">↑</button>
-      <button class="btn-icon dn-btn" title="Move down">↓</button>
+      <input type="checkbox" class="en-chk"${step.enabled ? ' checked' : ''}>${moveButtons}
     </div>
     <div class="step-main">
       <div class="step-fn-row">
-        <select class="fn-select">${opts}</select>
+        ${fnControl}
         <span class="step-tooltip-slot">${buildTooltipHTML(step.func)}</span>
-        <button class="btn-icon rm-btn" style="color:var(--err)" title="Remove">✕</button>
+        ${rmButton}
       </div>
       <div class="step-args">${buildArgsHTML(step)}</div>
       <div class="delay-row">
@@ -726,12 +799,36 @@ function buildAlertArgsHTML(step) {
     </div>`;
 }
 
+// The mandatory leading step: URL to open first + its URL parameters.
+// These previously lived in the Target accordion; they now travel with the
+// queue (and with saved scripts) as this step's inputs.
+function buildOpenUrlArgsHTML(step) {
+  if (!Array.isArray(step.inputs.params)) {
+    step.inputs.params = step.inputs.params ? [step.inputs.params] : [];
+  }
+  const params = step.inputs.params.length ? step.inputs.params : [''];
+  const rows = params.map((v, i) => `
+    <div class="arg-row open-url-param-row">
+      <span class="arg-lbl">${i === 0 ? 'Params' : ''}</span>
+      <input type="text" class="open-url-param-input" data-idx="${i}" placeholder="key=value" value="${esc(v)}">
+      <button class="btn-icon rm-open-url-param" data-idx="${i}" title="Remove" style="color:var(--err)">✕</button>
+    </div>`).join('');
+  return `
+    <div class="arg-row">
+      <span class="arg-lbl">URL</span>
+      <input type="text" data-arg="url" value="${esc(step.inputs.url || '')}" placeholder="https://example.com (optional — leave blank to use active tab)">
+    </div>
+    <div class="open-url-params">${rows}</div>
+    <button class="btn ghost sm add-open-url-param" type="button" style="align-self:flex-start;margin:4px 0 0;padding:3px 8px;font-size:12px">+ Add parameter</button>`;
+}
+
 function buildArgsHTML(step) {
-  if (step.func === 'click')     return buildMethodArgsHTML(step, CLICK_METHODS,  false);
-  if (step.func === 'fill')      return buildMethodArgsHTML(step, FILL_METHODS,   true);
-  if (step.func === 'submit')    return buildMethodArgsHTML(step, SUBMIT_METHODS, false);
-  if (step.func === 'switch_to') return buildSwitchArgsHTML(step);
-  if (step.func === 'alert')     return buildAlertArgsHTML(step);
+  if (step.func === 'click')       return buildMethodArgsHTML(step, CLICK_METHODS,  false);
+  if (step.func === 'fill')        return buildMethodArgsHTML(step, FILL_METHODS,   true);
+  if (step.func === 'submit')      return buildMethodArgsHTML(step, SUBMIT_METHODS, false);
+  if (step.func === 'switch_to')   return buildSwitchArgsHTML(step);
+  if (step.func === 'alert')       return buildAlertArgsHTML(step);
+  if (step.func === OPEN_URL_FUNC) return buildOpenUrlArgsHTML(step);
 
   const args = FN_META[step.func]?.args || [];
   if (!args.length) return '<div class="no-args">No arguments</div>';
@@ -785,6 +882,35 @@ function wireArgs(el, step) {
     const argName = btn.dataset.pickArg;
     const onResult = ['click', 'fill', 'submit'].includes(step.func) ? applyPickerToMethod : null;
     btn.addEventListener('click', () => startPicker(el, step, argName, onResult));
+  });
+
+  if (step.func === OPEN_URL_FUNC) wireOpenUrlArgs(el, step);
+}
+
+// Rebuild and rewire a step's argument area in place — used whenever the
+// number of inputs changes (e.g. adding/removing a URL parameter row).
+function rerenderStepArgs(el, step) {
+  el.querySelector('.step-args').innerHTML = buildArgsHTML(step);
+  wireArgs(el, step);
+  persistQueue();
+}
+
+function wireOpenUrlArgs(el, step) {
+  el.querySelectorAll('.open-url-param-input').forEach(inp => {
+    inp.addEventListener('input', e => {
+      step.inputs.params[Number(inp.dataset.idx)] = e.target.value;
+      persistQueue();
+    });
+  });
+  el.querySelectorAll('.rm-open-url-param').forEach(btn => {
+    btn.addEventListener('click', () => {
+      step.inputs.params.splice(Number(btn.dataset.idx), 1);
+      rerenderStepArgs(el, step);
+    });
+  });
+  el.querySelector('.add-open-url-param')?.addEventListener('click', () => {
+    step.inputs.params.push('');
+    rerenderStepArgs(el, step);
   });
 }
 
@@ -842,7 +968,8 @@ function applyPickerToMethod(selector, stepEl, step) {
 
 function removeStep(id) {
   const i = steps.findIndex(s => s.id === id);
-  if (i >= 0) steps.splice(i, 1);
+  if (i < 0 || steps[i].locked) return;
+  steps.splice(i, 1);
   document.getElementById('step-' + id)?.remove();
   updateCount();
   persistQueue();
@@ -851,7 +978,8 @@ function removeStep(id) {
 function moveStep(id, dir) {
   const i = steps.findIndex(s => s.id === id);
   const j = i + dir;
-  if (j < 0 || j >= steps.length) return;
+  if (i < 0 || j < 0 || j >= steps.length) return;
+  if (steps[i].locked || steps[j].locked) return;
   [steps[i], steps[j]] = [steps[j], steps[i]];
   const list = document.getElementById('step-list');
   const all  = [...list.querySelectorAll('.step')];
@@ -941,41 +1069,6 @@ function renderSuiteResults(containerId, results, order) {
   el.querySelector('[data-clear-results]')?.addEventListener('click', () => { el.innerHTML = ''; });
 }
 
-// ── Test Suites: Accessibility audit ─────────────────────────────────────────
-async function runA11yAudit() {
-  const btn = document.getElementById('btn-run-a11y');
-  const resultsEl = document.getElementById('a11y-results');
-  if (!resultsEl) return;
-
-  const checks = [...document.querySelectorAll('input[name="a11y-check"]:checked')]
-    .map(cb => cb.value);
-
-  if (!checks.length) {
-    resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Select at least one check.</div>';
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Running…';
-  resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Auditing page…</div>';
-
-  try {
-    const res = await chrome.runtime.sendMessage({ action: 'runA11yAudit', checks });
-    if (!res?.ok) throw new Error(res?.error || 'Audit failed');
-    renderA11yResults(res.results, checks);
-  } catch (e) {
-    resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Run Audit';
-  }
-}
-
-function renderA11yResults(results, checks) {
-  const ORDER = ['alt','labels','headings','landmarks','aria','links','contrast','touch','keyboard'];
-  renderSuiteResults('a11y-results', results, ORDER.filter(k => checks.includes(k)));
-}
-
 // ── Generic suite runner ──────────────────────────────────────────────────────
 async function runSuiteAudit({ action, checkName, btnId, resultsId }) {
   const btn = document.getElementById(btnId);
@@ -998,6 +1091,12 @@ async function runSuiteAudit({ action, checkName, btnId, resultsId }) {
     const res = await chrome.runtime.sendMessage({ action, checks });
     if (!res?.ok) throw new Error(res?.error || 'Audit failed');
     renderSuiteResults(resultsId, res.results, checks);
+    if (res.axeError) {
+      const note = document.createElement('div');
+      note.style.cssText = 'color:var(--fg3);font-size:11px;padding:6px 2px 0';
+      note.textContent = 'Note: axe-core could not run on this page (' + res.axeError + '). Heuristic checks were used instead.';
+      resultsEl.prepend(note);
+    }
   } catch (e) {
     resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
   } finally {
@@ -1006,12 +1105,68 @@ async function runSuiteAudit({ action, checkName, btnId, resultsId }) {
   }
 }
 
-// ── Test Suites: Conversion / Friction audit ──────────────────────────────────
-function runConversionAudit() {
-  return runSuiteAudit({ action: 'runConversionAudit', checkName: 'conv-check', btnId: 'btn-run-conv', resultsId: 'conv-results' });
+// ── Test Suites: per-criterion explanations (shown as hover tooltips) ─────────
+const WCAG_INFO = {
+  titles: 'Every page needs a unique, descriptive <title>. It is the first thing a screen reader announces and how users tell browser tabs and history entries apart. (WCAG 2.4.2)',
+  navconsistency: 'Navigation, header, footer, and help links should stay in the same place with the same labels on every page, so users can rely on a consistent mental model. (WCAG 3.2.3, 3.2.4, 3.2.6)',
+  multipleways: 'Offer at least two ways to reach content — e.g. a navigation menu plus site search or a sitemap — so users are not forced through a single path. (WCAG 2.4.5)',
+  skiplink: 'A "skip to main content" link lets keyboard and screen-reader users jump past repeated navigation straight to the page’s main region. (WCAG 2.4.1)',
+  keyboardpath: 'All functionality must be operable with the keyboard alone, and the tab/focus order must follow a logical sequence. Positive tabindex values break that order. (WCAG 2.1.1, 2.4.3)',
+  modalescape: 'Users must never get trapped in a component. A modal or dialog should always be closable with a standard method such as the Escape key. (WCAG 2.1.2)',
+  formerror: 'When a submission fails, the error must be clearly identified, described in text with a suggested fix, and announced to assistive technology. (WCAG 3.3.1, 3.3.3, 4.1.3)',
+  sessiontiming: 'If a session can expire, warn the user before it does and let them extend it without losing any data they have entered. (WCAG 2.2.1, 2.2.6)',
+  destructive: 'Actions with real consequences — delete, cancel, payment — should require explicit confirmation or be reversible, to prevent costly mistakes. (WCAG 3.3.4, 3.3.6)',
+  linkpurpose: 'Link text should make sense on its own. Generic phrases like "click here" or "read more" are meaningless to someone scanning links out of context. (WCAG 2.4.4, 2.4.9)',
+  formlabels: 'Every field needs a real, persistent label that is programmatically associated with it. Placeholder text disappears on input and does not count as a label. (WCAG 3.3.2, 1.3.1)',
+  redundant: 'In a multi-step flow, do not make users re-enter information they already provided — auto-populate it or let them reuse it. (WCAG 3.3.7)',
+  focusvis: 'A visible focus indicator must appear when an element is focused by keyboard, and must not be removed by CSS or hidden behind sticky headers or overlays. (WCAG 2.4.7, 2.4.11)',
+  ariastate: 'Custom widgets (accordions, tabs, dropdowns, toggles) must expose and update their state — e.g. aria-expanded or aria-selected — so assistive tech knows what happened. (WCAG 4.1.2)',
+  contrast: 'Text and meaningful UI elements need enough contrast against their background: 4.5:1 for normal text, 3:1 for large text and non-text elements. (WCAG 1.4.3, 1.4.11)',
+  reflow: 'Content must reflow into a single column and stay usable at 400% zoom or a 320px-wide viewport, without forcing two-dimensional scrolling. (WCAG 1.4.10, 1.4.4)',
+  motion: 'Nothing should flash more than three times per second, and any auto-playing motion must be pausable, stoppable, or hideable. (WCAG 2.2.2, 2.3.1)',
+  screenreader: 'Assistive tech must be able to announce each element’s name, role, and state, plus dynamic status updates — via alt text, accessible names, and live regions. (WCAG 1.1.1, 4.1.2, 4.1.3)',
+  realworld: 'A holistic check: using only a keyboard or a screen reader, can someone actually complete the key tasks (sign up, checkout, find content) without excessive friction? (cross-cutting)'
+};
+
+// Attach an info tooltip to every WCAG audit criterion. Sourced from one map so
+// the popup and side panel stay in sync. Flips up/down to avoid clipping in the
+// scrollable panel.
+function initSuiteTooltips() {
+  const scroller = document.getElementById('panels');
+  document.querySelectorAll('input[name="wcag-check"]').forEach(cb => {
+    const label = cb.closest('.suite-check');
+    const text = WCAG_INFO[cb.value];
+    if (!label || !text || label.querySelector('.tooltip-wrap')) return;
+
+    const wrap = document.createElement('span');
+    wrap.className = 'tooltip-wrap';
+    wrap.style.marginLeft = 'auto';
+
+    const icon = document.createElement('span');
+    icon.className = 'tooltip-icon';
+    icon.textContent = 'ⓘ';
+    icon.setAttribute('aria-label', 'What this checks');
+
+    const box = document.createElement('span');
+    box.className = 'tooltip-box';
+    box.textContent = text;
+
+    wrap.appendChild(icon);
+    wrap.appendChild(box);
+    label.appendChild(wrap);
+
+    // Clicking the icon shouldn't toggle the checkbox it lives inside.
+    wrap.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
+
+    // Open downward when there isn't room above within the scroll container.
+    wrap.addEventListener('mouseenter', () => {
+      const top = (scroller || document.documentElement).getBoundingClientRect().top;
+      box.classList.toggle('tt-down', wrap.getBoundingClientRect().top - top < 140);
+    });
+  });
 }
 
-// ── Test Suites: Content & Copy audit ─────────────────────────────────────────
-function runContentAudit() {
-  return runSuiteAudit({ action: 'runContentAudit', checkName: 'content-check', btnId: 'btn-run-content', resultsId: 'content-results' });
+// ── Test Suites: WCAG 2.2 audit ───────────────────────────────────────────────
+function runWcagAudit() {
+  return runSuiteAudit({ action: 'runWcagAudit', checkName: 'wcag-check', btnId: 'btn-run-wcag', resultsId: 'wcag-results' });
 }

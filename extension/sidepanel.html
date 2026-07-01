@@ -108,12 +108,14 @@
   /* Steps */
   .step{background:var(--surface);border:1px solid var(--stroke);border-radius:6px;
     padding:10px 12px;display:flex;gap:8px;align-items:flex-start}
+  .step-locked{border-color:var(--brand)}
   .step-ctrl{display:flex;flex-direction:column;align-items:center;gap:3px;
     flex-shrink:0;padding-top:2px}
   .step-ctrl input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:var(--brand)}
   .step-main{flex:1;min-width:0}
   .step-fn-row{display:flex;align-items:center;gap:6px;margin-bottom:5px}
   .step-fn-row select{flex:1}
+  .fn-locked{flex:1;font-size:12px;font-weight:600;color:var(--brand)}
   .step-doc{font-size:10px;color:var(--fg3);margin-bottom:5px;min-height:13px}
   .step-args{display:flex;flex-direction:column;gap:4px}
   .arg-row{display:flex;align-items:center;gap:6px}
@@ -205,6 +207,8 @@
     border:6px solid transparent;border-top-color:#1a1a1a;
   }
   .tooltip-wrap:hover .tooltip-box{display:block}
+  .tooltip-box.tt-down{top:calc(100% + 7px);bottom:auto}
+  .tooltip-box.tt-down::after{top:auto;bottom:100%;border-top-color:transparent;border-bottom-color:#1a1a1a}
 
   /* Suite checkboxes */
   .suite-check{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--fg1);
@@ -275,15 +279,6 @@
       </div>
       <div class="acc-body">
         <div>
-          <label class="cap">URL to open first (leave blank to use active tab)</label>
-          <input type="url" id="url-input" placeholder="https://example.com (optional)">
-        </div>
-        <div>
-          <label class="cap" style="margin-bottom:6px">URL parameters (leave blank to skip)</label>
-          <div id="param-list" style="display:flex;flex-direction:column;gap:4px"></div>
-          <button class="btn ghost" id="btn-add-param" style="align-self:flex-start;margin-top:4px;padding:3px 8px;font-size:12px">+ Add parameter</button>
-        </div>
-        <div>
           <label class="cap">Execution Mode</label>
           <div class="radio-group">
             <input type="radio" name="mode" id="mode-close" value="close" checked>
@@ -301,21 +296,32 @@
             <label for="tt-new">New tab</label>
           </div>
         </div>
+        <div class="queue-bar">
+          <input type="text" id="save-name" placeholder="Script name…" style="flex:1;min-width:80px">
+          <button class="btn" id="btn-save-script">Save</button>
+          <div style="flex:1"></div>
+          <button id="btn-run" class="btn primary">Execute</button>
+          <button id="btn-stop" class="btn danger" disabled>Stop</button>
+        </div>
       </div>
     </div>
 
     <!-- Accordion 2: Load Script -->
     <div class="accordion" id="acc-scripts">
       <div class="acc-hdr" data-acc="acc-scripts">
-        <span>Load Script</span>
+        <span>Saved Scripts</span>
         <span class="acc-chevron">›</span>
       </div>
       <div class="acc-body">
-        <div class="row">
-          <select id="script-select" style="flex:1"><option>&lt;no scripts&gt;</option></select>
-          <button class="btn" id="btn-load-script">Load</button>
-          <button class="btn danger" id="btn-delete-script">Delete</button>
+        <div class="row" style="align-items:stretch">
+          <select id="script-select" size="4" style="flex:1"><option disabled>&lt;no scripts&gt;</option></select>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <button class="btn primary" id="btn-append-script">Add to Queue</button>
+            <button class="btn" id="btn-load-script">Replace</button>
+            <button class="btn danger" id="btn-delete-script">Delete</button>
+          </div>
         </div>
+        <div style="font-size:10px;color:var(--fg3);margin-top:6px">Select a script. <b>Add to Queue</b> appends it to the current queue; <b>Replace</b> swaps out the current queue.</div>
       </div>
     </div>
 
@@ -341,13 +347,6 @@
         <div id="step-list">
           <div id="empty-msg">No steps yet — click + Add Step to begin</div>
         </div>
-        <div class="queue-bar">
-          <input type="text" id="save-name" placeholder="Script name…" style="flex:1;min-width:80px">
-          <button class="btn" id="btn-save-script">Save</button>
-          <div style="flex:1"></div>
-          <button id="btn-run" class="btn primary">Execute</button>
-          <button id="btn-stop" class="btn danger" disabled>Stop</button>
-        </div>
       </div>
     </div>
 
@@ -358,57 +357,33 @@
     <div class="card">
       <div class="row-spread" style="margin-bottom:12px">
         <div>
-          <div class="card-title" style="margin-bottom:1px">Accessibility</div>
-          <div style="font-size:10px;color:var(--fg3)">Runs against the active tab</div>
+          <div class="card-title" style="margin-bottom:1px">WCAG 2.2 Audit</div>
+          <div style="font-size:10px;color:var(--fg3)">Runs against the active tab · <span style="color:var(--brand)">Info</span> rows need a manual check</div>
         </div>
-        <button class="btn primary" id="btn-run-a11y">Run Audit</button>
+        <button class="btn primary" id="btn-run-wcag">Run Audit</button>
       </div>
       <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:12px">
-        <label class="suite-check"><input type="checkbox" name="a11y-check" value="alt" checked>Missing alt text <span style="color:var(--fg3);font-size:10px">WCAG 1.1.1</span></label>
-        <label class="suite-check"><input type="checkbox" name="a11y-check" value="labels" checked>Form inputs without labels <span style="color:var(--fg3);font-size:10px">1.3.1</span></label>
-        <label class="suite-check"><input type="checkbox" name="a11y-check" value="headings" checked>Heading hierarchy <span style="color:var(--fg3);font-size:10px">1.3.1</span></label>
-        <label class="suite-check"><input type="checkbox" name="a11y-check" value="landmarks" checked>Missing landmark regions <span style="color:var(--fg3);font-size:10px">1.3.6</span></label>
-        <label class="suite-check"><input type="checkbox" name="a11y-check" value="aria" checked>Invalid ARIA roles <span style="color:var(--fg3);font-size:10px">4.1.2</span></label>
-        <label class="suite-check"><input type="checkbox" name="a11y-check" value="links" checked>Low-quality link text <span style="color:var(--fg3);font-size:10px">2.4.4</span></label>
-        <label class="suite-check"><input type="checkbox" name="a11y-check" value="contrast" checked>Color contrast (WCAG AA) <span style="color:var(--fg3);font-size:10px">1.4.3</span></label>
-        <label class="suite-check"><input type="checkbox" name="a11y-check" value="touch" checked>Touch target size (&lt;44×44px) <span style="color:var(--fg3);font-size:10px">2.5.5</span></label>
-        <label class="suite-check"><input type="checkbox" name="a11y-check" value="keyboard" checked>Keyboard reachability <span style="color:var(--fg3);font-size:10px">2.1.1</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="titles" checked>Page Identity &amp; Titles <span style="color:var(--fg3);font-size:10px">2.4.2</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="navconsistency" checked>Navigation Consistency <span style="color:var(--fg3);font-size:10px">3.2.3, 3.2.4, 3.2.6</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="multipleways" checked>Alternate Paths to Content <span style="color:var(--fg3);font-size:10px">2.4.5</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="skiplink" checked>Skip Link Functionality <span style="color:var(--fg3);font-size:10px">2.4.1</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="keyboardpath" checked>Keyboard Path Verification <span style="color:var(--fg3);font-size:10px">2.1.1, 2.4.3</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="modalescape" checked>Modal &amp; Dialog Escape <span style="color:var(--fg3);font-size:10px">2.1.2 · manual</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="formerror" checked>Form Error Handling <span style="color:var(--fg3);font-size:10px">3.3.1, 3.3.3, 4.1.3</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="sessiontiming" checked>Session Timing <span style="color:var(--fg3);font-size:10px">2.2.1, 2.2.6 · manual</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="destructive" checked>Destructive Action Confirmation <span style="color:var(--fg3);font-size:10px">3.3.4, 3.3.6 · manual</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="linkpurpose" checked>Link Purpose <span style="color:var(--fg3);font-size:10px">2.4.4, 2.4.9</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="formlabels" checked>Form Labeling <span style="color:var(--fg3);font-size:10px">3.3.2, 1.3.1</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="redundant" checked>Redundant Entry <span style="color:var(--fg3);font-size:10px">3.3.7 · manual</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="focusvis" checked>Focus Visibility <span style="color:var(--fg3);font-size:10px">2.4.7, 2.4.11</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="ariastate" checked>ARIA State Toggling <span style="color:var(--fg3);font-size:10px">4.1.2</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="contrast" checked>Color Contrast <span style="color:var(--fg3);font-size:10px">1.4.3, 1.4.11</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="reflow" checked>Reflow &amp; Zoom <span style="color:var(--fg3);font-size:10px">1.4.10, 1.4.4</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="motion" checked>Motion &amp; Flashing <span style="color:var(--fg3);font-size:10px">2.2.2, 2.3.1</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="screenreader" checked>Screen Reader Announcements <span style="color:var(--fg3);font-size:10px">1.1.1, 4.1.3, 4.1.2</span></label>
+        <label class="suite-check"><input type="checkbox" name="wcag-check" value="realworld" checked>Real-World Task Usability <span style="color:var(--fg3);font-size:10px">cross-cutting · manual</span></label>
       </div>
-      <div id="a11y-results"></div>
-    </div>
-
-    <div class="card">
-      <div class="row-spread" style="margin-bottom:12px">
-        <div>
-          <div class="card-title" style="margin-bottom:1px">Conversion / Friction</div>
-          <div style="font-size:10px;color:var(--fg3)">Runs against the active tab</div>
-        </div>
-        <button class="btn primary" id="btn-run-conv">Run Audit</button>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:12px">
-        <label class="suite-check"><input type="checkbox" name="conv-check" value="ctg" checked>Click-to-goal — steps to reach primary CTA</label>
-        <label class="suite-check"><input type="checkbox" name="conv-check" value="forms" checked>Form usability — validation &amp; error messaging</label>
-        <label class="suite-check"><input type="checkbox" name="conv-check" value="dead" checked>Dead-button detection</label>
-        <label class="suite-check"><input type="checkbox" name="conv-check" value="fold" checked>Primary CTA above fold across breakpoints</label>
-      </div>
-      <div id="conv-results"></div>
-    </div>
-
-    <div class="card">
-      <div class="row-spread" style="margin-bottom:12px">
-        <div>
-          <div class="card-title" style="margin-bottom:1px">Content &amp; Copy</div>
-          <div style="font-size:10px;color:var(--fg3)">Runs against the active tab</div>
-        </div>
-        <button class="btn primary" id="btn-run-content">Run Audit</button>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:12px">
-        <label class="suite-check"><input type="checkbox" name="content-check" value="readability" checked>Readability score (Flesch)</label>
-        <label class="suite-check"><input type="checkbox" name="content-check" value="placeholder" checked>Leftover placeholder / Lorem ipsum</label>
-        <label class="suite-check"><input type="checkbox" name="content-check" value="meta" checked>Page title &amp; meta description</label>
-        <label class="suite-check"><input type="checkbox" name="content-check" value="spelling" checked>Basic spellcheck</label>
-      </div>
-      <div id="content-results"></div>
+      <div id="wcag-results"></div>
     </div>
   </div>
 

@@ -1,5 +1,7 @@
 // Selenite — background service worker
 // Handles queue execution; writes logs to session storage so popup can read them.
+//
+// Originally created and developed by William Wiley. Forked for Cro Metrics.
 
 // ── Open side panel when toolbar icon is clicked ──────────────────────────
 chrome.sidePanel
@@ -236,8 +238,18 @@ async function exec(tabId, fn, args) {
 // ── Action implementations ────────────────────────────────────────────────
 const ACTIONS = {
 
-  open_url: async (tabId, { url }) => {
-    await chrome.tabs.update(tabId, { url: normalizeUrl(url) });
+  open_url: async (tabId, { url, params }) => {
+    let fullUrl = (url || '').trim();
+    if (!fullUrl) return; // Blank URL — leave the active tab as-is, don't navigate.
+
+    const paramList = Array.isArray(params)
+      ? params.map(p => String(p).trim()).filter(Boolean)
+      : String(params || '').split('\n').map(p => p.trim()).filter(Boolean);
+    if (paramList.length) {
+      const sep = fullUrl.includes('?') ? '&' : '?';
+      fullUrl = fullUrl + sep + paramList.join('&');
+    }
+    await chrome.tabs.update(tabId, { url: normalizeUrl(fullUrl) });
     await waitForLoad(tabId);
   },
 
@@ -479,22 +491,18 @@ const ACTIONS = {
 let _running = false;
 let _stopRequested = false;
 
-async function runQueue({ url, queue, mode, targetTabId, universalDelay }) {
+async function runQueue({ queue, mode, targetTabId, universalDelay }) {
   _running = true;
   _stopRequested = false;
   await chrome.storage.session.set({ running: true });
 
-  // Resolve target tab — use provided tabId or open a new tab
+  // Resolve target tab — use provided tabId or open a new blank tab.
+  // The queue's own leading "Open URL" step navigates it to the target URL.
   let tabId = targetTabId;
   if (!tabId) {
-    const tab = await chrome.tabs.create({ url: url ? normalizeUrl(url) : 'about:blank', active: true });
+    const tab = await chrome.tabs.create({ url: 'about:blank', active: true });
     tabId = tab.id;
     await waitForLoad(tabId);
-  } else {
-    if (url) {
-      await chrome.tabs.update(tabId, { url: normalizeUrl(url) });
-      await waitForLoad(tabId);
-    }
   }
 
   // Reset console feed and auto-attach capture to the test tab
@@ -550,7 +558,7 @@ async function runQueue({ url, queue, mode, targetTabId, universalDelay }) {
 
 // ── Arg name map (mirrors functions.py signatures) ─────────────────────────
 const ARG_NAMES = {
-  open_url:                  ['url'],
+  open_url:                  ['url', 'params'],
   implicit_wait:             ['seconds'],
   explicit_wait:             ['css_selector', 'timeout'],
   click:                     ['method', 'selector'],
@@ -565,7 +573,7 @@ const ARG_NAMES = {
 
 // ── Descriptions (shown as tooltips in the UI) ────────────────────────────
 const DESCRIPTIONS = {
-  open_url:                  'Navigates the browser to the specified URL and waits for the page to finish loading.',
+  open_url:                  'Navigates the browser to the specified URL (with any URL parameters appended) and waits for the page to finish loading. This is always the first step in the queue.',
   get_current_url:           'Returns the full URL of the currently loaded page and logs it to the console.',
   get_title:                 'Returns the <title> of the current page and logs it to the console.',
   back:                      'Clicks the browser Back button and waits for the previous page to load.',
@@ -780,343 +788,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.storage.session.set({ pickerResult: { selector: msg.selector, ts: Date.now() } });
     sendResponse({ ok: true });
 
-  } else if (msg.action === 'runConversionAudit') {
-    (async () => {
-      const checks = msg.checks || [];
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      const tabId = tabs[0]?.id;
-      if (!tabId) { sendResponse({ ok: false, error: 'No active tab' }); return; }
-      try {
-        const results = await exec(tabId, function(checks) {
-
-          const CTA_SIGNALS = ['sign up','signup','get started','start free','start now','try free','try now','buy now','buy','subscribe','join now','join','create account','register','get access','start trial','free trial','request demo','book demo','get demo','donate','donate now','give now','shop now','order now','add to cart','checkout'];
-
-          function brief(el) {
-            if (el.id) return '#' + el.id;
-            const cls = [...el.classList].filter(c => c.length < 20).slice(0,2).join('.');
-            return el.tagName.toLowerCase() + (cls ? '.' + cls : '');
-          }
-
-          function isCTA(el) {
-            const text = (el.textContent || el.getAttribute('value') || el.getAttribute('aria-label') || '').trim().toLowerCase();
-            return CTA_SIGNALS.some(s => text === s || text.startsWith(s + ' ') || text.endsWith(' ' + s));
-          }
-
-          function absY(el) {
-            return el.getBoundingClientRect().top + window.scrollY;
-          }
-
-          const out = {};
-
-          // 1. Click-to-goal
-          if (checks.includes('ctg')) {
-            const vh = window.innerHeight;
-            const pageH = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, 1);
-            const ctaEls = [...document.querySelectorAll('a,button,[role="button"],[type="submit"]')]
-              .filter(el => el.offsetParent !== null && isCTA(el));
-            const issues = [];
-
-            if (ctaEls.length === 0) {
-              issues.push('No primary CTA detected — check that button/link text matches common patterns (Sign up, Get started, Buy, etc.)');
-            } else {
-              const firstCTA = ctaEls.reduce((a, b) => absY(a) < absY(b) ? a : b);
-              const firstY = absY(firstCTA);
-              const aboveFold = ctaEls.filter(el => absY(el) <= vh);
-
-              if (aboveFold.length === 0) {
-                const pct = Math.round((firstY / pageH) * 100);
-                issues.push('No CTA visible above fold — nearest "' + firstCTA.textContent.trim().slice(0,30) + '" is ' + Math.round(firstY) + 'px from top (' + pct + '% down page)');
-              }
-
-              const allInteractive = [...document.querySelectorAll('a[href],button')].filter(el => el.offsetParent !== null);
-              const distractors = allInteractive.filter(el => absY(el) < firstY && !isCTA(el)).length;
-              if (distractors > 7) {
-                issues.push(distractors + ' non-CTA interactive elements appear before the first CTA — high choice friction');
-              }
-            }
-
-            out.ctg = { label: 'Click-to-goal', issues };
-          }
-
-          // 2. Form usability
-          if (checks.includes('forms')) {
-            const issues = [];
-            const forms = [...document.querySelectorAll('form')];
-
-            if (forms.length === 0) {
-              const loose = [...document.querySelectorAll('input:not([type=hidden]):not([type=submit])')].filter(el => !el.closest('form'));
-              if (loose.length > 0) issues.push(loose.length + ' input(s) outside a <form> — submission handling unclear');
-            }
-
-            forms.forEach((form, i) => {
-              const lbl = form.id ? '#' + form.id : 'form[' + i + ']';
-
-              if (form.hasAttribute('novalidate')) {
-                const hasCustom = form.querySelector('[aria-describedby],[aria-errormessage],.error,.invalid,.field-error,.form-error');
-                if (!hasCustom) issues.push(lbl + ': novalidate set but no custom validation indicators found');
-              }
-
-              const required = [...form.querySelectorAll('[required]')];
-              const noError = required.filter(inp => {
-                const desc = inp.getAttribute('aria-describedby');
-                if (desc && document.getElementById(desc)) return false;
-                const err = inp.getAttribute('aria-errormessage');
-                if (err && document.getElementById(err)) return false;
-                return true;
-              });
-              if (noError.length > 0) issues.push(lbl + ': ' + noError.length + ' required field(s) have no linked error message element');
-
-              const textInputs = [...form.querySelectorAll('input[type=text],input[type=email],input[type=tel],input[type=password],textarea')];
-              if (textInputs.length > 0 && required.length === 0) {
-                issues.push(lbl + ': ' + textInputs.length + ' text input(s) with no required attributes — validation intent unclear');
-              }
-
-              if (!form.querySelector('[type=submit],button:not([type=button])')) {
-                issues.push(lbl + ': no submit button found');
-              }
-            });
-
-            out.forms = { label: 'Form usability', issues };
-          }
-
-          // 3. Dead-button detection
-          if (checks.includes('dead')) {
-            const issues = [];
-
-            [...document.querySelectorAll('a')]
-              .filter(a => a.offsetParent !== null && a.textContent.trim().length > 0)
-              .filter(a => {
-                const href = a.getAttribute('href');
-                return href === null || href === '' || href === '#' || /^javascript\s*:/i.test(href);
-              })
-              .slice(0, 10)
-              .forEach(a => {
-                const href = a.getAttribute('href');
-                issues.push('"' + a.textContent.trim().slice(0,30) + '" — ' + (href === null ? 'no href' : 'href="' + href + '"'));
-              });
-
-            [...document.querySelectorAll('button[type=button],button:not([type])')]
-              .filter(btn => btn.offsetParent !== null && !btn.closest('form'))
-              .filter(btn => {
-                if (btn.hasAttribute('onclick')) return false;
-                if ([...btn.attributes].some(a => a.name.startsWith('data-'))) return false;
-                if (btn.hasAttribute('aria-controls') || btn.hasAttribute('aria-expanded') || btn.hasAttribute('aria-haspopup')) return false;
-                return true;
-              })
-              .slice(0, 10)
-              .forEach(btn => {
-                issues.push(brief(btn) + ' "' + btn.textContent.trim().slice(0,30) + '" — no detectable handler (note: JS frameworks may bind externally)');
-              });
-
-            out.dead = { label: 'Dead-button detection', issues };
-          }
-
-          // 4. CTA above fold across breakpoints
-          if (checks.includes('fold')) {
-            const BREAKPOINTS = [
-              { name: 'Mobile (375×667)', h: 667 },
-              { name: 'Tablet (768×1024)', h: 1024 },
-              { name: 'Desktop (1280×800)', h: 800 },
-            ];
-            const ctaEls = [...document.querySelectorAll('a,button,[role="button"],[type="submit"]')]
-              .filter(el => el.offsetParent !== null && isCTA(el));
-            const issues = [];
-
-            if (ctaEls.length === 0) {
-              issues.push('No primary CTA detected on page');
-            } else {
-              ctaEls.slice(0, 4).forEach(el => {
-                const y = absY(el);
-                const text = '"' + el.textContent.trim().slice(0,25) + '"';
-                const hidden = BREAKPOINTS.filter(bp => y > bp.h).map(bp => bp.name);
-                if (hidden.length > 0) {
-                  issues.push(text + ' at ' + Math.round(y) + 'px — below fold at: ' + hidden.join(', '));
-                }
-              });
-            }
-
-            out.fold = { label: 'CTA above fold (breakpoints)', issues };
-          }
-
-          return out;
-        }, [checks]);
-
-        sendResponse({ ok: true, results });
-      } catch (e) {
-        sendResponse({ ok: false, error: e.message });
-      }
-    })();
-    return true;
-
-  } else if (msg.action === 'runContentAudit') {
-    (async () => {
-      const checks = msg.checks || [];
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      const tabId = tabs[0]?.id;
-      if (!tabId) { sendResponse({ ok: false, error: 'No active tab' }); return; }
-      try {
-        const results = await exec(tabId, function(checks) {
-
-          // Extract visible body text, skipping script/style/nav chrome
-          function visibleText() {
-            const skip = new Set(['SCRIPT','STYLE','NOSCRIPT','NAV','HEADER','FOOTER','SVG','CODE','PRE','TEXTAREA']);
-            let text = '';
-            const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-              acceptNode(node) {
-                const p = node.parentElement;
-                if (!p || skip.has(p.tagName)) return NodeFilter.FILTER_REJECT;
-                if (p.offsetParent === null && p.tagName !== 'BODY') return NodeFilter.FILTER_REJECT;
-                return node.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-              }
-            });
-            let n;
-            while ((n = walk.nextNode())) text += ' ' + n.textContent.trim();
-            return text.replace(/\s+/g, ' ').trim();
-          }
-
-          function countSyllables(word) {
-            word = word.toLowerCase().replace(/[^a-z]/g, '');
-            if (word.length <= 3) return word.length ? 1 : 0;
-            word = word.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '').replace(/^y/, '');
-            const m = word.match(/[aeiouy]{1,2}/g);
-            return m ? m.length : 1;
-          }
-
-          const out = {};
-          const text = visibleText();
-
-          // 1. Readability (Flesch Reading Ease)
-          if (checks.includes('readability')) {
-            const issues = [];
-            const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
-            const words = text.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) || [];
-            if (words.length < 100) {
-              issues.push('Only ' + words.length + ' words of body copy — too little to score reliably');
-            } else {
-              const syllables = words.reduce((sum, w) => sum + countSyllables(w), 0);
-              const wps = words.length / Math.max(sentences.length, 1);
-              const spw = syllables / words.length;
-              const score = 206.835 - 1.015 * wps - 84.6 * spw;
-              let band;
-              if (score >= 70) band = 'easy';
-              else if (score >= 60) band = 'plain English';
-              else if (score >= 50) band = 'fairly difficult';
-              else if (score >= 30) band = 'difficult (college level)';
-              else band = 'very difficult (graduate level)';
-              const detail = 'Flesch ' + score.toFixed(0) + '/100 — ' + band + ' (' + wps.toFixed(1) + ' words/sentence, ' + words.length + ' words)';
-              if (score < 50) issues.push(detail + '. Aim for 60+ for general web audiences.');
-              else issues.push(detail);
-            }
-            out.readability = { label: 'Readability (Flesch)', issues, infoOnly: true };
-          }
-
-          // 2. Placeholder / Lorem ipsum
-          if (checks.includes('placeholder')) {
-            const issues = [];
-            const haystack = text.toLowerCase();
-            const patterns = [
-              ['lorem ipsum', /lorem ipsum/g],
-              ['dolor sit amet', /dolor sit amet/g],
-              ['"Lorem" filler', /\blorem\b/g],
-              ['placeholder text', /\bplaceholder text\b/g],
-              ['"insert ... here"', /insert\s+\w+\s+here/g],
-              ['TODO marker', /\btodo\b/g],
-              ['FIXME marker', /\bfixme\b/g],
-              ['XXX marker', /\bxxx\b/g],
-              ['Lighthouse "your text"', /\byour (?:text|content|headline|title) here\b/g],
-              ['"sample text"', /\bsample text\b/g],
-              ['dummy content', /\bdummy (?:text|content|data)\b/g],
-            ];
-            for (const [label, re] of patterns) {
-              const matches = haystack.match(re);
-              if (matches) issues.push(label + ' — ' + matches.length + ' occurrence' + (matches.length !== 1 ? 's' : ''));
-            }
-            // Attribute placeholders that look like dev leftovers
-            [...document.querySelectorAll('[alt],[title],[placeholder]')].forEach(el => {
-              ['alt','title','placeholder'].forEach(attr => {
-                const v = (el.getAttribute(attr) || '').toLowerCase();
-                if (/lorem|placeholder|todo|fixme|sample text|your text here/.test(v)) {
-                  issues.push(el.tagName.toLowerCase() + ' @' + attr + '="' + el.getAttribute(attr).slice(0,40) + '"');
-                }
-              });
-            });
-            out.placeholder = { label: 'Placeholder / Lorem ipsum', issues: issues.slice(0, 20) };
-          }
-
-          // 3. Title & meta description
-          if (checks.includes('meta')) {
-            const issues = [];
-            const titles = [...document.querySelectorAll('title')];
-            const title = (document.title || '').trim();
-
-            if (titles.length === 0 || !title) issues.push('Missing <title> — every page needs a unique, descriptive title');
-            else {
-              if (titles.length > 1) issues.push(titles.length + ' <title> elements found — there must be exactly one');
-              if (title.length < 10) issues.push('Title too short (' + title.length + ' chars): "' + title + '"');
-              if (title.length > 60) issues.push('Title too long (' + title.length + ' chars) — may truncate in search results');
-            }
-
-            const metaDescs = [...document.querySelectorAll('meta[name="description" i]')];
-            if (metaDescs.length === 0) issues.push('Missing <meta name="description"> — used for search/social snippets');
-            else {
-              if (metaDescs.length > 1) issues.push(metaDescs.length + ' meta descriptions found — there should be only one');
-              const desc = (metaDescs[0].getAttribute('content') || '').trim();
-              if (!desc) issues.push('Meta description is empty');
-              else if (desc.length < 50) issues.push('Meta description short (' + desc.length + ' chars) — aim for 120–160');
-              else if (desc.length > 160) issues.push('Meta description long (' + desc.length + ' chars) — may truncate around 160');
-            }
-            out.meta = { label: 'Title & meta description', issues };
-          }
-
-          // 4. Basic spellcheck (common-error dictionary)
-          if (checks.includes('spelling')) {
-            const COMMON = {
-              'teh':'the','adn':'and','recieve':'receive','recieved':'received','seperate':'separate',
-              'definately':'definitely','occured':'occurred','occurence':'occurrence','accomodate':'accommodate',
-              'untill':'until','wich':'which','thier':'their','alot':'a lot','arguement':'argument',
-              'begining':'beginning','beleive':'believe','calender':'calendar','catagory':'category',
-              'cemetary':'cemetery','collegue':'colleague','commitee':'committee','concious':'conscious',
-              'enviroment':'environment','existance':'existence','experiance':'experience','familar':'familiar',
-              'finaly':'finally','foriegn':'foreign','goverment':'government','grammer':'grammar',
-              'gaurd':'guard','harrass':'harass','independant':'independent','knowlege':'knowledge',
-              'liason':'liaison','maintainance':'maintenance','neccessary':'necessary','noticable':'noticeable',
-              'occassion':'occasion','persistant':'persistent','posession':'possession','prefered':'preferred',
-              'priviledge':'privilege','publically':'publicly','recomend':'recommend','refered':'referred',
-              'relevent':'relevant','succesful':'successful','sucessful':'successful','tommorow':'tomorrow',
-              'truely':'truly','unfortunatly':'unfortunately','usefull':'useful','wierd':'weird',
-              'writting':'writing','accross':'across','agressive':'aggressive','appearence':'appearance',
-              'basicly':'basically','buisness':'business','completly':'completely','embarass':'embarrass',
-              'guarentee':'guarantee','immediatly':'immediately','occuring':'occurring','paralel':'parallel',
-              'recieving':'receiving','reccomend':'recommend','succesfully':'successfully','wether':'whether'
-            };
-            const issues = [];
-            const seen = {};
-            const words = text.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) || [];
-            for (const w of words) {
-              const lower = w.toLowerCase();
-              if (COMMON[lower] && !seen[lower]) {
-                seen[lower] = true;
-                issues.push('"' + w + '" → did you mean "' + COMMON[lower] + '"?');
-              }
-            }
-            out.spelling = { label: 'Basic spellcheck', issues: issues.slice(0, 25) };
-          }
-
-          return out;
-        }, [checks]);
-
-        sendResponse({ ok: true, results });
-      } catch (e) {
-        sendResponse({ ok: false, error: e.message });
-      }
-    })();
-    return true;
-
-  } else if (msg.action === 'pickerCancel') {
-    chrome.storage.session.set({ pickerResult: { cancelled: true, ts: Date.now() } });
-    sendResponse({ ok: true });
-
-  } else if (msg.action === 'runA11yAudit') {
+  } else if (msg.action === 'runWcagAudit') {
     (async () => {
       const checks = msg.checks || [];
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -1129,84 +801,227 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (el.id) return '#' + el.id;
             const name = el.getAttribute('name');
             if (name) return '[name="' + name + '"]';
-            const cls = [...el.classList].slice(0,2).join('.');
+            const cls = [...el.classList].slice(0, 2).join('.');
             return el.tagName.toLowerCase() + (cls ? '.' + cls : '');
           }
+          function accName(el) {
+            const al = (el.getAttribute('aria-label') || '').trim();
+            if (al) return al;
+            const lb = el.getAttribute('aria-labelledby');
+            if (lb) {
+              const t = lb.trim().split(/\s+/).map(id => { const n = document.getElementById(id); return n ? n.textContent.trim() : ''; }).join(' ').trim();
+              if (t) return t;
+            }
+            const txt = (el.textContent || '').trim();
+            if (txt) return txt;
+            const ti = (el.getAttribute('title') || '').trim();
+            if (ti) return ti;
+            return (el.value || '').trim();
+          }
+          function cssEsc(s) { try { return CSS.escape(s); } catch (e) { return s.replace(/["\\\]]/g, '\\$&'); } }
 
           const out = {};
 
-          // 1. Missing alt text
-          if (checks.includes('alt')) {
-            const issues = [...document.querySelectorAll('img')]
-              .filter(img => !img.hasAttribute('alt'))
-              .map(img => '<img src="' + ((img.getAttribute('src') || '').split('/').pop() || '?').slice(0,50) + '">');
-            out.alt = { label: 'Missing alt text', issues, wcag: '1.1.1' };
+          // 1. Page Identity & Titles — 2.4.2
+          if (checks.includes('titles')) {
+            const issues = [];
+            const t = (document.title || '').trim();
+            if (!t) issues.push('Page has no <title> (document.title is empty)');
+            else {
+              const generic = ['untitled', 'document', 'home', 'page', 'new page', 'index', 'react app', 'vite app', 'title'];
+              if (generic.includes(t.toLowerCase())) issues.push('Generic, non-descriptive title: "' + t + '"');
+              if (t.length < 3) issues.push('Very short title: "' + t + '"');
+            }
+            out.titles = { label: 'Page Identity & Titles', issues, wcag: '2.4.2' };
           }
 
-          // 2. Unlabeled form inputs
-          if (checks.includes('labels')) {
+          // 2. Navigation Consistency — 3.2.3 / 3.2.4 / 3.2.6
+          if (checks.includes('navconsistency')) {
+            const issues = [];
+            if (!document.querySelector('nav,[role="navigation"]')) issues.push('No <nav> / role="navigation" landmark found');
+            if (!document.querySelector('header,[role="banner"]')) issues.push('No <header> / role="banner" region');
+            if (!document.querySelector('footer,[role="contentinfo"]')) issues.push('No <footer> / role="contentinfo" region');
+            const helpRe = /help|contact|support|faq/i;
+            const hasHelp = [...document.querySelectorAll('a,button')]
+              .some(el => helpRe.test(el.textContent || '') || helpRe.test(el.getAttribute('aria-label') || ''));
+            if (!hasHelp) issues.push('No help / contact / support mechanism detected (3.2.6)');
+            out.navconsistency = { label: 'Navigation Consistency', issues, wcag: '3.2.3, 3.2.4, 3.2.6' };
+          }
+
+          // 3. Alternate Paths to Content — 2.4.5
+          if (checks.includes('multipleways')) {
+            const issues = [];
+            const hasSearch = !!document.querySelector('input[type="search"], [role="search"], form[role="search"], input[name*="search" i], input[name="q"], input[placeholder*="search" i]');
+            const hasSitemap = [...document.querySelectorAll('a[href]')]
+              .some(a => /sitemap/i.test(a.textContent || '') || /sitemap/i.test(a.getAttribute('href') || ''));
+            const hasNav = document.querySelectorAll('nav a[href], [role="navigation"] a[href]').length > 0;
+            const ways = [];
+            if (hasNav) ways.push('navigation menu');
+            if (hasSearch) ways.push('site search');
+            if (hasSitemap) ways.push('sitemap');
+            if (ways.length < 2) issues.push('Only ' + (ways.length ? ways.join(' + ') : 'no recognizable') + ' way(s) to find content; 2.4.5 needs ≥2 (e.g. nav + search or sitemap)');
+            out.multipleways = { label: 'Alternate Paths to Content', issues, wcag: '2.4.5' };
+          }
+
+          // 4. Skip Link Functionality — 2.4.1
+          if (checks.includes('skiplink')) {
+            const issues = [];
+            const anchors = [...document.querySelectorAll('a[href^="#"]')];
+            const skip = anchors.find(a => /skip|jump to/i.test(a.textContent || '') || /skip/i.test(a.getAttribute('href') || ''));
+            if (!skip) issues.push('No "skip to main content" link found (checked in-page # anchors)');
+            else {
+              const id = (skip.getAttribute('href') || '').slice(1);
+              if (!id) issues.push('Skip link href is "#" — it points nowhere');
+              else if (!document.getElementById(id) && !document.querySelector('a[name="' + cssEsc(id) + '"]')) {
+                issues.push('Skip link target "#' + id + '" does not exist on the page');
+              }
+            }
+            out.skiplink = { label: 'Skip Link Functionality', issues, wcag: '2.4.1' };
+          }
+
+          // 5. Keyboard Path Verification — 2.1.1 / 2.4.3
+          if (checks.includes('keyboardpath')) {
+            const issues = [];
+            [...document.querySelectorAll('[tabindex]')]
+              .filter(el => parseInt(el.getAttribute('tabindex'), 10) > 0)
+              .slice(0, 15)
+              .forEach(el => issues.push('Positive tabindex=' + el.getAttribute('tabindex') + ' on ' + brief(el) + ' — disrupts natural focus order (2.4.3)'));
+            const badNeg = [...document.querySelectorAll('a[href],button,input,select,textarea')]
+              .filter(el => el.getAttribute('tabindex') === '-1' && !el.hasAttribute('disabled'));
+            if (badNeg.length) issues.push(badNeg.length + ' natively focusable control(s) removed from tab order via tabindex="-1"');
+            out.keyboardpath = { label: 'Keyboard Path Verification', issues: issues.slice(0, 20), wcag: '2.1.1, 2.4.3' };
+          }
+
+          // 6. Modal & Dialog Escape — 2.1.2 (interaction required)
+          if (checks.includes('modalescape')) {
+            const dialogs = [...document.querySelectorAll('dialog,[role="dialog"],[role="alertdialog"],[aria-modal="true"]')];
+            const issues = [];
+            if (!dialogs.length) issues.push('No modal/dialog in the current DOM. Open each modal and confirm Escape (or a visible close control) exits it without trapping keyboard focus.');
+            else dialogs.forEach(d => issues.push(brief(d) + ' — verify Escape closes it and focus is not trapped (2.1.2)'));
+            out.modalescape = { label: 'Modal & Dialog Escape', issues, wcag: '2.1.2', infoOnly: true };
+          }
+
+          // 7. Form Error Handling — 3.3.1 / 3.3.3 / 4.1.3
+          if (checks.includes('formerror')) {
+            const issues = [];
+            const forms = [...document.querySelectorAll('form')];
+            if (!forms.length) issues.push('No <form> on the page to validate');
+            else {
+              if (!document.querySelector('[aria-live],[role="alert"],[role="status"]')) {
+                issues.push('No aria-live / role="alert" region — validation & status messages may not be announced (4.1.3)');
+              }
+              const req = [...document.querySelectorAll('input[required],select[required],textarea[required],[aria-required="true"]')];
+              const noDesc = req.filter(el => !el.getAttribute('aria-describedby') && !el.getAttribute('aria-errormessage'));
+              if (noDesc.length) issues.push(noDesc.length + ' required field(s) lack aria-describedby / aria-errormessage to carry an error suggestion (3.3.1, 3.3.3)');
+            }
+            out.formerror = { label: 'Form Error Handling', issues, wcag: '3.3.1, 3.3.3, 4.1.3' };
+          }
+
+          // 8. Session Timing — 2.2.1 / 2.2.6 (not statically detectable)
+          if (checks.includes('sessiontiming')) {
+            out.sessiontiming = {
+              label: 'Session Timing',
+              issues: ['Cannot be auto-detected. Manually verify a warning appears before session expiry, the user can extend the session, and no entered data is lost (2.2.1, 2.2.6).'],
+              wcag: '2.2.1, 2.2.6', infoOnly: true
+            };
+          }
+
+          // 9. Destructive Action Confirmation — 3.3.4 / 3.3.6 (interaction required)
+          if (checks.includes('destructive')) {
+            const re = /\b(delete|remove|discard|cancel subscription|deactivate|close account|erase|clear all|pay now|place order|submit order|confirm purchase|buy now|checkout)\b/i;
+            const found = [...document.querySelectorAll('button,a[href],input[type="submit"],[role="button"]')]
+              .map(el => (accName(el) || '').trim())
+              .filter(name => name && re.test(name))
+              .map(name => '"' + name.slice(0, 40) + '"');
+            const uniq = [...new Set(found)];
+            const issues = uniq.length
+              ? ['Verify each finalizes only after explicit confirmation, or is reversible/undoable (3.3.4, 3.3.6):', ...uniq.slice(0, 20)]
+              : ['No obviously destructive/consequential actions detected on this view.'];
+            out.destructive = { label: 'Destructive Action Confirmation', issues, wcag: '3.3.4, 3.3.6', infoOnly: true };
+          }
+
+          // 10. Link Purpose — 2.4.4 / 2.4.9
+          if (checks.includes('linkpurpose')) {
+            const bad = new Set(['click here', 'here', 'read more', 'more', 'link', 'this', 'click', 'learn more', 'details', 'more info', 'info', 'go', 'go here', 'this link', 'continue', 'see more', 'view', 'download']);
+            const issues = [...document.querySelectorAll('a[href]')]
+              .filter(a => !a.getAttribute('aria-label') && bad.has((a.textContent || '').trim().toLowerCase()))
+              .map(a => '"' + a.textContent.trim() + '" → ' + (a.href || '').slice(0, 60));
+            out.linkpurpose = { label: 'Link Purpose', issues: issues.slice(0, 25), wcag: '2.4.4, 2.4.9' };
+          }
+
+          // 11. Form Labeling — 3.3.2 / 1.3.1
+          if (checks.includes('formlabels')) {
             const sel = 'input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([type=image]), select, textarea';
             const issues = [...document.querySelectorAll(sel)]
               .filter(inp => {
-                if (inp.id && document.querySelector('label[for="' + inp.id + '"]')) return false;
+                if (inp.id && document.querySelector('label[for="' + cssEsc(inp.id) + '"]')) return false;
                 if ((inp.getAttribute('aria-label') || '').trim()) return false;
-                if (inp.getAttribute('aria-labelledby')) {
-                  const ids = inp.getAttribute('aria-labelledby').trim().split(/\s+/);
-                  if (ids.some(id => id && document.getElementById(id))) return false;
-                }
+                const lb = inp.getAttribute('aria-labelledby');
+                if (lb && lb.trim().split(/\s+/).some(id => id && document.getElementById(id))) return false;
                 if (inp.closest('label')) return false;
                 if ((inp.getAttribute('title') || '').trim()) return false;
                 return true;
               })
-              .map(inp => brief(inp));
-            out.labels = { label: 'Unlabeled form inputs', issues, wcag: '1.3.1' };
+              .map(inp => {
+                const ph = (inp.getAttribute('placeholder') || '').trim();
+                return brief(inp) + (ph ? ' — placeholder only, no persistent <label>' : ' — no associated label');
+              });
+            out.formlabels = { label: 'Form Labeling', issues: issues.slice(0, 25), wcag: '3.3.2, 1.3.1' };
           }
 
-          // 3. Heading hierarchy
-          if (checks.includes('headings')) {
-            const headings = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')]
-              .map(h => ({ level: parseInt(h.tagName[1]), text: h.textContent.trim().slice(0,50) }));
+          // 12. Redundant Entry — 3.3.7 (multi-step flow, not statically detectable)
+          if (checks.includes('redundant')) {
+            out.redundant = {
+              label: 'Redundant Entry',
+              issues: ['Manual check: across a multi-step flow, information entered earlier (name, email, address) should be auto-populated or selectable later rather than re-entered (3.3.7).'],
+              wcag: '3.3.7', infoOnly: true
+            };
+          }
+
+          // 13. Focus Visibility — 2.4.7 / 2.4.11
+          if (checks.includes('focusvis')) {
             const issues = [];
-            const h1s = headings.filter(h => h.level === 1);
-            if (h1s.length === 0) issues.push('No <h1> found on page');
-            if (h1s.length > 1) issues.push(h1s.length + ' <h1> elements: ' + h1s.map(h => '"' + h.text + '"').join(', '));
-            for (let i = 1; i < headings.length; i++) {
-              if (headings[i].level > headings[i-1].level + 1) {
-                issues.push('h' + headings[i-1].level + '→h' + headings[i].level + ' skip after "' + headings[i-1].text.slice(0,30) + '"');
+            const killed = [];
+            for (const sheet of document.styleSheets) {
+              let rules;
+              try { rules = sheet.cssRules; } catch (e) { continue; }
+              if (!rules) continue;
+              for (const r of rules) {
+                if (!r.selectorText || !r.style) continue;
+                const s = r.selectorText;
+                if (/:focus(?!-visible)/.test(s) || /(^|,)\s*\*/.test(s)) {
+                  const o = (r.style.outlineStyle || r.style.outline || '').toLowerCase();
+                  const ow = (r.style.outlineWidth || '').toLowerCase();
+                  if ((/none/.test(o) || /^0/.test(ow)) && !/:focus-visible/.test(s)) {
+                    killed.push(s.slice(0, 60));
+                  }
+                }
               }
             }
-            out.headings = { label: 'Heading hierarchy', issues, wcag: '1.3.1' };
+            const uniq = [...new Set(killed)];
+            if (uniq.length) issues.push('Focus outline removed without a :focus-visible replacement in: ' + uniq.slice(0, 10).join('  ;  '));
+            const inline = [...document.querySelectorAll('a[href],button,input,select,textarea')]
+              .filter(el => /outline\s*:\s*(none|0\b)/.test(el.getAttribute('style') || ''));
+            if (inline.length) issues.push(inline.length + ' element(s) hide the focus ring via inline outline:none');
+            out.focusvis = { label: 'Focus Visibility', issues, wcag: '2.4.7, 2.4.11' };
           }
 
-          // 4. Missing landmark regions
-          if (checks.includes('landmarks')) {
-            const issues = [];
-            if (!document.querySelector('main,[role="main"]'))        issues.push('No <main> or role="main"');
-            if (!document.querySelector('nav,[role="navigation"]'))   issues.push('No <nav> or role="navigation"');
-            if (!document.querySelector('header,[role="banner"]'))    issues.push('No <header> or role="banner"');
-            if (!document.querySelector('footer,[role="contentinfo"]')) issues.push('No <footer> or role="contentinfo"');
-            out.landmarks = { label: 'Missing landmark regions', issues, wcag: '1.3.6' };
+          // 14. ARIA State Toggling — 4.1.2
+          if (checks.includes('ariastate')) {
+            const togglers = [...document.querySelectorAll('button,[role="button"],[aria-haspopup],[data-toggle],[class*="accordion" i],[class*="dropdown" i],[class*="collapse" i]')];
+            const missing = togglers
+              .filter(el => {
+                if (el.hasAttribute('aria-expanded') || el.hasAttribute('aria-pressed') || el.hasAttribute('aria-checked') || el.hasAttribute('aria-selected')) return false;
+                return el.hasAttribute('aria-haspopup') || el.hasAttribute('data-toggle') || /accordion|dropdown|toggle|collapse/i.test(el.className);
+              })
+              .map(el => brief(el) + ' — interactive widget with no aria-expanded/aria-pressed state');
+            const tabs = [...document.querySelectorAll('[role="tab"]')]
+              .filter(el => !el.hasAttribute('aria-selected'))
+              .map(el => brief(el) + ' — role="tab" without aria-selected');
+            out.ariastate = { label: 'ARIA State Toggling', issues: [...missing, ...tabs].slice(0, 25), wcag: '4.1.2' };
           }
 
-          // 5. Invalid ARIA roles
-          if (checks.includes('aria')) {
-            const valid = new Set(['alert','alertdialog','application','article','banner','button','cell','checkbox','columnheader','combobox','complementary','contentinfo','definition','dialog','directory','document','feed','figure','form','grid','gridcell','group','heading','img','link','list','listbox','listitem','log','main','marquee','math','menu','menubar','menuitem','menuitemcheckbox','menuitemradio','navigation','none','note','option','presentation','progressbar','radio','radiogroup','region','row','rowgroup','rowheader','scrollbar','search','searchbox','separator','slider','spinbutton','status','switch','tab','table','tablist','tabpanel','term','textbox','timer','toolbar','tooltip','tree','treegrid','treeitem']);
-            const issues = [...document.querySelectorAll('[role]')]
-              .filter(el => !valid.has(el.getAttribute('role')))
-              .map(el => brief(el) + ': role="' + el.getAttribute('role') + '"');
-            out.aria = { label: 'Invalid ARIA roles', issues, wcag: '4.1.2' };
-          }
-
-          // 6. Low-quality link text
-          if (checks.includes('links')) {
-            const bad = new Set(['click here','here','read more','more','link','this','click','learn more','details','more info','info','go','go here','this link','continue','see more']);
-            const issues = [...document.querySelectorAll('a[href]')]
-              .filter(a => !a.getAttribute('aria-label') && bad.has(a.textContent.trim().toLowerCase()))
-              .map(a => '"' + a.textContent.trim() + '" → ' + (a.href || '').slice(0,60));
-            out.links = { label: 'Low-quality link text', issues, wcag: '2.4.4' };
-          }
-
-          // 7. Color contrast (WCAG AA)
+          // 15. Color Contrast — 1.4.3 / 1.4.11
           if (checks.includes('contrast')) {
             function getBg(el) {
               let cur = el;
@@ -1217,79 +1032,151 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               }
               return 'rgb(255,255,255)';
             }
-            function parseRGB(s) {
-              const m = s.match(/\d+/g);
-              return m ? [+m[0], +m[1], +m[2]] : null;
-            }
-            function lum(r,g,b) {
-              let t = 0;
-              const w = [0.2126,0.7152,0.0722];
-              [r,g,b].forEach((c,i) => {
-                const s = c/255;
-                t += (s <= 0.04045 ? s/12.92 : Math.pow((s+0.055)/1.055, 2.4)) * w[i];
-              });
+            function parseRGB(s) { const m = s.match(/\d+/g); return m ? [+m[0], +m[1], +m[2]] : null; }
+            function lum(r, g, b) {
+              let t = 0; const w = [0.2126, 0.7152, 0.0722];
+              [r, g, b].forEach((c, i) => { const s = c / 255; t += (s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)) * w[i]; });
               return t;
             }
-            function contrastRatio(c1,c2) {
-              const l1=lum(...c1), l2=lum(...c2);
-              return (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05);
-            }
-
+            function ratio(c1, c2) { const l1 = lum(...c1), l2 = lum(...c2); return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); }
             const issues = [];
             const seen = new Set();
-            const els = [...document.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,td,th,a,button,label')]
+            const els = [...document.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,td,th,a,button,label,span')]
               .filter(el => el.offsetParent !== null && el.textContent.trim().length > 1)
-              .slice(0, 80);
-
+              .slice(0, 90);
             for (const el of els) {
               const st = getComputedStyle(el);
               const fg = parseRGB(st.color);
               const bg = parseRGB(getBg(el));
               if (!fg || !bg) continue;
-              const r = contrastRatio(fg, bg);
+              const r = ratio(fg, bg);
               const fs = parseFloat(st.fontSize);
               const bold = parseInt(st.fontWeight) >= 700;
               const large = fs >= 18 || (bold && fs >= 14);
               const minAA = large ? 3 : 4.5;
               if (r < minAA) {
                 const key = brief(el) + st.color;
-                if (!seen.has(key)) {
-                  seen.add(key);
-                  issues.push(brief(el) + ': ' + r.toFixed(2) + ':1 (need ' + minAA + ':1' + (large ? ', large text' : '') + ')');
-                }
+                if (!seen.has(key)) { seen.add(key); issues.push(brief(el) + ': ' + r.toFixed(2) + ':1 (need ' + minAA + ':1' + (large ? ', large text' : '') + ')'); }
               }
             }
-            out.contrast = { label: 'Color contrast (WCAG AA)', issues: issues.slice(0,15), wcag: '1.4.3' };
+            out.contrast = { label: 'Color Contrast', issues: issues.slice(0, 20), wcag: '1.4.3, 1.4.11' };
           }
 
-          // 8. Touch target size
-          if (checks.includes('touch')) {
-            const issues = [...document.querySelectorAll('a,button,input,select,textarea,[role="button"],[role="link"]')]
-              .filter(el => el.offsetParent !== null)
-              .filter(el => { const r = el.getBoundingClientRect(); return r.width < 44 || r.height < 44; })
-              .slice(0, 15)
-              .map(el => { const r = el.getBoundingClientRect(); return brief(el) + ': ' + Math.round(r.width) + '×' + Math.round(r.height) + 'px'; });
-            out.touch = { label: 'Touch targets <44×44px', issues, wcag: '2.5.5' };
-          }
-
-          // 9. Keyboard reachability
-          if (checks.includes('keyboard')) {
+          // 16. Reflow & Zoom — 1.4.10 / 1.4.4
+          if (checks.includes('reflow')) {
             const issues = [];
-            [...document.querySelectorAll('a[href],button,input,select,textarea,[role="button"]')]
-              .filter(el => !el.hasAttribute('disabled') && el.getAttribute('tabindex') === '-1')
-              .slice(0, 10)
-              .forEach(el => issues.push(brief(el) + ' — tabindex="-1" (removed from tab order)'));
-            [...document.querySelectorAll('a[href],button,input,select,textarea')]
-              .filter(el => /outline\s*:\s*(none|0\b)/.test(el.getAttribute('style') || ''))
-              .slice(0, 10)
-              .forEach(el => issues.push(brief(el) + ' — inline outline:none (hides focus ring)'));
-            out.keyboard = { label: 'Keyboard reachability', issues, wcag: '2.1.1' };
+            const vp = document.querySelector('meta[name="viewport"]');
+            if (vp) {
+              const c = (vp.getAttribute('content') || '').toLowerCase();
+              if (/user-scalable\s*=\s*(no|0)/.test(c)) issues.push('viewport meta sets user-scalable=no — blocks zoom (1.4.4)');
+              const ms = c.match(/maximum-scale\s*=\s*([\d.]+)/);
+              if (ms && parseFloat(ms[1]) < 2) issues.push('viewport meta caps maximum-scale=' + ms[1] + ' — prevents 200% zoom (1.4.4)');
+            }
+            if (document.documentElement.scrollWidth > window.innerWidth + 4) {
+              issues.push('Page scrolls horizontally at current width (' + document.documentElement.scrollWidth + 'px > ' + window.innerWidth + 'px viewport) — check reflow at 320px / 400% (1.4.10)');
+            }
+            out.reflow = { label: 'Reflow & Zoom', issues, wcag: '1.4.10, 1.4.4' };
+          }
+
+          // 17. Motion & Flashing — 2.2.2 / 2.3.1
+          if (checks.includes('motion')) {
+            const issues = [];
+            [...document.querySelectorAll('video[autoplay],audio[autoplay]')]
+              .filter(m => !m.hasAttribute('controls'))
+              .forEach(m => issues.push(brief(m) + ' — autoplaying ' + m.tagName.toLowerCase() + ' with no controls to pause/stop (2.2.2)'));
+            if (document.querySelector('marquee,blink')) issues.push('<marquee>/<blink> element present — continuous motion with no pause (2.2.2)');
+            let animated = 0;
+            [...document.querySelectorAll('*')].slice(0, 2000).forEach(el => {
+              const st = getComputedStyle(el);
+              if (st.animationName && st.animationName !== 'none' && /infinite/.test(st.animationIterationCount)) animated++;
+            });
+            if (animated) issues.push(animated + ' element(s) with infinite CSS animation — ensure motion can be paused/stopped/hidden and never flashes >3×/sec (2.2.2, 2.3.1)');
+            out.motion = { label: 'Motion & Flashing', issues, wcag: '2.2.2, 2.3.1' };
+          }
+
+          // 18. Screen Reader Announcements — 1.1.1 / 4.1.3 / 4.1.2
+          if (checks.includes('screenreader')) {
+            const issues = [];
+            const noAlt = [...document.querySelectorAll('img')].filter(img => !img.hasAttribute('alt')).length;
+            if (noAlt) issues.push(noAlt + ' <img> missing an alt attribute — no text alternative to announce (1.1.1)');
+            const namelessBtns = [...document.querySelectorAll('button,[role="button"],a[href]')]
+              .filter(el => el.offsetParent !== null && !accName(el))
+              .slice(0, 15)
+              .map(el => brief(el) + ' — control has no accessible name (4.1.2)');
+            issues.push(...namelessBtns);
+            if (!document.querySelector('[aria-live],[role="status"],[role="alert"],[role="log"]')) {
+              issues.push('No live region (aria-live / role="status") — dynamic status updates will not be announced (4.1.3)');
+            }
+            out.screenreader = { label: 'Screen Reader Announcements', issues: issues.slice(0, 25), wcag: '1.1.1, 4.1.3, 4.1.2' };
+          }
+
+          // 19. Real-World Task Usability — cross-cutting (manual)
+          if (checks.includes('realworld')) {
+            out.realworld = {
+              label: 'Real-World Task Usability',
+              issues: ['Manual, holistic check: using only a keyboard and/or screen reader, complete each key task end to end (sign up, checkout, find content) and confirm it succeeds without excessive friction, confusion, or dead ends.'],
+              wcag: 'cross-cutting', infoOnly: true
+            };
           }
 
           return out;
         }, [checks]);
 
-        sendResponse({ ok: true, results });
+        // ── axe-core: authoritative engine, merged into the suites above by WCAG SC ──
+        let axeError = null;
+        const axeSuites = {
+          titles: ['2.4.2'], skiplink: ['2.4.1'], keyboardpath: ['2.1.1', '2.4.3'],
+          formerror: ['3.3.1', '3.3.3', '4.1.3'], linkpurpose: ['2.4.4', '2.4.9'],
+          formlabels: ['3.3.2', '1.3.1'], ariastate: ['4.1.2'], contrast: ['1.4.3', '1.4.11'],
+          reflow: ['1.4.10', '1.4.4'], motion: ['2.2.2', '2.3.1'],
+          screenreader: ['1.1.1', '4.1.3', '4.1.2']
+        };
+        // axe is strictly better here — drop the heuristic issues when axe succeeds
+        const axeReplace = new Set(['contrast']);
+
+        if (Object.keys(axeSuites).some(k => checks.includes(k))) {
+          let violations = [];
+          try {
+            await chrome.scripting.executeScript({ target: { tabId }, files: ['axe.min.js'] });
+            violations = await exec(tabId, async function () {
+              if (typeof window.axe === 'undefined') return { __error: 'axe-core failed to load' };
+              try {
+                const r = await window.axe.run(document, {
+                  resultTypes: ['violations'],
+                  runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] }
+                });
+                return (r.violations || []).map(function (v) {
+                  return {
+                    id: v.id,
+                    help: v.help,
+                    sc: (v.tags || []).map(function (t) { const m = /^wcag(\d)(\d)(\d+)$/.exec(t); return m ? m[1] + '.' + m[2] + '.' + m[3] : null; }).filter(Boolean),
+                    nodes: (v.nodes || []).slice(0, 10).map(function (n) { return (n.target || []).join(' '); })
+                  };
+                });
+              } catch (e) { return { __error: e.message }; }
+            }, []);
+          } catch (e) {
+            violations = { __error: e.message };
+          }
+          if (violations && violations.__error) { axeError = violations.__error; violations = []; }
+
+          for (const key of Object.keys(axeSuites)) {
+            if (!results[key] || !checks.includes(key)) continue;
+            const scs = axeSuites[key];
+            const axeIssues = [];
+            for (const v of violations) {
+              if (!v.sc.some(s => scs.includes(s))) continue;
+              for (const target of v.nodes) axeIssues.push('axe · ' + v.help + (target ? ' — ' + target : ''));
+            }
+            if (axeReplace.has(key) && !axeError) {
+              results[key].issues = axeIssues;
+            } else if (axeIssues.length) {
+              results[key].issues = [...axeIssues, ...results[key].issues];
+            }
+          }
+        }
+
+        sendResponse({ ok: true, results, axeError });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }

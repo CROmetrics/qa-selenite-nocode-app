@@ -2,6 +2,8 @@
 Selenite — No-Code QA Runner
 Web-based UI: starts a local HTTP server and opens the browser.
 Works identically on Windows and macOS with no extra dependencies.
+
+Originally created and developed by William Wiley. Forked for Cro Metrics.
 """
 import os, json, inspect, threading, time, webbrowser, platform
 from http.server import HTTPServer, BaseHTTPRequestHandler

@@ -22,5 +22,7 @@
     <true/>
     <key>NSRequiresAquaSystemAppearance</key>
     <false/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Originally created and developed by William Wiley. Forked for Cro Metrics.</string>
 </dict>
 </plist>

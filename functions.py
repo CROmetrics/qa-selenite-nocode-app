@@ -1,3 +1,5 @@
+# Originally created and developed by William Wiley. Forked for Cro Metrics.
+
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC

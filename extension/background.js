@@ -15,17 +15,184 @@ async function injectCapture(tabId) {
   await chrome.scripting.executeScript({ target: { tabId }, files: ['console-bridge.js'] });
 }
 
+// ── Full live-console mirror (Browser Console tab) via chrome.debugger/CDP ──
+// The console.* patch above only ever sees the 5 methods it overrides, and only
+// after injection — it structurally cannot see uncaught exceptions, network/CSP
+// errors, or native deprecation warnings. Attaching the debugger protocol gives
+// the same event stream DevTools itself uses, so this is a genuine mirror, not
+// an approximation.
+const CDP_VERSION = '1.3';
+const BROWSER_CONSOLE_CAP = 1000;
+let debuggerTabId = null;
+
+async function addBrowserConsoleLog(entry) {
+  const { browserConsoleLogs = [] } = await chrome.storage.session.get('browserConsoleLogs');
+  browserConsoleLogs.push({ ts: new Date().toLocaleTimeString(), ...entry });
+  if (browserConsoleLogs.length > BROWSER_CONSOLE_CAP) {
+    const evicted = browserConsoleLogs.splice(0, browserConsoleLogs.length - BROWSER_CONSOLE_CAP);
+    // Release remote object handles for evicted expandable entries so long
+    // sessions don't pin objects in the page's memory indefinitely.
+    for (const e of evicted) {
+      if (e.objectId && debuggerTabId) {
+        chrome.debugger.sendCommand({ tabId: debuggerTabId }, 'Runtime.releaseObject', { objectId: e.objectId }).catch(() => {});
+      }
+    }
+  }
+  await chrome.storage.session.set({ browserConsoleLogs });
+}
+
+function formatRemoteArg(o) {
+  if (!o) return '';
+  if (o.unserializableValue) return o.unserializableValue;
+  if ('value' in o) return typeof o.value === 'string' ? o.value : JSON.stringify(o.value);
+  if (o.description) return o.description;
+  return o.type || '';
+}
+
+// One-line preview for eval() return values — same RemoteObject shape as
+// console args, but objects/arrays get a constructor-labeled property preview
+// (closer to what DevTools shows) instead of just their bare "description".
+function formatEvalResult(o) {
+  if (!o || o.type === 'undefined') return 'undefined';
+  if (o.subtype === 'null') return 'null';
+  if (o.unserializableValue) return o.unserializableValue;
+  if (o.type === 'function') {
+    const name = (o.description || '').match(/^(?:function\s*\*?\s*|get\s+|set\s+|class\s+|async\s+)*([\w$]*)/)?.[1] || '';
+    return `ƒ ${name}()`;
+  }
+  if ('value' in o) return typeof o.value === 'string' ? JSON.stringify(o.value) : String(o.value);
+  if (o.preview) {
+    const props = (o.preview.properties || []).map(p => `${p.name}: ${p.value ?? p.type}`).join(', ');
+    const overflow = o.preview.overflow ? ', …' : '';
+    return o.subtype === 'array' ? `[${props}${overflow}]` : `${o.className || o.subtype || o.type} {${props}${overflow}}`;
+  }
+  if (o.description) return o.description;
+  return o.type || 'undefined';
+}
+
+// Kept in sync with console-capture.js's tag list/casing and %c-stripping —
+// the Browser Console's own CRO toggle filters on this "tagged" flag.
+const TAGS = ['[pjs]', '[cro]'];
+function formatConsoleArgs(args) {
+  if (args.length && typeof args[0].value === 'string' && args[0].value.includes('%c')) {
+    const cCount = (args[0].value.match(/%c/g) || []).length;
+    const label  = args[0].value.replace(/%c/g, '').trim();
+    const rest   = args.slice(1 + cCount).map(formatRemoteArg);
+    return [label, ...rest].join(' ').trim();
+  }
+  return args.map(formatRemoteArg).join(' ');
+}
+
+const CONSOLE_TYPE_MAP = { error: 'ERROR', assert: 'ERROR', warning: 'WARNING', info: 'INFO', table: 'INFO', count: 'INFO' };
+const LOG_LEVEL_MAP    = { verbose: 'BROWSER', info: 'INFO', warning: 'WARNING', error: 'ERROR' };
+
+async function setDebuggerStatus(status) {
+  await chrome.storage.session.set({ debuggerStatus: status });
+}
+
+async function attachDebugger(tabId) {
+  try {
+    await chrome.debugger.attach({ tabId }, CDP_VERSION);
+  } catch (e) {
+    throw new Error(`Could not attach (is DevTools open on this tab?): ${e.message}`);
+  }
+  await chrome.debugger.sendCommand({ tabId }, 'Runtime.enable');
+  await chrome.debugger.sendCommand({ tabId }, 'Log.enable');
+  debuggerTabId = tabId;
+  await setDebuggerStatus({ attached: true, tabId, error: null });
+}
+
+async function detachDebugger(tabId) {
+  if (!tabId) return;
+  try { await chrome.debugger.detach({ tabId }); } catch (_) {}
+  if (debuggerTabId === tabId) debuggerTabId = null;
+  await setDebuggerStatus({ attached: false, tabId: null, error: null });
+}
+
+// ── Trusted input helpers ($click/$hover in the eval REPL) ─────────────────
+// Runtime.evaluate runs JS *in the page*, so el.click()/dispatchEvent() there
+// produces an untrusted event (isTrusted: false) — browsers won't open a native
+// <select> popup from that, and some custom widgets gate on trusted input too.
+// The Input domain instead simulates real OS-level mouse input, which Chrome
+// treats as trusted — the same mechanism Puppeteer/Playwright rely on.
+async function resolveElementCenter(tabId, selector) {
+  const expression = `(() => {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (!el) return null;
+    el.scrollIntoView({ block: 'center', inline: 'center' });
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`;
+  const res = await chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', { expression, returnByValue: true });
+  if (res.exceptionDetails) throw new Error(res.exceptionDetails.exception?.description || 'evaluate failed');
+  return res.result?.value || null;
+}
+
+async function dispatchTrustedHover(tabId, x, y) {
+  await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+}
+
+async function dispatchTrustedClick(tabId, x, y) {
+  await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+  await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+  await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+}
+
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (source.tabId !== debuggerTabId) return;
+  if (method === 'Runtime.consoleAPICalled') {
+    const level  = CONSOLE_TYPE_MAP[params.type] || 'BROWSER';
+    const text   = formatConsoleArgs(params.args || []);
+    const tagged = TAGS.some(tag => text.toLowerCase().includes(tag));
+    // Only a single-arg call (e.g. console.log(myObject)) maps cleanly onto one
+    // expandable reference — multi-arg calls keep the flattened text only.
+    const single   = params.args && params.args.length === 1 ? params.args[0] : null;
+    const objectId = single?.objectId || null;
+    addBrowserConsoleLog({ level, text, source: 'console', tagged, objectId, expandable: !!objectId });
+  } else if (method === 'Runtime.exceptionThrown') {
+    const d    = params.exceptionDetails || {};
+    const text = d.exception?.description || d.text || 'Uncaught exception';
+    addBrowserConsoleLog({ level: 'ERROR', text: `Uncaught: ${text.split('\n')[0]}`, source: 'exception' });
+  } else if (method === 'Log.entryAdded') {
+    const e     = params.entry || {};
+    const level = LOG_LEVEL_MAP[e.level] || 'BROWSER';
+    addBrowserConsoleLog({ level, text: `[${e.source}] ${e.text}`, source: 'log' });
+  }
+});
+
+chrome.debugger.onDetach.addListener((source, reason) => {
+  if (source.tabId !== debuggerTabId) return;
+  debuggerTabId = null;
+  setDebuggerStatus({ attached: false, tabId: null, error: `Disconnected (${reason})` });
+});
+
 chrome.tabs.onUpdated.addListener(async (tabId, info) => {
   if (info.status !== 'complete') return;
   const { captureTabId } = await chrome.storage.session.get('captureTabId');
   if (tabId !== captureTabId) return;
   try { await injectCapture(tabId); } catch (_) {}
+  if (debuggerTabId !== tabId) {
+    try { await attachDebugger(tabId); } catch (_) {}
+  } else {
+    // The CDP session survives navigation, but re-enabling defensively covers
+    // the case where a new execution context drops domain state.
+    try {
+      await chrome.debugger.sendCommand({ tabId }, 'Runtime.enable');
+      await chrome.debugger.sendCommand({ tabId }, 'Log.enable');
+    } catch (_) {}
+  }
+});
+
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  const { captureTabId } = await chrome.storage.session.get('captureTabId');
+  if (tabId === captureTabId) await chrome.storage.session.remove('captureTabId');
+  if (tabId === debuggerTabId) await detachDebugger(tabId);
 });
 
 // ── Logging ───────────────────────────────────────────────────────────────
-async function addLog(level, text) {
+async function addLog(level, text, meta) {
   const { logs = [] } = await chrome.storage.session.get('logs');
-  logs.push({ level, text, ts: new Date().toLocaleTimeString() });
+  logs.push({ level, text, ts: new Date().toLocaleTimeString(), ...(meta || {}) });
   await chrome.storage.session.set({ logs });
 }
 
@@ -479,7 +646,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         await injectCapture(tabId);
         await chrome.storage.session.set({ captureTabId: tabId });
-        sendResponse({ ok: true, tabId });
+        let debuggerError = null;
+        try { await attachDebugger(tabId); } catch (e) { debuggerError = e.message; }
+        sendResponse({ ok: true, tabId, debuggerError });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }
@@ -497,14 +666,100 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             func: () => { if (window.__seleniteCaptureRestore) window.__seleniteCaptureRestore(); }
           });
         } catch (_) {}
+        await detachDebugger(captureTabId);
       }
       sendResponse({ ok: true });
     })();
     return true;
 
   } else if (msg.action === 'browserLog') {
-    addLog(msg.level, `[browser] ${msg.text}`);
+    addLog(msg.level, `[browser] ${msg.text}`, { browser: true, tagged: !!msg.tagged });
     sendResponse({ ok: true });
+
+  } else if (msg.action === 'bcEval') {
+    (async () => {
+      if (!debuggerTabId) { sendResponse({ ok: false, error: 'Not attached' }); return; }
+      const tabId = debuggerTabId;
+      await addBrowserConsoleLog({ level: 'CMD', text: msg.expression, source: 'eval-input' });
+      try {
+        // $click('sel') / $hover('sel') — trusted-input helpers, handled here
+        // (not passed to Runtime.evaluate) because they need chrome.debugger's
+        // Input domain, which isn't reachable from page-side JS.
+        const helper = msg.expression.trim().match(/^\$(click|hover)\(\s*(['"])(.*)\2\s*\)$/);
+        if (helper) {
+          const [, action, , selector] = helper;
+          const center = await resolveElementCenter(tabId, selector);
+          if (!center) {
+            await addBrowserConsoleLog({ level: 'ERROR', text: `No element matches: ${selector}`, source: 'eval-result' });
+          } else if (action === 'hover') {
+            await dispatchTrustedHover(tabId, center.x, center.y);
+            await addBrowserConsoleLog({ level: 'BROWSER', text: `Hovered (${Math.round(center.x)}, ${Math.round(center.y)})`, source: 'eval-result' });
+          } else {
+            await dispatchTrustedClick(tabId, center.x, center.y);
+            await addBrowserConsoleLog({ level: 'BROWSER', text: `Clicked (${Math.round(center.x)}, ${Math.round(center.y)})`, source: 'eval-result' });
+          }
+          sendResponse({ ok: true });
+          return;
+        }
+        const res = await chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', {
+          expression: msg.expression,
+          generatePreview: true,
+          awaitPromise: true,
+        });
+        if (res.exceptionDetails) {
+          const d = res.exceptionDetails;
+          const text = d.exception?.description || d.text || 'Error';
+          await addBrowserConsoleLog({ level: 'ERROR', text, source: 'eval-result' });
+        } else {
+          const objectId = res.result?.objectId || null;
+          await addBrowserConsoleLog({
+            level: 'BROWSER', text: formatEvalResult(res.result), source: 'eval-result',
+            objectId, expandable: !!objectId,
+          });
+        }
+        sendResponse({ ok: true });
+      } catch (e) {
+        await addBrowserConsoleLog({ level: 'ERROR', text: e.message, source: 'eval-result' });
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'bcExpand') {
+    (async () => {
+      if (!debuggerTabId) { sendResponse({ ok: false, error: 'Not attached' }); return; }
+      try {
+        const res = await chrome.debugger.sendCommand({ tabId: debuggerTabId }, 'Runtime.getProperties', {
+          objectId: msg.objectId,
+          ownProperties: true,
+          generatePreview: true,
+        });
+        // Match DevTools' full expansion: include non-enumerable own properties
+        // (array .length, etc), accessor get/set pairs (e.g. __proto__), and the
+        // internal [[Prototype]] link — not just enumerable data properties.
+        // The chain terminates naturally at Object.prototype's [[Prototype]]: null.
+        const props = [];
+        for (const p of (res.result || [])) {
+          if (p.value) {
+            props.push({ name: p.name, text: formatEvalResult(p.value), objectId: p.value.objectId || null, expandable: !!p.value.objectId });
+          }
+          if (p.get && p.get.type !== 'undefined') {
+            props.push({ name: `get ${p.name}`, text: formatEvalResult(p.get), objectId: null, expandable: false });
+          }
+          if (p.set && p.set.type !== 'undefined') {
+            props.push({ name: `set ${p.name}`, text: formatEvalResult(p.set), objectId: null, expandable: false });
+          }
+        }
+        for (const ip of (res.internalProperties || [])) {
+          if (!ip.value) continue;
+          props.push({ name: ip.name, text: formatEvalResult(ip.value), objectId: ip.value.objectId || null, expandable: !!ip.value.objectId });
+        }
+        sendResponse({ ok: true, props });
+      } catch (e) {
+        sendResponse({ ok: false, error: `Could not expand (reference expired?): ${e.message}` });
+      }
+    })();
+    return true;
 
   } else if (msg.action === 'startPicker') {
     // Inject picker into the active tab

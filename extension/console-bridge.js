@@ -7,7 +7,7 @@
   window.addEventListener('message', (e) => {
     if (!e.data?.__selenite) return;
     try {
-      chrome.runtime.sendMessage({ action: 'browserLog', level: e.data.level, text: e.data.text });
+      chrome.runtime.sendMessage({ action: 'browserLog', level: e.data.level, text: e.data.text, tagged: e.data.tagged });
     } catch (_) {}
   });
 })();

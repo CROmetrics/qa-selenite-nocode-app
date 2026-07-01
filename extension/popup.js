@@ -5,6 +5,9 @@ let steps = [];       // [{ id, enabled, func, delay, inputs }]
 let nextId = 1;
 let logData = [];
 let filterLevel = null;
+let bcLogData = [];
+let bcFilterLevel = null;
+let bcTagOnly = false;   // Browser Console "CRO" toggle: narrow the live mirror to [PjS]/[cro] tagged lines
 let logOffset = 0;
 let _wasRunning = false;
 
@@ -20,12 +23,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   await refreshScripts();
   await syncLogs();
+  await syncBcLogs();
+  await syncBcStatus();
 
-  // Poll for log updates and running state
+  // Poll for log updates and running state. Test Results and Browser Console
+  // are polled independently so one panel's updates never block the other's.
   setInterval(syncLogs, 600);
+  setInterval(syncBcLogs, 600);
+  setInterval(syncBcStatus, 800);
   setInterval(syncRunState, 800);
 
   await loadUniversalDelay();
+  await loadBcTagFilter();
   await restoreCaptureState();
   initAccordions();
 
@@ -67,6 +76,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('fb-err').addEventListener('click',     function() { setFilter('ERROR',   this); });
   document.getElementById('fb-browser').addEventListener('click', function() { setFilter('BROWSER', this); });
   document.getElementById('btn-clear-log').addEventListener('click', clearLog);
+
+  // Console subtabs
+  document.querySelectorAll('.console-subtab').forEach(b => {
+    b.addEventListener('click', () => showConsoleSubtab(b.dataset.subtab));
+  });
+
+  // Browser Console filter input/buttons
+  document.getElementById('bc-filter-input')?.addEventListener('input', renderBcLog);
+  document.getElementById('bcfb-all')?.addEventListener('click',  function() { setBcFilter(null,      this); });
+  document.getElementById('bcfb-info')?.addEventListener('click', function() { setBcFilter('INFO',    this); });
+  document.getElementById('bcfb-warn')?.addEventListener('click', function() { setBcFilter('WARNING', this); });
+  document.getElementById('bcfb-err')?.addEventListener('click',  function() { setBcFilter('ERROR',   this); });
+  document.getElementById('btn-clear-bc-log')?.addEventListener('click', clearBcLog);
+  document.getElementById('bc-tag-filter-enabled')?.addEventListener('change', onBcTagFilterToggle);
+  document.getElementById('bc-eval-input')?.addEventListener('keydown', onBcEvalKeydown);
+  document.getElementById('bc-log-out')?.addEventListener('click', onBcLogClick);
 
   // Console capture toggle + tab selector
   document.getElementById('capture-enabled').addEventListener('change', onCaptureToggle);
@@ -158,6 +183,177 @@ function setFilter(lv, btn) {
   renderLog();
 }
 
+// ── Browser Console (genuine live mirror, via chrome.debugger/CDP) ──────────
+// Kept as a fully separate data stream/render cycle from the Test Results log
+// above, so the two panels never clobber each other and update independently.
+async function syncBcLogs() {
+  const { browserConsoleLogs = [] } = await chrome.storage.session.get('browserConsoleLogs');
+  if (browserConsoleLogs.length !== bcLogData.length) {
+    bcLogData = browserConsoleLogs;
+    renderBcLog();
+  }
+}
+
+function renderBcLog() {
+  const needle = (document.getElementById('bc-filter-input')?.value || '').trim().toLowerCase();
+  const out = document.getElementById('bc-log-out');
+  if (!out) return;
+  const atBottom = out.scrollHeight - out.scrollTop <= out.clientHeight + 4;
+  out.innerHTML = bcLogData
+    .filter(e => (!bcFilterLevel || e.level === bcFilterLevel)
+              && (!needle || e.text.toLowerCase().includes(needle))
+              && (!bcTagOnly || e.tagged))
+    .map(e => {
+      const badge  = e.level === 'CMD' ? '&gt;' : (e.source === 'eval-result' ? '&#8626;' : e.level);
+      const toggle = e.expandable ? `<button class="bc-expand-toggle" data-object-id="${e.objectId}">&#9656;</button>` : '';
+      return `<div class="bc-entry bc-${e.level}">
+        <span class="bc-ts">${e.ts}</span>
+        <span class="bc-badge">${badge}</span>
+        ${toggle}
+        <span class="bc-text">${esc(e.text)}</span>
+      </div>`;
+    })
+    .join('');
+  if (atBottom) out.scrollTop = out.scrollHeight;
+}
+
+// Lazily expands object/array values via Runtime.getProperties (bcExpand).
+// Delegated on #bc-log-out so it survives re-renders without re-binding.
+// Note: a full renderBcLog() re-render (triggered by a *new* log line arriving)
+// rebuilds innerHTML from bcLogData and does not preserve expanded state.
+async function onBcLogClick(e) {
+  const btn = e.target.closest('.bc-expand-toggle');
+  if (!btn) return;
+  const objectId = btn.dataset.objectId;
+  // Nested (tiered) toggles live inside .bc-child-row, not .bc-entry — match
+  // either so drilling into a second/third level of nesting works the same
+  // way as the top level.
+  const entryRow = btn.closest('.bc-entry, .bc-child-row');
+  if (!entryRow) return;
+  const existing = entryRow.nextElementSibling;
+  if (existing && existing.classList.contains('bc-children') && existing.dataset.parentFor === objectId) {
+    const nowHidden = existing.style.display === 'none';
+    existing.style.display = nowHidden ? '' : 'none';
+    btn.classList.toggle('bc-expanded', nowHidden);
+    return;
+  }
+  btn.disabled = true;
+  const res = await chrome.runtime.sendMessage({ action: 'bcExpand', objectId });
+  btn.disabled = false;
+  const container = document.createElement('div');
+  container.className = 'bc-children';
+  container.dataset.parentFor = objectId;
+  if (!res?.ok) {
+    container.innerHTML = `<div class="bc-child-row" style="color:var(--err)">${esc(res?.error || 'Could not expand')}</div>`;
+  } else {
+    btn.classList.add('bc-expanded');
+    container.innerHTML = res.props.map(p => {
+      const childToggle = p.expandable
+        ? `<button class="bc-expand-toggle" data-object-id="${p.objectId}">&#9656;</button>`
+        : '';
+      return `<div class="bc-child-row">
+        ${childToggle}
+        <span class="bc-key">${esc(p.name)}:</span>
+        <span class="bc-text">${esc(p.text)}</span>
+      </div>`;
+    }).join('') || '<div class="bc-child-row">(no own properties)</div>';
+  }
+  entryRow.insertAdjacentElement('afterend', container);
+}
+
+async function loadBcTagFilter() {
+  const { bcTagFilterEnabled = false } = await chrome.storage.local.get('bcTagFilterEnabled');
+  bcTagOnly = bcTagFilterEnabled;
+  const chk = document.getElementById('bc-tag-filter-enabled');
+  if (chk) chk.checked = bcTagOnly;
+  renderBcLog();
+}
+
+async function onBcTagFilterToggle() {
+  bcTagOnly = document.getElementById('bc-tag-filter-enabled').checked;
+  await chrome.storage.local.set({ bcTagFilterEnabled: bcTagOnly });
+  renderBcLog();
+}
+
+function setBcFilter(lv, btn) {
+  bcFilterLevel = lv;
+  document.querySelectorAll('#bc-filter-btns .btn-icon').forEach(b => {
+    b.style.background = '';
+    b.style.color = '';
+  });
+  btn.style.background = 'var(--brand)';
+  btn.style.color = '#fff';
+  renderBcLog();
+}
+
+async function clearBcLog() {
+  bcLogData = [];
+  await chrome.storage.session.set({ browserConsoleLogs: [] });
+  document.getElementById('bc-log-out').innerHTML = '';
+}
+
+async function syncBcStatus() {
+  const { debuggerStatus } = await chrome.storage.session.get('debuggerStatus');
+  const attached = !!debuggerStatus?.attached;
+  const input = document.getElementById('bc-eval-input');
+  if (input) {
+    input.disabled = !attached;
+    input.placeholder = attached ? '> Type a JS expression and press Enter…' : '> Not attached';
+  }
+  const el = document.getElementById('bc-status');
+  if (!el) return;
+  if (attached) {
+    el.textContent = '● Live — mirroring the captured tab';
+    el.style.color = 'var(--brand)';
+  } else if (debuggerStatus?.error) {
+    el.textContent = `○ Not attached — ${debuggerStatus.error}`;
+    el.style.color = 'var(--err)';
+  } else {
+    el.textContent = '○ Not attached — enable Capture above';
+    el.style.color = 'var(--fg3)';
+  }
+}
+
+// ── Browser Console eval REPL (Runtime.evaluate over CDP) ───────────────────
+let bcEvalHistory = [];
+let bcEvalHistoryIdx = -1;
+
+async function sendBcEval() {
+  const input = document.getElementById('bc-eval-input');
+  const expr = input.value.trim();
+  if (!expr) return;
+  bcEvalHistory.push(expr);
+  bcEvalHistoryIdx = bcEvalHistory.length;
+  input.value = '';
+  await chrome.runtime.sendMessage({ action: 'bcEval', expression: expr });
+  await syncBcLogs();
+}
+
+function onBcEvalKeydown(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    sendBcEval();
+  } else if (e.key === 'ArrowUp' && bcEvalHistory.length) {
+    e.preventDefault();
+    bcEvalHistoryIdx = Math.max(0, bcEvalHistoryIdx - 1);
+    e.target.value = bcEvalHistory[bcEvalHistoryIdx] || '';
+  } else if (e.key === 'ArrowDown' && bcEvalHistory.length) {
+    e.preventDefault();
+    bcEvalHistoryIdx = Math.min(bcEvalHistory.length, bcEvalHistoryIdx + 1);
+    e.target.value = bcEvalHistory[bcEvalHistoryIdx] || '';
+  }
+}
+
+function showConsoleSubtab(name) {
+  document.querySelectorAll('.console-subtab').forEach(b => {
+    const active = b.dataset.subtab === name;
+    b.style.background = active ? 'var(--brand)' : '';
+    b.style.color = active ? '#fff' : '';
+  });
+  document.getElementById('subpanel-test-results')?.classList.toggle('active', name === 'test-results');
+  document.getElementById('subpanel-browser-console')?.classList.toggle('active', name === 'browser-console');
+}
+
 // ── Console capture ───────────────────────────────────────────────────────
 async function loadTabList() {
   const res = await chrome.runtime.sendMessage({ action: 'getTabs' });
@@ -194,7 +390,10 @@ async function onCaptureToggle() {
     if (!res?.ok) {
       document.getElementById('capture-enabled').checked = false;
       alert('Could not inject console capture. Make sure the selected tab is a regular webpage.');
+    } else if (res.debuggerError) {
+      alert(`Test Results capture is active, but the full Browser Console mirror could not attach:\n${res.debuggerError}`);
     }
+    await syncBcStatus();
   } else {
     await chrome.runtime.sendMessage({ action: 'stopCapture' });
   }

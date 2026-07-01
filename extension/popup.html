@@ -112,13 +112,50 @@
 
   /* Console */
   #console-wrap{display:flex;flex-direction:column;gap:5px}
-  #con-hdr{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
-  #filter-btns{display:flex;gap:2px;margin-left:auto}
+  #con-hdr,#bc-hdr{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+  #filter-btns,#bc-filter-btns{display:flex;gap:2px;margin-left:auto}
   #log-out{height:200px;overflow-y:auto;background:#111;border-radius:4px;
     font-family:'Cascadia Code','Menlo',monospace;font-size:11px;
     padding:6px 8px;line-height:1.6;border:1px solid var(--stroke)}
   .log-INFO{color:#89D185}.log-WARNING{color:#CCA700}
   .log-ERROR{color:#F48771}.log-BROWSER{color:#4FC1FF}
+
+  /* Console subtabs */
+  .console-subtabs{display:flex;gap:4px}
+  .console-subpanel{display:none;flex-direction:column;gap:5px}
+  .console-subpanel.active{display:flex}
+
+  /* Browser Console — structured log rows, not a terminal */
+  #bc-log-out{height:200px;overflow-y:auto;background:var(--card);border-radius:4px;
+    border:1px solid var(--stroke);font-size:12px}
+  .bc-entry{display:flex;align-items:flex-start;gap:7px;padding:5px 8px;
+    border-bottom:1px solid var(--stroke);line-height:1.5}
+  .bc-entry:last-child{border-bottom:none}
+  .bc-ts{color:var(--fg3);font-size:10px;flex-shrink:0;margin-top:2px;font-variant-numeric:tabular-nums}
+  .bc-badge{flex-shrink:0;font-size:9px;font-weight:700;letter-spacing:.3px;
+    padding:2px 5px;border-radius:3px;margin-top:1px}
+  .bc-text{color:var(--fg1);word-break:break-word;flex:1;
+    font-family:'Cascadia Code','Menlo',monospace;font-size:11px}
+  .bc-ERROR{background:rgba(244,135,113,.07)}
+  .bc-ERROR .bc-badge{background:rgba(244,135,113,.18);color:var(--err)}
+  .bc-WARNING{background:rgba(204,167,0,.07)}
+  .bc-WARNING .bc-badge{background:rgba(204,167,0,.18);color:var(--warn)}
+  .bc-INFO .bc-badge{background:rgba(137,209,133,.18);color:var(--ok)}
+  .bc-BROWSER .bc-badge{background:rgba(79,193,255,.18);color:var(--info)}
+  .bc-CMD{background:rgba(0,120,212,.06)}
+  .bc-CMD .bc-badge{background:rgba(0,120,212,.2);color:var(--brand)}
+  .bc-CMD .bc-text{font-weight:600}
+  #bc-eval-input:disabled{opacity:.5}
+
+  /* Expandable object/array values (Runtime.getProperties drill-down) */
+  .bc-expand-toggle{background:transparent;border:none;color:var(--fg2);cursor:pointer;
+    font-size:9px;padding:0 2px;flex-shrink:0;line-height:1.6;margin-top:1px}
+  .bc-expand-toggle:hover{color:var(--fg1)}
+  .bc-expand-toggle.bc-expanded{transform:rotate(90deg)}
+  .bc-children{padding-left:14px;margin-left:8px;border-left:1px solid var(--stroke)}
+  .bc-child-row{display:flex;align-items:flex-start;gap:6px;padding:3px 8px;
+    font-family:'Cascadia Code','Menlo',monospace;font-size:11px;line-height:1.5}
+  .bc-key{color:var(--fg2);flex-shrink:0}
 
   /* Toggle switch */
   .toggle-wrap{display:inline-flex;align-items:center;cursor:pointer;flex-shrink:0}
@@ -381,19 +418,52 @@
         </select>
         <button class="btn-icon" id="btn-refresh-tabs" title="Refresh tab list" style="flex-shrink:0">⟳</button>
       </div>
-      <div id="con-hdr">
-        <input type="text" id="filter-input" placeholder="Filter…"
-          style="flex:1;max-width:110px;padding:4px 7px;font-size:11px">
-        <div id="filter-btns">
-          <button class="btn-icon" id="fb-all" style="color:#fff;background:var(--brand)">ALL</button>
-          <button class="btn-icon" id="fb-info">INFO</button>
-          <button class="btn-icon" id="fb-warn">WARN</button>
-          <button class="btn-icon" id="fb-err">ERR</button>
-          <button class="btn-icon" id="fb-browser">PAGE</button>
-          <button class="btn ghost btn-icon" id="btn-clear-log">Clear</button>
-        </div>
+      <div class="console-subtabs">
+        <button class="btn-icon console-subtab" data-subtab="test-results" style="background:var(--brand);color:#fff">Test Results</button>
+        <button class="btn-icon console-subtab" data-subtab="browser-console">Browser Console</button>
       </div>
-      <div id="log-out"></div>
+
+      <!-- Test Results: step-execution log, updates independently of the mirror below -->
+      <div class="console-subpanel active" id="subpanel-test-results">
+        <div id="con-hdr">
+          <input type="text" id="filter-input" placeholder="Filter…"
+            style="flex:1;max-width:110px;padding:4px 7px;font-size:11px">
+          <div id="filter-btns">
+            <button class="btn-icon" id="fb-all" style="color:#fff;background:var(--brand)">ALL</button>
+            <button class="btn-icon" id="fb-info">INFO</button>
+            <button class="btn-icon" id="fb-warn">WARN</button>
+            <button class="btn-icon" id="fb-err">ERR</button>
+            <button class="btn-icon" id="fb-browser">PAGE</button>
+            <button class="btn ghost btn-icon" id="btn-clear-log">Clear</button>
+          </div>
+        </div>
+        <div id="log-out"></div>
+      </div>
+
+      <!-- Browser Console: genuine live mirror of the page's console via CDP -->
+      <div class="console-subpanel" id="subpanel-browser-console">
+        <div id="bc-status" style="font-size:11px;color:var(--fg3)">○ Not attached — enable Capture above</div>
+        <div id="bc-hdr">
+          <input type="text" id="bc-filter-input" placeholder="Filter…"
+            style="flex:1;max-width:110px;padding:4px 7px;font-size:11px">
+          <label class="toggle-wrap" title="Show only [PjS]/[cro] tagged messages">
+            <input type="checkbox" id="bc-tag-filter-enabled">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+          <span style="font-size:11px;color:var(--fg2);flex-shrink:0">CRO</span>
+          <div id="bc-filter-btns">
+            <button class="btn-icon" id="bcfb-all" style="color:#fff;background:var(--brand)">ALL</button>
+            <button class="btn-icon" id="bcfb-info">INFO</button>
+            <button class="btn-icon" id="bcfb-warn">WARN</button>
+            <button class="btn-icon" id="bcfb-err">ERR</button>
+            <button class="btn ghost btn-icon" id="btn-clear-bc-log">Clear</button>
+          </div>
+        </div>
+        <div id="bc-log-out"></div>
+        <input type="text" id="bc-eval-input" placeholder="> Not attached" disabled
+          title="JS expressions, or $click('selector') / $hover('selector') for a trusted click/hover (opens native <select> dropdowns and menus gated on real input)"
+          style="width:100%;font-family:'Cascadia Code','Menlo',monospace;font-size:11px;padding:6px 8px">
+      </div>
     </div>
   </div>
 

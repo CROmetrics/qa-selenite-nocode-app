@@ -238,13 +238,18 @@ async function exec(tabId, fn, args) {
 // ── Action implementations ────────────────────────────────────────────────
 const ACTIONS = {
 
-  open_url: async (tabId, { url, params }) => {
+  open_url: async (tabId, { url, params, qa_mode }) => {
     let fullUrl = (url || '').trim();
     if (!fullUrl) return; // Blank URL — leave the active tab as-is, don't navigate.
 
-    const paramList = Array.isArray(params)
+    let paramList = Array.isArray(params)
       ? params.map(p => String(p).trim()).filter(Boolean)
       : String(params || '').split('\n').map(p => p.trim()).filter(Boolean);
+    if (qa_mode) {
+      // QA param must always be the last parameter on the executed URL.
+      paramList = paramList.filter(p => !p.toLowerCase().startsWith('cro_mode='));
+      paramList.push('cro_mode=qa');
+    }
     if (paramList.length) {
       const sep = fullUrl.includes('?') ? '&' : '?';
       fullUrl = fullUrl + sep + paramList.join('&');
@@ -558,7 +563,7 @@ async function runQueue({ queue, mode, targetTabId, universalDelay }) {
 
 // ── Arg name map (mirrors functions.py signatures) ─────────────────────────
 const ARG_NAMES = {
-  open_url:                  ['url', 'params'],
+  open_url:                  ['url', 'params', 'qa_mode'],
   implicit_wait:             ['seconds'],
   explicit_wait:             ['css_selector', 'timeout'],
   click:                     ['method', 'selector'],

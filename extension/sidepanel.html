@@ -343,7 +343,10 @@
             <span style="font-size:11px;color:var(--fg2)">sec</span>
           </div>
         </div>
-        <button class="btn" id="btn-add-step" style="align-self:flex-start">+ Add Step</button>
+        <div style="display:flex;gap:6px;align-self:flex-start">
+          <button class="btn" id="btn-add-step">+ Add Step</button>
+          <button class="btn danger" id="btn-clear-steps" title="Remove all steps from the queue">Clear All</button>
+        </div>
         <div id="step-list">
           <div id="empty-msg">No steps yet — click + Add Step to begin</div>
         </div>

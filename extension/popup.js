@@ -58,6 +58,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Queue buttons
   document.getElementById('btn-add-step').addEventListener('click', () => addStep());
+  document.getElementById('btn-clear-steps')?.addEventListener('click', clearSteps);
   document.getElementById('btn-run').addEventListener('click', runQueue);
   document.getElementById('btn-stop').addEventListener('click', stopQueue);
 
@@ -630,6 +631,7 @@ function addStep(data, opts = {}) {
     el.querySelector('.rm-btn').addEventListener('click', () => removeStep(id));
     el.querySelector('.up-btn').addEventListener('click', () => moveStep(id, -1));
     el.querySelector('.dn-btn').addEventListener('click', () => moveStep(id, 1));
+    el.querySelector('.dup-btn').addEventListener('click', () => duplicateStep(id));
   }
   el.querySelector('.en-chk').addEventListener('change', e => {
     step.enabled = e.target.checked;
@@ -675,7 +677,8 @@ function buildStepHTML(step, fnNames) {
       <button class="btn-icon up-btn" title="Move up">↑</button>
       <button class="btn-icon dn-btn" title="Move down">↓</button>`;
 
-  const rmButton = locked ? '' : `<button class="btn-icon rm-btn" style="color:var(--err)" title="Remove">✕</button>`;
+  const dupButton = locked ? '' : `<button class="btn-icon dup-btn" title="Duplicate">⧉</button>`;
+  const rmButton  = locked ? '' : `<button class="btn-icon rm-btn" style="color:var(--err)" title="Remove">✕</button>`;
 
   return `
     <div class="step-ctrl">
@@ -685,6 +688,7 @@ function buildStepHTML(step, fnNames) {
       <div class="step-fn-row">
         ${fnControl}
         <span class="step-tooltip-slot">${buildTooltipHTML(step.func)}</span>
+        ${dupButton}
         ${rmButton}
       </div>
       <div class="step-args">${buildArgsHTML(step)}</div>
@@ -818,6 +822,13 @@ function buildOpenUrlArgsHTML(step) {
       <span class="arg-lbl">URL</span>
       <input type="text" data-arg="url" value="${esc(step.inputs.url || '')}" placeholder="https://example.com (optional — leave blank to use active tab)">
     </div>
+    <div class="arg-row">
+      <span class="arg-lbl">QA Mode</span>
+      <label class="toggle-wrap" title="Append cro_mode=qa as a parameter on the executed URL">
+        <input type="checkbox" class="qa-mode-chk"${step.inputs.qa_mode ? ' checked' : ''}>
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+      </label>
+    </div>
     <div class="open-url-params">${rows}</div>
     <button class="btn ghost sm add-open-url-param" type="button" style="align-self:flex-start;margin:4px 0 0;padding:3px 8px;font-size:12px">+ Add parameter</button>`;
 }
@@ -896,6 +907,10 @@ function rerenderStepArgs(el, step) {
 }
 
 function wireOpenUrlArgs(el, step) {
+  el.querySelector('.qa-mode-chk')?.addEventListener('change', e => {
+    step.inputs.qa_mode = e.target.checked;
+    persistQueue();
+  });
   el.querySelectorAll('.open-url-param-input').forEach(inp => {
     inp.addEventListener('input', e => {
       step.inputs.params[Number(inp.dataset.idx)] = e.target.value;
@@ -972,6 +987,43 @@ function removeStep(id) {
   steps.splice(i, 1);
   document.getElementById('step-' + id)?.remove();
   updateCount();
+  persistQueue();
+}
+
+function clearSteps() {
+  const removable = steps.filter(s => !s.locked);
+  if (!removable.length) return;
+  if (!confirm(`Remove all ${removable.length} step${removable.length !== 1 ? 's' : ''} from the queue?`)) return;
+  steps = steps.filter(s => s.locked);
+  document.querySelectorAll('#step-list .step:not(.step-locked)').forEach(el => el.remove());
+  updateCount();
+  persistQueue();
+}
+
+function duplicateStep(id) {
+  const i = steps.findIndex(s => s.id === id);
+  if (i < 0) return;
+  const src = steps[i];
+
+  // Create the copy (deep-clone inputs so nested arrays/objects aren't shared).
+  const copy = addStep({
+    func:    src.func,
+    enabled: src.enabled,
+    delay:   src.delay,
+    inputs:  structuredClone(src.inputs),
+  });
+
+  // addStep() appends to the end; move the copy to sit right after its source.
+  const from = steps.length - 1;
+  const to   = i + 1;
+  if (to !== from) {
+    steps.splice(from, 1);
+    steps.splice(to, 0, copy);
+    const srcEl = document.getElementById('step-' + id);
+    const copyEl = document.getElementById('step-' + copy.id);
+    srcEl.after(copyEl);
+  }
+
   persistQueue();
 }
 

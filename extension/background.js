@@ -43,6 +43,18 @@ async function addBrowserConsoleLog(entry) {
   await chrome.storage.session.set({ browserConsoleLogs });
 }
 
+// ── Metrics (Build tab) ─────────────────────────────────────────────────────
+// Every [PJS]/[cro]-tagged console line is also appended here, so the Build
+// tab's Metrics section can aggregate fires independently of the console
+// panels' caps and Clear buttons.
+const METRICS_CAP = 500;
+async function addMetric(level, text) {
+  const { metricsLog = [] } = await chrome.storage.session.get('metricsLog');
+  metricsLog.push({ ts: new Date().toLocaleTimeString(), t: Date.now(), level, text });
+  if (metricsLog.length > METRICS_CAP) metricsLog.splice(0, metricsLog.length - METRICS_CAP);
+  await chrome.storage.session.set({ metricsLog });
+}
+
 function formatRemoteArg(o) {
   if (!o) return '';
   if (o.unserializableValue) return o.unserializableValue;
@@ -151,6 +163,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
     const single   = params.args && params.args.length === 1 ? params.args[0] : null;
     const objectId = single?.objectId || null;
     addBrowserConsoleLog({ level, text, source: 'console', tagged, objectId, expandable: !!objectId });
+    if (tagged) addMetric(level, text);
   } else if (method === 'Runtime.exceptionThrown') {
     const d    = params.exceptionDetails || {};
     const text = d.exception?.description || d.text || 'Uncaught exception';
@@ -258,16 +271,6 @@ const ACTIONS = {
     await waitForLoad(tabId);
   },
 
-  get_current_url: async (tabId) => {
-    const tab = await chrome.tabs.get(tabId);
-    return tab.url;
-  },
-
-  get_title: async (tabId) => {
-    const tab = await chrome.tabs.get(tabId);
-    return tab.title;
-  },
-
   back: async (tabId) => {
     await chrome.tabs.goBack(tabId);
     await waitForLoad(tabId);
@@ -283,32 +286,8 @@ const ACTIONS = {
     await waitForLoad(tabId);
   },
 
-  maximize_window: async (tabId) => {
-    const tab = await chrome.tabs.get(tabId);
-    await chrome.windows.update(tab.windowId, { state: 'maximized' });
-  },
-
-  minimize_window: async (tabId) => {
-    const tab = await chrome.tabs.get(tabId);
-    await chrome.windows.update(tab.windowId, { state: 'minimized' });
-  },
-
-  implicit_wait: async (_tabId, { seconds }) => {
-    await new Promise(r => setTimeout(r, parseFloat(seconds) * 1000));
-  },
-
   wait_seconds: async (_tabId, { seconds }) => {
     await new Promise(r => setTimeout(r, parseFloat(seconds) * 1000));
-  },
-
-  explicit_wait: async (tabId, { css_selector, timeout }) => {
-    const deadline = Date.now() + parseFloat(timeout) * 1000;
-    while (Date.now() < deadline) {
-      const found = await exec(tabId, (sel) => !!document.querySelector(sel), [css_selector]);
-      if (found) return;
-      await new Promise(r => setTimeout(r, 300));
-    }
-    throw new Error(`Timed out waiting for: ${css_selector}`);
   },
 
   click: async (tabId, { method, selector }) => {
@@ -473,7 +452,7 @@ const ACTIONS = {
   alert: async (_tabId, { action }) => {
     switch (action) {
       case 'accept':
-        await addLog('WARNING', 'Accept alert: alerts are auto-dismissed in extensions. Use explicit_wait before this step if timing is needed.');
+        await addLog('WARNING', 'Accept alert: alerts are auto-dismissed in extensions. Use wait_seconds before this step if timing is needed.');
         break;
       case 'dismiss':
         await addLog('WARNING', 'Dismiss alert: alerts are auto-dismissed in extensions.');
@@ -486,15 +465,27 @@ const ACTIONS = {
     }
   },
 
-  close_browser: async (tabId) => {
-    const tab = await chrome.tabs.get(tabId);
-    await chrome.windows.remove(tab.windowId);
+  track_metric: async (_tabId, { metric }) => {
+    const value = (metric || '').trim();
+    if (!value) throw new Error('No metric selected — define one in the Metrics section');
+    const { metricsLog = [] } = await chrome.storage.session.get('metricsLog');
+    // Only count fires from the current run, not leftovers from earlier sessions.
+    const fires = metricsLog.filter(e =>
+      (e.t || 0) >= _runStartedAt && e.text.toLowerCase().includes(value.toLowerCase()));
+    // A missed metric is a failed assertion, not a broken step — log it and
+    // let the rest of the queue keep running.
+    if (!fires.length) {
+      await addLog('ERROR', `✖ Metric did not fire: ${value}`);
+      return;
+    }
+    return `Metric fired ×${fires.length}: ${value}`;
   },
 };
 
 // ── Execution loop ─────────────────────────────────────────────────────────
 let _running = false;
 let _stopRequested = false;
+let _runStartedAt = 0;  // track_metric only counts fires recorded after this
 
 async function runQueue({ queue, mode, targetTabId, universalDelay }) {
   _running = true;
@@ -511,6 +502,7 @@ async function runQueue({ queue, mode, targetTabId, universalDelay }) {
   }
 
   // Reset console feed and auto-attach capture to the test tab
+  _runStartedAt = Date.now();
   await chrome.storage.session.set({ logs: [], captureTabId: tabId });
   try { await injectCapture(tabId); } catch (_) {}
 
@@ -564,8 +556,6 @@ async function runQueue({ queue, mode, targetTabId, universalDelay }) {
 // ── Arg name map (mirrors functions.py signatures) ─────────────────────────
 const ARG_NAMES = {
   open_url:                  ['url', 'params', 'qa_mode'],
-  implicit_wait:             ['seconds'],
-  explicit_wait:             ['css_selector', 'timeout'],
   click:                     ['method', 'selector'],
   fill:                      ['method', 'selector', 'text'],
   submit:                    ['method', 'selector'],
@@ -574,20 +564,15 @@ const ARG_NAMES = {
   switch_to:                 ['target', 'value'],
   alert:                     ['action'],
   wait_seconds:              ['seconds'],
+  track_metric:              ['metric'],
 };
 
 // ── Descriptions (shown as tooltips in the UI) ────────────────────────────
 const DESCRIPTIONS = {
   open_url:                  'Navigates the browser to the specified URL (with any URL parameters appended) and waits for the page to finish loading. This is always the first step in the queue.',
-  get_current_url:           'Returns the full URL of the currently loaded page and logs it to the console.',
-  get_title:                 'Returns the <title> of the current page and logs it to the console.',
   back:                      'Clicks the browser Back button and waits for the previous page to load.',
   forward:                   'Clicks the browser Forward button and waits for the next page to load.',
   refresh:                   'Reloads the current page and waits for it to fully load again.',
-  maximize_window:           'Expands the browser window to fill the entire screen.',
-  minimize_window:           'Minimises the browser window to the taskbar.',
-  implicit_wait:             'Pauses all subsequent steps by the given number of seconds before looking up any element.',
-  explicit_wait:             'Waits up to "timeout" seconds until a CSS selector matches an element on the page. Fails if it never appears.',
   click:                     'Clicks an element on the page. Choose a method (CSS Selector, ID, Name, XPath, or Link Text) and enter the value, or use the picker (🎯) to select the element visually.',
   fill:                      'Clears an input field and types text into it. Choose a method (CSS Selector, ID, Name, or XPath) and enter the value, or use the picker (🎯) to select the field visually.',
   submit:                    'Submits the form containing the matched element. Choose a method (ID, CSS Selector, or XPath) and enter the value, or use the picker (🎯) to select any field inside the form.',
@@ -596,21 +581,15 @@ const DESCRIPTIONS = {
   switch_to:                 'Changes the active context. Choose Frame (by name), Main Page, Parent Frame, or Window (by title).',
   alert:                     'Handles a JavaScript alert dialog. Choose Accept (OK), Dismiss (Cancel), or Get Text to log the message.',
   wait_seconds:              'Pauses execution for an exact number of seconds before running the next step.',
-  close_browser:             'Closes the entire browser window and ends the session.',
+  track_metric:              'Checks the console output captured during this run for the selected metric (defined in the Metrics section) and reports whether it fired. A missed metric logs an error but does not stop the queue.',
 };
 
 // ── Display names ──────────────────────────────────────────────────────────
 const DISPLAY_NAMES = {
   open_url:                  'Open URL',
-  get_current_url:           'Get Current URL',
-  get_title:                 'Get Page Title',
   back:                      'Go Back',
   forward:                   'Go Forward',
   refresh:                   'Refresh Page',
-  maximize_window:           'Maximize Window',
-  minimize_window:           'Minimize Window',
-  implicit_wait:             'Set Implicit Wait',
-  explicit_wait:             'Wait for Element (CSS)',
   click:                     'Click',
   fill:                      'Fill Field',
   submit:                    'Submit Form',
@@ -619,7 +598,7 @@ const DISPLAY_NAMES = {
   switch_to:                 'Switch To',
   alert:                     'Alert',
   wait_seconds:              'Wait (seconds)',
-  close_browser:             'Close Browser',
+  track_metric:              'Track Metric',
 };
 
 // ── Message listener ───────────────────────────────────────────────────────
@@ -687,6 +666,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   } else if (msg.action === 'browserLog') {
     addLog(msg.level, `[browser] ${msg.text}`, { browser: true, tagged: !!msg.tagged });
+    // The CDP mirror sees the same console call when the debugger is attached
+    // to this tab — only record the metric from this fallback path when it
+    // isn't, so a single fire never counts twice.
+    if (msg.tagged && sender?.tab?.id !== debuggerTabId) addMetric(msg.level, msg.text);
     sendResponse({ ok: true });
 
   } else if (msg.action === 'bcEval') {

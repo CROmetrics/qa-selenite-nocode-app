@@ -7,11 +7,13 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - Side panel UI — build and run test queues without leaving the page
 - Visual step builder — add, reorder, and remove automation steps
 - Element picker — click any element on the page to capture its CSS selector
+- Metrics section — define the metric values that fire in the browser output (often prefixed `[PJS]` or `[cro]`) and assert them during runs with the **Track Metric** step
 - Save and load named scripts (stored in Chrome sync storage)
 - Universal delay override — set a single delay across all steps
 - Two execution modes: **close after run** or **loop continuously**
 - Tab targeting: run on the **active tab** or open a **new tab**
-- Console log with live output and INFO / WARN / ERR filtering
+- Console log with live output and INFO / WARN / ERR filtering, plus a live browser-console mirror with a CRO (`[PJS]`/`[cro]`) filter
+- WCAG 2.2 audit suite in the **Test Suites** tab
 - Stop execution at any time
 
 ## Installation
@@ -28,16 +30,22 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 1. Open the Selenite side panel by clicking the extension icon.
 2. In the **Target** section:
-   - Optionally enter a URL to open before the queue runs (leave blank to use the active tab).
    - Choose an execution mode: **Close after run** or **Loop continuously**.
    - Choose a tab target: **Active tab** or **New tab**.
-3. Click **+ Add Step** to add automation steps to the queue.
-4. For each step:
+3. Every queue starts with a locked **Open URL** step — enter the URL to open (leave blank to use the active tab), plus any URL parameters and the QA Mode toggle (`cro_mode=qa`).
+4. Click **+ Add Step** to add automation steps to the queue.
+5. For each step:
    - Select a function from the dropdown.
-   - Fill in any required arguments (use the picker button `⊕` to capture selectors from the page).
+   - Fill in any required arguments (use the picker button `🎯` to capture selectors from the page).
    - Optionally set a per-step delay (seconds).
    - Use the checkbox to enable/disable individual steps.
-5. Click **Execute** to run the queue.
+6. Click **Execute** to run the queue.
+
+### Tracking Metrics
+
+1. Open the **Metrics** section at the top of the Build tab and click **+ Add Metric** for each console value you want to track (e.g. `Tagging: hero_cta_click`). Metrics persist across sessions.
+2. Add a **Track Metric** step to the queue and pick a metric from the dropdown.
+3. When the step runs, it checks the `[PJS]`/`[cro]`-tagged console output captured during the current run for that value (case-insensitive substring match). A hit logs how many times it fired; a miss logs an error without stopping the queue.
 
 ### Saving and Loading Scripts
 
@@ -49,36 +57,34 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 | Function | Description |
 |---|---|
-| `open_url` | Navigates to a URL and waits for the page to load |
+| `open_url` | Navigates to a URL and waits for the page to load (always the first step) |
 | `click` | Clicks an element (CSS selector, ID, name, XPath, or link text) |
 | `fill` | Clears and types into an input field (CSS selector, ID, name, or XPath) |
 | `submit` | Submits the form containing the matched element |
 | `select_by_name` | Selects a dropdown option by element name and option value |
 | `send_keys_action` | Sends keystrokes to the currently focused element |
-| `explicit_wait` | Waits up to N seconds until a CSS selector is present |
-| `implicit_wait` | Pauses all subsequent steps by N seconds |
 | `wait_seconds` | Pauses for an exact number of seconds |
 | `back` | Navigates back in browser history |
 | `forward` | Navigates forward in browser history |
 | `refresh` | Reloads the current page |
-| `get_current_url` | Logs the current page URL to the console |
-| `get_title` | Logs the current page title to the console |
-| `maximize_window` | Maximizes the browser window |
-| `minimize_window` | Minimizes the browser window |
 | `switch_to` | Switches context to a frame, parent frame, main page, or window |
 | `alert` | Accepts, dismisses, or reads a browser alert dialog |
-| `close_browser` | Closes the browser window and ends the session |
+| `track_metric` | Checks the run's console output for a metric defined in the Metrics section |
 
 ## Project Structure
 
 ```
 extension/
-├── manifest.json      # Chrome extension manifest (MV3)
-├── sidepanel.html     # Side panel UI
-├── popup.js           # Queue builder, execution engine, UI logic
-├── background.js      # Service worker (side panel + tab management)
-├── picker.js          # In-page element picker (injected on demand)
-└── icons/             # Extension icons (16, 48, 128px)
+├── manifest.json       # Chrome extension manifest (MV3)
+├── sidepanel.html      # Side panel UI
+├── popup.html          # Popup UI (same layout as the side panel)
+├── popup.js            # Queue builder, Metrics section, UI logic (shared by both UIs)
+├── background.js       # Service worker (queue execution, console capture, metrics)
+├── picker.js           # In-page element picker (injected on demand)
+├── console-capture.js  # MAIN-world console patch (relays [PJS]/[cro] tagged output)
+├── console-bridge.js   # ISOLATED-world bridge to the service worker
+├── axe.min.js          # axe-core, used by the WCAG audit suite
+└── icons/              # Extension icons (16, 48, 128px)
 ```
 
 ## Script Format

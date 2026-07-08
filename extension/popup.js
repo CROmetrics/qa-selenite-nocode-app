@@ -8,6 +8,7 @@ let filterLevel = null;
 let bcLogData = [];
 let bcFilterLevel = null;
 let bcTagOnly = false;   // Browser Console "CRO" toggle: narrow the live mirror to [PjS]/[cro] tagged lines
+let metrics = [];        // User-defined metric values (Build tab → Metrics), persisted in storage.local
 let logOffset = 0;
 let _wasRunning = false;
 
@@ -34,6 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await syncLogs();
   await syncBcLogs();
   await syncBcStatus();
+  await loadMetrics();
 
   // Poll for log updates and running state. Test Results and Browser Console
   // are polled independently so one panel's updates never block the other's.
@@ -55,6 +57,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Test Suites tab
   document.getElementById('btn-run-wcag')?.addEventListener('click', runWcagAudit);
   initSuiteTooltips();
+
+  // Metrics section
+  document.getElementById('btn-add-metric')?.addEventListener('click', () => addMetricRow());
+  const metricList = document.getElementById('metric-list');
+  metricList?.addEventListener('input', onMetricInput);
+  metricList?.addEventListener('click', onMetricRemove);
 
   // Queue buttons
   document.getElementById('btn-add-step').addEventListener('click', () => addStep());
@@ -307,6 +315,68 @@ async function clearBcLog() {
   bcLogData = [];
   await chrome.storage.session.set({ browserConsoleLogs: [] });
   document.getElementById('bc-log-out').innerHTML = '';
+}
+
+// ── Metrics (Build tab) ─────────────────────────────────────────────────────
+// User-entered metric values — the strings that fire in the browser output,
+// typically prefixed [PJS] or [cro] (the same values the Console tab's CRO
+// toggle surfaces). Stored in storage.local as `metricsList`; a tracking
+// mechanism consuming these is planned as follow-up work.
+async function loadMetrics() {
+  const { metricsList = [] } = await chrome.storage.local.get('metricsList');
+  metrics = metricsList;
+  renderMetrics();
+  // The queue is restored before this runs — give any restored Track Metric
+  // steps their dropdown options now that the list is in memory.
+  refreshTrackMetricSteps();
+}
+
+function persistMetrics() {
+  chrome.storage.local.set({ metricsList: metrics });
+}
+
+function renderMetrics() {
+  const list = document.getElementById('metric-list');
+  if (!list) return;
+  const countEl = document.getElementById('metric-count');
+  if (countEl) countEl.textContent = `${metrics.length} metric${metrics.length === 1 ? '' : 's'}`;
+
+  if (!metrics.length) {
+    list.innerHTML = '<div id="metrics-empty">No metrics yet — click + Add Metric to track a value</div>';
+    return;
+  }
+  list.innerHTML = metrics.map((m, i) => `
+    <div class="metric-row">
+      <input type="text" data-metric-idx="${i}" placeholder="Metric value, e.g. Tagging: hero_cta_click" value="${esc(m).replace(/"/g, '&quot;')}">
+      <button class="btn-icon" data-metric-remove="${i}" title="Remove metric">✕</button>
+    </div>`).join('');
+}
+
+function addMetricRow() {
+  metrics.push('');
+  persistMetrics();
+  renderMetrics();
+  document.querySelector(`#metric-list input[data-metric-idx="${metrics.length - 1}"]`)?.focus();
+}
+
+// Delegated on #metric-list: typing updates in place (no re-render, so focus
+// is preserved); the ✕ button removes the row. Track Metric steps in the
+// queue mirror this list, so their dropdowns refresh on every change.
+function onMetricInput(e) {
+  const idx = e.target?.dataset?.metricIdx;
+  if (idx === undefined) return;
+  metrics[+idx] = e.target.value;
+  persistMetrics();
+  refreshTrackMetricSteps();
+}
+
+function onMetricRemove(e) {
+  const btn = e.target.closest('[data-metric-remove]');
+  if (!btn) return;
+  metrics.splice(+btn.dataset.metricRemove, 1);
+  persistMetrics();
+  renderMetrics();
+  refreshTrackMetricSteps();
 }
 
 async function syncBcStatus() {
@@ -833,13 +903,45 @@ function buildOpenUrlArgsHTML(step) {
     <button class="btn ghost sm add-open-url-param" type="button" style="align-self:flex-start;margin:4px 0 0;padding:3px 8px;font-size:12px">+ Add parameter</button>`;
 }
 
+// Dropdown of the user-defined metric values from the Metrics section. A value
+// saved on the step but since removed from the list is kept selectable so the
+// step still shows (and runs with) what it was configured to track.
+function buildTrackMetricArgsHTML(step) {
+  const values  = metrics.map(m => m.trim()).filter(Boolean);
+  const current = (step.inputs.metric || '').trim();
+  if (current && !values.includes(current)) values.unshift(current);
+  if (!values.length) {
+    return '<div class="no-args">No metrics defined — add one in the Metrics section first</div>';
+  }
+  if (!current) step.inputs.metric = values[0];
+  const opts = values.map(v =>
+    `<option value="${esc(v).replace(/"/g, '&quot;')}"${v === step.inputs.metric ? ' selected' : ''}>${esc(v)}</option>`
+  ).join('');
+  return `
+    <div class="arg-row">
+      <span class="arg-lbl">Metric</span>
+      <select data-arg="metric" class="method-select">${opts}</select>
+    </div>`;
+}
+
+// Rebuild every Track Metric step's dropdown so it reflects the current
+// Metrics list — called whenever that list changes.
+function refreshTrackMetricSteps() {
+  for (const step of steps) {
+    if (step.func !== 'track_metric') continue;
+    const el = document.getElementById('step-' + step.id);
+    if (el) rerenderStepArgs(el, step);
+  }
+}
+
 function buildArgsHTML(step) {
-  if (step.func === 'click')       return buildMethodArgsHTML(step, CLICK_METHODS,  false);
-  if (step.func === 'fill')        return buildMethodArgsHTML(step, FILL_METHODS,   true);
-  if (step.func === 'submit')      return buildMethodArgsHTML(step, SUBMIT_METHODS, false);
-  if (step.func === 'switch_to')   return buildSwitchArgsHTML(step);
-  if (step.func === 'alert')       return buildAlertArgsHTML(step);
-  if (step.func === OPEN_URL_FUNC) return buildOpenUrlArgsHTML(step);
+  if (step.func === 'click')          return buildMethodArgsHTML(step, CLICK_METHODS,  false);
+  if (step.func === 'fill')           return buildMethodArgsHTML(step, FILL_METHODS,   true);
+  if (step.func === 'submit')         return buildMethodArgsHTML(step, SUBMIT_METHODS, false);
+  if (step.func === 'switch_to')      return buildSwitchArgsHTML(step);
+  if (step.func === 'alert')          return buildAlertArgsHTML(step);
+  if (step.func === 'track_metric')   return buildTrackMetricArgsHTML(step);
+  if (step.func === OPEN_URL_FUNC)    return buildOpenUrlArgsHTML(step);
 
   const args = FN_META[step.func]?.args || [];
   if (!args.length) return '<div class="no-args">No arguments</div>';

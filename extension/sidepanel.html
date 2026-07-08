@@ -242,6 +242,12 @@
   .a11y-summary-total{font-weight:600;color:var(--fg1)}
   .row-spread{display:flex;align-items:center;justify-content:space-between;gap:6px}
 
+  /* Metrics (Build tab) */
+  #metric-list{display:flex;flex-direction:column;gap:4px}
+  #metrics-empty{color:var(--fg3);text-align:center;padding:12px 0;font-size:12px}
+  .metric-row{display:flex;align-items:center;gap:5px}
+  .metric-row input{flex:1;font-family:'Cascadia Code','Menlo',monospace;font-size:11px}
+
   /* Running indicator */
   .run-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);
     display:inline-block;margin-left:4px;animation:pulse 1s infinite}
@@ -271,7 +277,22 @@
   <!-- Build panel -->
   <div class="panel active" id="panel-build">
 
-    <!-- Accordion 1: Target -->
+    <!-- Accordion 1: Metrics -->
+    <div class="accordion" id="acc-metrics">
+      <div class="acc-hdr" data-acc="acc-metrics">
+        <span>Metrics <span id="metric-count" style="font-weight:400;color:var(--fg2);font-size:11px">0 metrics</span></span>
+        <span class="acc-chevron">›</span>
+      </div>
+      <div class="acc-body">
+        <div style="font-size:10px;color:var(--fg3)">Metric values that fire in the browser output — often prefixed [PJS] or [cro], as seen in the Console tab</div>
+        <div id="metric-list">
+          <div id="metrics-empty">No metrics yet — click + Add Metric to track a value</div>
+        </div>
+        <button class="btn" id="btn-add-metric" style="align-self:flex-start">+ Add Metric</button>
+      </div>
+    </div>
+
+    <!-- Accordion 2: Target -->
     <div class="accordion" id="acc-target">
       <div class="acc-hdr" data-acc="acc-target">
         <span>Target</span>
@@ -306,7 +327,7 @@
       </div>
     </div>
 
-    <!-- Accordion 2: Load Script -->
+    <!-- Accordion 3: Load Script -->
     <div class="accordion" id="acc-scripts">
       <div class="acc-hdr" data-acc="acc-scripts">
         <span>Saved Scripts</span>
@@ -325,7 +346,7 @@
       </div>
     </div>
 
-    <!-- Accordion 3: Queue -->
+    <!-- Accordion 4: Queue -->
     <div class="accordion open" id="acc-queue">
       <div class="acc-hdr" data-acc="acc-queue">
         <span>Function Queue <span id="step-count" style="font-weight:400;color:var(--fg2);font-size:11px">0 steps</span></span>

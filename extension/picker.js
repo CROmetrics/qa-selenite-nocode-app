@@ -40,7 +40,6 @@
 
   // ── Interactive element preference ────────────────────────────────────────
   const INTERACTIVE = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'LABEL', 'SUMMARY']);
-  const SKIP        = new Set(['HTML', 'BODY', 'MAIN', 'HEADER', 'FOOTER', 'NAV', 'SECTION', 'ARTICLE']);
 
   // Walk up from el to find the nearest interactive ancestor (max 5 levels).
   // Falls back to el itself if none found.
@@ -55,40 +54,9 @@
   }
 
   // ── Selector builder ───────────────────────────────────────────────────────
-  function buildSelector(el) {
-    if (el.id) return { idValue: el.id, css: '#' + CSS.escape(el.id) };
-
-    // For <a> tags, try href-based selector first (very readable)
-    if (el.tagName === 'A' && el.getAttribute('href')) {
-      const href = el.getAttribute('href');
-      const sel = `a[href="${CSS.escape(href).replace(/\\"/g, '"')}"]`;
-      try {
-        if (document.querySelectorAll(`a[href="${href}"]`).length === 1) {
-          return { idValue: null, css: `a[href="${href}"]` };
-        }
-      } catch (_) {}
-    }
-
-    // Walk up building a unique CSS path
-    const parts = [];
-    let cur = el;
-    while (cur && cur.nodeType === 1 && cur !== document.documentElement) {
-      if (cur.id) { parts.unshift('#' + CSS.escape(cur.id)); break; }
-      let seg = cur.tagName.toLowerCase();
-      const cls = [...cur.classList].filter(c => !/^\d/.test(c) && c.length < 40).slice(0, 2);
-      if (cls.length) seg += cls.map(c => '.' + CSS.escape(c)).join('');
-      const siblings = cur.parentElement
-        ? [...cur.parentElement.children].filter(c => c.tagName === cur.tagName)
-        : [];
-      if (siblings.length > 1) {
-        seg += ':nth-of-type(' + (siblings.indexOf(cur) + 1) + ')';
-      }
-      parts.unshift(seg);
-      if (!SKIP.has(cur.tagName) && document.querySelectorAll(parts.join(' > ')).length === 1) break;
-      cur = cur.parentElement;
-    }
-    return { idValue: null, css: parts.join(' > ') };
-  }
+  // Shared with the session recorder — lives in selector.js, which background
+  // injects alongside this file.
+  const buildSelector = window.__seleniteBuildSelector;
 
   // ── Interaction ────────────────────────────────────────────────────────────
   function getTarget(e) {

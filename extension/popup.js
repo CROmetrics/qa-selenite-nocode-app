@@ -69,6 +69,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     b.addEventListener('click', () => showTestModeSub(null));
   });
   await initTestModePages();
+  // Test Modes: Visual Regression / Cross-Variant Accessibility /
+  // Performance / Session Replay (each is a no-op if its subpage is absent).
+  await initVrMode();
+  await initCvaMode();
+  await initPerfMode();
+  await initSrMode();
 
   // Metrics section
   document.getElementById('btn-add-metric')?.addEventListener('click', () => addMetricRow());
@@ -264,6 +270,9 @@ function showTestModeSub(n) {
   document.querySelectorAll('.testmode-sub').forEach(s => {
     s.style.display = (n && s.id === 'testmode-sub-' + n) ? '' : 'none';
   });
+  // Visual Regression's baseline list reflects the Pages list above it, which
+  // may have been edited since the last visit — refresh on entry.
+  if (n === '3') renderVrBaselines();
 }
 
 // ── Accordions ────────────────────────────────────────────────────────────
@@ -1919,19 +1928,23 @@ async function deleteAbSet() {
 // ── Run orchestration ─────────────────────────────────────────────────────────
 // Compose the final URL for one target: per-target URL (or the shared base),
 // plus the override query string, plus cro_mode=qa last — mirroring the Build
-// tab's Open URL behavior.
-function abComposeUrl(target) {
-  let url = (target.url || abState.baseUrl || '').trim();
+// tab's Open URL behavior. Shared with the Cross-Variant Accessibility mode.
+function composeVariantUrl(target, baseUrl, qaMode) {
+  let url = (target.url || baseUrl || '').trim();
   if (!url) return '';
   let params = [];
   const override = (target.override || '').trim().replace(/^[?&]/, '');
   if (override) params.push(override);
-  if (abState.qaMode) {
+  if (qaMode) {
     params = params.filter(p => !p.toLowerCase().startsWith('cro_mode='));
     params.push('cro_mode=qa');
   }
   if (params.length) url += (url.includes('?') ? '&' : '?') + params.join('&');
   return url;
+}
+
+function abComposeUrl(target) {
+  return composeVariantUrl(target, abState.baseUrl, abState.qaMode);
 }
 
 let _abProgressPoller = null;
@@ -2183,4 +2196,1557 @@ function renderAbResults(allCaptures, metricsList, selectors) {
     hdr.addEventListener('click', () => hdr.closest('[data-suite-row]').classList.toggle('open'));
   });
   el.querySelector('[data-clear-results]')?.addEventListener('click', () => { el.innerHTML = ''; });
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Test Modes: shared helpers for the batch-style modes
+// ═════════════════════════════════════════════════════════════════════════════
+
+// One entry per WCAG check suite — mirrors the static checkbox list on the
+// standalone WCAG subpage and background.js's check keys. The Cross-Variant
+// mode builds its check list from this so the two stay in sync.
+const WCAG_CHECKS = [
+  { key: 'titles',         label: 'Page Identity & Titles',          sc: '2.4.2' },
+  { key: 'navconsistency', label: 'Navigation Consistency',          sc: '3.2.3, 3.2.4, 3.2.6' },
+  { key: 'multipleways',   label: 'Alternate Paths to Content',      sc: '2.4.5' },
+  { key: 'skiplink',       label: 'Skip Link Functionality',         sc: '2.4.1' },
+  { key: 'keyboardpath',   label: 'Keyboard Path Verification',      sc: '2.1.1, 2.4.3' },
+  { key: 'modalescape',    label: 'Modal & Dialog Escape',           sc: '2.1.2', manual: true },
+  { key: 'formerror',      label: 'Form Error Handling',             sc: '3.3.1, 3.3.3, 4.1.3' },
+  { key: 'sessiontiming',  label: 'Session Timing',                  sc: '2.2.1, 2.2.6', manual: true },
+  { key: 'destructive',    label: 'Destructive Action Confirmation', sc: '3.3.4, 3.3.6', manual: true },
+  { key: 'linkpurpose',    label: 'Link Purpose',                    sc: '2.4.4, 2.4.9' },
+  { key: 'formlabels',     label: 'Form Labeling',                   sc: '3.3.2, 1.3.1' },
+  { key: 'redundant',      label: 'Redundant Entry',                 sc: '3.3.7', manual: true },
+  { key: 'focusvis',       label: 'Focus Visibility',                sc: '2.4.7, 2.4.11' },
+  { key: 'ariastate',      label: 'ARIA State Toggling',             sc: '4.1.2' },
+  { key: 'contrast',       label: 'Color Contrast',                  sc: '1.4.3, 1.4.11' },
+  { key: 'reflow',         label: 'Reflow & Zoom',                   sc: '1.4.10, 1.4.4' },
+  { key: 'motion',         label: 'Motion & Flashing',               sc: '2.2.2, 2.3.1' },
+  { key: 'screenreader',   label: 'Screen Reader Announcements',     sc: '1.1.1, 4.1.3, 4.1.2' },
+  { key: 'realworld',      label: 'Real-World Task Usability',       sc: 'cross-cutting', manual: true },
+];
+
+// Compose the executable URL for a Test Modes page row — the same rules as the
+// Build tab's Open URL step (params appended, cro_mode=qa always last).
+function tmComposeUrl(page) {
+  let url = (page.inputs.url || '').trim();
+  if (!url) return '';
+  let params = Array.isArray(page.inputs.params)
+    ? page.inputs.params.map(p => String(p).trim()).filter(Boolean)
+    : [];
+  if (page.inputs.qa_mode) {
+    params = params.filter(p => !p.toLowerCase().startsWith('cro_mode='));
+    params.push('cro_mode=qa');
+  }
+  if (params.length) url += (url.includes('?') ? '&' : '?') + params.join('&');
+  return url;
+}
+
+// The enabled, non-empty page URLs a mode's scaffold currently defines
+// (respecting the Single/Multi scope radio).
+function tmPagesFor(n) {
+  const mode = tmModes[n];
+  if (!mode) return [];
+  const shown = mode.scope === 'multi' ? mode.pages : mode.pages.slice(0, 1);
+  return shown.filter(p => p.enabled).map(p => ({ url: tmComposeUrl(p) })).filter(p => p.url);
+}
+
+function shortUrl(u) {
+  try { const x = new URL(u); return x.host + x.pathname + (x.search ? x.search : ''); } catch (_) { return u || ''; }
+}
+
+function downloadJson(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+}
+
+function fmtBytes(n) {
+  if (n == null) return '—';
+  if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+  if (n >= 1024) return Math.round(n / 1024) + ' KB';
+  return Math.round(n) + ' B';
+}
+
+// ── IndexedDB (screenshots + recorded sessions outgrow chrome.storage quotas) ─
+const IDB_NAME = 'selenite';
+let _idb = null;
+
+function idb() {
+  if (_idb) return Promise.resolve(_idb);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('vrImages')) db.createObjectStore('vrImages');
+      if (!db.objectStoreNames.contains('sessions')) db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
+    };
+    req.onsuccess = () => { _idb = req.result; resolve(_idb); };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function idbReq(r) {
+  return new Promise((resolve, reject) => {
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+
+async function idbPut(store, value, key) {
+  const os = (await idb()).transaction(store, 'readwrite').objectStore(store);
+  return idbReq(key === undefined ? os.put(value) : os.put(value, key));
+}
+async function idbGet(store, key) {
+  return idbReq((await idb()).transaction(store).objectStore(store).get(key));
+}
+async function idbDelete(store, key) {
+  return idbReq((await idb()).transaction(store, 'readwrite').objectStore(store).delete(key));
+}
+async function idbGetAll(store) {
+  return idbReq((await idb()).transaction(store).objectStore(store).getAll());
+}
+
+// Data URLs can't be opened as a top-level navigation; hand the image to a new
+// tab as a blob URL instead (same-origin with the panel, so it renders).
+async function openImageInTab(dataUrl) {
+  try {
+    const blob = await (await fetch(dataUrl)).blob();
+    chrome.tabs.create({ url: URL.createObjectURL(blob) });
+  } catch (_) {}
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Test Modes: Visual Regression Mode subpage (#testmode-sub-3)
+// ═════════════════════════════════════════════════════════════════════════════
+// Capture-and-diff regression testing for a page over time. Background owns the
+// tab lifecycle and CDP full-page capture; this side owns config, IndexedDB
+// image storage, the canvas pixel diff, and rendering. Never touches the Build
+// tab queue.
+
+let vrState = null;       // { settleSec, threshold, keepTabs, ignoreSelectors: [] }
+let _vrLastRun = null;    // last comparison, for export (images stay in IndexedDB)
+let _vrProgressPoller = null;
+
+function vrDefaultState() {
+  return { settleSec: '3', threshold: '0.1', keepTabs: false, ignoreSelectors: [] };
+}
+
+async function initVrMode() {
+  if (!document.getElementById('btn-vr-run')) return;
+  const { vrConfig } = await chrome.storage.local.get('vrConfig');
+  vrState = { ...vrDefaultState(), ...(vrConfig || {}) };
+  if (!Array.isArray(vrState.ignoreSelectors)) vrState.ignoreSelectors = [];
+
+  document.getElementById('vr-settle').value      = vrState.settleSec;
+  document.getElementById('vr-threshold').value   = vrState.threshold;
+  document.getElementById('vr-keep-tabs').checked = !!vrState.keepTabs;
+
+  document.getElementById('vr-settle').addEventListener('input',      e => { vrState.settleSec = e.target.value;  persistVrState(); });
+  document.getElementById('vr-threshold').addEventListener('input',   e => { vrState.threshold = e.target.value;  persistVrState(); });
+  document.getElementById('vr-keep-tabs').addEventListener('change',  e => { vrState.keepTabs = e.target.checked; persistVrState(); });
+
+  document.getElementById('btn-vr-add-ignore').addEventListener('click', () => {
+    vrState.ignoreSelectors.push('');
+    renderVrIgnores();
+    persistVrState();
+    const inputs = document.querySelectorAll('#vr-ignore-list [data-vr-ignore-input]');
+    inputs[inputs.length - 1]?.focus();
+  });
+  document.getElementById('btn-vr-baseline').addEventListener('click', () => runVrCapture('baseline'));
+  document.getElementById('btn-vr-run').addEventListener('click', () => runVrCapture('compare'));
+  document.getElementById('btn-vr-stop').addEventListener('click', () =>
+    chrome.runtime.sendMessage({ action: 'stop' }));
+
+  renderVrIgnores();
+  await renderVrBaselines();
+}
+
+function persistVrState() {
+  chrome.storage.local.set({ vrConfig: vrState });
+}
+
+function renderVrIgnores() {
+  const list = document.getElementById('vr-ignore-list');
+  if (!list) return;
+  const q = s => esc(s || '').replace(/"/g, '&quot;');
+  if (!vrState.ignoreSelectors.length) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--fg3)">None — use for carousels, timestamps, ads, and other legitimately dynamic content.</div>';
+    return;
+  }
+  list.innerHTML = vrState.ignoreSelectors.map((s, i) => `
+    <div class="ab-sel-row" data-vr-ignore="${i}">
+      <input type="text" data-vr-ignore-input value="${q(s)}" placeholder=".carousel, #ad-slot …">
+      <button class="btn-pick" data-pick-arg="vr-ignore" title="Pick element from page">&#x1F3AF;</button>
+      <button class="btn-icon" data-vr-rm-ignore title="Remove" style="color:var(--err)">✕</button>
+    </div>`).join('');
+
+  list.querySelectorAll('[data-vr-ignore]').forEach(row => {
+    const i = +row.dataset.vrIgnore;
+    row.querySelector('[data-vr-ignore-input]').addEventListener('input', e => {
+      vrState.ignoreSelectors[i] = e.target.value;
+      persistVrState();
+    });
+    row.querySelector('.btn-pick').addEventListener('click', () => {
+      startPicker(row, null, 'vr-ignore', (selector) => {
+        const val = selector.css || (selector.idValue ? '#' + selector.idValue : '');
+        vrState.ignoreSelectors[i] = val;
+        row.querySelector('[data-vr-ignore-input]').value = val;
+        persistVrState();
+      });
+    });
+    row.querySelector('[data-vr-rm-ignore]').addEventListener('click', () => {
+      vrState.ignoreSelectors.splice(i, 1);
+      renderVrIgnores();
+      persistVrState();
+    });
+  });
+}
+
+// Baseline status per configured page, with a per-page reset affordance.
+// Run Comparison stays disabled until at least one page has a baseline.
+async function renderVrBaselines() {
+  const el = document.getElementById('vr-baseline-list');
+  if (!el) return;
+  const pages = tmPagesFor('3');
+  const { vrMeta = {} } = await chrome.storage.local.get('vrMeta');
+  const runBtn = document.getElementById('btn-vr-run');
+  if (!pages.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--fg3)">Add a page URL above first.</div>';
+    if (runBtn) runBtn.disabled = true;
+    return;
+  }
+  let anyBaseline = false;
+  el.innerHTML = pages.map(p => {
+    const b = vrMeta[p.url]?.baseline;
+    if (b) anyBaseline = true;
+    return `
+      <div class="ab-line">
+        <b>${esc(shortUrl(p.url))}</b>
+        <div class="ab-cline">${b
+          ? `baseline captured ${new Date(b.ts).toLocaleString()} · ${b.viewportW}px viewport${b.truncated ? ' · <span class="ab-warn">capture truncated at ' + b.capturedH + 'px</span>' : ''}
+             <button class="btn-icon" data-vr-reset="${esc(p.url).replace(/"/g, '&quot;')}" title="Reset baseline" style="color:var(--err)">✕ reset</button>`
+          : '<span style="color:var(--fg3)">no baseline yet — Run Comparison will skip this page</span>'}</div>
+      </div>`;
+  }).join('');
+  if (runBtn) runBtn.disabled = !anyBaseline;
+
+  el.querySelectorAll('[data-vr-reset]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const url = btn.dataset.vrReset;
+      if (!confirm('Reset the stored baseline for this page?')) return;
+      const { vrMeta = {} } = await chrome.storage.local.get('vrMeta');
+      delete vrMeta[url];
+      await chrome.storage.local.set({ vrMeta });
+      for (const k of ['baseline|', 'current|', 'diff|']) { try { await idbDelete('vrImages', k + url); } catch (_) {} }
+      await renderVrBaselines();
+    });
+  });
+}
+
+async function runVrCapture(kind) {
+  const resultsEl = document.getElementById('vr-results');
+  const baseBtn = document.getElementById('btn-vr-baseline');
+  const runBtn  = document.getElementById('btn-vr-run');
+  const stopBtn = document.getElementById('btn-vr-stop');
+
+  const pages = tmPagesFor('3');
+  if (!pages.length) {
+    resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Add at least one page URL above.</div>';
+    return;
+  }
+  const { vrMeta = {} } = await chrome.storage.local.get('vrMeta');
+  let targets = pages;
+  if (kind === 'compare') {
+    targets = pages.filter(p => vrMeta[p.url]?.baseline);
+    if (!targets.length) {
+      resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">No baselines stored yet — click Set Baseline first.</div>';
+      return;
+    }
+  }
+
+  baseBtn.disabled = true;
+  runBtn.disabled = true;
+  stopBtn.style.display = '';
+  resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Capturing…</div>';
+  _vrProgressPoller = setInterval(async () => {
+    const { vrProgress } = await chrome.storage.session.get('vrProgress');
+    if (vrProgress?.running) {
+      resultsEl.innerHTML = `<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Capturing ${esc(shortUrl(vrProgress.label || ''))} (${vrProgress.index + 1} of ${vrProgress.total})…</div>`;
+    }
+  }, 400);
+
+  try {
+    const res = await chrome.runtime.sendMessage({
+      action: 'runVisualCapture',
+      payload: {
+        pages: targets, settleSeconds: vrState.settleSec,
+        keepTabs: vrState.keepTabs, ignoreSelectors: vrState.ignoreSelectors,
+      },
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Capture failed');
+    if (kind === 'baseline') await vrStoreBaselines(res.results);
+    else await vrCompare(res.results);
+  } catch (e) {
+    resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
+  } finally {
+    clearInterval(_vrProgressPoller);
+    _vrProgressPoller = null;
+    baseBtn.disabled = false;
+    stopBtn.style.display = 'none';
+    await renderVrBaselines();   // also re-enables Run Comparison when applicable
+  }
+}
+
+async function vrStoreBaselines(captures) {
+  const resultsEl = document.getElementById('vr-results');
+  const { vrMeta = {} } = await chrome.storage.local.get('vrMeta');
+  const lines = [];
+  for (const c of captures) {
+    if (c.skipped) { lines.push(`<div class="ab-line ab-same-row">${esc(shortUrl(c.url))} — skipped (stopped)</div>`); continue; }
+    if (c.error)   { lines.push(`<div class="ab-line"><span class="ab-err">${esc(shortUrl(c.url))} — ${esc(c.error)}</span></div>`); continue; }
+    await idbPut('vrImages', c.dataUrl, 'baseline|' + c.url);
+    try { await idbDelete('vrImages', 'current|' + c.url); await idbDelete('vrImages', 'diff|' + c.url); } catch (_) {}
+    vrMeta[c.url] = {
+      baseline: {
+        ts: c.ts, viewportW: c.viewportW, viewportH: c.viewportH,
+        pageW: c.pageW, pageH: c.pageH, capturedH: c.capturedH,
+        truncated: !!c.truncated, boxes: c.boxes || [],
+      },
+    };
+    lines.push(`<div class="ab-line">${esc(shortUrl(c.url))} — <span style="color:var(--ok)">baseline stored</span>${c.truncated ? ' <span class="ab-warn">(page taller than ' + VR_MAX_H_NOTE + 'px — capture truncated)</span>' : ''}</div>`);
+  }
+  await chrome.storage.local.set({ vrMeta });
+  resultsEl.innerHTML = `
+    <div class="a11y-summary-bar"><span>Baseline capture</span></div>
+    <div style="display:flex;flex-direction:column;gap:2px">${lines.join('')}</div>`;
+}
+
+const VR_MAX_H_NOTE = 8000;   // mirrors background's VR_MAX_CAPTURE_HEIGHT, for copy only
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Could not decode image'));
+    img.src = src;
+  });
+}
+
+// Dependency-free pixel diff. Small per-channel tolerance absorbs
+// anti-aliasing; ignore-region boxes are blacked out of both images first;
+// a height difference is diffed over the shared region and the delta itself
+// counts toward the mismatch (tinted amber on the diff image).
+async function vrDiffImages(baseSrc, curSrc, baseMeta, curCap, threshold) {
+  const [bi, ci] = await Promise.all([loadImage(baseSrc), loadImage(curSrc)]);
+  const w = Math.min(bi.naturalWidth, ci.naturalWidth);
+  const sharedH = Math.min(bi.naturalHeight, ci.naturalHeight);
+  const maxH = Math.max(bi.naturalHeight, ci.naturalHeight);
+
+  const draw = (img, pageW) => {
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img, 0, 0);
+    // Mask ignore regions from BOTH captures onto this image, scaled from
+    // page CSS px to image px.
+    const s = pageW ? img.naturalWidth / pageW : 1;
+    x.fillStyle = '#000';
+    for (const b of [...(baseMeta.boxes || []), ...(curCap.boxes || [])]) {
+      x.fillRect(Math.floor(b.x * s), Math.floor(b.y * s), Math.ceil(b.w * s), Math.ceil(b.h * s));
+    }
+    return x;
+  };
+  const bx = draw(bi, baseMeta.pageW);
+  const cx = draw(ci, curCap.pageW);
+  const bd = bx.getImageData(0, 0, w, sharedH).data;
+  const cd = cx.getImageData(0, 0, w, sharedH).data;
+
+  // Diff image: changed pixels in red over a dimmed copy of the baseline.
+  const out = document.createElement('canvas');
+  out.width = w; out.height = maxH;
+  const ox = out.getContext('2d');
+  ox.fillStyle = '#fff';
+  ox.fillRect(0, 0, w, maxH);
+  ox.globalAlpha = 0.25;
+  ox.drawImage(bi, 0, 0);
+  ox.globalAlpha = 1;
+  const od = ox.getImageData(0, 0, w, maxH);
+  const o = od.data;
+
+  const TOL = 25;
+  let changed = 0;
+  const px = w * sharedH;
+  for (let i = 0; i < px; i++) {
+    const j = i * 4;
+    if (Math.abs(bd[j] - cd[j]) > TOL || Math.abs(bd[j + 1] - cd[j + 1]) > TOL || Math.abs(bd[j + 2] - cd[j + 2]) > TOL) {
+      changed++;
+      o[j] = 229; o[j + 1] = 57; o[j + 2] = 53; o[j + 3] = 255;
+    }
+  }
+  ox.putImageData(od, 0, 0);
+  const deltaH = maxH - sharedH;
+  if (deltaH > 0) {
+    ox.fillStyle = 'rgba(255,170,0,.35)';
+    ox.fillRect(0, sharedH, w, deltaH);
+  }
+
+  const total = w * maxH;
+  const mismatchPct = total ? ((changed + w * deltaH) / total) * 100 : 0;
+  return {
+    mismatchPct: Math.round(mismatchPct * 1000) / 1000,
+    pass: mismatchPct <= threshold,
+    changedPixels: changed,
+    heightDeltaPx: deltaH,
+    baseH: bi.naturalHeight, curH: ci.naturalHeight, width: w,
+    diffDataUrl: out.toDataURL('image/png'),
+  };
+}
+
+async function vrCompare(captures) {
+  const { vrMeta = {} } = await chrome.storage.local.get('vrMeta');
+  const threshold = Math.max(0, parseFloat(vrState.threshold) || 0.1);
+  const pageResults = [];
+  for (const c of captures) {
+    if (c.skipped) { pageResults.push({ url: c.url, skipped: true }); continue; }
+    const meta = vrMeta[c.url] || {};
+    const entry = {
+      url: c.url, ts: c.ts, threshold,
+      error: c.error || null,
+      baselineTs: meta.baseline?.ts || null,
+      truncated: !!(c.truncated || meta.baseline?.truncated),
+    };
+    if (!entry.error && meta.baseline) {
+      if (c.viewportW !== meta.baseline.viewportW) {
+        // Dimension-mismatched diffs are noise, not signal — flag and skip.
+        entry.viewportMismatch = { baseline: meta.baseline.viewportW, current: c.viewportW };
+      } else {
+        const baseImg = await idbGet('vrImages', 'baseline|' + c.url);
+        if (!baseImg) {
+          entry.error = 'Baseline image missing from storage — set a new baseline';
+        } else {
+          try {
+            const diff = await vrDiffImages(baseImg, c.dataUrl, meta.baseline, c, threshold);
+            await idbPut('vrImages', c.dataUrl, 'current|' + c.url);
+            await idbPut('vrImages', diff.diffDataUrl, 'diff|' + c.url);
+            delete diff.diffDataUrl;   // images stay in IndexedDB, not in the result/export
+            Object.assign(entry, diff, { hasImages: true });
+          } catch (e) {
+            entry.error = 'Diff failed: ' + e.message;
+          }
+        }
+      }
+      vrMeta[c.url] = {
+        ...meta,
+        lastRun: { ts: c.ts, viewportW: c.viewportW, pageH: c.pageH, mismatchPct: entry.mismatchPct ?? null, pass: entry.pass ?? null },
+      };
+    } else if (!entry.error) {
+      entry.error = 'No baseline stored for this page';
+    }
+    pageResults.push(entry);
+  }
+  await chrome.storage.local.set({ vrMeta });
+  _vrLastRun = { ts: Date.now(), threshold, pages: pageResults };
+  await renderVrResults(pageResults);
+}
+
+async function renderVrResults(pages) {
+  const el = document.getElementById('vr-results');
+  const compared = pages.filter(p => !p.skipped);
+  const passed = compared.filter(p => p.pass === true).length;
+  const failed = compared.filter(p => p.pass === false).length;
+  const warned = compared.filter(p => p.viewportMismatch || (p.error && !p.pass)).length;
+
+  const blocks = [];
+  for (const p of pages) {
+    if (p.skipped) {
+      blocks.push(`<div class="ab-line ab-same-row">${esc(shortUrl(p.url))} — skipped (stopped)</div>`);
+      continue;
+    }
+    let hdr;
+    if (p.viewportMismatch) {
+      hdr = `<span class="ab-warn">⚠ Viewport changed</span> — baseline ${p.viewportMismatch.baseline}px, now ${p.viewportMismatch.current}px. Pixel diff skipped: resize the window to match (or set a new baseline).`;
+    } else if (p.error) {
+      hdr = `<span class="ab-err">${esc(p.error)}</span>`;
+    } else {
+      const verdict = p.pass
+        ? '<span style="color:var(--ok);font-weight:700">PASS</span>'
+        : '<span style="color:var(--err);font-weight:700">FAIL</span>';
+      hdr = `${verdict} — ${p.mismatchPct}% mismatch (threshold ${p.threshold}%)`
+        + (p.heightDeltaPx ? ` · page height changed by ${p.heightDeltaPx}px` : '')
+        + (p.truncated ? ' · <span class="ab-warn">capture truncated</span>' : '');
+    }
+    const meta = `baseline ${p.baselineTs ? new Date(p.baselineTs).toLocaleString() : '—'} · compared ${new Date(p.ts).toLocaleString()}`;
+
+    let imgs = '';
+    if (p.hasImages) {
+      const [b, c, d] = await Promise.all([
+        idbGet('vrImages', 'baseline|' + p.url),
+        idbGet('vrImages', 'current|' + p.url),
+        idbGet('vrImages', 'diff|' + p.url),
+      ]);
+      const thumb = (src, lbl) => src ? `
+        <div class="vr-thumb">
+          <img src="${src}" data-vr-open title="Click to open full size">
+          <div class="vr-thumb-lbl">${lbl}</div>
+        </div>` : '';
+      imgs = `<div class="vr-thumbs">${thumb(b, 'Baseline')}${thumb(c, 'Current')}${thumb(d, 'Diff')}</div>`;
+    }
+
+    blocks.push(`
+      <div class="ab-line">
+        <b>${esc(shortUrl(p.url))}</b>
+        <div class="ab-cline">${hdr}</div>
+        <div class="ab-cline" style="color:var(--fg3)">${meta}</div>
+        ${imgs}
+      </div>`);
+  }
+
+  const summaryColor = failed ? 'var(--err)' : 'var(--ok)';
+  el.innerHTML = `
+    <div class="a11y-summary-bar">
+      <span>${passed} passed · ${failed} failed${warned ? ` · ${warned} warning${warned !== 1 ? 's' : ''}` : ''}</span>
+      <div class="row" style="gap:8px">
+        <span class="a11y-summary-total" style="color:${summaryColor}">${failed ? failed + ' page' + (failed !== 1 ? 's' : '') + ' over threshold' : 'All within threshold'}</span>
+        <button class="btn ghost btn-icon" data-vr-export title="Download results as JSON (images excluded)">Export</button>
+        <button class="btn ghost btn-icon" data-clear-results title="Clear results">Clear</button>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">${blocks.join('')}</div>`;
+
+  el.querySelector('[data-clear-results]')?.addEventListener('click', () => { el.innerHTML = ''; });
+  el.querySelector('[data-vr-export]')?.addEventListener('click', () => {
+    if (!_vrLastRun) return;
+    downloadJson(_vrLastRun, 'visual-regression-' + new Date(_vrLastRun.ts).toISOString().replace(/[:.]/g, '-') + '.json');
+  });
+  el.querySelectorAll('[data-vr-open]').forEach(img => {
+    img.addEventListener('click', () => openImageInTab(img.getAttribute('src')));
+  });
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Test Modes: Cross-Variant Accessibility Mode subpage (#testmode-sub-5)
+// ═════════════════════════════════════════════════════════════════════════════
+// Hybrid of the WCAG mode (audit engine — performWcagAudit in background) and
+// the A/B mode (variant-loading machinery). Runs the same audit against every
+// variant and diffs findings vs the baseline: Introduced / Resolved /
+// Pre-existing. Never touches the Build tab queue.
+
+let cvaState = null;
+let _cvaLastRun = null;
+let _cvaProgressPoller = null;
+
+function cvaDefaultState() {
+  return {
+    baseUrl: '', qaMode: false, settleSec: '3', keepTabs: false, scope: '',
+    includeManual: false,
+    checks: WCAG_CHECKS.filter(c => !c.manual).map(c => c.key),
+    targets: [
+      { label: 'Control',   url: '', override: '' },
+      { label: 'Variant A', url: '', override: '' },
+    ],
+  };
+}
+
+async function initCvaMode() {
+  if (!document.getElementById('cva-target-list')) return;
+  const { cvaModeState } = await chrome.storage.session.get('cvaModeState');
+  cvaState = { ...cvaDefaultState(), ...(cvaModeState || {}) };
+  if (!Array.isArray(cvaState.targets) || !cvaState.targets.length) cvaState.targets = cvaDefaultState().targets;
+  if (!Array.isArray(cvaState.checks)) cvaState.checks = cvaDefaultState().checks;
+
+  applyCvaStateToInputs();
+
+  document.getElementById('cva-base-url').addEventListener('input',        e => { cvaState.baseUrl = e.target.value;          persistCvaState(); });
+  document.getElementById('cva-qa-mode').addEventListener('change',        e => { cvaState.qaMode = e.target.checked;         persistCvaState(); });
+  document.getElementById('cva-settle').addEventListener('input',          e => { cvaState.settleSec = e.target.value;        persistCvaState(); });
+  document.getElementById('cva-keep-tabs').addEventListener('change',      e => { cvaState.keepTabs = e.target.checked;       persistCvaState(); });
+  document.getElementById('cva-scope').addEventListener('input',           e => { cvaState.scope = e.target.value;            persistCvaState(); });
+  document.getElementById('cva-include-manual').addEventListener('change', e => { cvaState.includeManual = e.target.checked;  persistCvaState(); });
+
+  document.getElementById('btn-cva-scope-pick')?.addEventListener('click', () => {
+    const row = document.getElementById('cva-scope-row');
+    startPicker(row, null, 'cva-scope', (selector) => {
+      const val = selector.css || (selector.idValue ? '#' + selector.idValue : '');
+      document.getElementById('cva-scope').value = val;
+      cvaState.scope = val;
+      persistCvaState();
+    });
+  });
+
+  document.getElementById('btn-cva-add-target').addEventListener('click', () => {
+    cvaState.targets.push({ label: 'Variant ' + String.fromCharCode(64 + cvaState.targets.length), url: '', override: '' });
+    renderCvaTargets();
+    persistCvaState();
+  });
+
+  document.getElementById('btn-cva-save-set').addEventListener('click', saveCvaSet);
+  document.getElementById('btn-cva-load-set').addEventListener('click', loadCvaSet);
+  document.getElementById('btn-cva-delete-set').addEventListener('click', deleteCvaSet);
+  document.getElementById('btn-run-cva').addEventListener('click', runCvaAudit);
+  document.getElementById('btn-cva-stop').addEventListener('click', () =>
+    chrome.runtime.sendMessage({ action: 'stop' }));
+
+  renderCvaTargets();
+  renderCvaChecks();
+  await refreshCvaSets();
+}
+
+function applyCvaStateToInputs() {
+  document.getElementById('cva-base-url').value          = cvaState.baseUrl || '';
+  document.getElementById('cva-qa-mode').checked         = !!cvaState.qaMode;
+  document.getElementById('cva-settle').value            = cvaState.settleSec || '3';
+  document.getElementById('cva-keep-tabs').checked       = !!cvaState.keepTabs;
+  document.getElementById('cva-scope').value             = cvaState.scope || '';
+  document.getElementById('cva-include-manual').checked  = !!cvaState.includeManual;
+}
+
+function persistCvaState() {
+  chrome.storage.session.set({ cvaModeState: cvaState });
+}
+
+function renderCvaTargets() {
+  const list = document.getElementById('cva-target-list');
+  const q = s => esc(s || '').replace(/"/g, '&quot;');
+  list.innerHTML = cvaState.targets.map((t, i) => `
+    <div class="ab-target" data-cva-target="${i}">
+      <div class="arg-row">
+        <span class="arg-lbl">Label</span>
+        <input type="text" data-cva-field="label" value="${q(t.label)}" placeholder="e.g. Variant A">
+        <button class="btn-icon" data-cva-rm-target title="Remove variant" style="color:var(--err)">✕</button>
+      </div>
+      <div class="arg-row">
+        <span class="arg-lbl">URL</span>
+        <input type="text" data-cva-field="url" value="${q(t.url)}" placeholder="(uses base URL)">
+      </div>
+      <div class="arg-row">
+        <span class="arg-lbl">Override</span>
+        <input type="text" data-cva-field="override" value="${q(t.override)}" placeholder="e.g. optimizely_x=123456">
+      </div>
+    </div>`).join('');
+
+  list.querySelectorAll('[data-cva-target]').forEach(block => {
+    const i = +block.dataset.cvaTarget;
+    block.querySelectorAll('[data-cva-field]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        cvaState.targets[i][inp.dataset.cvaField] = inp.value;
+        persistCvaState();
+      });
+    });
+    block.querySelector('[data-cva-rm-target]').addEventListener('click', () => {
+      cvaState.targets.splice(i, 1);
+      renderCvaTargets();
+      persistCvaState();
+    });
+  });
+}
+
+// Automated checks only — the manual/infoOnly checks produce identical
+// guidance on every variant, so they live behind the single "include manual
+// checks" toggle instead of individual checkboxes.
+function renderCvaChecks() {
+  const list = document.getElementById('cva-check-list');
+  if (!list) return;
+  list.innerHTML = WCAG_CHECKS.filter(c => !c.manual).map(c => `
+    <label class="suite-check">
+      <input type="checkbox" name="cva-check" value="${c.key}"${cvaState.checks.includes(c.key) ? ' checked' : ''}>
+      ${esc(c.label)} <span style="color:var(--fg3);font-size:10px">${esc(c.sc)}</span>
+    </label>`).join('');
+  list.querySelectorAll('input[name="cva-check"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      cvaState.checks = [...list.querySelectorAll('input[name="cva-check"]:checked')].map(x => x.value);
+      persistCvaState();
+    });
+  });
+}
+
+// ── Saved variant target sets (chrome.storage.sync, namespaced to this mode
+// so the list never collides with the A/B mode's sets) ────────────────────────
+async function refreshCvaSets() {
+  const { cvaVariantSets = {} } = await chrome.storage.sync.get('cvaVariantSets');
+  const names = Object.keys(cvaVariantSets).sort();
+  const sel = document.getElementById('cva-set-select');
+  sel.innerHTML = names.length
+    ? names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')
+    : '<option disabled>&lt;no saved sets&gt;</option>';
+}
+
+async function saveCvaSet() {
+  const name = document.getElementById('cva-set-name').value.trim();
+  if (!name) { alert('Enter a set name.'); return; }
+  const { cvaVariantSets = {} } = await chrome.storage.sync.get('cvaVariantSets');
+  cvaVariantSets[name] = JSON.parse(JSON.stringify(cvaState));
+  await chrome.storage.sync.set({ cvaVariantSets });
+  await refreshCvaSets();
+  document.getElementById('cva-set-select').value = name;
+  document.getElementById('cva-set-name').value = '';
+  alert(`"${name}" saved.`);
+}
+
+async function loadCvaSet() {
+  const name = document.getElementById('cva-set-select').value || '';
+  if (!name) { alert('Select a saved set first.'); return; }
+  const { cvaVariantSets = {} } = await chrome.storage.sync.get('cvaVariantSets');
+  if (!cvaVariantSets[name]) return;
+  cvaState = { ...cvaDefaultState(), ...cvaVariantSets[name] };
+  applyCvaStateToInputs();
+  renderCvaTargets();
+  renderCvaChecks();
+  persistCvaState();
+}
+
+async function deleteCvaSet() {
+  const name = document.getElementById('cva-set-select').value || '';
+  if (!name) return;
+  if (!confirm(`Delete "${name}"?`)) return;
+  const { cvaVariantSets = {} } = await chrome.storage.sync.get('cvaVariantSets');
+  delete cvaVariantSets[name];
+  await chrome.storage.sync.set({ cvaVariantSets });
+  await refreshCvaSets();
+}
+
+// ── Run ───────────────────────────────────────────────────────────────────────
+async function runCvaAudit() {
+  const btn       = document.getElementById('btn-run-cva');
+  const stopBtn   = document.getElementById('btn-cva-stop');
+  const resultsEl = document.getElementById('cva-results');
+
+  const targets = cvaState.targets
+    .map(t => ({ label: (t.label || '').trim() || 'Variant', url: composeVariantUrl(t, cvaState.baseUrl, cvaState.qaMode) }))
+    .filter(t => t.url);
+  if (targets.length < 2) {
+    resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Define at least two variant targets with a URL (or set a base URL). The first target is the baseline.</div>';
+    return;
+  }
+  const autoChecks = cvaState.checks.filter(k => WCAG_CHECKS.some(c => c.key === k && !c.manual));
+  if (!autoChecks.length) {
+    resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Select at least one check.</div>';
+    return;
+  }
+  const checks = cvaState.includeManual ? [...autoChecks, ...WCAG_MANUAL_KEYS] : autoChecks;
+  const scope = (cvaState.scope || '').trim();
+
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  stopBtn.style.display = '';
+  resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Auditing variants…</div>';
+  _cvaProgressPoller = setInterval(async () => {
+    const { cvaProgress } = await chrome.storage.session.get('cvaProgress');
+    if (cvaProgress?.running) {
+      btn.textContent = `Running ${cvaProgress.index + 1}/${cvaProgress.total}…`;
+      resultsEl.innerHTML = `<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Auditing ${esc(cvaProgress.label)} (${cvaProgress.index + 1} of ${cvaProgress.total})…</div>`;
+    }
+  }, 400);
+
+  try {
+    const res = await chrome.runtime.sendMessage({
+      action: 'runCrossVariantAudit',
+      payload: { targets, settleSeconds: cvaState.settleSec, keepTabs: cvaState.keepTabs, checks, scope },
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Audit failed');
+    const runs = (res.results || []).filter(r => !r.skipped);
+    if (runs.length < 2) {
+      resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Stopped before two variants were audited — nothing to compare.</div>';
+      return;
+    }
+    _cvaLastRun = { ts: Date.now(), scope, autoChecks, includeManual: cvaState.includeManual, runs };
+    renderCvaResults(_cvaLastRun);
+  } catch (e) {
+    resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
+  } finally {
+    clearInterval(_cvaProgressPoller);
+    _cvaProgressPoller = null;
+    btn.disabled = false;
+    btn.textContent = 'Run Cross-Variant Audit';
+    stopBtn.style.display = 'none';
+  }
+}
+
+// ── Diff (pure function over the collected result sets) ──────────────────────
+// Issue identity: normalized string (trim, collapse whitespace), matched
+// exactly within its check. axe node-target strings can differ across runs for
+// the same underlying issue — a known v1 limitation; no fuzzy matching.
+function diffCvaRuns(runs, checkKeys) {
+  const norm = s => String(s).replace(/\s+/g, ' ').trim();
+  const issuesOf = (r, k) => {
+    const c = r.results?.[k];
+    return c && !c.infoOnly ? (c.issues || []).map(norm) : null;
+  };
+  const base = runs[0];
+  const variants = runs.slice(1).map(r => {
+    if (r.loadError || !r.results) {
+      return { label: r.label, url: r.url, tabId: r.tabId || null, loadError: r.loadError || 'No results', perCheck: [], introduced: 0, resolved: 0, preexisting: 0 };
+    }
+    const perCheck = [];
+    let ti = 0, tr = 0, tp = 0;
+    for (const k of checkKeys) {
+      const bv = base.loadError ? null : issuesOf(base, k);
+      const cv = issuesOf(r, k);
+      if (bv == null && cv == null) continue;
+      const bset = new Set(bv || []);
+      const cset = new Set(cv || []);
+      const introduced  = [...cset].filter(x => !bset.has(x));
+      const resolved    = [...bset].filter(x => !cset.has(x));
+      const preexisting = [...cset].filter(x => bset.has(x));
+      perCheck.push({ key: k, introduced, resolved, preexisting });
+      ti += introduced.length; tr += resolved.length; tp += preexisting.length;
+    }
+    return { label: r.label, url: r.url, tabId: r.tabId || null, loadError: null, perCheck, introduced: ti, resolved: tr, preexisting: tp };
+  });
+  return { base, variants };
+}
+
+// Highlight an issue's element in the variant tab it was found in (kept open
+// via keep-tabs), falling back to the active tab; degrades with an inline note.
+async function cvaHighlight(selector, tabId, rowEl) {
+  let res = null;
+  try {
+    res = await chrome.runtime.sendMessage({ action: 'highlightElement', tabId: tabId || null, selector });
+  } catch (_) {}
+  if ((!res?.ok || !res.found) && rowEl && !rowEl.querySelector('.a11y-loc-miss')) {
+    const note = document.createElement('span');
+    note.className = 'a11y-loc-miss';
+    note.textContent = ' — not found on the current page';
+    note.style.color = 'var(--fg3)';
+    rowEl.appendChild(note);
+    setTimeout(() => note.remove(), 2500);
+  }
+}
+
+function renderCvaResults(run) {
+  const el = document.getElementById('cva-results');
+  const checkMeta = Object.fromEntries(WCAG_CHECKS.map(c => [c.key, c]));
+  const diff = diffCvaRuns(run.runs, run.autoChecks);
+  const base = diff.base;
+
+  const issueHtml = (text, cls, tabId) => {
+    const target = extractIssueTarget(text);
+    const locAttrs = target
+      ? ` class="a11y-issue a11y-issue-loc ${cls}" data-loc="${esc(target).replace(/"/g, '&quot;')}" data-cva-tab="${tabId || ''}" title="Click to highlight this element on the page"`
+      : ` class="a11y-issue ${cls}"`;
+    return `<div${locAttrs}>${esc(text)}</div>`;
+  };
+
+  const blocks = [];
+  const notes = [];
+  for (const r of run.runs) {
+    if (r.scopeError) notes.push(`${r.label}: ${r.scopeError}`);
+    if (r.axeError)   notes.push(`${r.label}: axe-core could not run (${r.axeError}) — heuristics only.`);
+  }
+  if (run.scope && !notes.length) notes.push('Scoped to: ' + run.scope);
+
+  // Baseline block — its findings as-is (everything here is "pre-existing" by
+  // definition; the interesting buckets live on the variants below).
+  if (base.loadError) {
+    blocks.push(`<div class="ab-line"><b>${esc(base.label)}</b> <span style="color:var(--fg3)">(baseline)</span> — <span class="ab-err">Load failure: ${esc(base.loadError)}</span><div class="ab-cline ab-warn">Variants below are shown against an empty baseline — every issue counts as introduced.</div></div>`);
+  } else {
+    const rows = run.autoChecks.filter(k => base.results?.[k]).map(k => {
+      const c = base.results[k];
+      const count = c.issues.length;
+      const dot = count ? 'a11y-fail-dot' : 'a11y-pass-dot';
+      const body = count ? `<div class="a11y-body">${c.issues.map(t => issueHtml(t, '', base.tabId)).join('')}</div>` : '';
+      return `
+        <div class="a11y-row" data-suite-row>
+          <div class="a11y-row-hdr">
+            <span class="a11y-dot ${dot}"></span>
+            <span class="a11y-row-label">${esc(checkMeta[k]?.label || k)}</span>
+            <span class="a11y-wcag">${esc(checkMeta[k]?.sc || '')}</span>
+            <span class="a11y-count">${count ? count + ' issue' + (count !== 1 ? 's' : '') : 'Pass'}</span>
+            ${count ? '<span class="a11y-chevron">›</span>' : ''}
+          </div>
+          ${body}
+        </div>`;
+    });
+    const baseTotal = run.autoChecks.reduce((n, k) => n + (base.results?.[k]?.issues.length || 0), 0);
+    blocks.push(`
+      <div class="a11y-summary-bar" style="margin-top:2px">
+        <span><b>${esc(base.label)}</b> (baseline)</span>
+        <span class="a11y-summary-total" style="color:${baseTotal ? 'var(--warn)' : 'var(--ok)'}">${baseTotal} issue${baseTotal !== 1 ? 's' : ''}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">${rows.join('')}</div>`);
+  }
+
+  // Variant blocks — Introduced expanded (error styling), Resolved positive,
+  // Pre-existing collapsed/greyed but never hidden entirely.
+  for (const v of diff.variants) {
+    if (v.loadError) {
+      blocks.push(`<div class="ab-line" style="margin-top:8px"><b>${esc(v.label)}</b> — <span class="ab-err">Load failure: ${esc(v.loadError)}</span></div>`);
+      continue;
+    }
+    const sumColor = v.introduced ? 'var(--err)' : 'var(--ok)';
+    const rows = v.perCheck
+      .filter(pc => pc.introduced.length || pc.resolved.length || pc.preexisting.length)
+      .map(pc => {
+        const parts = [];
+        if (pc.introduced.length)  parts.push(pc.introduced.length + ' introduced');
+        if (pc.resolved.length)    parts.push(pc.resolved.length + ' resolved');
+        if (pc.preexisting.length) parts.push(pc.preexisting.length + ' pre-existing');
+        const dot = pc.introduced.length ? 'a11y-fail-dot' : (pc.resolved.length ? 'a11y-pass-dot' : 'a11y-skip-dot');
+        const body = `
+          ${pc.introduced.map(t => issueHtml(t, 'cva-issue-intro', v.tabId)).join('')}
+          ${pc.resolved.map(t => `<div class="a11y-issue cva-issue-res">${esc(t)}</div>`).join('')}
+          ${pc.preexisting.length ? `
+            <details class="cva-pre">
+              <summary>${pc.preexisting.length} pre-existing issue${pc.preexisting.length !== 1 ? 's' : ''} (identical to baseline)</summary>
+              ${pc.preexisting.map(t => issueHtml(t, '', v.tabId)).join('')}
+            </details>` : ''}`;
+        return `
+          <div class="a11y-row${pc.introduced.length ? ' open' : ''}" data-suite-row>
+            <div class="a11y-row-hdr">
+              <span class="a11y-dot ${dot}"></span>
+              <span class="a11y-row-label">${esc(checkMeta[pc.key]?.label || pc.key)}</span>
+              <span class="a11y-wcag">${esc(checkMeta[pc.key]?.sc || '')}</span>
+              <span class="a11y-count">${parts.join(' · ')}</span>
+              <span class="a11y-chevron">›</span>
+            </div>
+            <div class="a11y-body">${body}</div>
+          </div>`;
+      });
+    blocks.push(`
+      <div class="a11y-summary-bar" style="margin-top:8px">
+        <span><b>${esc(v.label)}</b></span>
+        <span class="a11y-summary-total" style="color:${sumColor}">${v.introduced} introduced · ${v.resolved} resolved · ${v.preexisting} pre-existing</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">${rows.join('') || '<div class="ab-line ab-same-row">No issues in this variant or the baseline for the selected checks.</div>'}</div>`);
+  }
+
+  // Manual checks render once — identical guidance on every variant.
+  if (run.includeManual && !base.loadError) {
+    const manualRows = WCAG_MANUAL_KEYS.filter(k => base.results?.[k]).map(k => {
+      const c = base.results[k];
+      const guide = WCAG_MANUAL_GUIDE[k] || [];
+      return `
+        <div class="a11y-row" data-suite-row>
+          <div class="a11y-row-hdr">
+            <span class="a11y-dot a11y-info-dot"></span>
+            <span class="a11y-row-label">${esc(checkMeta[k]?.label || k)}</span>
+            <span class="a11y-wcag">${esc(checkMeta[k]?.sc || '')}</span>
+            <span class="a11y-count">Manual</span>
+            <span class="a11y-chevron">›</span>
+          </div>
+          <div class="a11y-body">
+            ${c.issues.map(t => `<div class="a11y-issue">${esc(t)}</div>`).join('')}
+            ${guide.length ? `<div class="a11y-guide-title">Verify by hand (on every variant):</div>${guide.map(g => `<div class="a11y-guide-item">${esc(g)}</div>`).join('')}` : ''}
+          </div>
+        </div>`;
+    });
+    blocks.push(`
+      <div class="a11y-summary-bar" style="margin-top:8px"><span>Manual checks — apply to every variant</span></div>
+      <div style="display:flex;flex-direction:column;gap:4px">${manualRows.join('')}</div>`);
+  }
+
+  const totalIntroduced = diff.variants.reduce((n, v) => n + v.introduced, 0);
+  el.innerHTML = `
+    <div class="a11y-summary-bar">
+      <span>Baseline: ${esc(base.label)}</span>
+      <div class="row" style="gap:8px">
+        <span class="a11y-summary-total" style="color:${totalIntroduced ? 'var(--err)' : 'var(--ok)'}">${totalIntroduced} introduced issue${totalIntroduced !== 1 ? 's' : ''} across variants</span>
+        <button class="btn ghost btn-icon" data-cva-export title="Download results as JSON">Export</button>
+        <button class="btn ghost btn-icon" data-clear-results title="Clear results">Clear</button>
+      </div>
+    </div>
+    ${notes.length ? `<div style="color:var(--fg3);font-size:11px;padding:2px 2px 6px">${notes.map(esc).join(' · ')}</div>` : ''}
+    ${blocks.join('')}`;
+
+  el.querySelectorAll('[data-suite-row] .a11y-row-hdr').forEach(hdr => {
+    hdr.addEventListener('click', () => hdr.closest('[data-suite-row]').classList.toggle('open'));
+  });
+  el.querySelector('[data-clear-results]')?.addEventListener('click', () => { el.innerHTML = ''; });
+  el.querySelector('[data-cva-export]')?.addEventListener('click', () => exportCvaResults(diff, run));
+  el.querySelectorAll('.a11y-issue-loc').forEach(row => {
+    row.addEventListener('click', () =>
+      cvaHighlight(row.dataset.loc, parseInt(row.dataset.cvaTab, 10) || null, row));
+  });
+}
+
+function exportCvaResults(diff, run) {
+  const checkMeta = Object.fromEntries(WCAG_CHECKS.map(c => [c.key, c]));
+  const data = {
+    timestamp: new Date(run.ts).toISOString(),
+    scope: run.scope || null,
+    checks: run.autoChecks,
+    baseline: {
+      label: diff.base.label, url: diff.base.url, loadError: diff.base.loadError || null,
+      issues: diff.base.loadError ? null : Object.fromEntries(run.autoChecks
+        .filter(k => diff.base.results?.[k])
+        .map(k => [k, diff.base.results[k].issues])),
+    },
+    variants: diff.variants.map(v => ({
+      label: v.label, url: v.url, loadError: v.loadError,
+      summary: { introduced: v.introduced, resolved: v.resolved, preexisting: v.preexisting },
+      checks: v.perCheck.map(pc => ({
+        key: pc.key,
+        label: checkMeta[pc.key]?.label || pc.key,
+        wcag: checkMeta[pc.key]?.sc || '',
+        introduced: pc.introduced,
+        resolved: pc.resolved,
+        preexisting: pc.preexisting,
+      })),
+    })),
+  };
+  downloadJson(data, 'cross-variant-a11y-' + new Date(run.ts).toISOString().replace(/[:.]/g, '-') + '.json');
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Test Modes: Performance/Load Mode subpage (#testmode-sub-6)
+// ═════════════════════════════════════════════════════════════════════════════
+// Background loads each page N times (fresh tab per run, sequential, cache
+// optionally disabled over CDP) and returns raw per-run metrics; this side owns
+// median math, budget evaluation, rendering, history, and export. Numbers come
+// from a real browser on the user's machine — relative comparison, not lab
+// absolutes. Never touches the Build tab queue.
+
+const PERF_DEFAULT_BUDGETS = { lcp: 2500, cls: 0.1, ttfb: 800, load: 5000 };
+const PERF_METRICS = [
+  { key: 'ttfb', label: 'TTFB',                    unit: 'ms', budget: 'ttfb' },
+  { key: 'fcp',  label: 'First Contentful Paint',  unit: 'ms' },
+  { key: 'lcp',  label: 'LCP',                     unit: 'ms', budget: 'lcp' },
+  { key: 'dcl',  label: 'DOMContentLoaded',        unit: 'ms' },
+  { key: 'load', label: 'Load event',              unit: 'ms', budget: 'load' },
+  { key: 'cls',  label: 'CLS',                     unit: '',   budget: 'cls', digits: 3 },
+  { key: 'longTaskMs', label: 'Long-task time',    unit: 'ms' },
+];
+
+let perfState = null;      // { settleSec, runs, disableCache }
+let perfBudgets = null;    // { lcp, cls, ttfb, load } — sync storage
+let _perfLastRun = null;
+let _perfProgressPoller = null;
+
+function median(vals) {
+  const v = vals.filter(x => typeof x === 'number' && !Number.isNaN(x)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const mid = Math.floor(v.length / 2);
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+
+function fmtMetric(v, m) {
+  if (v == null) return '—';
+  const digits = m?.digits ?? 0;
+  const n = digits ? v.toFixed(digits) : Math.round(v).toLocaleString();
+  return n + (m?.unit ? ' ' + m.unit : '');
+}
+
+async function initPerfMode() {
+  if (!document.getElementById('btn-perf-run')) return;
+  const { perfModeState } = await chrome.storage.session.get('perfModeState');
+  perfState = { settleSec: '3', runs: '3', disableCache: true, ...(perfModeState || {}) };
+  const { perfBudgets: saved } = await chrome.storage.sync.get('perfBudgets');
+  perfBudgets = { ...PERF_DEFAULT_BUDGETS, ...(saved || {}) };
+
+  document.getElementById('perf-settle').value          = perfState.settleSec;
+  document.getElementById('perf-runs').value            = perfState.runs;
+  document.getElementById('perf-disable-cache').checked = !!perfState.disableCache;
+  for (const k of ['lcp', 'cls', 'ttfb', 'load']) {
+    const inp = document.getElementById('perf-budget-' + k);
+    inp.value = perfBudgets[k];
+    inp.addEventListener('input', () => {
+      const v = parseFloat(inp.value);
+      if (!Number.isNaN(v) && v > 0) perfBudgets[k] = v;
+      chrome.storage.sync.set({ perfBudgets });
+    });
+  }
+
+  document.getElementById('perf-settle').addEventListener('input',          e => { perfState.settleSec = e.target.value;         persistPerfState(); });
+  document.getElementById('perf-runs').addEventListener('input',            e => { perfState.runs = e.target.value;              persistPerfState(); });
+  document.getElementById('perf-disable-cache').addEventListener('change',  e => { perfState.disableCache = e.target.checked;    persistPerfState(); });
+
+  document.getElementById('btn-perf-run').addEventListener('click', runPerfMode);
+  document.getElementById('btn-perf-stop').addEventListener('click', () =>
+    chrome.runtime.sendMessage({ action: 'stop' }));
+  document.getElementById('btn-perf-view-history')?.addEventListener('click', viewPerfHistoryRun);
+  await renderPerfHistoryList();
+}
+
+function persistPerfState() {
+  chrome.storage.session.set({ perfModeState: perfState });
+}
+
+async function runPerfMode() {
+  const btn       = document.getElementById('btn-perf-run');
+  const stopBtn   = document.getElementById('btn-perf-stop');
+  const resultsEl = document.getElementById('perf-results');
+
+  const pages = tmPagesFor('6');
+  if (!pages.length) {
+    resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Add at least one page URL above. Tip: add the same page twice with different override params to compare experiment variants.</div>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  stopBtn.style.display = '';
+  resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Measuring…</div>';
+  _perfProgressPoller = setInterval(async () => {
+    const { perfProgress } = await chrome.storage.session.get('perfProgress');
+    if (perfProgress?.running) {
+      const t = `page ${perfProgress.page}/${perfProgress.pages} · run ${perfProgress.run}/${perfProgress.runs}`;
+      btn.textContent = `Running (${t})…`;
+      resultsEl.innerHTML = `<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Measuring ${esc(shortUrl(perfProgress.label || ''))} — ${t}…</div>`;
+    }
+  }, 400);
+
+  try {
+    const res = await chrome.runtime.sendMessage({
+      action: 'runPerfMeasurement',
+      payload: {
+        pages, settleSeconds: perfState.settleSec,
+        runsPerPage: perfState.runs, disableCache: perfState.disableCache,
+      },
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Measurement failed');
+    const summarized = (res.results || []).map(p => ({
+      url: p.url, ts: Date.now(), skipped: !!p.skipped && !p.runs.length,
+      partial: !!p.skipped && p.runs.length > 0,
+      runs: p.runs, summary: perfSummarize(p),
+    }));
+    _perfLastRun = { ts: Date.now(), budgets: { ...perfBudgets }, disableCache: perfState.disableCache, pages: summarized };
+    renderPerfResults(_perfLastRun);
+    await savePerfHistory(summarized);
+  } catch (e) {
+    resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
+  } finally {
+    clearInterval(_perfProgressPoller);
+    _perfProgressPoller = null;
+    btn.disabled = false;
+    btn.textContent = 'Run Measurement';
+    stopBtn.style.display = 'none';
+  }
+}
+
+function perfSummarize(p) {
+  const good = (p.runs || []).filter(r => !r.error);
+  const medians = {};
+  for (const m of PERF_METRICS) medians[m.key] = median(good.map(r => r[m.key]));
+  medians.longTasks     = median(good.map(r => r.longTasks));
+  medians.resourceCount = median(good.map(r => r.resourceCount));
+  medians.transferBytes = median(good.map(r => r.transferBytes));
+  medians.lateCount     = median(good.map(r => r.late?.count));
+  medians.lateBytes     = median(good.map(r => r.late?.bytes));
+  const byType = {};
+  for (const t of ['script', 'css', 'img', 'font', 'other']) {
+    byType[t] = {
+      count: median(good.map(r => r.byType?.[t]?.count)),
+      bytes: median(good.map(r => r.byType?.[t]?.bytes)),
+    };
+  }
+  const verdicts = {};
+  for (const m of PERF_METRICS) {
+    if (!m.budget) continue;
+    const v = medians[m.key];
+    verdicts[m.key] = v == null ? null : (v <= perfBudgets[m.budget] ? 'ok' : 'over');
+  }
+  const jsErrors = [...new Set(good.flatMap(r => r.jsErrors || []))];
+  const runErrors = (p.runs || []).map(r => r.error).filter(Boolean);
+  return { medians, verdicts, byType, jsErrors, runErrors, runCount: good.length };
+}
+
+function perfPageBlock(pg, budgets, { compact = false } = {}) {
+  const s = pg.summary;
+  const overCount = Object.values(s.verdicts).filter(v => v === 'over').length;
+  const bar = `
+    <div class="a11y-summary-bar" style="margin-top:8px">
+      <span><b>${esc(shortUrl(pg.url))}</b>${pg.partial ? ' <span class="ab-warn">(stopped early)</span>' : ''}</span>
+      <span class="a11y-summary-total" style="color:${overCount ? 'var(--err)' : 'var(--ok)'}">${overCount ? overCount + ' metric' + (overCount !== 1 ? 's' : '') + ' over budget' : 'All budgets met'}</span>
+    </div>`;
+  if (!s.runCount) {
+    return bar + `<div class="ab-line"><span class="ab-err">${esc(s.runErrors[0] || 'No successful runs')}</span></div>`;
+  }
+
+  const rows = PERF_METRICS.map(m => {
+    const v = s.medians[m.key];
+    const budget = m.budget ? budgets[m.budget] : null;
+    const verdict = m.budget ? s.verdicts[m.key] : null;
+    const verdictHtml = verdict === 'ok' ? '<span class="perf-ok">OK</span>'
+      : verdict === 'over' ? '<span class="perf-over">OVER</span>'
+      : '<span style="color:var(--fg3)">—</span>';
+    const extra = m.key === 'longTaskMs' && s.medians.longTasks != null
+      ? ` <span style="color:var(--fg3)">(${Math.round(s.medians.longTasks)} task${Math.round(s.medians.longTasks) !== 1 ? 's' : ''})</span>` : '';
+    return `
+      <tr>
+        <td>${esc(m.label)}${extra}</td>
+        <td style="${verdict === 'over' ? 'color:var(--err);font-weight:600' : verdict === 'ok' ? 'color:var(--ok)' : ''}">${fmtMetric(v, m)}</td>
+        <td style="color:var(--fg2)">${budget != null ? '≤ ' + fmtMetric(budget, m) : '—'}</td>
+        <td>${verdictHtml}</td>
+      </tr>`;
+  }).join('');
+
+  const table = `
+    <table class="perf-table">
+      <tr><th>Metric</th><th>Median</th><th>Budget</th><th>Verdict</th></tr>
+      ${rows}
+    </table>`;
+
+  let runsBlock = '';
+  if (!compact && pg.runs?.length) {
+    const runRows = pg.runs.map((r, i) => r.error
+      ? `<div class="ab-cline ab-err">Run ${i + 1}: ${esc(r.error)}</div>`
+      : `<div class="ab-cline">Run ${i + 1}: ${PERF_METRICS.map(m => `${esc(m.label)} ${fmtMetric(r[m.key], m)}`).join(' · ')}</div>`
+    ).join('');
+    runsBlock = `
+      <div class="a11y-row" data-suite-row>
+        <div class="a11y-row-hdr">
+          <span class="a11y-dot a11y-info-dot"></span>
+          <span class="a11y-row-label">Individual runs</span>
+          <span class="a11y-count">${pg.runs.length} run${pg.runs.length !== 1 ? 's' : ''} · medians reported</span>
+          <span class="a11y-chevron">›</span>
+        </div>
+        <div class="a11y-body">${runRows}</div>
+      </div>`;
+  }
+
+  let resBlock = '';
+  if (!compact) {
+    const bt = s.byType;
+    const parts = ['script', 'css', 'img', 'font', 'other']
+      .filter(t => bt[t].count != null && bt[t].count > 0)
+      .map(t => `${t} ${Math.round(bt[t].count)} (${fmtBytes(bt[t].bytes)})`);
+    resBlock = `
+      <div class="ab-line">
+        Resources (median): ${s.medians.resourceCount != null ? Math.round(s.medians.resourceCount) : '—'} requests · ${fmtBytes(s.medians.transferBytes)}
+        ${parts.length ? `<div class="ab-cline" style="color:var(--fg2)">${parts.join(' · ')}</div>` : ''}
+        <div class="ab-cline ${s.medians.lateCount ? 'ab-warn' : ''}" title="Experiment scripts often inject resources late">After load event: ${s.medians.lateCount != null ? Math.round(s.medians.lateCount) : 0} request${Math.round(s.medians.lateCount || 0) !== 1 ? 's' : ''} · ${fmtBytes(s.medians.lateBytes || 0)}</div>
+        ${s.jsErrors.length ? s.jsErrors.map(x => `<div class="ab-cline ab-err">JS error: ${esc(x)}</div>`).join('') : ''}
+        ${s.runErrors.length ? s.runErrors.map(x => `<div class="ab-cline ab-err">Run failed: ${esc(x)}</div>`).join('') : ''}
+      </div>`;
+  }
+
+  return bar + table + runsBlock + resBlock;
+}
+
+function renderPerfResults(run) {
+  const el = document.getElementById('perf-results');
+  const shown = run.pages.filter(p => !p.skipped);
+  const skipped = run.pages.length - shown.length;
+  const blocks = shown.map(p => perfPageBlock(p, run.budgets)).join('');
+  const overTotal = shown.reduce((n, p) => n + Object.values(p.summary.verdicts).filter(v => v === 'over').length, 0);
+
+  el.innerHTML = `
+    <div class="a11y-summary-bar">
+      <span>${shown.length} page${shown.length !== 1 ? 's' : ''} measured${skipped ? ` · ${skipped} skipped (stopped)` : ''}${run.disableCache ? ' · cache disabled' : ' · cache enabled'}</span>
+      <div class="row" style="gap:8px">
+        <span class="a11y-summary-total" style="color:${overTotal ? 'var(--err)' : 'var(--ok)'}">${overTotal ? overTotal + ' over budget' : 'All budgets met'}</span>
+        <button class="btn ghost btn-icon" data-perf-export title="Download results as JSON">Export</button>
+        <button class="btn ghost btn-icon" data-clear-results title="Clear results">Clear</button>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--fg3);padding:0 2px 4px">Measured in this browser on this machine and network — treat as relative comparison, not lab-grade absolutes.</div>
+    ${blocks}`;
+
+  el.querySelectorAll('[data-suite-row] .a11y-row-hdr').forEach(hdr => {
+    hdr.addEventListener('click', () => hdr.closest('[data-suite-row]').classList.toggle('open'));
+  });
+  el.querySelector('[data-clear-results]')?.addEventListener('click', () => { el.innerHTML = ''; });
+  el.querySelector('[data-perf-export]')?.addEventListener('click', () => {
+    downloadJson({
+      timestamp: new Date(run.ts).toISOString(),
+      budgets: run.budgets,
+      cacheDisabled: !!run.disableCache,
+      note: 'Measured in a real browser on the tester’s machine and network — relative comparison, not lab-grade absolutes.',
+      pages: run.pages.map(p => ({
+        url: p.url, skipped: !!p.skipped,
+        medians: p.summary?.medians, verdicts: p.summary?.verdicts,
+        byType: p.summary?.byType, jsErrors: p.summary?.jsErrors,
+        runs: p.runs,
+      })),
+    }, 'perf-measurement-' + new Date(run.ts).toISOString().replace(/[:.]/g, '-') + '.json');
+  });
+}
+
+// ── Run history (medians + verdicts only, last 10 per URL) ───────────────────
+const PERF_HISTORY_PER_URL = 10;
+
+async function savePerfHistory(pages) {
+  const { perfHistory = {} } = await chrome.storage.local.get('perfHistory');
+  for (const p of pages) {
+    if (p.skipped || !p.summary.runCount) continue;
+    const arr = perfHistory[p.url] || [];
+    arr.unshift({ ts: p.ts, medians: p.summary.medians, verdicts: p.summary.verdicts, runs: p.summary.runCount, budgets: { ...perfBudgets } });
+    perfHistory[p.url] = arr.slice(0, PERF_HISTORY_PER_URL);
+  }
+  await chrome.storage.local.set({ perfHistory });
+  await renderPerfHistoryList();
+}
+
+async function renderPerfHistoryList() {
+  const sel = document.getElementById('perf-history-select');
+  if (!sel) return;
+  const { perfHistory = {} } = await chrome.storage.local.get('perfHistory');
+  const opts = [];
+  for (const [url, runs] of Object.entries(perfHistory)) {
+    runs.forEach((r, i) => opts.push({ url, i, ts: r.ts }));
+  }
+  opts.sort((a, b) => b.ts - a.ts);
+  sel.innerHTML = opts.length
+    ? opts.map(o => `<option value="${encodeURIComponent(o.url)}|${o.i}">${new Date(o.ts).toLocaleString()} — ${esc(shortUrl(o.url))}</option>`).join('')
+    : '<option disabled>&lt;no past runs&gt;</option>';
+}
+
+async function viewPerfHistoryRun() {
+  const v = document.getElementById('perf-history-select')?.value || '';
+  const bar = v.lastIndexOf('|');
+  if (bar < 0) return;
+  const url = decodeURIComponent(v.slice(0, bar));
+  const idx = +v.slice(bar + 1);
+  const { perfHistory = {} } = await chrome.storage.local.get('perfHistory');
+  const h = perfHistory[url]?.[idx];
+  if (!h) return;
+  const el = document.getElementById('perf-results');
+  const pg = { url, ts: h.ts, runs: [], summary: { medians: h.medians, verdicts: h.verdicts, byType: {}, jsErrors: [], runErrors: [], runCount: h.runs } };
+  el.innerHTML = `
+    <div class="a11y-summary-bar">
+      <span>History — ${new Date(h.ts).toLocaleString()} (${h.runs} run${h.runs !== 1 ? 's' : ''}, medians only)</span>
+      <button class="btn ghost btn-icon" data-clear-results title="Clear results">Clear</button>
+    </div>
+    ${perfPageBlock(pg, h.budgets || perfBudgets, { compact: true })}`;
+  el.querySelector('[data-clear-results]')?.addEventListener('click', () => { el.innerHTML = ''; });
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Test Modes: Session Replay / Heatmap Mode subpage (#testmode-sub-7)
+// ═════════════════════════════════════════════════════════════════════════════
+// Records the tester's OWN session on the active tab (clicks, scroll, metric
+// fires) and plays it back as an overlay + timeline. Background owns the live
+// buffer (recording survives the panel closing); this side owns IndexedDB
+// session storage, the saved-sessions list, timeline rendering, and overlay
+// orchestration. No data ever leaves the browser.
+
+const SR_SESSION_CAP = 20;
+let _srViewedSession = null;
+let _srFilter = '';
+let _srStatusPoller = null;
+
+function fmtDur(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+async function initSrMode() {
+  if (!document.getElementById('btn-sr-record')) return;
+
+  document.getElementById('btn-sr-record').addEventListener('click', srStartRecording);
+  document.getElementById('btn-sr-stop').addEventListener('click', srStopRecording);
+  document.getElementById('btn-sr-overlay-show').addEventListener('click', srShowOverlay);
+  document.getElementById('btn-sr-overlay-hide').addEventListener('click', () =>
+    chrome.runtime.sendMessage({ action: 'sessionHideOverlay' }));
+
+  document.querySelectorAll('#sr-filter-btns [data-sr-filter]').forEach(b => {
+    b.addEventListener('click', () => {
+      _srFilter = b.dataset.srFilter;
+      document.querySelectorAll('#sr-filter-btns [data-sr-filter]').forEach(x => {
+        x.style.background = x === b ? 'var(--brand)' : '';
+        x.style.color = x === b ? '#fff' : '';
+      });
+      renderSrTimeline();
+    });
+  });
+
+  // Background is the source of truth for a live recording — the panel just
+  // re-syncs on open and keeps polling, so recording survives close/reopen.
+  await syncSrStatus();
+  _srStatusPoller = setInterval(syncSrStatus, 800);
+  await renderSrSessions();
+}
+
+async function srStartRecording() {
+  const label = document.getElementById('sr-label').value.trim();
+  const captureMove = document.getElementById('sr-capture-move').checked;
+  const res = await chrome.runtime.sendMessage({ action: 'sessionRecordStart', label, captureMove });
+  if (!res?.ok) alert('Could not start recording: ' + (res?.error || 'unknown error'));
+  await syncSrStatus();
+}
+
+async function srStopRecording() {
+  const res = await chrome.runtime.sendMessage({ action: 'sessionRecordStop' });
+  if (res?.ok && res.session) await srSaveSession(res.session);
+  await syncSrStatus();
+}
+
+async function syncSrStatus() {
+  const { srStatus, srFinishedSession } = await chrome.storage.session.get(['srStatus', 'srFinishedSession']);
+  // A recording whose tab was closed finalizes in background — pick it up here.
+  if (srFinishedSession) {
+    await chrome.storage.session.remove('srFinishedSession');
+    await srSaveSession(srFinishedSession);
+  }
+  const rec = !!srStatus?.recording;
+  const recordBtn = document.getElementById('btn-sr-record');
+  const stopBtn   = document.getElementById('btn-sr-stop');
+  const live      = document.getElementById('sr-live');
+  if (!recordBtn) return;
+  recordBtn.disabled = rec;
+  stopBtn.disabled = !rec;
+  if (rec) {
+    live.innerHTML = `<span style="color:var(--err)">●</span> Recording${srStatus.label ? ' “' + esc(srStatus.label) + '”' : ''} — ${fmtDur(Date.now() - srStatus.startedAt)} · ${srStatus.eventCount} event${srStatus.eventCount !== 1 ? 's' : ''}${srStatus.capped ? ' · <span class="ab-warn">capped at 10k</span>' : ''}`;
+  } else {
+    live.textContent = '○ Not recording';
+  }
+}
+
+async function srSaveSession(session) {
+  const pages = [...new Set((session.segments || []).map(s => shortUrl(s.url)))];
+  const rec = { ...session, pages, duration: (session.endedAt || Date.now()) - session.startedAt };
+  try {
+    await idbPut('sessions', rec);
+    // Retention cap — oldest-first eviction.
+    const all = await idbGetAll('sessions');
+    if (all.length > SR_SESSION_CAP) {
+      all.sort((a, b) => a.startedAt - b.startedAt);
+      for (const s of all.slice(0, all.length - SR_SESSION_CAP)) await idbDelete('sessions', s.id);
+    }
+  } catch (e) {
+    alert('Could not save session: ' + e.message);
+  }
+  await renderSrSessions();
+}
+
+async function renderSrSessions() {
+  const el = document.getElementById('sr-session-list');
+  if (!el) return;
+  let sessions = [];
+  try { sessions = await idbGetAll('sessions'); } catch (_) {}
+  sessions.sort((a, b) => b.startedAt - a.startedAt);
+  if (!sessions.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--fg3)">No saved sessions yet — click Record, walk the page, then Stop.</div>';
+    return;
+  }
+  el.innerHTML = sessions.map(s => `
+    <div class="sr-session-row" data-sr-id="${s.id}">
+      <div class="sr-session-main">
+        <div>${esc(s.label || 'Untitled session')}${s.capped ? ' <span class="ab-warn">(capped)</span>' : ''}</div>
+        <div class="sr-session-sub">${new Date(s.startedAt).toLocaleString()} · ${fmtDur(s.duration || 0)} · ${(s.events || []).length} events · ${esc((s.pages || []).slice(0, 2).join(', '))}${(s.pages || []).length > 2 ? ' +' + (s.pages.length - 2) : ''}</div>
+      </div>
+      <button class="btn sm" data-sr-view>View</button>
+      <button class="btn-icon" data-sr-export title="Export session JSON">⭳</button>
+      <button class="btn-icon" data-sr-delete title="Delete session" style="color:var(--err)">✕</button>
+    </div>`).join('');
+
+  el.querySelectorAll('.sr-session-row').forEach(row => {
+    const id = +row.dataset.srId;
+    row.querySelector('[data-sr-view]').addEventListener('click', () => viewSrSession(id));
+    row.querySelector('[data-sr-export]').addEventListener('click', async () => {
+      const s = await idbGet('sessions', id);
+      if (s) downloadJson(s, 'session-' + (s.label || 'untitled').replace(/[^\w-]+/g, '-').toLowerCase() + '-' + new Date(s.startedAt).toISOString().replace(/[:.]/g, '-') + '.json');
+    });
+    row.querySelector('[data-sr-delete]').addEventListener('click', async () => {
+      if (!confirm('Delete this session?')) return;
+      await idbDelete('sessions', id);
+      if (_srViewedSession?.id === id) {
+        _srViewedSession = null;
+        document.getElementById('sr-viewer').style.display = 'none';
+      }
+      await renderSrSessions();
+    });
+  });
+}
+
+async function viewSrSession(id) {
+  const s = await idbGet('sessions', id);
+  if (!s) return;
+  _srViewedSession = s;
+  document.getElementById('sr-viewer').style.display = '';
+  document.getElementById('sr-viewer-title').textContent =
+    (s.label || 'Untitled session') + ' — ' + new Date(s.startedAt).toLocaleString();
+  document.getElementById('sr-overlay-warn').textContent = '';
+  renderSrTimeline();
+}
+
+// Chronological items for the timeline: navigations (from segments), clicks,
+// scroll milestones, and metric fires. Mouse-movement samples are overlay-only.
+function srTimelineItems(s) {
+  const items = [];
+  (s.segments || []).forEach((seg, i) => items.push({ type: 'nav', t: seg.t, text: seg.url, seg: i }));
+  let lastDepth = -100;
+  for (const e of (s.events || [])) {
+    if (e.type === 'move') continue;
+    if (e.type === 'scroll') {
+      // Milestones only — raw samples arrive ~4/sec and would flood the list.
+      if (Math.abs((e.depth || 0) - lastDepth) < 10) continue;
+      lastDepth = e.depth || 0;
+    }
+    items.push(e);
+  }
+  items.sort((a, b) => a.t - b.t);
+  return items;
+}
+
+function renderSrTimeline() {
+  const el = document.getElementById('sr-timeline');
+  const s = _srViewedSession;
+  if (!el || !s) return;
+  const items = srTimelineItems(s).filter(e => !_srFilter || e.type === _srFilter);
+  if (!items.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--fg3);padding:8px">No events' + (_srFilter ? ' of this type' : '') + '.</div>';
+    return;
+  }
+  const badge = { click: 'CLICK', scroll: 'SCROLL', metric: 'METRIC', nav: 'NAV' };
+  el.innerHTML = items.map(e => {
+    const ts = fmtDur(e.t - s.startedAt);
+    let text, cls = '';
+    if (e.type === 'click') {
+      text = (e.sel ? e.sel + ' ' : '') + `(${Math.round(e.x)}, ${Math.round(e.y)})`;
+      cls = ' sr-ev-click';
+    } else if (e.type === 'scroll') {
+      text = `scrolled to ${e.depth}% depth`;
+    } else if (e.type === 'metric') {
+      text = e.text;
+    } else {
+      text = e.text;
+    }
+    return `
+      <div class="sr-ev${cls}"${e.type === 'click' && e.sel ? ` data-sr-sel="${esc(e.sel).replace(/"/g, '&quot;')}" title="Click to highlight this element on the page"` : ''}>
+        <span class="sr-ev-ts">${ts}</span>
+        <span class="sr-ev-badge${e.type === 'metric' ? ' sr-ev-metric-badge' : ''}">${badge[e.type] || e.type}</span>
+        <span class="sr-ev-text">${esc(text || '')}</span>
+      </div>`;
+  }).join('');
+
+  el.querySelectorAll('[data-sr-sel]').forEach(row => {
+    row.addEventListener('click', async () => {
+      const res = await chrome.runtime.sendMessage({ action: 'highlightElement', tabId: null, selector: row.dataset.srSel });
+      if ((!res?.ok || !res.found) && !row.querySelector('.a11y-loc-miss')) {
+        const note = document.createElement('span');
+        note.className = 'a11y-loc-miss';
+        note.textContent = ' — not found on the current page';
+        note.style.color = 'var(--fg3)';
+        row.appendChild(note);
+        setTimeout(() => note.remove(), 2500);
+      }
+    });
+  });
+}
+
+async function srShowOverlay() {
+  const s = _srViewedSession;
+  if (!s) return;
+  const warnEl = document.getElementById('sr-overlay-warn');
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const strip = u => { try { const x = new URL(u); return x.origin + x.pathname; } catch (_) { return u || ''; } };
+  const cur = strip(tab?.url);
+
+  // Prefer segments recorded at the current page's URL; fall back to all
+  // segments with a warning if the tab is somewhere else.
+  let segIdxs = (s.segments || []).map((seg, i) => (strip(seg.url) === cur ? i : -1)).filter(i => i >= 0);
+  if (!segIdxs.length) {
+    segIdxs = (s.segments || []).map((_, i) => i);
+    warnEl.textContent = '⚠ The active tab is not at this session’s URL — overlay points may not line up.';
+  } else {
+    warnEl.textContent = '';
+  }
+  const segSet = new Set(segIdxs);
+  const ref = (s.segments || [])[segIdxs[0]] || {};
+  const events = s.events || [];
+  const payload = {
+    label: s.label || '',
+    segPageW: ref.pageW, segPageH: ref.pageH,
+    clicks: events.filter(e => e.type === 'click' && segSet.has(e.seg)).map(e => ({ x: e.x, y: e.y })),
+    trail: events.filter(e => e.type === 'move' && segSet.has(e.seg)).slice(0, 3000).map(e => ({ x: e.x, y: e.y })),
+    maxDepth: Math.max(0, ...events.filter(e => e.type === 'scroll' && segSet.has(e.seg)).map(e => e.maxDepth || e.depth || 0)),
+  };
+  const res = await chrome.runtime.sendMessage({ action: 'sessionShowOverlay', payload });
+  if (!res?.ok) warnEl.textContent = 'Could not show overlay: ' + (res?.error || 'unknown error');
 }

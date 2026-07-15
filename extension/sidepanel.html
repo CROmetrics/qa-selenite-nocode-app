@@ -237,6 +237,12 @@
     border-bottom:1px solid var(--stroke);word-break:break-all;line-height:1.5}
   .a11y-issue::before{content:'• ';color:var(--err)}
   .a11y-issue:last-child{border-bottom:none}
+  .a11y-issue-loc{cursor:pointer}
+  .a11y-issue-loc:hover{color:var(--fg1);text-decoration:underline dotted}
+  .a11y-guide-title{font-size:10px;font-weight:600;color:var(--fg2);text-transform:uppercase;
+    letter-spacing:.4px;margin:6px 0 2px;padding-left:2px}
+  .a11y-guide-item{font-size:11px;color:var(--fg2);padding:2px 0 2px 10px;line-height:1.5}
+  .a11y-guide-item::before{content:'\2610  ';color:var(--info)}
   .a11y-summary-bar{font-size:12px;padding:4px 2px 8px;display:flex;
     align-items:center;justify-content:space-between;color:var(--fg2)}
   .a11y-summary-total{font-weight:600;color:var(--fg1)}
@@ -247,6 +253,29 @@
   #metrics-empty{color:var(--fg3);text-align:center;padding:12px 0;font-size:12px}
   .metric-row{display:flex;align-items:center;gap:5px}
   .metric-row input{flex:1;font-family:'Cascadia Code','Menlo',monospace;font-size:11px}
+
+
+  /* A/B Variant Comparison */
+  #ab-target-list{display:flex;flex-direction:column;gap:5px}
+  .ab-target{background:var(--surface);border:1px solid var(--stroke);border-radius:5px;
+    padding:6px 8px;display:flex;flex-direction:column;gap:3px}
+  #ab-selector-list{display:flex;flex-direction:column;gap:4px}
+  .ab-sel-row{display:flex;align-items:center;gap:5px}
+  .ab-sel-row input{flex:1;font-family:'Cascadia Code','Menlo',monospace;font-size:11px}
+  .ab-line{font-size:11px;color:var(--fg2);padding:3px 0;border-bottom:1px solid var(--stroke);
+    line-height:1.5;word-break:break-word}
+  .ab-line:last-child{border-bottom:none}
+  .ab-line b{color:var(--fg1);font-weight:600}
+  .ab-sel-block{padding:4px 0;border-bottom:1px solid var(--stroke)}
+  .ab-sel-block:last-child{border-bottom:none}
+  .ab-sel-name{font-family:'Cascadia Code','Menlo',monospace;font-size:11px;color:var(--fg1);margin-bottom:2px}
+  .ab-cline{font-size:10px;padding:1px 0 1px 10px;word-break:break-word;line-height:1.5}
+  .ab-cline.ab-line-add::before{content:'+ ';color:var(--ok);font-weight:700}
+  .ab-cline.ab-line-miss::before{content:'\2212  ';color:var(--warn);font-weight:700}
+  .ab-delta{background:rgba(79,193,255,.14);color:var(--info);border-radius:3px;padding:0 3px}
+  .ab-warn{color:var(--warn);font-weight:600}
+  .ab-err{color:var(--err)}
+  .ab-same-row{opacity:.55}
 
   /* Running indicator */
   .run-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);
@@ -265,7 +294,7 @@
 
 <div id="tabs">
   <div class="tab active" data-tab="build">Build</div>
-  <div class="tab" data-tab="suites">Test Suites</div>
+  <div class="tab" data-tab="testmodes">Test Modes</div>
   <div class="tab" data-tab="console">
     Console
     <span id="run-indicator" style="display:none" class="run-dot"></span>
@@ -376,15 +405,151 @@
 
   </div><!-- /panel-build -->
 
-  <!-- Test Suites panel -->
-  <div class="panel" id="panel-suites">
+  <!-- Test Modes panel -->
+  <div class="panel" id="panel-testmodes">
+
+    <!-- Mode menu -->
+    <div class="card" id="testmodes-menu">
+      <div class="card-title">Test Modes</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <button class="btn testmode-btn" id="btn-testmode-1" data-testmode="1">Functional Testing Mode</button>
+        <button class="btn testmode-btn" id="btn-testmode-2" data-testmode="2">A/B Variant Comparison Mode</button>
+        <button class="btn testmode-btn" id="btn-testmode-3" data-testmode="3">Visual Regression Mode</button>
+        <button class="btn testmode-btn" id="btn-testmode-4" data-testmode="4">WCAG / Accessibility Mode</button>
+        <button class="btn testmode-btn" id="btn-testmode-5" data-testmode="5">Cross-Variant Accessibility Mode</button>
+        <button class="btn testmode-btn" id="btn-testmode-6" data-testmode="6">Performance/Load Mode</button>
+        <button class="btn testmode-btn" id="btn-testmode-7" data-testmode="7">Session Replay / Heatmap Mode</button>
+      </div>
+    </div>
+
+    <!-- Mode submenus -->
+    <div class="card testmode-sub" id="testmode-sub-1" style="display:none">
+      <div class="row-spread" style="margin-bottom:10px">
+        <div class="card-title" style="margin-bottom:0">Functional Testing Mode</div>
+        <button class="btn testmode-back">‹ Back</button>
+      </div>
+      <div>
+        <label class="cap">Scope</label>
+        <div class="radio-group">
+          <input type="radio" name="tm-scope-1" id="tm-scope-1-single" value="single" checked>
+          <label for="tm-scope-1-single">Single</label>
+          <input type="radio" name="tm-scope-1" id="tm-scope-1-multi" value="multi">
+          <label for="tm-scope-1-multi">Multi</label>
+        </div>
+      </div>
+      <div>
+        <label class="cap">Pages</label>
+        <div class="tm-pages" data-mode="1" style="display:flex;flex-direction:column;gap:6px"></div>
+        <button class="btn ghost sm tm-add-page" data-mode="1" type="button" style="display:none;align-self:flex-start;margin-top:4px;padding:3px 8px;font-size:12px">+ Add Page</button>
+      </div>
+    </div>
+    <div class="card testmode-sub" id="testmode-sub-2" style="display:none">
+      <div class="row-spread" style="margin-bottom:10px">
+        <div class="card-title" style="margin-bottom:0">A/B Variant Comparison Mode</div>
+        <button class="btn testmode-back">‹ Back</button>
+      </div>
+    <!-- A/B Variant Comparison -->
+    <div class="card" style="margin-top:8px">
+      <div class="row-spread" style="margin-bottom:10px">
+        <div>
+          <div class="card-title" style="margin-bottom:1px">A/B Variant Comparison</div>
+          <div style="font-size:10px;color:var(--fg3)">Loads each variant once, then shows what differs · differences are not failures</div>
+        </div>
+        <div class="row" style="gap:5px;flex-shrink:0">
+          <button class="btn danger sm" id="btn-stop-abcompare" style="display:none">Stop</button>
+          <button class="btn primary sm" id="btn-run-abcompare">Run Comparison</button>
+        </div>
+      </div>
+
+      <div class="script-row">
+        <select id="ab-set-select"><option disabled>&lt;no saved sets&gt;</option></select>
+        <button class="btn sm" id="btn-ab-load-set">Load</button>
+        <button class="btn danger sm" id="btn-ab-delete-set">Delete</button>
+      </div>
+      <div class="script-row" style="margin-bottom:8px">
+        <input type="text" id="ab-set-name" placeholder="Save targets as…">
+        <button class="btn sm" id="btn-ab-save-set">Save</button>
+      </div>
+
+      <div class="arg-row" style="margin-bottom:6px">
+        <span class="arg-lbl">Base URL</span>
+        <input type="text" id="ab-base-url" placeholder="https://example.com — shared by all variants">
+      </div>
+      <div class="row" style="gap:14px;flex-wrap:wrap;margin-bottom:10px">
+        <span class="row" style="gap:5px">
+          <label class="toggle-wrap" title="Append cro_mode=qa as the last parameter on every variant URL">
+            <input type="checkbox" id="ab-qa-mode">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+          <span style="font-size:11px;color:var(--fg2)">QA Mode</span>
+        </span>
+        <span class="row" style="gap:5px" title="Extra wait after page load so experiment scripts can apply their changes">
+          <span style="font-size:11px;color:var(--fg2)">Settle (s)</span>
+          <input type="text" id="ab-settle" value="3" style="width:40px">
+        </span>
+        <label class="row" style="gap:5px;font-size:11px;color:var(--fg2);cursor:pointer" title="Leave each variant tab open for manual inspection">
+          <input type="checkbox" id="ab-keep-tabs" style="accent-color:var(--brand);cursor:pointer">Keep tabs open
+        </label>
+      </div>
+
+      <label class="cap">Variant Targets</label>
+      <div id="ab-target-list"></div>
+      <button class="btn sm" id="btn-ab-add-target" style="margin:5px 0 10px">+ Add Variant</button>
+
+      <label class="cap">Watched Selectors (optional)</label>
+      <div id="ab-selector-list"></div>
+      <button class="btn sm" id="btn-ab-add-selector" style="margin:5px 0 10px">+ Add Selector</button>
+
+      <div id="ab-results"></div>
+    </div>
+    </div>
+    <div class="card testmode-sub" id="testmode-sub-3" style="display:none">
+      <div class="row-spread" style="margin-bottom:10px">
+        <div class="card-title" style="margin-bottom:0">Visual Regression Mode</div>
+        <button class="btn testmode-back">‹ Back</button>
+      </div>
+      <div>
+        <label class="cap">Scope</label>
+        <div class="radio-group">
+          <input type="radio" name="tm-scope-3" id="tm-scope-3-single" value="single" checked>
+          <label for="tm-scope-3-single">Single</label>
+          <input type="radio" name="tm-scope-3" id="tm-scope-3-multi" value="multi">
+          <label for="tm-scope-3-multi">Multi</label>
+        </div>
+      </div>
+      <div>
+        <label class="cap">Pages</label>
+        <div class="tm-pages" data-mode="3" style="display:flex;flex-direction:column;gap:6px"></div>
+        <button class="btn ghost sm tm-add-page" data-mode="3" type="button" style="display:none;align-self:flex-start;margin-top:4px;padding:3px 8px;font-size:12px">+ Add Page</button>
+      </div>
+    </div>
+    <div class="card testmode-sub" id="testmode-sub-4" style="display:none">
+      <div class="row-spread" style="margin-bottom:10px">
+        <div class="card-title" style="margin-bottom:0">WCAG / Accessibility Mode</div>
+        <button class="btn testmode-back">‹ Back</button>
+      </div>
     <div class="card">
       <div class="row-spread" style="margin-bottom:12px">
         <div>
           <div class="card-title" style="margin-bottom:1px">WCAG 2.2 Audit</div>
-          <div style="font-size:10px;color:var(--fg3)">Runs against the active tab · <span style="color:var(--brand)">Info</span> rows need a manual check</div>
+          <div style="font-size:10px;color:var(--fg3)">Runs against the active tab · <span style="color:var(--brand)">Manual</span> rows include a hand-check list</div>
         </div>
         <button class="btn primary" id="btn-run-wcag">Run Audit</button>
+      </div>
+
+      <div class="script-row">
+        <select id="wcag-preset-select"></select>
+        <button class="btn sm" id="btn-wcag-load-preset">Load</button>
+        <button class="btn danger sm" id="btn-wcag-delete-preset">Delete</button>
+      </div>
+      <div class="script-row" style="margin-bottom:8px">
+        <input type="text" id="wcag-preset-name" placeholder="Save checks as preset…">
+        <button class="btn sm" id="btn-wcag-save-preset">Save</button>
+      </div>
+      <div class="arg-row" id="wcag-scope-row" style="margin-bottom:10px">
+        <span class="arg-lbl">Scope</span>
+        <input type="text" id="wcag-scope" placeholder="(optional) CSS selector — audit only this region">
+        <button class="btn-pick" data-pick-arg="wcag-scope" id="btn-wcag-scope-pick" title="Pick element from page">🎯</button>
       </div>
       <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:12px">
         <label class="suite-check"><input type="checkbox" name="wcag-check" value="titles" checked>Page Identity &amp; Titles <span style="color:var(--fg3);font-size:10px">2.4.2</span></label>
@@ -408,7 +573,77 @@
         <label class="suite-check"><input type="checkbox" name="wcag-check" value="realworld" checked>Real-World Task Usability <span style="color:var(--fg3);font-size:10px">cross-cutting · manual</span></label>
       </div>
       <div id="wcag-results"></div>
+
+      <div style="margin-top:10px">
+        <label class="cap">Recent Runs</label>
+        <div class="script-row">
+          <select id="wcag-history-select"><option disabled>&lt;no past runs&gt;</option></select>
+          <button class="btn sm" id="btn-wcag-view-history">View</button>
+        </div>
+      </div>
     </div>
+    </div>
+    <div class="card testmode-sub" id="testmode-sub-5" style="display:none">
+      <div class="row-spread" style="margin-bottom:10px">
+        <div class="card-title" style="margin-bottom:0">Cross-Variant Accessibility Mode</div>
+        <button class="btn testmode-back">‹ Back</button>
+      </div>
+      <div>
+        <label class="cap">Scope</label>
+        <div class="radio-group">
+          <input type="radio" name="tm-scope-5" id="tm-scope-5-single" value="single" checked>
+          <label for="tm-scope-5-single">Single</label>
+          <input type="radio" name="tm-scope-5" id="tm-scope-5-multi" value="multi">
+          <label for="tm-scope-5-multi">Multi</label>
+        </div>
+      </div>
+      <div>
+        <label class="cap">Pages</label>
+        <div class="tm-pages" data-mode="5" style="display:flex;flex-direction:column;gap:6px"></div>
+        <button class="btn ghost sm tm-add-page" data-mode="5" type="button" style="display:none;align-self:flex-start;margin-top:4px;padding:3px 8px;font-size:12px">+ Add Page</button>
+      </div>
+    </div>
+    <div class="card testmode-sub" id="testmode-sub-6" style="display:none">
+      <div class="row-spread" style="margin-bottom:10px">
+        <div class="card-title" style="margin-bottom:0">Performance/Load Mode</div>
+        <button class="btn testmode-back">‹ Back</button>
+      </div>
+      <div>
+        <label class="cap">Scope</label>
+        <div class="radio-group">
+          <input type="radio" name="tm-scope-6" id="tm-scope-6-single" value="single" checked>
+          <label for="tm-scope-6-single">Single</label>
+          <input type="radio" name="tm-scope-6" id="tm-scope-6-multi" value="multi">
+          <label for="tm-scope-6-multi">Multi</label>
+        </div>
+      </div>
+      <div>
+        <label class="cap">Pages</label>
+        <div class="tm-pages" data-mode="6" style="display:flex;flex-direction:column;gap:6px"></div>
+        <button class="btn ghost sm tm-add-page" data-mode="6" type="button" style="display:none;align-self:flex-start;margin-top:4px;padding:3px 8px;font-size:12px">+ Add Page</button>
+      </div>
+    </div>
+    <div class="card testmode-sub" id="testmode-sub-7" style="display:none">
+      <div class="row-spread" style="margin-bottom:10px">
+        <div class="card-title" style="margin-bottom:0">Session Replay / Heatmap Mode</div>
+        <button class="btn testmode-back">‹ Back</button>
+      </div>
+      <div>
+        <label class="cap">Scope</label>
+        <div class="radio-group">
+          <input type="radio" name="tm-scope-7" id="tm-scope-7-single" value="single" checked>
+          <label for="tm-scope-7-single">Single</label>
+          <input type="radio" name="tm-scope-7" id="tm-scope-7-multi" value="multi">
+          <label for="tm-scope-7-multi">Multi</label>
+        </div>
+      </div>
+      <div>
+        <label class="cap">Pages</label>
+        <div class="tm-pages" data-mode="7" style="display:flex;flex-direction:column;gap:6px"></div>
+        <button class="btn ghost sm tm-add-page" data-mode="7" type="button" style="display:none;align-self:flex-start;margin-top:4px;padding:3px 8px;font-size:12px">+ Add Page</button>
+      </div>
+    </div>
+
   </div>
 
   <!-- Console -->

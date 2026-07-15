@@ -553,6 +553,143 @@ async function runQueue({ queue, mode, targetTabId, universalDelay }) {
   }
 }
 
+// ── A/B Variant Comparison (Test Modes tab) ────────────────────────────────
+// Loads each variant target once in its own tab — sequentially, never in
+// parallel — and captures page basics, [PJS]/[cro]-tagged console output,
+// uncaught JS errors, and watched-selector state. Returns the raw per-variant
+// captures; diffing and rendering live in popup.js. This path is fully
+// independent of the Build tab queue and never reads or executes it.
+let _abStopRequested = false;
+let _abCapture = null;   // { tabId, lines: [] } while a variant tab is being captured
+
+async function setAbProgress(p) {
+  await chrome.storage.session.set({ abProgress: p });
+}
+
+// waitForLoad with a hard timeout; unlike waitForLoad it removes its listener
+// on both outcomes so timed-out runs don't leak onUpdated listeners.
+function waitForLoadTimeout(tabId, ms) {
+  return new Promise((resolve, reject) => {
+    let timer = null;
+    function listener(id, info) {
+      if (id === tabId && info.status === 'complete') done();
+    }
+    function done(err) {
+      chrome.tabs.onUpdated.removeListener(listener);
+      clearTimeout(timer);
+      err ? reject(err) : resolve();
+    }
+    timer = setTimeout(() => done(new Error(`Page load timed out after ${ms / 1000}s`)), ms);
+    chrome.tabs.onUpdated.addListener(listener);
+    chrome.tabs.get(tabId, (tab) => {
+      if (tab && tab.status === 'complete') done();
+    });
+  });
+}
+
+// MAIN-world collector for uncaught errors and unhandled rejections during the
+// variant load. console-capture.js only sees console.* calls, so this fills
+// the JS-error gap without needing the debugger attached.
+async function injectAbErrorCollector(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: () => {
+      if (window.__abErrors) return;
+      window.__abErrors = [];
+      window.addEventListener('error', e =>
+        window.__abErrors.push(String(e.message || 'Script error') + (e.filename ? ` (${e.filename}:${e.lineno})` : '')));
+      window.addEventListener('unhandledrejection', e =>
+        window.__abErrors.push('Unhandled rejection: ' + String((e.reason && e.reason.message) || e.reason || '')));
+    },
+  });
+}
+
+async function captureVariant(target, { settleMs, selectors, keepTabs }) {
+  const out = {
+    label: target.label, url: target.url,
+    finalUrl: '', title: '', loadError: null,
+    console: [], errors: [], selectors: [], tabId: null,
+  };
+  let tab = null;
+  try {
+    tab = await chrome.tabs.create({ url: normalizeUrl(target.url), active: true });
+    _abCapture = { tabId: tab.id, lines: [] };
+    // Inject as early as possible, then again after load — both scripts are
+    // idempotent, and experiment scripts typically log after DOMContentLoaded,
+    // so the post-load injection is the one that matters on slow pages.
+    try { await injectCapture(tab.id); await injectAbErrorCollector(tab.id); } catch (_) {}
+    await waitForLoadTimeout(tab.id, 30000);
+    try {
+      await injectCapture(tab.id);
+      await injectAbErrorCollector(tab.id);
+    } catch (e) {
+      throw new Error(`Could not inject into page (${e.message})`);
+    }
+    if (settleMs > 0) await new Promise(r => setTimeout(r, settleMs));
+
+    const t = await chrome.tabs.get(tab.id);
+    out.finalUrl = t.url || '';
+    out.title    = t.title || '';
+
+    const errRes = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () => (window.__abErrors || []).slice(0, 50),
+    });
+    out.errors = errRes?.[0]?.result || [];
+
+    if (selectors.length) {
+      out.selectors = await exec(tab.id, (sels) => sels.map(s => {
+        try {
+          const el = document.querySelector(s);
+          if (!el) return { selector: s, exists: false, visible: false, text: '', styles: null };
+          const cs = getComputedStyle(el);
+          const r  = el.getBoundingClientRect();
+          const visible = cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0 && r.height > 0;
+          return {
+            selector: s, exists: true, visible,
+            text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 300),
+            styles: { display: cs.display, visibility: cs.visibility, color: cs.color, 'background-color': cs.backgroundColor },
+          };
+        } catch (e) {
+          return { selector: s, exists: false, visible: false, text: '', styles: null, error: e.message };
+        }
+      }), [selectors]);
+    }
+  } catch (e) {
+    out.loadError = e.message;
+  } finally {
+    out.console = _abCapture ? _abCapture.lines.slice() : [];
+    _abCapture = null;
+    if (tab) {
+      if (keepTabs) out.tabId = tab.id;
+      else { try { await chrome.tabs.remove(tab.id); } catch (_) {} }
+    }
+  }
+  return out;
+}
+
+async function runVariantComparison({ targets = [], settleSeconds, keepTabs, selectors = [] }) {
+  _abStopRequested = false;
+  const settleMs = Math.max(0, (parseFloat(settleSeconds) || 0) * 1000);
+  const sels = selectors.map(s => String(s).trim()).filter(Boolean);
+  const results = [];
+  try {
+    for (let i = 0; i < targets.length; i++) {
+      if (_abStopRequested) {
+        results.push({ label: targets[i].label, url: targets[i].url, skipped: true });
+        continue;
+      }
+      await setAbProgress({ running: true, index: i, total: targets.length, label: targets[i].label });
+      results.push(await captureVariant(targets[i], { settleMs, selectors: sels, keepTabs: !!keepTabs }));
+    }
+  } finally {
+    await setAbProgress({ running: false });
+  }
+  return results;
+}
+
 // ── Arg name map (mirrors functions.py signatures) ─────────────────────────
 const ARG_NAMES = {
   open_url:                  ['url', 'params', 'qa_mode'],
@@ -609,6 +746,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   } else if (msg.action === 'stop') {
     _stopRequested = true;
+    _abStopRequested = true;   // shared stop: also halts a variant comparison run
     sendResponse({ ok: true });
 
   } else if (msg.action === 'status') {
@@ -666,6 +804,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   } else if (msg.action === 'browserLog') {
     addLog(msg.level, `[browser] ${msg.text}`, { browser: true, tagged: !!msg.tagged });
+    // While a variant comparison is capturing, tagged lines from the variant's
+    // own tab are also buffered per variant for the post-run diff.
+    if (_abCapture && sender?.tab?.id === _abCapture.tabId && msg.tagged) {
+      _abCapture.lines.push({ level: msg.level, text: msg.text });
+    }
     // The CDP mirror sees the same console call when the debugger is attached
     // to this tab — only record the metric from this fallback path when it
     // isn't, so a single fire never counts twice.
@@ -776,14 +919,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.storage.session.set({ pickerResult: { selector: msg.selector, ts: Date.now() } });
     sendResponse({ ok: true });
 
+  } else if (msg.action === 'runVariantComparison') {
+    (async () => {
+      try {
+        const results = await runVariantComparison(msg.payload || {});
+        sendResponse({ ok: true, results });
+      } catch (e) {
+        try { await setAbProgress({ running: false }); } catch (_) {}
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+
   } else if (msg.action === 'runWcagAudit') {
     (async () => {
       const checks = msg.checks || [];
+      const scope  = (msg.scope || '').trim();
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       const tabId = tabs[0]?.id;
       if (!tabId) { sendResponse({ ok: false, error: 'No active tab' }); return; }
       try {
-        const results = await exec(tabId, function(checks) {
+        const results = await exec(tabId, function(checks, scope) {
 
           function brief(el) {
             if (el.id) return '#' + el.id;
@@ -808,6 +964,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           function cssEsc(s) { try { return CSS.escape(s); } catch (e) { return s.replace(/["\\\]]/g, '\\$&'); } }
 
+          // Optional scoping: restrict element sweeps to a subtree so only the DOM
+          // an experiment variant touches is audited. Document-level facts —
+          // title, stylesheets, viewport meta, label/skip-link id lookups —
+          // intentionally stay global.
+          let ROOT = document;
+          let scopeError = null;
+          if (scope) {
+            try {
+              const scopeEl = document.querySelector(scope);
+              if (scopeEl) ROOT = scopeEl;
+              else scopeError = 'Scope selector matched nothing — audited the full page instead: ' + scope;
+            } catch (e) {
+              scopeError = 'Invalid scope selector — audited the full page instead: ' + scope;
+            }
+          }
+
           const out = {};
 
           // 1. Page Identity & Titles — 2.4.2
@@ -826,11 +998,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 2. Navigation Consistency — 3.2.3 / 3.2.4 / 3.2.6
           if (checks.includes('navconsistency')) {
             const issues = [];
-            if (!document.querySelector('nav,[role="navigation"]')) issues.push('No <nav> / role="navigation" landmark found');
-            if (!document.querySelector('header,[role="banner"]')) issues.push('No <header> / role="banner" region');
-            if (!document.querySelector('footer,[role="contentinfo"]')) issues.push('No <footer> / role="contentinfo" region');
+            if (!ROOT.querySelector('nav,[role="navigation"]')) issues.push('No <nav> / role="navigation" landmark found');
+            if (!ROOT.querySelector('header,[role="banner"]')) issues.push('No <header> / role="banner" region');
+            if (!ROOT.querySelector('footer,[role="contentinfo"]')) issues.push('No <footer> / role="contentinfo" region');
             const helpRe = /help|contact|support|faq/i;
-            const hasHelp = [...document.querySelectorAll('a,button')]
+            const hasHelp = [...ROOT.querySelectorAll('a,button')]
               .some(el => helpRe.test(el.textContent || '') || helpRe.test(el.getAttribute('aria-label') || ''));
             if (!hasHelp) issues.push('No help / contact / support mechanism detected (3.2.6)');
             out.navconsistency = { label: 'Navigation Consistency', issues, wcag: '3.2.3, 3.2.4, 3.2.6' };
@@ -839,10 +1011,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 3. Alternate Paths to Content — 2.4.5
           if (checks.includes('multipleways')) {
             const issues = [];
-            const hasSearch = !!document.querySelector('input[type="search"], [role="search"], form[role="search"], input[name*="search" i], input[name="q"], input[placeholder*="search" i]');
-            const hasSitemap = [...document.querySelectorAll('a[href]')]
+            const hasSearch = !!ROOT.querySelector('input[type="search"], [role="search"], form[role="search"], input[name*="search" i], input[name="q"], input[placeholder*="search" i]');
+            const hasSitemap = [...ROOT.querySelectorAll('a[href]')]
               .some(a => /sitemap/i.test(a.textContent || '') || /sitemap/i.test(a.getAttribute('href') || ''));
-            const hasNav = document.querySelectorAll('nav a[href], [role="navigation"] a[href]').length > 0;
+            const hasNav = ROOT.querySelectorAll('nav a[href], [role="navigation"] a[href]').length > 0;
             const ways = [];
             if (hasNav) ways.push('navigation menu');
             if (hasSearch) ways.push('site search');
@@ -854,7 +1026,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 4. Skip Link Functionality — 2.4.1
           if (checks.includes('skiplink')) {
             const issues = [];
-            const anchors = [...document.querySelectorAll('a[href^="#"]')];
+            const anchors = [...ROOT.querySelectorAll('a[href^="#"]')];
             const skip = anchors.find(a => /skip|jump to/i.test(a.textContent || '') || /skip/i.test(a.getAttribute('href') || ''));
             if (!skip) issues.push('No "skip to main content" link found (checked in-page # anchors)');
             else {
@@ -870,11 +1042,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 5. Keyboard Path Verification — 2.1.1 / 2.4.3
           if (checks.includes('keyboardpath')) {
             const issues = [];
-            [...document.querySelectorAll('[tabindex]')]
+            [...ROOT.querySelectorAll('[tabindex]')]
               .filter(el => parseInt(el.getAttribute('tabindex'), 10) > 0)
               .slice(0, 15)
               .forEach(el => issues.push('Positive tabindex=' + el.getAttribute('tabindex') + ' on ' + brief(el) + ' — disrupts natural focus order (2.4.3)'));
-            const badNeg = [...document.querySelectorAll('a[href],button,input,select,textarea')]
+            const badNeg = [...ROOT.querySelectorAll('a[href],button,input,select,textarea')]
               .filter(el => el.getAttribute('tabindex') === '-1' && !el.hasAttribute('disabled'));
             if (badNeg.length) issues.push(badNeg.length + ' natively focusable control(s) removed from tab order via tabindex="-1"');
             out.keyboardpath = { label: 'Keyboard Path Verification', issues: issues.slice(0, 20), wcag: '2.1.1, 2.4.3' };
@@ -882,7 +1054,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           // 6. Modal & Dialog Escape — 2.1.2 (interaction required)
           if (checks.includes('modalescape')) {
-            const dialogs = [...document.querySelectorAll('dialog,[role="dialog"],[role="alertdialog"],[aria-modal="true"]')];
+            const dialogs = [...ROOT.querySelectorAll('dialog,[role="dialog"],[role="alertdialog"],[aria-modal="true"]')];
             const issues = [];
             if (!dialogs.length) issues.push('No modal/dialog in the current DOM. Open each modal and confirm Escape (or a visible close control) exits it without trapping keyboard focus.');
             else dialogs.forEach(d => issues.push(brief(d) + ' — verify Escape closes it and focus is not trapped (2.1.2)'));
@@ -892,13 +1064,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 7. Form Error Handling — 3.3.1 / 3.3.3 / 4.1.3
           if (checks.includes('formerror')) {
             const issues = [];
-            const forms = [...document.querySelectorAll('form')];
+            const forms = [...ROOT.querySelectorAll('form')];
             if (!forms.length) issues.push('No <form> on the page to validate');
             else {
-              if (!document.querySelector('[aria-live],[role="alert"],[role="status"]')) {
+              if (!ROOT.querySelector('[aria-live],[role="alert"],[role="status"]')) {
                 issues.push('No aria-live / role="alert" region — validation & status messages may not be announced (4.1.3)');
               }
-              const req = [...document.querySelectorAll('input[required],select[required],textarea[required],[aria-required="true"]')];
+              const req = [...ROOT.querySelectorAll('input[required],select[required],textarea[required],[aria-required="true"]')];
               const noDesc = req.filter(el => !el.getAttribute('aria-describedby') && !el.getAttribute('aria-errormessage'));
               if (noDesc.length) issues.push(noDesc.length + ' required field(s) lack aria-describedby / aria-errormessage to carry an error suggestion (3.3.1, 3.3.3)');
             }
@@ -917,7 +1089,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 9. Destructive Action Confirmation — 3.3.4 / 3.3.6 (interaction required)
           if (checks.includes('destructive')) {
             const re = /\b(delete|remove|discard|cancel subscription|deactivate|close account|erase|clear all|pay now|place order|submit order|confirm purchase|buy now|checkout)\b/i;
-            const found = [...document.querySelectorAll('button,a[href],input[type="submit"],[role="button"]')]
+            const found = [...ROOT.querySelectorAll('button,a[href],input[type="submit"],[role="button"]')]
               .map(el => (accName(el) || '').trim())
               .filter(name => name && re.test(name))
               .map(name => '"' + name.slice(0, 40) + '"');
@@ -931,7 +1103,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 10. Link Purpose — 2.4.4 / 2.4.9
           if (checks.includes('linkpurpose')) {
             const bad = new Set(['click here', 'here', 'read more', 'more', 'link', 'this', 'click', 'learn more', 'details', 'more info', 'info', 'go', 'go here', 'this link', 'continue', 'see more', 'view', 'download']);
-            const issues = [...document.querySelectorAll('a[href]')]
+            const issues = [...ROOT.querySelectorAll('a[href]')]
               .filter(a => !a.getAttribute('aria-label') && bad.has((a.textContent || '').trim().toLowerCase()))
               .map(a => '"' + a.textContent.trim() + '" → ' + (a.href || '').slice(0, 60));
             out.linkpurpose = { label: 'Link Purpose', issues: issues.slice(0, 25), wcag: '2.4.4, 2.4.9' };
@@ -940,7 +1112,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 11. Form Labeling — 3.3.2 / 1.3.1
           if (checks.includes('formlabels')) {
             const sel = 'input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([type=image]), select, textarea';
-            const issues = [...document.querySelectorAll(sel)]
+            const issues = [...ROOT.querySelectorAll(sel)]
               .filter(inp => {
                 if (inp.id && document.querySelector('label[for="' + cssEsc(inp.id) + '"]')) return false;
                 if ((inp.getAttribute('aria-label') || '').trim()) return false;
@@ -988,7 +1160,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
             const uniq = [...new Set(killed)];
             if (uniq.length) issues.push('Focus outline removed without a :focus-visible replacement in: ' + uniq.slice(0, 10).join('  ;  '));
-            const inline = [...document.querySelectorAll('a[href],button,input,select,textarea')]
+            const inline = [...ROOT.querySelectorAll('a[href],button,input,select,textarea')]
               .filter(el => /outline\s*:\s*(none|0\b)/.test(el.getAttribute('style') || ''));
             if (inline.length) issues.push(inline.length + ' element(s) hide the focus ring via inline outline:none');
             out.focusvis = { label: 'Focus Visibility', issues, wcag: '2.4.7, 2.4.11' };
@@ -996,14 +1168,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           // 14. ARIA State Toggling — 4.1.2
           if (checks.includes('ariastate')) {
-            const togglers = [...document.querySelectorAll('button,[role="button"],[aria-haspopup],[data-toggle],[class*="accordion" i],[class*="dropdown" i],[class*="collapse" i]')];
+            const togglers = [...ROOT.querySelectorAll('button,[role="button"],[aria-haspopup],[data-toggle],[class*="accordion" i],[class*="dropdown" i],[class*="collapse" i]')];
             const missing = togglers
               .filter(el => {
                 if (el.hasAttribute('aria-expanded') || el.hasAttribute('aria-pressed') || el.hasAttribute('aria-checked') || el.hasAttribute('aria-selected')) return false;
                 return el.hasAttribute('aria-haspopup') || el.hasAttribute('data-toggle') || /accordion|dropdown|toggle|collapse/i.test(el.className);
               })
               .map(el => brief(el) + ' — interactive widget with no aria-expanded/aria-pressed state');
-            const tabs = [...document.querySelectorAll('[role="tab"]')]
+            const tabs = [...ROOT.querySelectorAll('[role="tab"]')]
               .filter(el => !el.hasAttribute('aria-selected'))
               .map(el => brief(el) + ' — role="tab" without aria-selected');
             out.ariastate = { label: 'ARIA State Toggling', issues: [...missing, ...tabs].slice(0, 25), wcag: '4.1.2' };
@@ -1029,7 +1201,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             function ratio(c1, c2) { const l1 = lum(...c1), l2 = lum(...c2); return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); }
             const issues = [];
             const seen = new Set();
-            const els = [...document.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,td,th,a,button,label,span')]
+            const els = [...ROOT.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,td,th,a,button,label,span')]
               .filter(el => el.offsetParent !== null && el.textContent.trim().length > 1)
               .slice(0, 90);
             for (const el of els) {
@@ -1069,12 +1241,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 17. Motion & Flashing — 2.2.2 / 2.3.1
           if (checks.includes('motion')) {
             const issues = [];
-            [...document.querySelectorAll('video[autoplay],audio[autoplay]')]
+            [...ROOT.querySelectorAll('video[autoplay],audio[autoplay]')]
               .filter(m => !m.hasAttribute('controls'))
               .forEach(m => issues.push(brief(m) + ' — autoplaying ' + m.tagName.toLowerCase() + ' with no controls to pause/stop (2.2.2)'));
-            if (document.querySelector('marquee,blink')) issues.push('<marquee>/<blink> element present — continuous motion with no pause (2.2.2)');
+            if (ROOT.querySelector('marquee,blink')) issues.push('<marquee>/<blink> element present — continuous motion with no pause (2.2.2)');
             let animated = 0;
-            [...document.querySelectorAll('*')].slice(0, 2000).forEach(el => {
+            [...ROOT.querySelectorAll('*')].slice(0, 2000).forEach(el => {
               const st = getComputedStyle(el);
               if (st.animationName && st.animationName !== 'none' && /infinite/.test(st.animationIterationCount)) animated++;
             });
@@ -1085,14 +1257,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 18. Screen Reader Announcements — 1.1.1 / 4.1.3 / 4.1.2
           if (checks.includes('screenreader')) {
             const issues = [];
-            const noAlt = [...document.querySelectorAll('img')].filter(img => !img.hasAttribute('alt')).length;
+            const noAlt = [...ROOT.querySelectorAll('img')].filter(img => !img.hasAttribute('alt')).length;
             if (noAlt) issues.push(noAlt + ' <img> missing an alt attribute — no text alternative to announce (1.1.1)');
-            const namelessBtns = [...document.querySelectorAll('button,[role="button"],a[href]')]
+            const namelessBtns = [...ROOT.querySelectorAll('button,[role="button"],a[href]')]
               .filter(el => el.offsetParent !== null && !accName(el))
               .slice(0, 15)
               .map(el => brief(el) + ' — control has no accessible name (4.1.2)');
             issues.push(...namelessBtns);
-            if (!document.querySelector('[aria-live],[role="status"],[role="alert"],[role="log"]')) {
+            if (!ROOT.querySelector('[aria-live],[role="status"],[role="alert"],[role="log"]')) {
               issues.push('No live region (aria-live / role="status") — dynamic status updates will not be announced (4.1.3)');
             }
             out.screenreader = { label: 'Screen Reader Announcements', issues: issues.slice(0, 25), wcag: '1.1.1, 4.1.3, 4.1.2' };
@@ -1107,8 +1279,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             };
           }
 
+          out.__scopeError = scopeError;
           return out;
-        }, [checks]);
+        }, [checks, scope]);
 
         // ── axe-core: authoritative engine, merged into the suites above by WCAG SC ──
         let axeError = null;
@@ -1126,10 +1299,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           let violations = [];
           try {
             await chrome.scripting.executeScript({ target: { tabId }, files: ['axe.min.js'] });
-            violations = await exec(tabId, async function () {
+            violations = await exec(tabId, async function (scope) {
               if (typeof window.axe === 'undefined') return { __error: 'axe-core failed to load' };
               try {
-                const r = await window.axe.run(document, {
+                // Same scoping rule as the heuristics: a valid scope selector
+                // constrains the run to that subtree, otherwise full document.
+                let ctx = document;
+                if (scope) {
+                  try { ctx = document.querySelector(scope) || document; } catch (e) {}
+                }
+                const r = await window.axe.run(ctx, {
                   resultTypes: ['violations'],
                   runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] }
                 });
@@ -1142,7 +1321,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                   };
                 });
               } catch (e) { return { __error: e.message }; }
-            }, []);
+            }, [scope]);
           } catch (e) {
             violations = { __error: e.message };
           }
@@ -1164,9 +1343,46 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
         }
 
-        sendResponse({ ok: true, results, axeError });
+        const scopeError = results.__scopeError || null;
+        delete results.__scopeError;
+        sendResponse({ ok: true, results, axeError, scopeError, tabId, url: tabs[0]?.url || '' });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'highlightElement') {
+    // Flash + scroll to an element referenced by an audit issue. Prefers the
+    // tab the audit ran on; falls back to the active tab (e.g. when re-viewing
+    // a history run). Degrades to {found:false} if neither works.
+    (async () => {
+      let tabId = msg.tabId || null;
+      if (tabId) {
+        try { await chrome.tabs.get(tabId); } catch (_) { tabId = null; }
+      }
+      if (!tabId) {
+        const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
+        tabId = t?.id || null;
+      }
+      if (!tabId) { sendResponse({ ok: false, found: false, error: 'No tab available' }); return; }
+      try {
+        const found = await exec(tabId, (sel) => {
+          let el = null;
+          try { el = document.querySelector(sel); } catch (e) { return false; }
+          if (!el) return false;
+          el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          const prevOutline = el.style.outline;
+          const prevOffset  = el.style.outlineOffset;
+          el.style.outline = '3px solid #C50F1F';
+          el.style.outlineOffset = '2px';
+          setTimeout(() => { el.style.outline = prevOutline; el.style.outlineOffset = prevOffset; }, 2500);
+          return true;
+        }, [msg.selector || '']);
+        if (found) { try { await chrome.tabs.update(tabId, { active: true }); } catch (_) {} }
+        sendResponse({ ok: true, found: !!found });
+      } catch (e) {
+        sendResponse({ ok: false, found: false, error: e.message });
       }
     })();
     return true;

@@ -13,7 +13,9 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - Two execution modes: **close after run** or **loop continuously**
 - Tab targeting: run on the **active tab** or open a **new tab**
 - Console log with live output and INFO / WARN / ERR filtering, plus a live browser-console mirror with a CRO (`[PJS]`/`[cro]`) filter
-- WCAG 2.2 audit suite in the **Test Suites** tab
+- **Test Modes** tab — a menu of self-contained testing modes, each on its own subpage
+- WCAG / Accessibility mode — full WCAG 2.2 audit (heuristics + axe-core) with region scoping, check presets, click-to-highlight findings, JSON export, and per-URL run history
+- A/B Variant Comparison mode — load each experiment variant once and diff page state, metric fires, and tagged console output against control
 - Stop execution at any time
 
 ## Installation
@@ -52,6 +54,33 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - Enter a name in the **Script name** field and click **Save** to store the queue.
 - Open the **Load Script** accordion to load or delete a saved script.
 - Scripts are saved to Chrome sync storage and persist across sessions.
+
+### Test Modes
+
+The **Test Modes** tab lists the available testing modes; clicking one opens its subpage (use **‹ Back** to return to the list). Modes are fully independent of the Build tab's queue.
+
+#### WCAG / Accessibility Mode
+
+Runs a WCAG 2.2 accessibility audit (19 heuristic check suites plus axe-core as the authoritative engine) against the active tab. Pick the criteria to check and click **Run Audit**; rows marked **Manual** include a hand-check list of what to verify yourself.
+
+- **Scoping** — enter a CSS selector (or pick one with `🎯`) to audit only that region of the page. Both the heuristic checks and the axe-core run are constrained to the subtree, so you can audit only the DOM an experiment variant touches. Leave empty for the full page.
+- **Presets** — save named check configurations (enabled checks + scope) to Chrome sync storage. Two built-ins are always available: **Full audit** (all 19) and **Automated only** (excludes the manual checks).
+- **Highlighting** — clicking an issue row that references a page element scrolls to and flashes that element in the audited tab.
+- **Export** — the **Export** button in the results header downloads the run as a JSON file (per check: label, WCAG SCs, status, issues).
+- **Run history** — the last 5 runs per page URL are kept in local storage; pick one under **Recent Runs** and click **View** to re-view its results.
+
+#### A/B Variant Comparison Mode
+
+Open the **Test Modes** tab and choose **A/B Variant Comparison Mode**. This mode QAs an A/B experiment (Optimizely, Convert, or similar) by loading the same page once per variant and diffing the captures — no interaction steps, just load and compare. Differences are shown neutrally (a variant is *supposed* to differ from control); only JS errors and load failures are styled as errors.
+
+1. Set the **Base URL** the variants share (each target can override it with its own URL).
+2. Define at least two **Variant Targets**. The first is the baseline (typically Control). Each target has a label and an **Override** — the query string that forces the variant, e.g. Optimizely's `optimizely_x=<variationId>`.
+3. Optionally add **Watched Selectors** (use `🎯` to pick them from the page) — each is compared across variants for existence, visibility, text, and key computed styles.
+4. Optional settings: **QA Mode** appends `cro_mode=qa` to every variant URL; **Settle** waits after load so experiment scripts can apply changes (default 3s); **Keep tabs open** leaves each variant tab open for manual inspection.
+5. Click **Run Comparison**. Each variant loads sequentially in its own tab; captures include page title/URL, `[PJS]`/`[cro]`-tagged console lines, Metrics fires (from the Build tab's Metrics list), JS errors, and watched-selector state.
+6. Results are grouped diffs vs the baseline — identical facts are greyed and collapsed, deltas are highlighted, and errors are always flagged red.
+
+Variant target sets can be saved by name (stored in Chrome sync storage) and re-run in one click. The comparison never touches the Build tab's queue.
 
 ## Available Functions
 

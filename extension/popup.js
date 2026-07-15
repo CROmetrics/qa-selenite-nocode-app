@@ -54,9 +54,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     t.addEventListener('click', () => showTab(t.dataset.tab));
   });
 
-  // Test Suites tab
+  // Test Modes: WCAG / Accessibility Mode
   document.getElementById('btn-run-wcag')?.addEventListener('click', runWcagAudit);
   initSuiteTooltips();
+  await initWcagMode();
+  // Test Modes: A/B Variant Comparison Mode
+  await initAbCompare();
+
+  // Test Modes tab — each mode button opens its submenu, Back returns to the menu
+  document.querySelectorAll('.testmode-btn').forEach(b => {
+    b.addEventListener('click', () => showTestModeSub(b.dataset.testmode));
+  });
+  document.querySelectorAll('.testmode-back').forEach(b => {
+    b.addEventListener('click', () => showTestModeSub(null));
+  });
+  await initTestModePages();
 
   // Metrics section
   document.getElementById('btn-add-metric')?.addEventListener('click', () => addMetricRow());
@@ -122,6 +134,136 @@ function showTab(name) {
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-' + name)?.classList.add('active');
+}
+
+// Each Test Mode submenu carries its own list of page areas — the same layout
+// and controls as the mandatory "Open URL" first step of the Build queue, but
+// held per mode. Scope drives the list shape: Single shows just "Start Page";
+// Multi shows "Start Page" … "End Page" with user-added pages in between.
+const tmModes = {};   // { modeNum: { scope, pages: [step-like objects] } }
+
+function tmNewPage(saved) {
+  return {
+    func: OPEN_URL_FUNC,
+    enabled: saved?.enabled ?? true,
+    delay: saved?.delay ?? '0',
+    inputs: { url: '', qa_mode: false, params: [], ...(saved?.inputs || {}) },
+  };
+}
+
+async function initTestModePages() {
+  const { tmPagesState } = await chrome.storage.session.get('tmPagesState');
+  document.querySelectorAll('.tm-pages').forEach(cont => {
+    const n = cont.dataset.mode;
+    const saved = tmPagesState?.[n] || {};
+    const mode = {
+      scope: saved.scope === 'multi' ? 'multi' : 'single',
+      pages: (saved.pages || []).map(tmNewPage),
+    };
+    if (!mode.pages.length) mode.pages.push(tmNewPage());
+    tmModes[n] = mode;
+
+    document.querySelectorAll(`input[name="tm-scope-${n}"]`).forEach(r => {
+      r.checked = r.value === mode.scope;
+      r.addEventListener('change', () => {
+        if (!r.checked) return;
+        mode.scope = r.value;
+        renderTmPages(n);
+        persistTmPages();
+      });
+    });
+
+    document.querySelector(`.tm-add-page[data-mode="${n}"]`)?.addEventListener('click', () => {
+      mode.pages.splice(mode.pages.length - 1, 0, tmNewPage());   // insert before End Page
+      renderTmPages(n);
+      persistTmPages();
+    });
+
+    renderTmPages(n);
+  });
+}
+
+function renderTmPages(n) {
+  const mode   = tmModes[n];
+  const cont   = document.querySelector(`.tm-pages[data-mode="${n}"]`);
+  const addBtn = document.querySelector(`.tm-add-page[data-mode="${n}"]`);
+  if (!mode || !cont) return;
+
+  const multi = mode.scope === 'multi';
+  if (multi && mode.pages.length < 2) mode.pages.push(tmNewPage());
+  const shown = multi ? mode.pages : mode.pages.slice(0, 1);
+  if (addBtn) addBtn.style.display = multi ? '' : 'none';
+
+  cont.innerHTML = '';
+  shown.forEach((page, i) => {
+    const isEnd = multi && i === shown.length - 1;
+    const label = i === 0 ? 'Start Page' : isEnd ? 'End Page' : `Page ${i + 1}`;
+    const removable = multi && i > 0 && !isEnd;
+    // Start and End pages always run — no enable checkbox, and any persisted
+    // disabled state is overridden.
+    const fixed = i === 0 || isEnd;
+    if (fixed) page.enabled = true;
+
+    const el = document.createElement('div');
+    el.className = 'step step-locked';
+    el.innerHTML = `
+      ${fixed ? '' : `
+      <div class="step-ctrl">
+        <input type="checkbox" class="en-chk"${page.enabled ? ' checked' : ''}>
+      </div>`}
+      <div class="step-main">
+        <div class="step-fn-row">
+          <span class="fn-locked">🔒 ${label}</span>
+          ${removable ? '<button class="btn-icon tm-rm-page" style="color:var(--err)" title="Remove page">✕</button>' : ''}
+        </div>
+        <div class="step-args"></div>
+        <div class="delay-row">
+          <span class="arg-lbl">Delay (s)</span>
+          <input type="text" class="delay-in" value="${esc(page.delay || '0')}">
+        </div>
+      </div>`;
+    el.querySelector('.step-args').innerHTML = buildOpenUrlArgsHTML(page);
+    wireArgs(el, page);
+
+    el.querySelector('.en-chk')?.addEventListener('change', e => { page.enabled = e.target.checked; });
+    el.querySelector('.delay-in').addEventListener('input', e => { page.delay = e.target.value; });
+    el.querySelector('.tm-rm-page')?.addEventListener('click', () => {
+      mode.pages.splice(i, 1);
+      renderTmPages(n);
+      persistTmPages();
+    });
+
+    // wireArgs/wireOpenUrlArgs already keep page.inputs current; these
+    // delegated listeners just persist after any edit in the area.
+    el.addEventListener('input', persistTmPages);
+    el.addEventListener('change', persistTmPages);
+    el.addEventListener('click', e => {
+      if (e.target.closest('.add-open-url-param, .rm-open-url-param')) persistTmPages();
+    });
+
+    cont.appendChild(el);
+  });
+}
+
+function persistTmPages() {
+  const state = {};
+  for (const [n, m] of Object.entries(tmModes)) {
+    state[n] = {
+      scope: m.scope,
+      pages: m.pages.map(p => ({ enabled: p.enabled, delay: p.delay, inputs: p.inputs })),
+    };
+  }
+  chrome.storage.session.set({ tmPagesState: state });
+}
+
+// Show one Test Mode submenu (by its data-testmode number), or pass null to
+// return to the mode menu.
+function showTestModeSub(n) {
+  const menu = document.getElementById('testmodes-menu');
+  if (menu) menu.style.display = n ? 'none' : '';
+  document.querySelectorAll('.testmode-sub').forEach(s => {
+    s.style.display = (n && s.id === 'testmode-sub-' + n) ? '' : 'none';
+  });
 }
 
 // ── Accordions ────────────────────────────────────────────────────────────
@@ -1157,37 +1299,58 @@ function persistQueue() {
   });
 }
 
-// ── Test Suites shared renderer ───────────────────────────────────────────────
+// ── WCAG results renderer ─────────────────────────────────────────────────────
+// Try to derive a CSS selector from an issue string so clicking the row can
+// highlight the element on the audited page. axe issues carry a real selector
+// after " — "; heuristic issues embed brief()'s '#id' / '[name="…"]' /
+// 'tag.class' shorthand. Returns null when nothing usable is found.
+const _LOC_TAGS = 'a|button|input|select|textarea|div|span|img|video|audio|ul|ol|li|p|h[1-6]|form|nav|header|footer|section|article|dialog|td|th|tr|table|label|iframe|svg|main|aside|marquee';
+function extractIssueTarget(text) {
+  const axeM = /^axe · .*? — (.+)$/.exec(text);
+  if (axeM) return axeM[1].trim();
+  const m = new RegExp(`(^|[\\s:])(#[A-Za-z][\\w-]*|\\[name="[^"]+"\\]|(?:${_LOC_TAGS})(?:\\.[A-Za-z0-9_-]+)+)`).exec(text);
+  return m ? m[2] : null;
+}
+
 function renderSuiteResults(containerId, results, order) {
   const el = document.getElementById(containerId);
   if (!el) return;
 
-  let totalIssues = 0, totalChecks = 0, passed = 0;
+  let passed = 0, withIssues = 0, manual = 0, totalIssues = 0;
+
+  const issueHtml = (text) => {
+    const target = extractIssueTarget(text);
+    return target
+      ? `<div class="a11y-issue a11y-issue-loc" data-loc="${esc(target).replace(/"/g, '&quot;')}" title="Click to highlight this element on the page">${esc(text)}</div>`
+      : `<div class="a11y-issue">${esc(text)}</div>`;
+  };
 
   const rows = order
     .filter(k => results[k])
     .map(k => {
       const { label, issues, infoOnly } = results[k];
       const count = issues.length;
-      totalChecks++;
+      const guide = infoOnly ? (WCAG_MANUAL_GUIDE[k] || []) : [];
 
-      let dotCls, countLabel, isOpen;
+      let dotCls, countLabel;
       if (infoOnly) {
-        // Informational only — never counts as a failure
-        passed++;
+        manual++;
         dotCls = 'a11y-info-dot';
-        countLabel = 'Info';
-        isOpen = count > 0;
+        countLabel = 'Manual';
       } else {
         totalIssues += count;
-        if (count === 0) passed++;
+        if (count === 0) passed++; else withIssues++;
         dotCls = count === 0 ? 'a11y-pass-dot' : 'a11y-fail-dot';
         countLabel = count === 0 ? 'Pass' : count + ' issue' + (count !== 1 ? 's' : '');
-        isOpen = count > 0;
       }
-      const body = count > 0
-        ? issues.map(i => `<div class="a11y-issue">${esc(i)}</div>`).join('')
-        : '';
+      const hasBody = count > 0 || guide.length > 0;
+      const isOpen = !infoOnly && count > 0;
+
+      const body = hasBody ? `
+        ${issues.map(issueHtml).join('')}
+        ${guide.length ? `
+          <div class="a11y-guide-title">Verify by hand:</div>
+          ${guide.map(g => `<div class="a11y-guide-item">${esc(g)}</div>`).join('')}` : ''}` : '';
 
       return `
         <div class="a11y-row${isOpen ? ' open' : ''}" data-suite-row>
@@ -1195,23 +1358,23 @@ function renderSuiteResults(containerId, results, order) {
             <span class="a11y-dot ${dotCls}"></span>
             <span class="a11y-row-label">${esc(label)}</span>
             <span class="a11y-count">${countLabel}</span>
-            ${count > 0 ? '<span class="a11y-chevron">›</span>' : ''}
+            ${hasBody ? '<span class="a11y-chevron">›</span>' : ''}
           </div>
-          ${count > 0 ? `<div class="a11y-body">${body}</div>` : ''}
+          ${hasBody ? `<div class="a11y-body">${body}</div>` : ''}
         </div>`;
     });
 
-  const failed = totalChecks - passed;
-  const summaryColor = failed === 0 ? 'var(--ok)' : 'var(--err)';
-  const summaryText = failed === 0
-    ? 'All checks passed'
-    : `${totalIssues} issue${totalIssues !== 1 ? 's' : ''} across ${failed} check${failed !== 1 ? 's' : ''}`;
+  const summaryColor = withIssues === 0 ? 'var(--ok)' : 'var(--err)';
+  const summaryText = withIssues === 0
+    ? 'No automated issues'
+    : `${totalIssues} issue${totalIssues !== 1 ? 's' : ''}`;
 
   el.innerHTML = `
     <div class="a11y-summary-bar">
-      <span>${passed}/${totalChecks} checks passed</span>
+      <span>${passed} passed · ${withIssues} with issues · ${manual} manual review</span>
       <div class="row" style="gap:8px">
         <span class="a11y-summary-total" style="color:${summaryColor}">${summaryText}</span>
+        <button class="btn ghost btn-icon" data-export-results title="Download results as JSON">Export</button>
         <button class="btn ghost btn-icon" data-clear-results title="Clear results">Clear</button>
       </div>
     </div>
@@ -1221,45 +1384,34 @@ function renderSuiteResults(containerId, results, order) {
     hdr.addEventListener('click', () => hdr.closest('[data-suite-row]').classList.toggle('open'));
   });
   el.querySelector('[data-clear-results]')?.addEventListener('click', () => { el.innerHTML = ''; });
+  el.querySelector('[data-export-results]')?.addEventListener('click', exportWcagResults);
+  el.querySelectorAll('.a11y-issue-loc').forEach(row => {
+    row.addEventListener('click', () => wcagHighlight(row.dataset.loc, row));
+  });
 }
 
-// ── Generic suite runner ──────────────────────────────────────────────────────
-async function runSuiteAudit({ action, checkName, btnId, resultsId }) {
-  const btn = document.getElementById(btnId);
-  const resultsEl = document.getElementById(resultsId);
-  if (!resultsEl) return;
-
-  const checks = [...document.querySelectorAll(`input[name="${checkName}"]:checked`)]
-    .map(cb => cb.value);
-
-  if (!checks.length) {
-    resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Select at least one check.</div>';
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Running…';
-  resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Auditing page…</div>';
-
+// Highlight an issue's element in the audited tab (or the active tab as a
+// fallback for history views). On failure, notes it inline on the row.
+async function wcagHighlight(selector, rowEl) {
+  let res = null;
   try {
-    const res = await chrome.runtime.sendMessage({ action, checks });
-    if (!res?.ok) throw new Error(res?.error || 'Audit failed');
-    renderSuiteResults(resultsId, res.results, checks);
-    if (res.axeError) {
-      const note = document.createElement('div');
-      note.style.cssText = 'color:var(--fg3);font-size:11px;padding:6px 2px 0';
-      note.textContent = 'Note: axe-core could not run on this page (' + res.axeError + '). Heuristic checks were used instead.';
-      resultsEl.prepend(note);
-    }
-  } catch (e) {
-    resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Run Audit';
+    res = await chrome.runtime.sendMessage({
+      action: 'highlightElement',
+      tabId: _wcagCurrentRun?.tabId || null,
+      selector,
+    });
+  } catch (_) {}
+  if ((!res?.ok || !res.found) && rowEl && !rowEl.querySelector('.a11y-loc-miss')) {
+    const note = document.createElement('span');
+    note.className = 'a11y-loc-miss';
+    note.textContent = ' — not found on the current page';
+    note.style.color = 'var(--fg3)';
+    rowEl.appendChild(note);
+    setTimeout(() => note.remove(), 2500);
   }
 }
 
-// ── Test Suites: per-criterion explanations (shown as hover tooltips) ─────────
+// ── WCAG mode: per-criterion explanations (shown as hover tooltips) ───────────
 const WCAG_INFO = {
   titles: 'Every page needs a unique, descriptive <title>. It is the first thing a screen reader announces and how users tell browser tabs and history entries apart. (WCAG 2.4.2)',
   navconsistency: 'Navigation, header, footer, and help links should stay in the same place with the same labels on every page, so users can rely on a consistent mental model. (WCAG 3.2.3, 3.2.4, 3.2.6)',
@@ -1320,7 +1472,715 @@ function initSuiteTooltips() {
   });
 }
 
-// ── Test Suites: WCAG 2.2 audit ───────────────────────────────────────────────
-function runWcagAudit() {
-  return runSuiteAudit({ action: 'runWcagAudit', checkName: 'wcag-check', btnId: 'btn-run-wcag', resultsId: 'wcag-results' });
+// ── Test Modes: WCAG / Accessibility Mode subpage ─────────────────────────────
+// The audit engine (heuristics + axe-core merge) lives in background.js and is
+// unchanged; this side owns scoping, presets, run history, export, and the
+// results view. Fully independent of the Build tab queue.
+
+// Manual-check guidance — one actionable checklist per infoOnly check, kept
+// alongside WCAG_INFO so all criterion copy lives in one place.
+const WCAG_MANUAL_GUIDE = {
+  modalescape: [
+    'Open each modal/dialog on the page.',
+    'Press Escape — the dialog should close.',
+    'Tab forward and backward inside the open dialog — focus must stay within it until it closes.',
+    'When it closes, focus should return to the control that opened it.',
+  ],
+  sessiontiming: [
+    'Stay idle until near session expiry — a warning should appear before you are logged out.',
+    'The warning offers a way to extend the session without losing your place (2.2.1).',
+    'After extending or re-authenticating, previously entered form data is still intact (2.2.6).',
+  ],
+  destructive: [
+    'Trigger each destructive or consequential action found above.',
+    'Confirm it only finalizes after an explicit confirmation step, or can be undone (3.3.4).',
+    'For legal/financial submissions, confirm the user can review and correct data before the final submit (3.3.6).',
+  ],
+  redundant: [
+    'Walk any multi-step flow (checkout, signup, booking) end to end.',
+    'Information entered in an earlier step (name, email, address) should be auto-populated or selectable later, not re-typed (3.3.7).',
+    'Re-entry is acceptable only when essential or for security (e.g. password confirmation).',
+  ],
+  realworld: [
+    'Using only the keyboard, complete each key task end to end (sign up, checkout, find content).',
+    'Repeat the same tasks with a screen reader (VoiceOver, NVDA, or JAWS).',
+    'Confirm there are no dead ends, focus traps, or silent state changes that block completion.',
+  ],
+};
+
+// The manual/infoOnly checks — used by the built-in "Automated only" preset.
+const WCAG_MANUAL_KEYS = Object.keys(WCAG_MANUAL_GUIDE);
+
+let _wcagCurrentRun = null;   // whatever run is currently rendered (fresh or from history)
+
+function wcagCheckboxes() {
+  return [...document.querySelectorAll('input[name="wcag-check"]')];
+}
+
+async function runWcagAudit() {
+  const btn = document.getElementById('btn-run-wcag');
+  const resultsEl = document.getElementById('wcag-results');
+  const checks = wcagCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
+  if (!checks.length) {
+    resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Select at least one check.</div>';
+    return;
+  }
+  const scope = (document.getElementById('wcag-scope')?.value || '').trim();
+
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Auditing page…</div>';
+
+  try {
+    const res = await chrome.runtime.sendMessage({ action: 'runWcagAudit', checks, scope });
+    if (!res?.ok) throw new Error(res?.error || 'Audit failed');
+    _wcagCurrentRun = {
+      url: res.url || '', ts: Date.now(), tabId: res.tabId || null,
+      checks, scope, results: res.results,
+      axeError: res.axeError || null, scopeError: res.scopeError || null,
+    };
+    renderWcagRun(_wcagCurrentRun);
+    await saveWcagHistory(_wcagCurrentRun);
+    await renderWcagHistoryList();
+  } catch (e) {
+    resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Audit';
+  }
+}
+
+function renderWcagRun(run) {
+  renderSuiteResults('wcag-results', run.results, run.checks);
+  const resultsEl = document.getElementById('wcag-results');
+  const notes = [];
+  if (run.scopeError) notes.push(run.scopeError);
+  else if (run.scope)  notes.push('Scoped to: ' + run.scope);
+  if (run.axeError)    notes.push('axe-core could not run on this page (' + run.axeError + '). Heuristic checks were used instead.');
+  if (run.url)         notes.push('Audited ' + run.url + ' at ' + new Date(run.ts).toLocaleString());
+  if (notes.length) {
+    const note = document.createElement('div');
+    note.style.cssText = 'color:var(--fg3);font-size:11px;padding:6px 2px 0';
+    note.textContent = notes.join(' · ');
+    resultsEl.prepend(note);
+  }
+}
+
+// ── Check presets (chrome.storage.sync, like saved scripts) ───────────────────
+// Two built-ins are always present; user presets also store the scope selector.
+const WCAG_BUILTIN_PRESETS = {
+  '__full': 'Full audit (all checks)',
+  '__auto': 'Automated only (no manual checks)',
+};
+
+async function refreshWcagPresets() {
+  const { wcagPresets = {} } = await chrome.storage.sync.get('wcagPresets');
+  const names = Object.keys(wcagPresets).sort();
+  const sel = document.getElementById('wcag-preset-select');
+  if (!sel) return;
+  sel.innerHTML =
+    Object.entries(WCAG_BUILTIN_PRESETS).map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('') +
+    names.map(n => `<option value="u:${esc(n)}">${esc(n)}</option>`).join('');
+}
+
+async function loadWcagPreset() {
+  const sel = document.getElementById('wcag-preset-select');
+  const v = sel?.value || '';
+  let checks = null, scope = '';
+  if (v === '__full') {
+    checks = wcagCheckboxes().map(cb => cb.value);
+  } else if (v === '__auto') {
+    checks = wcagCheckboxes().map(cb => cb.value).filter(k => !WCAG_MANUAL_KEYS.includes(k));
+  } else if (v.startsWith('u:')) {
+    const { wcagPresets = {} } = await chrome.storage.sync.get('wcagPresets');
+    const p = wcagPresets[v.slice(2)];
+    if (!p) return;
+    checks = p.checks || [];
+    scope = p.scope || '';
+  } else return;
+  wcagCheckboxes().forEach(cb => { cb.checked = checks.includes(cb.value); });
+  const scopeInput = document.getElementById('wcag-scope');
+  if (scopeInput) scopeInput.value = scope;
+}
+
+async function saveWcagPreset() {
+  const name = document.getElementById('wcag-preset-name').value.trim();
+  if (!name) { alert('Enter a preset name.'); return; }
+  const { wcagPresets = {} } = await chrome.storage.sync.get('wcagPresets');
+  wcagPresets[name] = {
+    checks: wcagCheckboxes().filter(cb => cb.checked).map(cb => cb.value),
+    scope: (document.getElementById('wcag-scope')?.value || '').trim(),
+  };
+  await chrome.storage.sync.set({ wcagPresets });
+  await refreshWcagPresets();
+  document.getElementById('wcag-preset-select').value = 'u:' + name;
+  document.getElementById('wcag-preset-name').value = '';
+  alert(`"${name}" saved.`);
+}
+
+async function deleteWcagPreset() {
+  const v = document.getElementById('wcag-preset-select')?.value || '';
+  if (!v.startsWith('u:')) { alert('Built-in presets can\'t be deleted.'); return; }
+  const name = v.slice(2);
+  if (!confirm(`Delete "${name}"?`)) return;
+  const { wcagPresets = {} } = await chrome.storage.sync.get('wcagPresets');
+  delete wcagPresets[name];
+  await chrome.storage.sync.set({ wcagPresets });
+  await refreshWcagPresets();
+}
+
+// ── Run history (chrome.storage.local — results can be large) ─────────────────
+const WCAG_HISTORY_PER_URL = 5;
+const WCAG_HISTORY_URLS = 15;
+
+async function saveWcagHistory(run) {
+  if (!run.url) return;
+  const { wcagHistory = {} } = await chrome.storage.local.get('wcagHistory');
+  const arr = wcagHistory[run.url] || [];
+  arr.unshift({ ts: run.ts, checks: run.checks, scope: run.scope, results: run.results, axeError: run.axeError, scopeError: run.scopeError });
+  wcagHistory[run.url] = arr.slice(0, WCAG_HISTORY_PER_URL);
+  const urls = Object.keys(wcagHistory);
+  if (urls.length > WCAG_HISTORY_URLS) {
+    urls.sort((a, b) => (wcagHistory[b][0]?.ts || 0) - (wcagHistory[a][0]?.ts || 0));
+    for (const u of urls.slice(WCAG_HISTORY_URLS)) delete wcagHistory[u];
+  }
+  await chrome.storage.local.set({ wcagHistory });
+}
+
+async function renderWcagHistoryList() {
+  const sel = document.getElementById('wcag-history-select');
+  if (!sel) return;
+  const { wcagHistory = {} } = await chrome.storage.local.get('wcagHistory');
+  const opts = [];
+  for (const [url, runs] of Object.entries(wcagHistory)) {
+    runs.forEach((r, i) => opts.push({ url, i, ts: r.ts, scope: r.scope }));
+  }
+  opts.sort((a, b) => b.ts - a.ts);
+  sel.innerHTML = opts.length
+    ? opts.map(o => {
+        let short = o.url;
+        try { const u = new URL(o.url); short = u.host + u.pathname; } catch (_) {}
+        return `<option value="${encodeURIComponent(o.url)}|${o.i}">${new Date(o.ts).toLocaleString()} — ${esc(short)}${o.scope ? ' (scoped)' : ''}</option>`;
+      }).join('')
+    : '<option disabled>&lt;no past runs&gt;</option>';
+}
+
+async function viewWcagHistoryRun() {
+  const v = document.getElementById('wcag-history-select')?.value || '';
+  const bar = v.lastIndexOf('|');
+  if (bar < 0) return;
+  const url = decodeURIComponent(v.slice(0, bar));
+  const idx = +v.slice(bar + 1);
+  const { wcagHistory = {} } = await chrome.storage.local.get('wcagHistory');
+  const run = wcagHistory[url]?.[idx];
+  if (!run) return;
+  // tabId is intentionally null — highlighting falls back to the active tab.
+  _wcagCurrentRun = { url, ts: run.ts, tabId: null, checks: run.checks, scope: run.scope, results: run.results, axeError: run.axeError, scopeError: run.scopeError };
+  renderWcagRun(_wcagCurrentRun);
+}
+
+// ── Export (plain JSON file download) ─────────────────────────────────────────
+function exportWcagResults() {
+  const r = _wcagCurrentRun;
+  if (!r) { alert('Run an audit first.'); return; }
+  const data = {
+    url: r.url || null,
+    timestamp: new Date(r.ts).toISOString(),
+    scope: r.scope || null,
+    axeError: r.axeError || null,
+    checks: r.checks.filter(k => r.results[k]).map(k => {
+      const c = r.results[k];
+      return {
+        key: k,
+        label: c.label,
+        wcag: c.wcag || '',
+        status: c.infoOnly ? 'manual review' : (c.issues.length ? 'issues' : 'pass'),
+        issues: c.issues,
+      };
+    }),
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = 'wcag-audit-' + new Date(r.ts).toISOString().replace(/[:.]/g, '-') + '.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+}
+
+// One-time wiring for the accessibility subpage's controls.
+async function initWcagMode() {
+  if (!document.getElementById('btn-run-wcag')) return;
+  document.getElementById('btn-wcag-scope-pick')?.addEventListener('click', () => {
+    const row = document.getElementById('wcag-scope-row');
+    startPicker(row, null, 'wcag-scope', (selector) => {
+      document.getElementById('wcag-scope').value =
+        selector.css || (selector.idValue ? '#' + selector.idValue : '');
+    });
+  });
+  document.getElementById('btn-wcag-load-preset')?.addEventListener('click', loadWcagPreset);
+  document.getElementById('btn-wcag-save-preset')?.addEventListener('click', saveWcagPreset);
+  document.getElementById('btn-wcag-delete-preset')?.addEventListener('click', deleteWcagPreset);
+  document.getElementById('btn-wcag-view-history')?.addEventListener('click', viewWcagHistoryRun);
+  await refreshWcagPresets();
+  await renderWcagHistoryList();
+}
+
+// ── Test Modes: A/B Variant Comparison Mode subpage ──────────────────────────
+// Static load-and-compare mode: opens each variant target once (background owns
+// the tab lifecycle and capture), then diffs every variant against the first
+// target — the baseline, typically Control. Differences are surfaced neutrally:
+// a variant is *supposed* to differ from control, so only JS errors and load
+// failures are styled as errors. This mode never reads or executes the Build
+// tab queue.
+
+let abState = null;   // { baseUrl, qaMode, settleSec, keepTabs, targets: [{label,url,override}], selectors: [] }
+
+function abDefaultState() {
+  return {
+    baseUrl: '', qaMode: false, settleSec: '3', keepTabs: false,
+    targets: [
+      { label: 'Control',   url: '', override: '' },
+      { label: 'Variant A', url: '', override: '' },
+    ],
+    selectors: [],
+  };
+}
+
+async function initAbCompare() {
+  if (!document.getElementById('ab-target-list')) return;
+  const { abCompareState } = await chrome.storage.session.get('abCompareState');
+  abState = { ...abDefaultState(), ...(abCompareState || {}) };
+  if (!Array.isArray(abState.targets) || !abState.targets.length) abState.targets = abDefaultState().targets;
+  if (!Array.isArray(abState.selectors)) abState.selectors = [];
+
+  applyAbStateToInputs();
+
+  document.getElementById('ab-base-url').addEventListener('input',   e => { abState.baseUrl  = e.target.value;   persistAbState(); });
+  document.getElementById('ab-qa-mode').addEventListener('change',   e => { abState.qaMode   = e.target.checked; persistAbState(); });
+  document.getElementById('ab-settle').addEventListener('input',     e => { abState.settleSec = e.target.value;  persistAbState(); });
+  document.getElementById('ab-keep-tabs').addEventListener('change', e => { abState.keepTabs = e.target.checked; persistAbState(); });
+
+  document.getElementById('btn-ab-add-target').addEventListener('click', () => {
+    // Default labels continue the sequence: Control, Variant A, Variant B, …
+    abState.targets.push({ label: 'Variant ' + String.fromCharCode(64 + abState.targets.length), url: '', override: '' });
+    renderAbTargets();
+    persistAbState();
+  });
+  document.getElementById('btn-ab-add-selector').addEventListener('click', () => {
+    abState.selectors.push('');
+    renderAbSelectors();
+    persistAbState();
+    const inputs = document.querySelectorAll('#ab-selector-list [data-ab-sel-input]');
+    inputs[inputs.length - 1]?.focus();
+  });
+
+  document.getElementById('btn-ab-save-set').addEventListener('click', saveAbSet);
+  document.getElementById('btn-ab-load-set').addEventListener('click', loadAbSet);
+  document.getElementById('btn-ab-delete-set').addEventListener('click', deleteAbSet);
+  document.getElementById('btn-run-abcompare').addEventListener('click', runAbComparison);
+  document.getElementById('btn-stop-abcompare').addEventListener('click', () =>
+    chrome.runtime.sendMessage({ action: 'stop' }));
+
+  renderAbTargets();
+  renderAbSelectors();
+  await refreshAbSets();
+}
+
+function applyAbStateToInputs() {
+  document.getElementById('ab-base-url').value    = abState.baseUrl || '';
+  document.getElementById('ab-qa-mode').checked   = !!abState.qaMode;
+  document.getElementById('ab-settle').value      = abState.settleSec || '3';
+  document.getElementById('ab-keep-tabs').checked = !!abState.keepTabs;
+}
+
+function persistAbState() {
+  chrome.storage.session.set({ abCompareState: abState });
+}
+
+function renderAbTargets() {
+  const list = document.getElementById('ab-target-list');
+  const q = s => esc(s || '').replace(/"/g, '&quot;');
+  list.innerHTML = abState.targets.map((t, i) => `
+    <div class="ab-target" data-ab-target="${i}">
+      <div class="arg-row">
+        <span class="arg-lbl">Label</span>
+        <input type="text" data-ab-field="label" value="${q(t.label)}" placeholder="e.g. Variant A">
+        <button class="btn-icon" data-ab-rm-target title="Remove variant" style="color:var(--err)">✕</button>
+      </div>
+      <div class="arg-row">
+        <span class="arg-lbl">URL</span>
+        <input type="text" data-ab-field="url" value="${q(t.url)}" placeholder="(uses base URL)">
+      </div>
+      <div class="arg-row">
+        <span class="arg-lbl">Override</span>
+        <input type="text" data-ab-field="override" value="${q(t.override)}" placeholder="e.g. optimizely_x=123456">
+      </div>
+    </div>`).join('');
+
+  list.querySelectorAll('[data-ab-target]').forEach(block => {
+    const i = +block.dataset.abTarget;
+    block.querySelectorAll('[data-ab-field]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        abState.targets[i][inp.dataset.abField] = inp.value;
+        persistAbState();
+      });
+    });
+    block.querySelector('[data-ab-rm-target]').addEventListener('click', () => {
+      abState.targets.splice(i, 1);
+      renderAbTargets();
+      persistAbState();
+    });
+  });
+}
+
+function renderAbSelectors() {
+  const list = document.getElementById('ab-selector-list');
+  const q = s => esc(s || '').replace(/"/g, '&quot;');
+  if (!abState.selectors.length) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--fg3)">None — the automatic captures (title, console, metrics) still compare.</div>';
+    return;
+  }
+  list.innerHTML = abState.selectors.map((s, i) => `
+    <div class="ab-sel-row" data-ab-sel="${i}">
+      <input type="text" data-ab-sel-input value="${q(s)}" placeholder=".hero .cta, #banner …">
+      <button class="btn-pick" data-pick-arg="ab-sel" title="Pick element from page">&#x1F3AF;</button>
+      <button class="btn-icon" data-ab-rm-sel title="Remove" style="color:var(--err)">✕</button>
+    </div>`).join('');
+
+  list.querySelectorAll('[data-ab-sel]').forEach(row => {
+    const i = +row.dataset.abSel;
+    row.querySelector('[data-ab-sel-input]').addEventListener('input', e => {
+      abState.selectors[i] = e.target.value;
+      persistAbState();
+    });
+    // Same picker flow as the Build tab; the callback routes the result into
+    // this row instead of a queue step.
+    row.querySelector('.btn-pick').addEventListener('click', () => {
+      startPicker(row, null, 'ab-sel', (selector) => {
+        const val = selector.css || (selector.idValue ? '#' + selector.idValue : '');
+        abState.selectors[i] = val;
+        row.querySelector('[data-ab-sel-input]').value = val;
+        persistAbState();
+      });
+    });
+    row.querySelector('[data-ab-rm-sel]').addEventListener('click', () => {
+      abState.selectors.splice(i, 1);
+      renderAbSelectors();
+      persistAbState();
+    });
+  });
+}
+
+// ── Saved variant target sets (chrome.storage.sync, like saved scripts) ──────
+async function refreshAbSets() {
+  const { abVariantSets = {} } = await chrome.storage.sync.get('abVariantSets');
+  const names = Object.keys(abVariantSets).sort();
+  const sel = document.getElementById('ab-set-select');
+  sel.innerHTML = names.length
+    ? names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')
+    : '<option disabled>&lt;no saved sets&gt;</option>';
+}
+
+async function saveAbSet() {
+  const name = document.getElementById('ab-set-name').value.trim();
+  if (!name) { alert('Enter a set name.'); return; }
+  const { abVariantSets = {} } = await chrome.storage.sync.get('abVariantSets');
+  abVariantSets[name] = JSON.parse(JSON.stringify(abState));
+  await chrome.storage.sync.set({ abVariantSets });
+  await refreshAbSets();
+  document.getElementById('ab-set-select').value = name;
+  document.getElementById('ab-set-name').value = '';
+  alert(`"${name}" saved.`);
+}
+
+async function loadAbSet() {
+  const name = document.getElementById('ab-set-select').value || '';
+  if (!name) { alert('Select a saved set first.'); return; }
+  const { abVariantSets = {} } = await chrome.storage.sync.get('abVariantSets');
+  if (!abVariantSets[name]) return;
+  abState = { ...abDefaultState(), ...abVariantSets[name] };
+  applyAbStateToInputs();
+  renderAbTargets();
+  renderAbSelectors();
+  persistAbState();
+}
+
+async function deleteAbSet() {
+  const name = document.getElementById('ab-set-select').value || '';
+  if (!name) return;
+  if (!confirm(`Delete "${name}"?`)) return;
+  const { abVariantSets = {} } = await chrome.storage.sync.get('abVariantSets');
+  delete abVariantSets[name];
+  await chrome.storage.sync.set({ abVariantSets });
+  await refreshAbSets();
+}
+
+// ── Run orchestration ─────────────────────────────────────────────────────────
+// Compose the final URL for one target: per-target URL (or the shared base),
+// plus the override query string, plus cro_mode=qa last — mirroring the Build
+// tab's Open URL behavior.
+function abComposeUrl(target) {
+  let url = (target.url || abState.baseUrl || '').trim();
+  if (!url) return '';
+  let params = [];
+  const override = (target.override || '').trim().replace(/^[?&]/, '');
+  if (override) params.push(override);
+  if (abState.qaMode) {
+    params = params.filter(p => !p.toLowerCase().startsWith('cro_mode='));
+    params.push('cro_mode=qa');
+  }
+  if (params.length) url += (url.includes('?') ? '&' : '?') + params.join('&');
+  return url;
+}
+
+let _abProgressPoller = null;
+
+async function runAbComparison() {
+  const btn       = document.getElementById('btn-run-abcompare');
+  const stopBtn   = document.getElementById('btn-stop-abcompare');
+  const resultsEl = document.getElementById('ab-results');
+
+  const targets = abState.targets
+    .map(t => ({ label: (t.label || '').trim() || 'Variant', url: abComposeUrl(t) }))
+    .filter(t => t.url);
+  if (targets.length < 2) {
+    resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Define at least two variant targets with a URL (or set a base URL).</div>';
+    return;
+  }
+
+  const metricsList = metrics.map(m => m.trim()).filter(Boolean);
+  const selectors   = abState.selectors.map(s => s.trim()).filter(Boolean);
+
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  if (stopBtn) stopBtn.style.display = '';
+  resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Loading variants…</div>';
+
+  _abProgressPoller = setInterval(async () => {
+    const { abProgress } = await chrome.storage.session.get('abProgress');
+    if (abProgress?.running) {
+      btn.textContent = `Running ${abProgress.index + 1}/${abProgress.total}…`;
+      resultsEl.innerHTML = `<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Loading ${esc(abProgress.label)} (${abProgress.index + 1} of ${abProgress.total})…</div>`;
+    }
+  }, 400);
+
+  try {
+    const res = await chrome.runtime.sendMessage({
+      action: 'runVariantComparison',
+      payload: { targets, settleSeconds: abState.settleSec, keepTabs: abState.keepTabs, selectors },
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Comparison failed');
+    renderAbResults(res.results, metricsList, selectors);
+  } catch (e) {
+    resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
+  } finally {
+    clearInterval(_abProgressPoller);
+    _abProgressPoller = null;
+    btn.disabled = false;
+    btn.textContent = 'Run Comparison';
+    if (stopBtn) stopBtn.style.display = 'none';
+  }
+}
+
+// ── Diffing ───────────────────────────────────────────────────────────────────
+// All comparison logic lives here; captures[0] is the baseline. Returns a
+// structure the renderer walks — no DOM concerns in this function.
+function diffAbCaptures(captures, metricsList, selectors) {
+  const texts = c => (c.console || []).map(l => l.text);
+  const stripUrl = (u) => {
+    try { const p = new URL(u); return p.origin + p.pathname; } catch (_) { return u || ''; }
+  };
+  const base = captures[0];
+
+  // Page basics — override params make full URLs differ by design, so URL
+  // mismatch means origin+path, not query string.
+  const basics = captures.map((c, i) => ({
+    label: c.label, title: c.title || '', finalUrl: c.finalUrl || '', loadError: c.loadError || null,
+    titleDiff: i > 0 && !c.loadError && c.title !== base.title,
+    urlDiff:   i > 0 && !c.loadError && stripUrl(c.finalUrl) !== stripUrl(base.finalUrl),
+  }));
+
+  // Watched selectors — per selector, one flattened fact row per variant, with
+  // the list of fact keys that differ from the baseline row.
+  const FACT_KEYS = ['exists', 'visible', 'text', 'display', 'visibility', 'color', 'background-color'];
+  const flat = f => f && {
+    exists: f.exists, visible: f.visible, text: f.text || '',
+    display: f.styles?.display ?? '', visibility: f.styles?.visibility ?? '',
+    color: f.styles?.color ?? '', 'background-color': f.styles?.['background-color'] ?? '',
+  };
+  const selectorRows = selectors.map((sel, si) => {
+    const rows  = captures.map(c => flat((c.selectors || [])[si]));
+    const diffs = rows.map((r, i) => {
+      if (i === 0 || !r || !rows[0]) return [];
+      return FACT_KEYS.filter(k => String(r[k]) !== String(rows[0][k]));
+    });
+    const missing = rows.map(r => !r);
+    const allSame = rows.every(Boolean) && diffs.every(d => !d.length);
+    return { selector: sel, rows, diffs, missing, allSame };
+  });
+
+  // Metrics — case-insensitive substring fire counts against tagged lines,
+  // the same matching rule as the Build tab's Track Metric step.
+  const metricRows = metricsList.map(m => {
+    const needle = m.toLowerCase();
+    const counts = captures.map(c => texts(c).filter(t => t.toLowerCase().includes(needle)).length);
+    const fired    = counts.map(c => c > 0);
+    return {
+      metric: m, counts,
+      allSame: counts.every(c => c === counts[0]),
+      mixedFiring: fired.some(Boolean) && !fired.every(Boolean),   // fired somewhere but not everywhere
+    };
+  });
+
+  // Console — added/missing tagged lines per variant vs baseline; lines present
+  // in every variant are the collapsed "shared" set.
+  const baseSet = new Set(texts(base));
+  const consoleRows = captures.map((c, i) => {
+    if (i === 0) return { label: c.label, added: [], missing: [] };
+    const set = new Set(texts(c));
+    return {
+      label: c.label,
+      added:   [...set].filter(t => !baseSet.has(t)),
+      missing: [...baseSet].filter(t => !set.has(t)),
+    };
+  });
+  const shared = [...baseSet].filter(t =>
+    captures.slice(1).every(c => texts(c).includes(t)));
+
+  // Errors — always flagged regardless of diff status.
+  const errors = captures.map(c => ({
+    label: c.label,
+    loadError: c.loadError || null,
+    jsErrors: c.errors || [],
+  })).filter(e => e.loadError || e.jsErrors.length);
+
+  return { basics, selectorRows, metricRows, consoleRows, shared, errors };
+}
+
+// ── Results rendering ─────────────────────────────────────────────────────────
+function abSection(title, deltaCount, body, { error = false, extra = '' } = {}) {
+  const dot = error ? 'a11y-fail-dot' : deltaCount ? 'a11y-info-dot' : 'a11y-pass-dot';
+  const countLabel = error
+    ? `${deltaCount} error${deltaCount !== 1 ? 's' : ''}`
+    : deltaCount ? `${deltaCount} delta${deltaCount !== 1 ? 's' : ''}` : 'Identical';
+  return `
+    <div class="a11y-row${deltaCount ? ' open' : ''}" data-suite-row>
+      <div class="a11y-row-hdr">
+        <span class="a11y-dot ${dot}"></span>
+        <span class="a11y-row-label">${esc(title)}${extra}</span>
+        <span class="a11y-count">${countLabel}</span>
+        <span class="a11y-chevron">›</span>
+      </div>
+      <div class="a11y-body">${body}</div>
+    </div>`;
+}
+
+function renderAbResults(allCaptures, metricsList, selectors) {
+  const el = document.getElementById('ab-results');
+  const captures = (allCaptures || []).filter(c => !c.skipped);
+  const skippedCount = (allCaptures || []).length - captures.length;
+  if (captures.length < 2) {
+    el.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Stopped before two variants were captured — nothing to compare.</div>';
+    return;
+  }
+
+  const d = diffAbCaptures(captures, metricsList, selectors);
+  const q = esc;
+  const mark = (val, isDiff) => isDiff ? `<span class="ab-delta">${q(String(val))}</span>` : q(String(val));
+
+  const sections = [];
+
+  // Errors — only shown when present, always red.
+  if (d.errors.length) {
+    const count = d.errors.reduce((n, e) => n + (e.loadError ? 1 : 0) + e.jsErrors.length, 0);
+    sections.push(abSection('Errors', count, d.errors.map(e => `
+      <div class="ab-line">
+        <b>${q(e.label)}</b>
+        ${e.loadError ? `<div class="ab-cline ab-err">Load failure: ${q(e.loadError)}</div>` : ''}
+        ${e.jsErrors.map(x => `<div class="ab-cline ab-err">${q(x)}</div>`).join('')}
+      </div>`).join(''), { error: true }));
+  }
+
+  // Page basics
+  const basicsDeltas = d.basics.filter(b => b.titleDiff || b.urlDiff).length;
+  sections.push(abSection('Page Basics', basicsDeltas, d.basics.map((b, i) => `
+    <div class="ab-line${!b.titleDiff && !b.urlDiff && i > 0 ? ' ab-same-row' : ''}">
+      <b>${q(b.label)}</b>${i === 0 ? ' <span style="color:var(--fg3)">(baseline)</span>' : ''}
+      ${b.loadError ? '<span class="ab-err"> — not captured (load failed)</span>' : `
+      <div class="ab-cline">title: ${mark(b.title, b.titleDiff)}</div>
+      <div class="ab-cline">url: ${mark(b.finalUrl, b.urlDiff)}</div>`}
+    </div>`).join('')));
+
+  // Watched selectors
+  if (selectors.length) {
+    const selDeltas = d.selectorRows.filter(s => !s.allSame).length;
+    sections.push(abSection('Watched Selectors', selDeltas, d.selectorRows.map(s => `
+      <div class="ab-sel-block${s.allSame ? ' ab-same-row' : ''}">
+        <div class="ab-sel-name">${q(s.selector)}${s.allSame ? ' <span style="color:var(--fg3)">— identical in all variants</span>' : ''}</div>
+        ${s.rows.map((r, i) => {
+          if (!r) return `<div class="ab-cline"><b>${q(captures[i].label)}</b> <span class="ab-err">not captured</span></div>`;
+          const df = new Set(s.diffs[i]);
+          const facts = [
+            `exists ${mark(r.exists ? '✓' : '✗', df.has('exists'))}`,
+            `visible ${mark(r.visible ? '✓' : '✗', df.has('visible'))}`,
+            `text ${mark(JSON.stringify(r.text.slice(0, 80)), df.has('text'))}`,
+            `display:${mark(r.display, df.has('display'))}`,
+            `visibility:${mark(r.visibility, df.has('visibility'))}`,
+            `color:${mark(r.color, df.has('color'))}`,
+            `bg:${mark(r['background-color'], df.has('background-color'))}`,
+          ];
+          return `<div class="ab-cline"><b>${q(captures[i].label)}</b> — ${facts.join(' · ')}</div>`;
+        }).join('')}
+      </div>`).join('') || '<div class="ab-line ab-same-row">No watched selectors.</div>'));
+  }
+
+  // Metrics
+  if (metricsList.length) {
+    const metricDeltas = d.metricRows.filter(m => !m.allSame).length;
+    sections.push(abSection('Metrics', metricDeltas, d.metricRows.map(m => `
+      <div class="ab-line${m.allSame ? ' ab-same-row' : ''}">
+        ${m.mixedFiring ? '<span class="ab-warn">⚠ </span>' : ''}<b>${q(m.metric)}</b> —
+        ${m.counts.map((c, i) => mark(`${captures[i].label} ×${c}`, !m.allSame && c !== m.counts[0])).join(' · ')}
+        ${m.mixedFiring ? '<div class="ab-cline ab-warn">Fired in some variants but not others</div>' : ''}
+      </div>`).join('')));
+  }
+
+  // Console
+  const consoleDeltas = d.consoleRows.filter(v => v.added.length || v.missing.length).length;
+  sections.push(abSection('Console (tagged lines)', consoleDeltas, `
+    ${d.consoleRows.slice(1).map(v => (v.added.length || v.missing.length) ? `
+      <div class="ab-line"><b>${q(v.label)}</b> — vs baseline
+        ${v.added.map(t => `<div class="ab-cline ab-line-add">${q(t)}</div>`).join('')}
+        ${v.missing.map(t => `<div class="ab-cline ab-line-miss">${q(t)}</div>`).join('')}
+      </div>` : `<div class="ab-line ab-same-row"><b>${q(v.label)}</b> — no differences vs baseline</div>`).join('')}
+    <div class="ab-line ab-same-row">${d.shared.length} shared line${d.shared.length !== 1 ? 's' : ''} across all variants${d.shared.length ? ':' : ''}
+      ${d.shared.map(t => `<div class="ab-cline">${q(t)}</div>`).join('')}
+    </div>`));
+
+  const totalDeltas =
+    basicsDeltas +
+    d.selectorRows.filter(s => !s.allSame).length +
+    d.metricRows.filter(m => !m.allSame).length +
+    consoleDeltas;
+  const errCount = d.errors.reduce((n, e) => n + (e.loadError ? 1 : 0) + e.jsErrors.length, 0);
+  const summaryColor = errCount ? 'var(--err)' : 'var(--info)';
+  const summaryText = (errCount ? `${errCount} error${errCount !== 1 ? 's' : ''} · ` : '')
+    + `${totalDeltas} difference${totalDeltas !== 1 ? 's' : ''} vs baseline`;
+
+  el.innerHTML = `
+    <div class="a11y-summary-bar">
+      <span>Baseline: ${q(captures[0].label)}</span>
+      <div class="row" style="gap:8px">
+        <span class="a11y-summary-total" style="color:${summaryColor}">${summaryText}</span>
+        <button class="btn ghost btn-icon" data-clear-results title="Clear results">Clear</button>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--fg3);padding:0 2px 6px">Differences are expected in an A/B test — review whether each delta matches the intended variant change. Only errors and load failures are defects.${skippedCount ? ` · ${skippedCount} variant${skippedCount !== 1 ? 's' : ''} skipped (stopped)` : ''}${abState.keepTabs ? ' · Variant tabs were left open for inspection.' : ''}</div>
+    <div style="display:flex;flex-direction:column;gap:4px">${sections.join('')}</div>`;
+
+  el.querySelectorAll('[data-suite-row] .a11y-row-hdr').forEach(hdr => {
+    hdr.addEventListener('click', () => hdr.closest('[data-suite-row]').classList.toggle('open'));
+  });
+  el.querySelector('[data-clear-results]')?.addEventListener('click', () => { el.innerHTML = ''; });
 }

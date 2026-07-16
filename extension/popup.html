@@ -327,6 +327,9 @@
   .run-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);
     display:inline-block;margin-left:4px;animation:pulse 1s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+  /* Test Agent: hide a mode's own run/stop button while its settings are parked here */
+  #ta-settings-slot .mode-run-btn, #ta-settings-slot .mode-stop-btn{display:none}
 </style>
 </head>
 <body>
@@ -340,6 +343,7 @@
   <div class="tab active" data-tab="build">Build</div>
   <div class="tab" data-tab="testmodes">Test Modes</div>
   <div class="tab" data-tab="console">Console <span id="run-indicator" style="display:none" class="run-dot"></span></div>
+  <div class="tab" data-tab="testagent">Test Agent</div>
 </div>
 
 <div id="panels">
@@ -491,15 +495,15 @@
         <button class="btn sm testmode-back">‹ Back</button>
       </div>
     <!-- A/B Variant Comparison -->
-    <div class="card" style="margin-top:8px">
+    <div class="card" id="tm2-body" style="margin-top:8px">
       <div class="row-spread" style="margin-bottom:10px">
         <div>
           <div class="card-title" style="margin-bottom:1px">A/B Variant Comparison</div>
           <div style="font-size:10px;color:var(--fg3)">Loads each variant once, then shows what differs · differences are not failures</div>
         </div>
         <div class="row" style="gap:5px;flex-shrink:0">
-          <button class="btn danger sm" id="btn-stop-abcompare" style="display:none">Stop</button>
-          <button class="btn primary sm" id="btn-run-abcompare">Run Comparison</button>
+          <button class="btn danger sm mode-stop-btn" id="btn-stop-abcompare" style="display:none">Stop</button>
+          <button class="btn primary sm mode-run-btn" id="btn-run-abcompare">Run Comparison</button>
         </div>
       </div>
 
@@ -595,13 +599,13 @@
         <div class="card-title" style="margin-bottom:0">WCAG / Accessibility Mode</div>
         <button class="btn sm testmode-back">‹ Back</button>
       </div>
-    <div class="card">
+    <div class="card" id="tm4-body">
       <div class="row-spread" style="margin-bottom:10px">
         <div>
           <div class="card-title" style="margin-bottom:1px">WCAG 2.2 Audit</div>
           <div style="font-size:10px;color:var(--fg3)">Runs against the active tab · <span style="color:var(--brand)">Manual</span> rows include a hand-check list</div>
         </div>
-        <button class="btn primary sm" id="btn-run-wcag">Run Audit</button>
+        <button class="btn primary sm mode-run-btn" id="btn-run-wcag">Run Audit</button>
       </div>
 
       <div class="script-row">
@@ -713,6 +717,7 @@
         <div class="card-title" style="margin-bottom:0">Performance/Load Mode</div>
         <button class="btn sm testmode-back">‹ Back</button>
       </div>
+      <div id="tm6-body" style="display:contents">
       <div>
         <label class="cap">Scope</label>
         <div class="radio-group">
@@ -753,8 +758,8 @@
         <span class="row" style="gap:4px;font-size:11px;color:var(--fg2)">Load ≤ <input type="text" id="perf-budget-load" style="width:52px"> ms</span>
       </div>
       <div class="row" style="gap:6px;margin-bottom:10px">
-        <button class="btn primary sm" id="btn-perf-run">Run Measurement</button>
-        <button class="btn danger sm" id="btn-perf-stop" style="display:none">Stop</button>
+        <button class="btn primary sm mode-run-btn" id="btn-perf-run">Run Measurement</button>
+        <button class="btn danger sm mode-stop-btn" id="btn-perf-stop" style="display:none">Stop</button>
       </div>
       <div id="perf-results"></div>
       <div style="margin-top:10px">
@@ -763,6 +768,7 @@
           <select id="perf-history-select"><option disabled>&lt;no past runs&gt;</option></select>
           <button class="btn sm" id="btn-perf-view-history">View</button>
         </div>
+      </div>
       </div>
     </div>
     <div class="card testmode-sub" id="testmode-sub-7" style="display:none">
@@ -869,6 +875,55 @@
           style="width:100%;font-family:'Cascadia Code','Menlo',monospace;font-size:11px;padding:6px 8px">
       </div>
     </div>
+  </div>
+
+  <!-- Test Agent panel -->
+  <div class="panel" id="panel-testagent">
+
+    <div class="card" id="ta-ai-settings">
+      <div class="card-title">AI Summary</div>
+      <div class="arg-row" style="margin-bottom:6px">
+        <span class="arg-lbl">Anthropic API Key</span>
+        <input type="password" id="ta-api-key" placeholder="sk-ant-...">
+        <button class="btn sm" id="btn-ta-save-key">Save</button>
+      </div>
+      <div style="font-size:10px;color:var(--fg3)">Stored locally in Chrome sync storage. Used only to generate a plain-English summary of Test Agent results via Anthropic's API — calls go directly from this extension to api.anthropic.com.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Test Mode</div>
+      <select id="ta-primary-select" style="width:100%">
+        <option value="" selected disabled>— Select a mode —</option>
+        <option value="2">A/B Variant Comparison</option>
+        <option value="4">WCAG / Accessibility</option>
+        <option value="6">Performance / Load</option>
+        <option value="funnel">Funnel Crawl (Coming Soon)</option>
+      </select>
+    </div>
+
+    <div id="ta-settings-slot"></div>
+
+    <div class="card" id="ta-multi-card" style="display:none">
+      <div class="card-title">Also Run</div>
+      <div id="ta-multi-list" style="display:flex;flex-direction:column;gap:1px"></div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="gap:14px;flex-wrap:wrap;margin-bottom:8px">
+        <label class="row" style="gap:5px;font-size:11px;color:var(--fg2);cursor:pointer">
+          <input type="checkbox" id="ta-agentic-testing">Agentic Testing (Sonnet)
+        </label>
+        <label class="row" style="gap:5px;font-size:11px;color:var(--fg2);cursor:pointer">
+          <input type="checkbox" id="ta-agentic-analysis" checked>Agentic Analysis (Opus)
+        </label>
+      </div>
+      <div class="row" style="gap:6px">
+        <button class="btn primary sm" id="btn-ta-run" disabled>Execute Test</button>
+        <button class="btn danger sm" id="btn-ta-stop" style="display:none">Stop Test</button>
+      </div>
+      <div id="ta-status" style="font-size:11px;color:var(--fg3);margin-top:6px"></div>
+    </div>
+
   </div>
 
 </div><!-- /panels -->

@@ -151,6 +151,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initPerfMode();
   await initSrMode();
 
+  // Test Agent tab
+  const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
+  if (anthropicApiKey) document.getElementById('ta-api-key').value = anthropicApiKey;
+  document.getElementById('btn-ta-save-key').addEventListener('click', () => {
+    chrome.storage.sync.set({ anthropicApiKey: document.getElementById('ta-api-key').value.trim() });
+  });
+  document.getElementById('ta-primary-select').addEventListener('change', taShowPrimary);
+  document.getElementById('ta-multi-list').addEventListener('change', e => {
+    const chk = e.target.closest('.ta-extra-chk');
+    if (!chk) return;
+    if (chk.checked) taQueuedExtra.add(chk.dataset.mode); else taQueuedExtra.delete(chk.dataset.mode);
+  });
+  document.getElementById('btn-ta-run').addEventListener('click', runTestAgent);
+  document.getElementById('btn-ta-stop').addEventListener('click', stopTestAgent);
+
   // Metrics section
   document.getElementById('btn-add-metric')?.addEventListener('click', () => addMetricRow());
   const metricList = document.getElementById('metric-list');
@@ -212,6 +227,157 @@ function showTab(name) {
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-' + name)?.classList.add('active');
+
+  // Test Agent parks a mode's settings body away from its Test Modes tab home
+  // while active — moving away/back here (rather than in showTestModeSub)
+  // covers every navigation path, so the Test Modes tab is never left showing
+  // a submenu whose body is actually sitting in the Test Agent tab.
+  if (name === 'testagent') {
+    taShowPrimary();
+  } else if (_taActiveBody) {
+    taMoveBodyHome(_taActiveBody);
+    _taActiveBody = null;
+  }
+}
+
+// ── Test Agent ───────────────────────────────────────────────────────────────
+// Reuses the Test Modes tab's own settings UI by reparenting it (not copying —
+// WCAG's checks share name="wcag-check" with no per-checkbox id, and
+// wcagCheckboxes() queries the whole document, so a literal duplicate would
+// silently merge two sets of checkboxes into one).
+function taAgenticTestingEnabled() {
+  return !!document.getElementById('ta-agentic-testing')?.checked;
+}
+
+const TA_MODES = {
+  '2': {
+    label: 'A/B Variant Comparison', bodyId: 'tm2-body', homeParentId: 'testmode-sub-2',
+    run: () => runAbComparison({ agenticTesting: taAgenticTestingEnabled() }),
+    isConfigured: () => (abState ? abState.targets.map(t => abComposeUrl(t)).filter(Boolean) : []).length >= 2,
+    getData: () => _abLastRun,
+  },
+  '4': {
+    label: 'WCAG / Accessibility', bodyId: 'tm4-body', homeParentId: 'testmode-sub-4',
+    run: () => runWcagAudit({ agenticTesting: taAgenticTestingEnabled() }),
+    isConfigured: () => wcagCheckboxes().some(cb => cb.checked),
+    getData: () => _wcagCurrentRun,
+  },
+  '6': {
+    label: 'Performance / Load', bodyId: 'tm6-body', homeParentId: 'testmode-sub-6',
+    run: () => runPerfMode({ agenticTesting: taAgenticTestingEnabled() }),
+    isConfigured: () => tmPagesFor('6').length > 0,
+    getData: () => _perfLastRun,
+  },
+};
+let _taActiveBody = null;        // '2' | '4' | '6' | null — which mode's body currently sits in #ta-settings-slot
+const taQueuedExtra = new Set(); // mode ids checked in the "Also Run" list, not persisted across popup reopen
+let _taStopRequested = false;
+
+function taMoveBodyHome(n) {
+  const home = document.getElementById(TA_MODES[n].homeParentId);
+  const body = document.getElementById(TA_MODES[n].bodyId);
+  if (home && body) home.appendChild(body);
+}
+
+function taShowPrimary() {
+  const val = document.getElementById('ta-primary-select').value;
+  if (_taActiveBody && _taActiveBody !== val) taMoveBodyHome(_taActiveBody);
+
+  const slot = document.getElementById('ta-settings-slot');
+  const runBtn = document.getElementById('btn-ta-run');
+
+  if (val === 'funnel') {
+    _taActiveBody = null;
+    slot.innerHTML = '<div class="card"><div class="card-title">Funnel Crawl</div>' +
+      '<div style="font-size:12px;color:var(--fg3)">Not implemented yet — coming soon.</div></div>';
+    runBtn.disabled = true;
+  } else if (TA_MODES[val]) {
+    slot.innerHTML = '';
+    slot.appendChild(document.getElementById(TA_MODES[val].bodyId));
+    _taActiveBody = val;
+    runBtn.disabled = false;
+  } else {
+    _taActiveBody = null;
+    slot.innerHTML = '';
+    runBtn.disabled = true;
+  }
+  taRenderMultiList();
+}
+
+function taRenderMultiList() {
+  const card = document.getElementById('ta-multi-card');
+  const list = document.getElementById('ta-multi-list');
+  const others = Object.keys(TA_MODES).filter(n => n !== _taActiveBody);
+
+  for (const n of [...taQueuedExtra]) if (!others.includes(n)) taQueuedExtra.delete(n);
+
+  if (!_taActiveBody || !others.length) { card.style.display = 'none'; list.innerHTML = ''; return; }
+  card.style.display = '';
+  list.innerHTML = others.map(n => `
+    <label class="suite-check">
+      <input type="checkbox" class="ta-extra-chk" data-mode="${n}"${taQueuedExtra.has(n) ? ' checked' : ''}>
+      ${esc(TA_MODES[n].label)}
+    </label>`).join('');
+}
+
+// Sequential batch execution: primary mode + whichever "Also Run" modes are
+// checked, in order — mirrors runAllModesAndReport's skip-if-unconfigured +
+// collect-results pattern, scoped to just the modes selected here.
+async function runTestAgent() {
+  const primary = _taActiveBody;
+  if (!primary) return;
+
+  const sequence = [primary, ...[...taQueuedExtra].filter(n => n !== primary)];
+  _taStopRequested = false;
+  const runBtn = document.getElementById('btn-ta-run');
+  const stopBtn = document.getElementById('btn-ta-stop');
+  const status = document.getElementById('ta-status');
+  runBtn.disabled = true;
+  stopBtn.style.display = '';
+
+  const modeResults = [];
+  try {
+    for (const n of sequence) {
+      const m = TA_MODES[n];
+      if (_taStopRequested) {
+        modeResults.push({ mode: +n, name: m.label, status: 'skipped', reason: 'Stopped before this mode started.' });
+        continue;
+      }
+      if (!m.isConfigured()) {
+        modeResults.push({ mode: +n, name: m.label, status: 'skipped', reason: 'Not configured.' });
+        continue;
+      }
+      status.textContent = `Running ${m.label}…`;
+      await m.run();
+      modeResults.push({ mode: +n, name: m.label, status: 'ran', data: m.getData() });
+    }
+
+    const anyRan = modeResults.some(r => r.status === 'ran');
+    if (anyRan) {
+      const analysisEnabled = !!document.getElementById('ta-agentic-analysis')?.checked;
+      let aiSectionHtml;
+      if (analysisEnabled) {
+        status.textContent = 'Generating AI summary…';
+        const summaryRes = await chrome.runtime.sendMessage({ action: 'summarizeTestAgentResults', payload: { modeResults } });
+        aiSectionHtml = rptAiSummarySection(summaryRes?.ok ? summaryRes.summary : null, summaryRes?.ok ? null : summaryRes?.error);
+      } else {
+        aiSectionHtml = rptAiSummarySection(null, 'Agentic Analysis is off — enable it in Test Controls for an AI-written summary.');
+      }
+      status.textContent = 'Done — report opened in a new tab.';
+      const html = buildFullReportHtml({ ts: Date.now(), pageUrls: [], modes: modeResults, extraHtml: aiSectionHtml });
+      chrome.tabs.create({ url: URL.createObjectURL(new Blob([html], { type: 'text/html' })) });
+    } else {
+      status.textContent = 'Done — nothing configured to run.';
+    }
+  } finally {
+    runBtn.disabled = false;
+    stopBtn.style.display = 'none';
+  }
+}
+
+function stopTestAgent() {
+  _taStopRequested = true;
+  chrome.runtime.sendMessage({ action: 'stop' });
 }
 
 // Each Test Mode submenu carries its own list of page areas — the same layout
@@ -1579,7 +1745,7 @@ function wcagCheckboxes() {
   return [...document.querySelectorAll('input[name="wcag-check"]')];
 }
 
-async function runWcagAudit() {
+async function runWcagAudit(opts = {}) {
   const btn = document.getElementById('btn-run-wcag');
   const resultsEl = document.getElementById('wcag-results');
   const checks = wcagCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
@@ -1594,12 +1760,13 @@ async function runWcagAudit() {
   resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Auditing page…</div>';
 
   try {
-    const res = await chrome.runtime.sendMessage({ action: 'runWcagAudit', checks, scope });
+    const res = await chrome.runtime.sendMessage({ action: 'runWcagAudit', checks, scope, agenticTesting: !!opts.agenticTesting });
     if (!res?.ok) throw new Error(res?.error || 'Audit failed');
     _wcagCurrentRun = {
       url: res.url || '', ts: Date.now(), tabId: res.tabId || null,
       checks, scope, results: res.results,
       axeError: res.axeError || null, scopeError: res.scopeError || null,
+      agenticNote: res.agenticNote || null,
     };
     renderWcagRun(_wcagCurrentRun);
     await saveWcagHistory(_wcagCurrentRun);
@@ -2003,7 +2170,7 @@ function abComposeUrl(target) {
 
 let _abProgressPoller = null;
 
-async function runAbComparison() {
+async function runAbComparison(opts = {}) {
   const btn       = document.getElementById('btn-run-abcompare');
   const stopBtn   = document.getElementById('btn-stop-abcompare');
   const resultsEl = document.getElementById('ab-results');
@@ -2035,10 +2202,10 @@ async function runAbComparison() {
   try {
     const res = await chrome.runtime.sendMessage({
       action: 'runVariantComparison',
-      payload: { targets, settleSeconds: abState.settleSec, keepTabs: abState.keepTabs, selectors, winId: WIN_ID },
+      payload: { targets, settleSeconds: abState.settleSec, keepTabs: abState.keepTabs, selectors, winId: WIN_ID, agenticTesting: !!opts.agenticTesting },
     });
     if (!res?.ok) throw new Error(res?.error || 'Comparison failed');
-    _abLastRun = { captures: res.results, metricsList, selectors, ts: Date.now() };
+    _abLastRun = { captures: res.results, metricsList, selectors, ts: Date.now(), agenticNote: res.agenticNote || null };
     renderAbResults(res.results, metricsList, selectors);
   } catch (e) {
     resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
@@ -3322,7 +3489,7 @@ function persistPerfState() {
   sessionNS.set({ perfModeState: perfState });
 }
 
-async function runPerfMode() {
+async function runPerfMode(opts = {}) {
   const btn       = document.getElementById('btn-perf-run');
   const stopBtn   = document.getElementById('btn-perf-stop');
   const resultsEl = document.getElementById('perf-results');
@@ -3352,14 +3519,14 @@ async function runPerfMode() {
       payload: {
         pages, settleSeconds: perfState.settleSec,
         runsPerPage: perfState.runs, disableCache: perfState.disableCache,
-        winId: WIN_ID,
+        winId: WIN_ID, agenticTesting: !!opts.agenticTesting,
       },
     });
     if (!res?.ok) throw new Error(res?.error || 'Measurement failed');
     const summarized = (res.results || []).map(p => ({
       url: p.url, ts: Date.now(), skipped: !!p.skipped && !p.runs.length,
       partial: !!p.skipped && p.runs.length > 0,
-      runs: p.runs, summary: perfSummarize(p),
+      runs: p.runs, summary: perfSummarize(p), agenticNote: p.agenticNote || null,
     }));
     _perfLastRun = { ts: Date.now(), budgets: { ...perfBudgets }, disableCache: perfState.disableCache, pages: summarized };
     renderPerfResults(_perfLastRun);
@@ -3958,6 +4125,17 @@ function rptSkipped(title, reason) {
   return rptSection(title, rptBadge('skip', 'SKIPPED'), reason || 'Not configured.', '');
 }
 
+// Test Agent: LLM-written verdict over the modeResults already collected —
+// prepended to the report, ahead of the per-mode sections below.
+function rptAiSummarySection(summary, error) {
+  if (!summary) {
+    return rptSection('AI Summary', rptBadge('skip', 'UNAVAILABLE'),
+      error || 'No API key configured — add one in the AI Summary card.', '');
+  }
+  return rptSection('AI Summary', rptBadge('info', 'AI'), '',
+    `<div style="white-space:pre-wrap">${esc(summary)}</div>`);
+}
+
 // ── Per-mode report bodies (reuse each mode's own diff/summarize helpers —
 // no new data is invented here, only reformatted for print) ──────────────────
 function rptQueueSection(entry) {
@@ -3971,6 +4149,13 @@ function rptQueueSection(entry) {
     ? `<table class="rpt-table"><thead><tr><th>Time</th><th>Level</th><th>Message</th></tr></thead><tbody>${rows}</tbody></table>`
     : '<p class="rpt-muted">No log entries.</p>';
   return rptSection(entry.name, badge, summary, body);
+}
+
+// Agentic Testing: a supplemental Sonnet judgment call, never a replacement
+// for the deterministic result rendered above it.
+function rptAgenticNoteHtml(note, label) {
+  if (!note) return '';
+  return `<p class="rpt-muted"><strong>${esc(label || 'Agentic Testing Note (Sonnet)')}:</strong> ${esc(note)}</p>`;
 }
 
 function rptAbSection(entry) {
@@ -4005,6 +4190,7 @@ function rptAbSection(entry) {
     body += `<h3>Errors</h3><table class="rpt-table"><thead><tr><th>Variant</th><th>Error</th></tr></thead><tbody>${errRows}</tbody></table>`;
   }
   body += '<p class="rpt-muted">Differences are expected in an A/B test — review whether each delta matches the intended variant change. Only errors and load failures are defects.</p>';
+  body += rptAgenticNoteHtml(entry.data.agenticNote);
   return rptSection(entry.name, badge, summary, body);
 }
 
@@ -4048,7 +4234,8 @@ function rptWcagSection(entry) {
   if (run.axeError) notes.push('axe-core could not run (' + run.axeError + ') — heuristic checks were used instead.');
   if (run.url) notes.push('Audited ' + run.url);
   const body = (notes.length ? `<p class="rpt-muted">${notes.map(esc).join(' · ')}</p>` : '') +
-    `<table class="rpt-table"><thead><tr><th>Check</th><th>Status</th><th>Issues</th></tr></thead><tbody>${rows}</tbody></table>`;
+    `<table class="rpt-table"><thead><tr><th>Check</th><th>Status</th><th>Issues</th></tr></thead><tbody>${rows}</tbody></table>` +
+    rptAgenticNoteHtml(run.agenticNote);
   return rptSection(entry.name, badge, summary, body);
 }
 
@@ -4084,8 +4271,11 @@ function rptPerfSection(entry) {
     ).join('<br>');
     return `<tr><td>${esc(shortUrl(p.url))}</td><td>${cells}</td></tr>`;
   }).join('');
+  const agenticNotes = shown.filter(p => p.agenticNote)
+    .map(p => rptAgenticNoteHtml(p.agenticNote, `${shortUrl(p.url)} — Agentic Testing Note (Sonnet)`)).join('');
   const body = `<table class="rpt-table"><thead><tr><th>Page</th><th>Metrics vs budget</th></tr></thead><tbody>${rows}</tbody></table>
-    <p class="rpt-muted">Measured in this browser on this machine and network — treat as relative comparison, not lab-grade absolutes.</p>`;
+    <p class="rpt-muted">Measured in this browser on this machine and network — treat as relative comparison, not lab-grade absolutes.</p>` +
+    agenticNotes;
   return rptSection(entry.name, badge, summary, body);
 }
 
@@ -4110,12 +4300,12 @@ function rptSrSection(entry) {
 // ── Report document assembly (pure — no DOM reads, only formats data already
 // produced by each mode's own run) ────────────────────────────────────────────
 function buildFullReportHtml(sections) {
-  const { ts, pageUrls, modes } = sections;
+  const { ts, pageUrls, modes, extraHtml } = sections;
   const builders = {
     1: rptQueueSection, 2: rptAbSection, 3: rptVrSection,
     4: rptWcagSection, 5: rptCvaSection, 6: rptPerfSection, 7: rptSrSection,
   };
-  const body = modes.map(entry => (builders[entry.mode] || (() => ''))(entry)).join('');
+  const body = (extraHtml || '') + modes.map(entry => (builders[entry.mode] || (() => ''))(entry)).join('');
   const urlsHtml = pageUrls.length
     ? pageUrls.map(u => `<li>${esc(u)}</li>`).join('')
     : '<li>No page URLs recorded.</li>';

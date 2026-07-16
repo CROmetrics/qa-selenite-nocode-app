@@ -891,11 +891,11 @@ async function injectAbErrorCollector(tabId) {
   });
 }
 
-async function captureVariant(target, { settleMs, selectors, keepTabs }) {
+async function captureVariant(target, { settleMs, selectors, keepTabs, captureForVision }) {
   const out = {
     label: target.label, url: target.url,
     finalUrl: '', title: '', loadError: null,
-    console: [], errors: [], selectors: [], tabId: null,
+    console: [], errors: [], selectors: [], tabId: null, screenshot: null,
   };
   let tab = null;
   try {
@@ -943,6 +943,12 @@ async function captureVariant(target, { settleMs, selectors, keepTabs }) {
         }
       }), [selectors]);
     }
+
+    if (captureForVision) {
+      // Best-effort — a screenshot failure (e.g. DevTools already open) must
+      // never mask the real loadError this catch block exists to record.
+      try { out.screenshot = await captureViewportScreenshot(tab.id); } catch (_) {}
+    }
   } catch (e) {
     out.loadError = e.message;
   } finally {
@@ -956,7 +962,7 @@ async function captureVariant(target, { settleMs, selectors, keepTabs }) {
   return out;
 }
 
-async function runVariantComparison({ targets = [], settleSeconds, keepTabs, selectors = [] }) {
+async function runVariantComparison({ targets = [], settleSeconds, keepTabs, selectors = [], agenticTesting }) {
   _abStopRequested = false;
   const settleMs = Math.max(0, (parseFloat(settleSeconds) || 0) * 1000);
   const sels = selectors.map(s => String(s).trim()).filter(Boolean);
@@ -968,12 +974,29 @@ async function runVariantComparison({ targets = [], settleSeconds, keepTabs, sel
         continue;
       }
       await setAbProgress({ running: true, index: i, total: targets.length, label: targets[i].label });
-      results.push(await captureVariant(targets[i], { settleMs, selectors: sels, keepTabs: !!keepTabs }));
+      results.push(await captureVariant(targets[i], { settleMs, selectors: sels, keepTabs: !!keepTabs, captureForVision: !!agenticTesting }));
     }
   } finally {
     await setAbProgress({ running: false });
   }
-  return results;
+
+  let agenticNote = null;
+  const screenshots = results.map(r => r.screenshot).filter(Boolean);
+  if (agenticTesting && screenshots.length && !_abStopRequested) {
+    const summary = results.map(r => r.skipped
+      ? `${r.label}: skipped`
+      : `${r.label} (${r.url}): ${r.loadError ? `load error — ${r.loadError}` : 'loaded'}, ${r.errors?.length || 0} JS errors, selectors: ${JSON.stringify(r.selectors)}`
+    ).join('\n');
+    const vision = await callClaudeVision({
+      images: screenshots,
+      prompt: 'These are screenshots of each variant in an A/B experiment, in the same order as the summary below. ' +
+        'Judge whether each visual difference between variants looks like an intended experiment change or a likely bug. ' +
+        'Keep it under 120 words.\n\n' + summary,
+    });
+    agenticNote = vision.ok ? vision.text : `Agentic Testing unavailable: ${vision.error}`;
+  }
+
+  return { results, agenticNote };
 }
 
 // ── Arg name map (mirrors functions.py signatures) ─────────────────────────
@@ -1029,7 +1052,7 @@ const DISPLAY_NAMES = {
 // returns { results, axeError, scopeError }. Extracted from the runWcagAudit
 // handler so the Cross-Variant Accessibility mode can run the exact same audit
 // against variant tabs — both modes get byte-for-byte identical audit behavior.
-async function performWcagAudit(tabId, checks, scope) {
+async function performWcagAudit(tabId, checks, scope, { captureForVision } = {}) {
   const results = await exec(tabId, function(checks, scope) {
 
     function brief(el) {
@@ -1436,7 +1459,29 @@ async function performWcagAudit(tabId, checks, scope) {
 
   const scopeError = results.__scopeError || null;
   delete results.__scopeError;
-  return { results, axeError, scopeError };
+
+  let agenticNote = null;
+  if (captureForVision) {
+    try {
+      const screenshot = await captureViewportScreenshot(tabId);
+      const foundIssues = Object.entries(results)
+        .filter(([, v]) => v?.issues?.length)
+        .map(([key, v]) => `${v.label || key}: ${v.issues.length} issue(s)`)
+        .join('\n') || 'No automated issues found.';
+      const vision = await callClaudeVision({
+        images: [screenshot],
+        prompt: 'This is a screenshot of a page that just had an automated WCAG accessibility audit run against it. ' +
+          'The automated findings are below. Look at the screenshot and flag any accessibility concerns the automated ' +
+          'checks structurally can\'t see (visual hierarchy, icon-only controls with unclear meaning, low-contrast text ' +
+          'that reads fine as a color value but not visually, etc). Keep it under 120 words.\n\n' + foundIssues,
+      });
+      agenticNote = vision.ok ? vision.text : `Agentic Testing unavailable: ${vision.error}`;
+    } catch (e) {
+      agenticNote = `Agentic Testing unavailable: ${e.message}`;
+    }
+  }
+
+  return { results, axeError, scopeError, agenticNote };
 }
 
 // ── Test Modes shared orchestration ─────────────────────────────────────────
@@ -1531,6 +1576,24 @@ async function runCrossVariantAudit({ targets = [], settleSeconds, keepTabs, che
 // because selectors can't be re-resolved against a static image later.
 // Diffing happens in popup.js, which has canvas access.
 const VR_MAX_CAPTURE_HEIGHT = 8000;   // CSS px — CDP hard-fails past 16384 device px
+
+// Agentic Testing: a plain viewport screenshot (no full-page stitching) for
+// vision commentary — short-lived attach/capture/detach, same lifecycle as
+// captureFullPage below, just without its scroll-height/ignore-region work.
+async function captureViewportScreenshot(tabId) {
+  const target = { tabId };
+  try {
+    await chrome.debugger.attach(target, CDP_VERSION);
+  } catch (e) {
+    throw new Error(`Could not attach for screenshot (is DevTools open?): ${e.message}`);
+  }
+  try {
+    const shot = await chrome.debugger.sendCommand(target, 'Page.captureScreenshot', { format: 'png' });
+    return 'data:image/png;base64,' + shot.data;
+  } finally {
+    try { await chrome.debugger.detach(target); } catch (_) {}
+  }
+}
 
 async function captureFullPage(tabId, ignoreSelectors) {
   const info = await exec(tabId, (sels) => {
@@ -1701,7 +1764,45 @@ async function measurePageOnce(url, settleMs, disableCache) {
   return run;
 }
 
-async function runPerfMeasurement({ pages = [], settleSeconds, runsPerPage, disableCache }) {
+// Agentic Testing: a short screenshot sequence from one extra, UNCOUNTED page
+// load — deliberately separate from measurePageOnce's timed runs, so CDP
+// screenshot overhead never skews the actual LCP/CLS/TTFB numbers. Best-effort
+// only: fixed frame count/interval, no attempt to synchronize with the real
+// load event.
+async function observePerceivedPerf(url) {
+  const tab = await chrome.tabs.create({ url: 'about:blank', active: true });
+  const target = { tabId: tab.id };
+  const screenshots = [];
+  try {
+    await waitForLoadTimeout(tab.id, 15000);
+    try {
+      await chrome.debugger.attach(target, CDP_VERSION);
+    } catch (e) {
+      throw new Error(`Could not attach for observation: ${e.message}`);
+    }
+    try {
+      await chrome.tabs.update(tab.id, { url: normalizeUrl(url) });
+      const frames = 5;
+      const intervalMs = 400;
+      for (let i = 0; i < frames; i++) {
+        await new Promise(r => setTimeout(r, intervalMs));
+        try {
+          const shot = await chrome.debugger.sendCommand(target, 'Page.captureScreenshot', { format: 'png' });
+          screenshots.push('data:image/png;base64,' + shot.data);
+        } catch (_) { /* tab may have navigated away mid-capture; skip this frame */ }
+      }
+    } finally {
+      try { await chrome.debugger.detach(target); } catch (_) {}
+    }
+  } catch (_) {
+    // best-effort observation pass — return whatever frames were captured
+  } finally {
+    try { await chrome.tabs.remove(tab.id); } catch (_) {}
+  }
+  return screenshots;
+}
+
+async function runPerfMeasurement({ pages = [], settleSeconds, runsPerPage, disableCache, agenticTesting }) {
   _tmStopRequested = false;
   const settleMs = Math.max(0, (parseFloat(settleSeconds) || 0) * 1000);
   const runs = Math.max(1, Math.min(9, parseInt(runsPerPage, 10) || 3));
@@ -1719,6 +1820,28 @@ async function runPerfMeasurement({ pages = [], settleSeconds, runsPerPage, disa
       if (_tmStopRequested) {
         for (const rest of pages.slice(i + 1)) results.push({ url: rest.url, runs: [], skipped: true });
         break;
+      }
+
+      if (agenticTesting && out.runs.length) {
+        try {
+          const screenshots = await observePerceivedPerf(p.url);
+          if (screenshots.length) {
+            const summary = out.runs.map((r, ri) => r.error
+              ? `Run ${ri + 1}: error — ${r.error}`
+              : `Run ${ri + 1}: LCP ${r.lcp}ms, CLS ${r.cls}, TTFB ${r.ttfb}ms, Load ${r.load}ms`
+            ).join('\n');
+            const vision = await callClaudeVision({
+              images: screenshots,
+              prompt: 'These are sequential screenshots captured roughly every 400ms during a fresh, separate load of this page ' +
+                '(not the timed measurement runs themselves). The already-measured numeric results for the same page are below. ' +
+                'Comment on any visible jank, layout shift, or loading issues across the frames, in plain English. ' +
+                'Keep it under 120 words.\n\n' + summary,
+            });
+            out.agenticNote = vision.ok ? vision.text : `Agentic Testing unavailable: ${vision.error}`;
+          }
+        } catch (e) {
+          out.agenticNote = `Agentic Testing unavailable: ${e.message}`;
+        }
       }
     }
   } finally {
@@ -1829,6 +1952,68 @@ function renderSessionOverlay(data) {
   return true;
 }
 
+// Condenses Test Agent's modeResults into a compact plain-text prompt asking
+// for a short human verdict — capped per mode so a large result set doesn't
+// blow up the request.
+function buildTestAgentSummaryPrompt(modeResults) {
+  const parts = modeResults.map(entry => {
+    if (entry.status !== 'ran') {
+      return `${entry.name}: skipped (${entry.reason || 'not configured'})`;
+    }
+    const json = JSON.stringify(entry.data ?? null);
+    const trimmed = json.length > 4000 ? json.slice(0, 4000) + '…' : json;
+    return `${entry.name}: ran\n${trimmed}`;
+  });
+  return 'You are reviewing QA test results from a browser extension. For each mode below, ' +
+    'write a short, plain-English summary of what happened — call out real issues vs. likely noise. ' +
+    'Keep the whole summary under 150 words.\n\n' + parts.join('\n\n');
+}
+
+// Agentic Testing: a supplemental vision pass over screenshot(s) already
+// captured by a mode's own deterministic run — never a replacement for it.
+// Only one vision call is ever in flight at a time (Test Agent runs modes
+// sequentially), so a single tracked AbortController is enough to make Stop
+// Test cancel it immediately rather than letting it complete.
+let _visionAbortController = null;
+
+async function callClaudeVision({ images, prompt, maxTokens }) {
+  const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
+  if (!anthropicApiKey) return { ok: false, error: 'No API key configured' };
+  _visionAbortController = new AbortController();
+  try {
+    const content = [
+      ...images.map(dataUrl => ({
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/png', data: dataUrl.replace(/^data:image\/png;base64,/, '') },
+      })),
+      { type: 'text', text: prompt },
+    ];
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      signal: _visionAbortController.signal,
+      headers: {
+        'x-api-key': anthropicApiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5',
+        max_tokens: maxTokens || 512,
+        messages: [{ role: 'user', content }],
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) return { ok: false, error: data?.error?.message || res.statusText };
+    const text = data.content?.find(b => b.type === 'text')?.text || '';
+    return { ok: true, text };
+  } catch (e) {
+    return { ok: false, error: e.name === 'AbortError' ? 'Stopped' : e.message };
+  } finally {
+    _visionAbortController = null;
+  }
+}
+
 // ── Message listener ───────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'run') {
@@ -1839,6 +2024,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     _stopRequested = true;
     _abStopRequested = true;   // shared stop: also halts a variant comparison run
     _tmStopRequested = true;   // …and any visual/cross-variant/performance run
+    _visionAbortController?.abort();   // …and any in-flight Agentic Testing vision call
     sendResponse({ ok: true });
 
   } else if (msg.action === 'status') {
@@ -2022,8 +2208,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       await beginTmRun(msg.payload);
       try {
-        const results = await runVariantComparison(msg.payload || {});
-        sendResponse({ ok: true, results });
+        const { results, agenticNote } = await runVariantComparison(msg.payload || {});
+        sendResponse({ ok: true, results, agenticNote });
       } catch (e) {
         try { await setAbProgress({ running: false }); } catch (_) {}
         sendResponse({ ok: false, error: e.message });
@@ -2041,8 +2227,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const tabId = tabs[0]?.id;
       if (!tabId) { sendResponse({ ok: false, error: 'No active tab' }); return; }
       try {
-        const { results, axeError, scopeError } = await performWcagAudit(tabId, checks, scope);
-        sendResponse({ ok: true, results, axeError, scopeError, tabId, url: tabs[0]?.url || '' });
+        const { results, axeError, scopeError, agenticNote } = await performWcagAudit(tabId, checks, scope, { captureForVision: !!msg.agenticTesting });
+        sendResponse({ ok: true, results, axeError, scopeError, agenticNote, tabId, url: tabs[0]?.url || '' });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }
@@ -2090,6 +2276,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, error: e.message });
       } finally {
         await endTmRun();
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'summarizeTestAgentResults') {
+    (async () => {
+      try {
+        const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
+        if (!anthropicApiKey) { sendResponse({ ok: false, error: 'No API key configured' }); return; }
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': anthropicApiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'claude-opus-4-8',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: buildTestAgentSummaryPrompt(msg.payload?.modeResults || []) }],
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) { sendResponse({ ok: false, error: data?.error?.message || res.statusText }); return; }
+        const text = data.content?.find(b => b.type === 'text')?.text || '';
+        sendResponse({ ok: true, summary: text });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
       }
     })();
     return true;

@@ -815,23 +815,20 @@
   <div class="panel" id="panel-console">
     <div id="console-wrap">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:5px">
-        <label class="toggle-wrap" title="Capture live browser console output">
+        <label class="toggle-wrap" title="Pause/resume passive console capture">
           <input type="checkbox" id="capture-enabled">
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
         <span style="font-size:11px;color:var(--fg2);flex-shrink:0">Capture</span>
-        <select id="capture-tab-select" style="flex:1;min-width:0;font-size:11px;padding:4px 6px">
-          <option value="">Loading tabs…</option>
-        </select>
-        <button class="btn-icon" id="btn-refresh-tabs" title="Refresh tab list" style="flex-shrink:0">⟳</button>
+        <span id="capture-status-label" style="flex:1;min-width:0;font-size:11px;color:var(--fg2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Not capturing</span>
       </div>
       <div class="console-subtabs">
-        <button class="btn-icon console-subtab" data-subtab="test-results" style="background:var(--brand);color:#fff">Test Results</button>
-        <button class="btn-icon console-subtab" data-subtab="browser-console">Browser Console</button>
+        <button class="btn-icon console-subtab" data-subtab="test-results">Test Results</button>
+        <button class="btn-icon console-subtab" data-subtab="browser-console" style="background:var(--brand);color:#fff">Browser Console</button>
       </div>
 
       <!-- Test Results: step-execution log, updates independently of the mirror below -->
-      <div class="console-subpanel active" id="subpanel-test-results">
+      <div class="console-subpanel" id="subpanel-test-results">
         <div id="con-hdr">
           <input type="text" id="filter-input" placeholder="Filter…"
             style="flex:1;max-width:140px;padding:5px 8px;font-size:11px">
@@ -848,7 +845,7 @@
       </div>
 
       <!-- Browser Console: genuine live mirror of the page's console via CDP -->
-      <div class="console-subpanel" id="subpanel-browser-console">
+      <div class="console-subpanel active" id="subpanel-browser-console">
         <div id="bc-status" style="font-size:11px;color:var(--fg3)">○ Not attached — enable Capture above</div>
         <div id="bc-hdr">
           <input type="text" id="bc-filter-input" placeholder="Filter…"

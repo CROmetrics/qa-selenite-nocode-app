@@ -3,6 +3,7 @@
   "name": "Selenite — No-Code QA Runner",
   "version": "1.0.0",
   "description": "Build and run QA test scripts directly in your browser — no code required.",
+  "incognito": "split",
   "permissions": [
     "tabs",
     "scripting",

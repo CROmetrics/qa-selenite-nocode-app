@@ -16,8 +16,81 @@ let _wasRunning = false;
 // and its parameters. This first step cannot be removed or reassigned.
 const OPEN_URL_FUNC = 'open_url';
 
+// ── Per-window state isolation ──────────────────────────────────────────────
+// The side panel is one instance per browser window, and each window's panel is
+// its own document (so in-memory globals are already isolated). The one channel
+// that leaks state across windows is chrome.storage. To make each window behave
+// like its own Chrome DevTools instance, every chrome.storage.session key — all
+// of it working/runtime state — is namespaced by this window's id via the
+// sessionNS wrapper below. Incognito is separated at the process level by the
+// manifest's "incognito": "split". Saved libraries and settings live in
+// storage.local / storage.sync and stay shared across windows on purpose (like
+// DevTools snippets/settings), so those are left un-namespaced.
+let WIN_ID = null;
+const nsPrefix = () => (WIN_ID != null ? `w${WIN_ID}:` : '');
+const nsKey    = (k) => nsPrefix() + k;
+const stripNs  = (k) => (nsPrefix() && k.startsWith(nsPrefix()) ? k.slice(nsPrefix().length) : k);
+
+// Namespaced facade over chrome.storage.session. Mirrors the get/set/remove
+// surface the code uses (string key, array of keys, or object literal) and
+// transparently prefixes keys, returning results under their bare names.
+const sessionNS = {
+  get(keys) {
+    const arr = Array.isArray(keys) ? keys : [keys];
+    return chrome.storage.session.get(arr.map(nsKey)).then(res => {
+      const out = {};
+      for (const [k, v] of Object.entries(res)) out[stripNs(k)] = v;
+      return out;
+    });
+  },
+  set(obj) {
+    const prefixed = {};
+    for (const [k, v] of Object.entries(obj)) prefixed[nsKey(k)] = v;
+    return chrome.storage.session.set(prefixed);
+  },
+  remove(keys) {
+    const arr = Array.isArray(keys) ? keys : [keys];
+    return chrome.storage.session.remove(arr.map(nsKey));
+  },
+};
+
+// Resolve the id of the window this side-panel instance belongs to. Prefer
+// windows.getCurrent (the panel's own window); fall back to the active tab's
+// window id. Must run before any sessionNS access.
+async function resolveWinId() {
+  try {
+    const w = await chrome.windows.getCurrent();
+    if (w && w.id != null) { WIN_ID = w.id; return; }
+  } catch (_) {}
+  try {
+    const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (t && t.windowId != null) WIN_ID = t.windowId;
+  } catch (_) {}
+}
+
+// A long-lived port is how background.js knows this window's panel is open —
+// its disconnect (panel closed, window closed, or the document torn down) is
+// what releases that window's passive capture/debugger attachment. Reconnects
+// after a drop (e.g. an MV3 service-worker restart); harmless if the document
+// itself is gone, since nothing runs after unload.
+let _panelPort = null;
+function connectPanelPort() {
+  _panelPort = chrome.runtime.connect({ name: 'selenite-panel' });
+  _panelPort.postMessage({ action: 'hello', winId: WIN_ID });
+  _panelPort.onDisconnect.addListener(() => {
+    _panelPort = null;
+    setTimeout(connectPanelPort, 500);
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  // Resolve this panel's window id first — every session read/write below is
+  // namespaced by it, and the background worker is told the id so it writes run
+  // logs / status / capture state into this window's namespace too.
+  await resolveWinId();
+  connectPanelPort();
+
   // Load function metadata from background
   const res = await chrome.runtime.sendMessage({ action: 'getFunctions' });
   FN_META = res.functions;
@@ -25,7 +98,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Restore saved queue state. The first step is always the mandatory
   // "Open URL" step; seed it from the saved state if present, otherwise
   // create a fresh one.
-  const { queueState } = await chrome.storage.session.get('queueState');
+  const { queueState } = await sessionNS.get('queueState');
   const rest = [...(queueState || [])];
   const firstData = (rest[0]?.func === OPEN_URL_FUNC) ? rest.shift() : null;
   ensureOpenUrlFirst(firstData);
@@ -43,6 +116,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(syncBcLogs, 600);
   setInterval(syncBcStatus, 800);
   setInterval(syncRunState, 800);
+  setInterval(syncCaptureStatus, 800);
 
   await loadUniversalDelay();
   await loadBcTagFilter();
@@ -68,6 +142,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.querySelectorAll('.testmode-back').forEach(b => {
     b.addEventListener('click', () => showTestModeSub(null));
   });
+  document.getElementById('btn-run-all-report')?.addEventListener('click', runAllModesAndReport);
   await initTestModePages();
   // Test Modes: Visual Regression / Cross-Variant Accessibility /
   // Performance / Session Replay (each is a no-op if its subpage is absent).
@@ -125,12 +200,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('bc-eval-input')?.addEventListener('keydown', onBcEvalKeydown);
   document.getElementById('bc-log-out')?.addEventListener('click', onBcLogClick);
 
-  // Console capture toggle + tab selector
+  // Console capture pause/resume toggle — capture itself is automatic and
+  // follows whatever tab is focused; this only pauses/resumes it.
   document.getElementById('capture-enabled').addEventListener('change', onCaptureToggle);
-  document.getElementById('capture-tab-select').addEventListener('change', () => {
-    if (document.getElementById('capture-enabled').checked) onCaptureToggle();
-  });
-  document.getElementById('btn-refresh-tabs').addEventListener('click', loadTabList);
 });
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
@@ -158,7 +230,7 @@ function tmNewPage(saved) {
 }
 
 async function initTestModePages() {
-  const { tmPagesState } = await chrome.storage.session.get('tmPagesState');
+  const { tmPagesState } = await sessionNS.get('tmPagesState');
   document.querySelectorAll('.tm-pages').forEach(cont => {
     const n = cont.dataset.mode;
     const saved = tmPagesState?.[n] || {};
@@ -259,7 +331,7 @@ function persistTmPages() {
       pages: m.pages.map(p => ({ enabled: p.enabled, delay: p.delay, inputs: p.inputs })),
     };
   }
-  chrome.storage.session.set({ tmPagesState: state });
+  sessionNS.set({ tmPagesState: state });
 }
 
 // Show one Test Mode submenu (by its data-testmode number), or pass null to
@@ -292,29 +364,23 @@ function initAccordions() {
 
 // ── Run state sync ────────────────────────────────────────────────────────
 async function syncRunState() {
-  const { running } = await chrome.storage.session.get('running');
+  const { running } = await sessionNS.get('running');
   document.getElementById('btn-run').disabled  = !!running;
   document.getElementById('btn-stop').disabled = !running;
   document.getElementById('run-indicator').style.display = running ? 'inline-block' : 'none';
 
   if (running && !_wasRunning) {
-    // Test just started — reset log view and update tab selector to show the test tab
+    // Test just started — reset log view (capture itself is automatic now,
+    // background already points it at the run's tab).
     logData = [];
     document.getElementById('log-out').innerHTML = '';
-    const { captureTabId } = await chrome.storage.session.get('captureTabId');
-    if (captureTabId) {
-      await loadTabList();
-      const sel = document.getElementById('capture-tab-select');
-      if (sel) sel.value = String(captureTabId);
-      document.getElementById('capture-enabled').checked = true;
-    }
   }
   _wasRunning = !!running;
 }
 
 // ── Log sync ──────────────────────────────────────────────────────────────
 async function syncLogs() {
-  const { logs = [] } = await chrome.storage.session.get('logs');
+  const { logs = [] } = await sessionNS.get('logs');
   if (logs.length > logData.length) {
     logData = logs;
     renderLog();
@@ -352,7 +418,7 @@ function setFilter(lv, btn) {
 // Kept as a fully separate data stream/render cycle from the Test Results log
 // above, so the two panels never clobber each other and update independently.
 async function syncBcLogs() {
-  const { browserConsoleLogs = [] } = await chrome.storage.session.get('browserConsoleLogs');
+  const { browserConsoleLogs = [] } = await sessionNS.get('browserConsoleLogs');
   if (browserConsoleLogs.length !== bcLogData.length) {
     bcLogData = browserConsoleLogs;
     renderBcLog();
@@ -414,7 +480,7 @@ async function onBcLogClick(e) {
     return;
   }
   btn.disabled = true;
-  const res = await chrome.runtime.sendMessage({ action: 'bcExpand', objectId });
+  const res = await chrome.runtime.sendMessage({ action: 'bcExpand', objectId, winId: WIN_ID });
   btn.disabled = false;
   const container = document.createElement('div');
   container.className = 'bc-children';
@@ -464,7 +530,7 @@ function setBcFilter(lv, btn) {
 
 async function clearBcLog() {
   bcLogData = [];
-  await chrome.storage.session.set({ browserConsoleLogs: [] });
+  await sessionNS.set({ browserConsoleLogs: [] });
   document.getElementById('bc-log-out').innerHTML = '';
 }
 
@@ -531,7 +597,7 @@ function onMetricRemove(e) {
 }
 
 async function syncBcStatus() {
-  const { debuggerStatus } = await chrome.storage.session.get('debuggerStatus');
+  const { debuggerStatus } = await sessionNS.get('debuggerStatus');
   const attached = !!debuggerStatus?.attached;
   const input = document.getElementById('bc-eval-input');
   if (input) {
@@ -547,9 +613,23 @@ async function syncBcStatus() {
     el.textContent = `○ Not attached — ${debuggerStatus.error}`;
     el.style.color = 'var(--err)';
   } else {
-    el.textContent = '○ Not attached — enable Capture above';
+    el.textContent = '○ Not attached — waiting for a capturable tab';
     el.style.color = 'var(--fg3)';
   }
+}
+
+// Reflects background's passive follow-active-tab capture state (see
+// followTab/doFollow in background.js) — read-only, since target selection is
+// now automatic rather than a manual dropdown.
+async function syncCaptureStatus() {
+  const { captureStatus } = await sessionNS.get('captureStatus');
+  const el = document.getElementById('capture-status-label');
+  if (!el) return;
+  if (!captureStatus) { el.textContent = 'Not capturing'; return; }
+  const label = captureStatus.title || captureStatus.url || `tab ${captureStatus.tabId}`;
+  el.textContent = captureStatus.capturable === false
+    ? `Not capturable: ${label}`
+    : `Capturing: ${label}`;
 }
 
 // ── Browser Console eval REPL (Runtime.evaluate over CDP) ───────────────────
@@ -563,7 +643,7 @@ async function sendBcEval() {
   bcEvalHistory.push(expr);
   bcEvalHistoryIdx = bcEvalHistory.length;
   input.value = '';
-  await chrome.runtime.sendMessage({ action: 'bcEval', expression: expr });
+  await chrome.runtime.sendMessage({ action: 'bcEval', expression: expr, winId: WIN_ID });
   await syncBcLogs();
 }
 
@@ -593,54 +673,27 @@ function showConsoleSubtab(name) {
 }
 
 // ── Console capture ───────────────────────────────────────────────────────
-async function loadTabList() {
-  const res = await chrome.runtime.sendMessage({ action: 'getTabs' });
-  const tabs = res?.tabs || [];
-  const sel = document.getElementById('capture-tab-select');
-  if (!sel) return;
-  const prevVal = sel.value;
-  sel.innerHTML = tabs.length
-    ? tabs.map(t => {
-        const label = (t.title || t.url || 'Tab').substring(0, 50);
-        return `<option value="${t.id}">${label}</option>`;
-      }).join('')
-    : '<option value="">No tabs available</option>';
-  if (prevVal && [...sel.options].some(o => o.value === prevVal)) sel.value = prevVal;
-}
-
+// Capture is passive — background follows whatever tab is focused in this
+// window automatically. This toggle only pauses/resumes it; there's no target
+// to pick, so failures (non-capturable page, DevTools already open, etc.) are
+// reflected in the read-only status label/bc-status, not surfaced as alerts.
 async function restoreCaptureState() {
-  await loadTabList();
-  const { captureTabId } = await chrome.storage.session.get('captureTabId');
+  const { captureEnabled } = await sessionNS.get('captureEnabled');
   const chk = document.getElementById('capture-enabled');
-  if (chk) chk.checked = !!captureTabId;
-  if (captureTabId) {
-    const sel = document.getElementById('capture-tab-select');
-    if (sel) sel.value = String(captureTabId);
-  }
+  if (chk) chk.checked = captureEnabled !== false;
 }
 
 async function onCaptureToggle() {
   const enabled = document.getElementById('capture-enabled').checked;
-  if (enabled) {
-    const tabId = parseInt(document.getElementById('capture-tab-select').value);
-    if (!tabId) { document.getElementById('capture-enabled').checked = false; return; }
-    const res = await chrome.runtime.sendMessage({ action: 'startCapture', tabId });
-    if (!res?.ok) {
-      document.getElementById('capture-enabled').checked = false;
-      alert('Could not inject console capture. Make sure the selected tab is a regular webpage.');
-    } else if (res.debuggerError) {
-      alert(`Test Results capture is active, but the full Browser Console mirror could not attach:\n${res.debuggerError}`);
-    }
-    await syncBcStatus();
-  } else {
-    await chrome.runtime.sendMessage({ action: 'stopCapture' });
-  }
+  await chrome.runtime.sendMessage({ action: enabled ? 'startCapture' : 'stopCapture', winId: WIN_ID });
+  await syncBcStatus();
+  await syncCaptureStatus();
 }
 
 async function clearLog() {
   logData = [];
   logOffset = 0;
-  await chrome.storage.session.set({ logs: [] });
+  await sessionNS.set({ logs: [] });
   document.getElementById('log-out').innerHTML = '';
 }
 
@@ -729,7 +782,7 @@ async function runQueue() {
 
   await chrome.runtime.sendMessage({
     action: 'run',
-    payload: { queue, mode, targetTabId, universalDelay }
+    payload: { queue, mode, targetTabId, universalDelay, winId: WIN_ID }
   });
 
   showTab('console');
@@ -1186,12 +1239,12 @@ function wireOpenUrlArgs(el, step) {
 let _pickerPoller = null;
 
 async function startPicker(stepEl, step, argName, onResult) {
-  await chrome.storage.session.remove('pickerResult');
+  await sessionNS.remove('pickerResult');
 
   const btn = stepEl.querySelector(`.btn-pick[data-pick-arg="${argName}"]`);
   if (btn) { btn.textContent = '…'; btn.disabled = true; }
 
-  const res = await chrome.runtime.sendMessage({ action: 'startPicker' });
+  const res = await chrome.runtime.sendMessage({ action: 'startPicker', winId: WIN_ID });
   if (!res?.ok) {
     if (btn) { btn.textContent = '🎯'; btn.disabled = false; }
     alert('Could not inject picker. Make sure you are on a regular webpage (not a chrome:// page).');
@@ -1199,12 +1252,12 @@ async function startPicker(stepEl, step, argName, onResult) {
   }
 
   _pickerPoller = setInterval(async () => {
-    const { pickerResult } = await chrome.storage.session.get('pickerResult');
+    const { pickerResult } = await sessionNS.get('pickerResult');
     if (!pickerResult) return;
 
     clearInterval(_pickerPoller);
     _pickerPoller = null;
-    await chrome.storage.session.remove('pickerResult');
+    await sessionNS.remove('pickerResult');
 
     if (btn) { btn.textContent = '🎯'; btn.disabled = false; }
     if (pickerResult.cancelled) return;
@@ -1301,7 +1354,7 @@ function updateCount() {
 }
 
 function persistQueue() {
-  chrome.storage.session.set({
+  sessionNS.set({
     queueState: steps.map(s => ({
       func: s.func, enabled: s.enabled, delay: s.delay, inputs: { ...s.inputs }
     }))
@@ -1744,6 +1797,7 @@ async function initWcagMode() {
 // tab queue.
 
 let abState = null;   // { baseUrl, qaMode, settleSec, keepTabs, targets: [{label,url,override}], selectors: [] }
+let _abLastRun = null;   // last comparison, for the Run All & Generate Report mode
 
 function abDefaultState() {
   return {
@@ -1758,7 +1812,7 @@ function abDefaultState() {
 
 async function initAbCompare() {
   if (!document.getElementById('ab-target-list')) return;
-  const { abCompareState } = await chrome.storage.session.get('abCompareState');
+  const { abCompareState } = await sessionNS.get('abCompareState');
   abState = { ...abDefaultState(), ...(abCompareState || {}) };
   if (!Array.isArray(abState.targets) || !abState.targets.length) abState.targets = abDefaultState().targets;
   if (!Array.isArray(abState.selectors)) abState.selectors = [];
@@ -1804,7 +1858,7 @@ function applyAbStateToInputs() {
 }
 
 function persistAbState() {
-  chrome.storage.session.set({ abCompareState: abState });
+  sessionNS.set({ abCompareState: abState });
 }
 
 function renderAbTargets() {
@@ -1971,7 +2025,7 @@ async function runAbComparison() {
   resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Loading variants…</div>';
 
   _abProgressPoller = setInterval(async () => {
-    const { abProgress } = await chrome.storage.session.get('abProgress');
+    const { abProgress } = await sessionNS.get('abProgress');
     if (abProgress?.running) {
       btn.textContent = `Running ${abProgress.index + 1}/${abProgress.total}…`;
       resultsEl.innerHTML = `<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Loading ${esc(abProgress.label)} (${abProgress.index + 1} of ${abProgress.total})…</div>`;
@@ -1981,9 +2035,10 @@ async function runAbComparison() {
   try {
     const res = await chrome.runtime.sendMessage({
       action: 'runVariantComparison',
-      payload: { targets, settleSeconds: abState.settleSec, keepTabs: abState.keepTabs, selectors },
+      payload: { targets, settleSeconds: abState.settleSec, keepTabs: abState.keepTabs, selectors, winId: WIN_ID },
     });
     if (!res?.ok) throw new Error(res?.error || 'Comparison failed');
+    _abLastRun = { captures: res.results, metricsList, selectors, ts: Date.now() };
     renderAbResults(res.results, metricsList, selectors);
   } catch (e) {
     resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
@@ -2475,7 +2530,7 @@ async function runVrCapture(kind) {
   stopBtn.style.display = '';
   resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Capturing…</div>';
   _vrProgressPoller = setInterval(async () => {
-    const { vrProgress } = await chrome.storage.session.get('vrProgress');
+    const { vrProgress } = await sessionNS.get('vrProgress');
     if (vrProgress?.running) {
       resultsEl.innerHTML = `<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Capturing ${esc(shortUrl(vrProgress.label || ''))} (${vrProgress.index + 1} of ${vrProgress.total})…</div>`;
     }
@@ -2487,6 +2542,7 @@ async function runVrCapture(kind) {
       payload: {
         pages: targets, settleSeconds: vrState.settleSec,
         keepTabs: vrState.keepTabs, ignoreSelectors: vrState.ignoreSelectors,
+        winId: WIN_ID,
       },
     });
     if (!res?.ok) throw new Error(res?.error || 'Capture failed');
@@ -2755,7 +2811,7 @@ function cvaDefaultState() {
 
 async function initCvaMode() {
   if (!document.getElementById('cva-target-list')) return;
-  const { cvaModeState } = await chrome.storage.session.get('cvaModeState');
+  const { cvaModeState } = await sessionNS.get('cvaModeState');
   cvaState = { ...cvaDefaultState(), ...(cvaModeState || {}) };
   if (!Array.isArray(cvaState.targets) || !cvaState.targets.length) cvaState.targets = cvaDefaultState().targets;
   if (!Array.isArray(cvaState.checks)) cvaState.checks = cvaDefaultState().checks;
@@ -2807,7 +2863,7 @@ function applyCvaStateToInputs() {
 }
 
 function persistCvaState() {
-  chrome.storage.session.set({ cvaModeState: cvaState });
+  sessionNS.set({ cvaModeState: cvaState });
 }
 
 function renderCvaTargets() {
@@ -2936,7 +2992,7 @@ async function runCvaAudit() {
   stopBtn.style.display = '';
   resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Auditing variants…</div>';
   _cvaProgressPoller = setInterval(async () => {
-    const { cvaProgress } = await chrome.storage.session.get('cvaProgress');
+    const { cvaProgress } = await sessionNS.get('cvaProgress');
     if (cvaProgress?.running) {
       btn.textContent = `Running ${cvaProgress.index + 1}/${cvaProgress.total}…`;
       resultsEl.innerHTML = `<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Auditing ${esc(cvaProgress.label)} (${cvaProgress.index + 1} of ${cvaProgress.total})…</div>`;
@@ -2946,7 +3002,7 @@ async function runCvaAudit() {
   try {
     const res = await chrome.runtime.sendMessage({
       action: 'runCrossVariantAudit',
-      payload: { targets, settleSeconds: cvaState.settleSec, keepTabs: cvaState.keepTabs, checks, scope },
+      payload: { targets, settleSeconds: cvaState.settleSec, keepTabs: cvaState.keepTabs, checks, scope, winId: WIN_ID },
     });
     if (!res?.ok) throw new Error(res?.error || 'Audit failed');
     const runs = (res.results || []).filter(r => !r.skipped);
@@ -3233,7 +3289,7 @@ function fmtMetric(v, m) {
 
 async function initPerfMode() {
   if (!document.getElementById('btn-perf-run')) return;
-  const { perfModeState } = await chrome.storage.session.get('perfModeState');
+  const { perfModeState } = await sessionNS.get('perfModeState');
   perfState = { settleSec: '3', runs: '3', disableCache: true, ...(perfModeState || {}) };
   const { perfBudgets: saved } = await chrome.storage.sync.get('perfBudgets');
   perfBudgets = { ...PERF_DEFAULT_BUDGETS, ...(saved || {}) };
@@ -3263,7 +3319,7 @@ async function initPerfMode() {
 }
 
 function persistPerfState() {
-  chrome.storage.session.set({ perfModeState: perfState });
+  sessionNS.set({ perfModeState: perfState });
 }
 
 async function runPerfMode() {
@@ -3282,7 +3338,7 @@ async function runPerfMode() {
   stopBtn.style.display = '';
   resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Measuring…</div>';
   _perfProgressPoller = setInterval(async () => {
-    const { perfProgress } = await chrome.storage.session.get('perfProgress');
+    const { perfProgress } = await sessionNS.get('perfProgress');
     if (perfProgress?.running) {
       const t = `page ${perfProgress.page}/${perfProgress.pages} · run ${perfProgress.run}/${perfProgress.runs}`;
       btn.textContent = `Running (${t})…`;
@@ -3296,6 +3352,7 @@ async function runPerfMode() {
       payload: {
         pages, settleSeconds: perfState.settleSec,
         runsPerPage: perfState.runs, disableCache: perfState.disableCache,
+        winId: WIN_ID,
       },
     });
     if (!res?.ok) throw new Error(res?.error || 'Measurement failed');
@@ -3555,7 +3612,7 @@ async function initSrMode() {
 async function srStartRecording() {
   const label = document.getElementById('sr-label').value.trim();
   const captureMove = document.getElementById('sr-capture-move').checked;
-  const res = await chrome.runtime.sendMessage({ action: 'sessionRecordStart', label, captureMove });
+  const res = await chrome.runtime.sendMessage({ action: 'sessionRecordStart', label, captureMove, winId: WIN_ID });
   if (!res?.ok) alert('Could not start recording: ' + (res?.error || 'unknown error'));
   await syncSrStatus();
 }
@@ -3567,10 +3624,10 @@ async function srStopRecording() {
 }
 
 async function syncSrStatus() {
-  const { srStatus, srFinishedSession } = await chrome.storage.session.get(['srStatus', 'srFinishedSession']);
+  const { srStatus, srFinishedSession } = await sessionNS.get(['srStatus', 'srFinishedSession']);
   // A recording whose tab was closed finalizes in background — pick it up here.
   if (srFinishedSession) {
-    await chrome.storage.session.remove('srFinishedSession');
+    await sessionNS.remove('srFinishedSession');
     await srSaveSession(srFinishedSession);
   }
   const rec = !!srStatus?.recording;
@@ -3749,4 +3806,414 @@ async function srShowOverlay() {
   };
   const res = await chrome.runtime.sendMessage({ action: 'sessionShowOverlay', payload });
   if (!res?.ok) warnEl.textContent = 'Could not show overlay: ' + (res?.error || 'unknown error');
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Test Modes: Run All & Generate Report
+// ═════════════════════════════════════════════════════════════════════════════
+// Runs every configured mode 1-6 in sequence (reusing each mode's own run
+// function untouched) and compiles a single self-contained HTML report opened
+// in a new tab. Session Replay (mode 7) is recording-based, not "run and get a
+// result" — it's excluded from the automatic run, but the most recently
+// viewed/saved session (if any) is folded into the report as a reference.
+
+// runQueue() only dispatches the background run and resolves immediately —
+// unlike the other modes' run functions, which already await full completion.
+// This mirrors syncRunState()'s own polling of the same 'running' flag.
+async function runQueueAndWait() {
+  await runQueue();
+  await new Promise(resolve => {
+    const poll = setInterval(async () => {
+      const { running } = await sessionNS.get('running');
+      if (!running) { clearInterval(poll); resolve(); }
+    }, 400);
+  });
+  const { logs = [] } = await sessionNS.get('logs');
+  logData = logs;
+}
+
+async function runAllModesAndReport() {
+  const btn = document.getElementById('btn-run-all-report');
+  if (btn) { btn.disabled = true; btn.textContent = 'Running all modes…'; }
+
+  const pageUrls = new Set();
+  const modeResults = [];
+
+  try {
+    // Mode 1 — Functional Testing (Build tab queue)
+    if (steps.length > 0) {
+      const openStep = steps.find(s => s.func === OPEN_URL_FUNC);
+      if (openStep?.inputs?.url) pageUrls.add(openStep.inputs.url);
+      await runQueueAndWait();
+      modeResults.push({ mode: 1, name: 'Functional Testing Mode', status: 'ran', logData: [...logData] });
+    } else {
+      modeResults.push({ mode: 1, name: 'Functional Testing Mode', status: 'skipped', reason: 'No queue steps defined.' });
+    }
+
+    // Mode 2 — A/B Variant Comparison
+    const abTargets = abState
+      ? abState.targets.map(t => ({ label: (t.label || '').trim() || 'Variant', url: abComposeUrl(t) })).filter(t => t.url)
+      : [];
+    if (abTargets.length >= 2) {
+      abTargets.forEach(t => pageUrls.add(t.url));
+      await runAbComparison();
+      modeResults.push({ mode: 2, name: 'A/B Variant Comparison Mode', status: 'ran', data: _abLastRun });
+    } else {
+      modeResults.push({ mode: 2, name: 'A/B Variant Comparison Mode', status: 'skipped', reason: 'Fewer than two variant targets with a URL configured.' });
+    }
+
+    // Mode 3 — Visual Regression
+    const vrPages = tmPagesFor('3');
+    const { vrMeta: _vrMetaCheck = {} } = await chrome.storage.local.get('vrMeta');
+    const vrHasBaseline = vrPages.some(p => _vrMetaCheck[p.url]?.baseline);
+    if (vrPages.length && vrHasBaseline) {
+      vrPages.forEach(p => pageUrls.add(p.url));
+      await runVrCapture('compare');
+      modeResults.push({ mode: 3, name: 'Visual Regression Mode', status: 'ran', data: _vrLastRun });
+    } else {
+      modeResults.push({
+        mode: 3, name: 'Visual Regression Mode', status: 'skipped',
+        reason: vrPages.length ? 'No stored baseline for the configured page(s) — set a baseline first.' : 'No page URL configured.',
+      });
+    }
+
+    // Mode 4 — WCAG / Accessibility (runs against the active tab)
+    const wcagChecks = wcagCheckboxes().filter(cb => cb.checked);
+    if (wcagChecks.length) {
+      await runWcagAudit();
+      if (_wcagCurrentRun?.url) pageUrls.add(_wcagCurrentRun.url);
+      modeResults.push({ mode: 4, name: 'WCAG / Accessibility Mode', status: 'ran', data: _wcagCurrentRun });
+    } else {
+      modeResults.push({ mode: 4, name: 'WCAG / Accessibility Mode', status: 'skipped', reason: 'No checks selected.' });
+    }
+
+    // Mode 5 — Cross-Variant Accessibility
+    const cvaTargets = cvaState
+      ? cvaState.targets.map(t => ({ label: (t.label || '').trim() || 'Variant', url: composeVariantUrl(t, cvaState.baseUrl, cvaState.qaMode) })).filter(t => t.url)
+      : [];
+    const cvaAutoChecks = cvaState ? cvaState.checks.filter(k => WCAG_CHECKS.some(c => c.key === k && !c.manual)) : [];
+    if (cvaTargets.length >= 2 && cvaAutoChecks.length) {
+      cvaTargets.forEach(t => pageUrls.add(t.url));
+      await runCvaAudit();
+      modeResults.push({ mode: 5, name: 'Cross-Variant Accessibility Mode', status: 'ran', data: _cvaLastRun });
+    } else {
+      modeResults.push({
+        mode: 5, name: 'Cross-Variant Accessibility Mode', status: 'skipped',
+        reason: 'Fewer than two variant targets with a URL, or no automated checks selected.',
+      });
+    }
+
+    // Mode 6 — Performance/Load
+    const perfPages = tmPagesFor('6');
+    if (perfPages.length) {
+      perfPages.forEach(p => pageUrls.add(p.url));
+      await runPerfMode();
+      modeResults.push({ mode: 6, name: 'Performance/Load Mode', status: 'ran', data: _perfLastRun });
+    } else {
+      modeResults.push({ mode: 6, name: 'Performance/Load Mode', status: 'skipped', reason: 'No page URL configured.' });
+    }
+
+    // Mode 7 — Session Replay: never auto-run (manual start/stop recording),
+    // but fold in the most recently viewed/saved session if one exists.
+    let srSession = _srViewedSession;
+    if (!srSession) {
+      try {
+        const all = await idbGetAll('sessions');
+        if (all.length) { all.sort((a, b) => b.startedAt - a.startedAt); srSession = all[0]; }
+      } catch (_) {}
+    }
+    modeResults.push({
+      mode: 7, name: 'Session Replay / Heatmap Mode',
+      status: srSession ? 'included' : 'skipped',
+      data: srSession || null,
+      reason: srSession ? null : 'Manual recording mode — no saved session available to include.',
+    });
+
+    const html = buildFullReportHtml({ ts: Date.now(), pageUrls: [...pageUrls], modes: modeResults });
+    const blob = new Blob([html], { type: 'text/html' });
+    chrome.tabs.create({ url: URL.createObjectURL(blob) });
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Run All & Generate Report'; }
+  }
+}
+
+// ── Report badge / section shell ──────────────────────────────────────────────
+function rptBadge(kind, label) {
+  return `<span class="rpt-badge rpt-badge-${kind}">${esc(label)}</span>`;
+}
+
+function rptSection(title, badgeHtml, summaryText, bodyHtml) {
+  return `
+    <section class="rpt-section">
+      <div class="rpt-section-hdr">
+        <h2>${esc(title)}</h2>
+        ${badgeHtml}
+      </div>
+      <div class="rpt-summary">${esc(summaryText)}</div>
+      ${bodyHtml}
+    </section>`;
+}
+
+function rptSkipped(title, reason) {
+  return rptSection(title, rptBadge('skip', 'SKIPPED'), reason || 'Not configured.', '');
+}
+
+// ── Per-mode report bodies (reuse each mode's own diff/summarize helpers —
+// no new data is invented here, only reformatted for print) ──────────────────
+function rptQueueSection(entry) {
+  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
+  const logs = entry.logData || [];
+  const errCount = logs.filter(l => l.level === 'ERROR').length;
+  const badge = rptBadge(errCount ? 'fail' : 'pass', errCount ? 'FAIL' : 'PASS');
+  const summary = `${logs.length} log line${logs.length !== 1 ? 's' : ''} · ${errCount} error${errCount !== 1 ? 's' : ''}`;
+  const rows = logs.map(l => `<tr><td>${esc(l.ts)}</td><td>${esc(l.level)}</td><td>${esc(l.text)}</td></tr>`).join('');
+  const body = logs.length
+    ? `<table class="rpt-table"><thead><tr><th>Time</th><th>Level</th><th>Message</th></tr></thead><tbody>${rows}</tbody></table>`
+    : '<p class="rpt-muted">No log entries.</p>';
+  return rptSection(entry.name, badge, summary, body);
+}
+
+function rptAbSection(entry) {
+  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
+  const { captures: allCaptures, metricsList, selectors } = entry.data;
+  const captures = (allCaptures || []).filter(c => !c.skipped);
+  if (captures.length < 2) return rptSkipped(entry.name, 'Stopped before two variants were captured — nothing to compare.');
+
+  const d = diffAbCaptures(captures, metricsList, selectors);
+  const errCount = d.errors.reduce((n, e) => n + (e.loadError ? 1 : 0) + e.jsErrors.length, 0);
+  const totalDeltas =
+    d.basics.filter(b => b.titleDiff || b.urlDiff).length +
+    d.selectorRows.filter(s => !s.allSame).length +
+    d.metricRows.filter(m => !m.allSame).length +
+    d.consoleRows.filter(v => v.added.length || v.missing.length).length;
+  const badge = errCount ? rptBadge('fail', 'FAIL') : totalDeltas ? rptBadge('issues', 'ISSUES FOUND') : rptBadge('pass', 'PASS');
+  const summary = `Baseline: ${captures[0].label} · ${errCount ? errCount + ' error(s) · ' : ''}${totalDeltas} difference(s) vs baseline`;
+
+  const basicsRows = d.basics.map((b, i) => `<tr><td>${esc(b.label)}${i === 0 ? ' (baseline)' : ''}</td><td>${b.loadError ? 'Load failed: ' + esc(b.loadError) : esc(b.title)}</td><td>${b.loadError ? '—' : esc(b.finalUrl)}</td></tr>`).join('');
+  let body = `<h3>Page Basics</h3><table class="rpt-table"><thead><tr><th>Variant</th><th>Title</th><th>URL</th></tr></thead><tbody>${basicsRows}</tbody></table>`;
+
+  if (selectors.length) {
+    const selRows = d.selectorRows.map(s => `<tr><td>${esc(s.selector)}</td><td>${s.allSame ? 'Identical in all variants' : 'Differs — see extension for detail'}</td></tr>`).join('');
+    body += `<h3>Watched Selectors</h3><table class="rpt-table"><thead><tr><th>Selector</th><th>Result</th></tr></thead><tbody>${selRows}</tbody></table>`;
+  }
+  if (metricsList.length) {
+    const metRows = d.metricRows.map(m => `<tr><td>${esc(m.metric)}</td><td>${m.counts.map((c, i) => esc(captures[i].label) + ' ×' + c).join(' · ')}</td></tr>`).join('');
+    body += `<h3>Metrics</h3><table class="rpt-table"><thead><tr><th>Metric</th><th>Fire counts</th></tr></thead><tbody>${metRows}</tbody></table>`;
+  }
+  if (d.errors.length) {
+    const errRows = d.errors.map(e => `<tr><td>${esc(e.label)}</td><td>${[e.loadError, ...e.jsErrors].filter(Boolean).map(esc).join('<br>')}</td></tr>`).join('');
+    body += `<h3>Errors</h3><table class="rpt-table"><thead><tr><th>Variant</th><th>Error</th></tr></thead><tbody>${errRows}</tbody></table>`;
+  }
+  body += '<p class="rpt-muted">Differences are expected in an A/B test — review whether each delta matches the intended variant change. Only errors and load failures are defects.</p>';
+  return rptSection(entry.name, badge, summary, body);
+}
+
+function rptVrSection(entry) {
+  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
+  const run = entry.data;
+  const compared = run.pages.filter(p => !p.skipped);
+  const passed = compared.filter(p => p.pass === true).length;
+  const failed = compared.filter(p => p.pass === false).length;
+  const badge = rptBadge(failed ? 'fail' : 'pass', failed ? 'FAIL' : 'PASS');
+  const skippedCount = run.pages.length - compared.length;
+  const summary = `${passed} passed · ${failed} failed${skippedCount ? ` · ${skippedCount} skipped` : ''}`;
+  const rows = run.pages.map(p => {
+    if (p.skipped) return `<tr><td>${esc(shortUrl(p.url))}</td><td colspan="2">Skipped (stopped)</td></tr>`;
+    if (p.viewportMismatch) return `<tr><td>${esc(shortUrl(p.url))}</td><td>Viewport changed</td><td>baseline ${p.viewportMismatch.baseline}px, now ${p.viewportMismatch.current}px — diff skipped</td></tr>`;
+    if (p.error) return `<tr><td>${esc(shortUrl(p.url))}</td><td colspan="2">${esc(p.error)}</td></tr>`;
+    return `<tr><td>${esc(shortUrl(p.url))}</td><td>${p.pass ? 'PASS' : 'FAIL'}</td><td>${p.mismatchPct}% mismatch (threshold ${p.threshold}%)${p.heightDeltaPx ? ' · height changed ' + p.heightDeltaPx + 'px' : ''}</td></tr>`;
+  }).join('');
+  const body = `<table class="rpt-table"><thead><tr><th>Page</th><th>Result</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="rpt-muted">Baseline/current/diff screenshots are available in the extension (Visual Regression Mode) — not embedded here.</p>`;
+  return rptSection(entry.name, badge, summary, body);
+}
+
+function rptWcagSection(entry) {
+  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
+  const run = entry.data;
+  let passed = 0, withIssues = 0, manual = 0, totalIssues = 0;
+  const rows = run.checks.filter(k => run.results[k]).map(k => {
+    const { label, issues, infoOnly } = run.results[k];
+    const count = issues.length;
+    let status;
+    if (infoOnly) { manual++; status = 'Manual'; }
+    else { totalIssues += count; count === 0 ? passed++ : withIssues++; status = count === 0 ? 'Pass' : count + ' issue(s)'; }
+    const issuesHtml = issues.length ? `<ul>${issues.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : '—';
+    return `<tr><td>${esc(label)}</td><td>${status}</td><td>${issuesHtml}</td></tr>`;
+  }).join('');
+  const badge = rptBadge(withIssues ? 'issues' : 'pass', withIssues ? 'ISSUES FOUND' : 'PASS');
+  const summary = `${passed} passed · ${withIssues} with issues · ${manual} manual review${totalIssues ? ` · ${totalIssues} total issue(s)` : ''}`;
+  const notes = [];
+  if (run.scope) notes.push('Scoped to: ' + run.scope);
+  if (run.axeError) notes.push('axe-core could not run (' + run.axeError + ') — heuristic checks were used instead.');
+  if (run.url) notes.push('Audited ' + run.url);
+  const body = (notes.length ? `<p class="rpt-muted">${notes.map(esc).join(' · ')}</p>` : '') +
+    `<table class="rpt-table"><thead><tr><th>Check</th><th>Status</th><th>Issues</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return rptSection(entry.name, badge, summary, body);
+}
+
+function rptCvaSection(entry) {
+  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
+  const run = entry.data;
+  const diff = diffCvaRuns(run.runs, run.autoChecks);
+  const checkMeta = Object.fromEntries(WCAG_CHECKS.map(c => [c.key, c]));
+  const totalIntroduced = diff.variants.reduce((n, v) => n + v.introduced, 0);
+  const badge = rptBadge(totalIntroduced ? 'issues' : 'pass', totalIntroduced ? 'ISSUES FOUND' : 'PASS');
+  const summary = `Baseline: ${diff.base.label} · ${totalIntroduced} introduced issue(s) across ${diff.variants.length} variant(s)`;
+  const rows = diff.variants.map(v => {
+    if (v.loadError) return `<tr><td>${esc(v.label)}</td><td colspan="2">Load failure: ${esc(v.loadError)}</td></tr>`;
+    const detail = v.perCheck.filter(pc => pc.introduced.length)
+      .map(pc => `${esc(checkMeta[pc.key]?.label || pc.key)}: ${pc.introduced.length} introduced`).join('; ') || '—';
+    return `<tr><td>${esc(v.label)}</td><td>${v.introduced} introduced · ${v.resolved} resolved · ${v.preexisting} pre-existing</td><td>${detail}</td></tr>`;
+  }).join('');
+  const body = `<table class="rpt-table"><thead><tr><th>Variant</th><th>Summary</th><th>Introduced checks</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return rptSection(entry.name, badge, summary, body);
+}
+
+function rptPerfSection(entry) {
+  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
+  const run = entry.data;
+  const shown = run.pages.filter(p => !p.skipped);
+  const overTotal = shown.reduce((n, p) => n + Object.values(p.summary.verdicts).filter(v => v === 'over').length, 0);
+  const badge = rptBadge(overTotal ? 'fail' : 'pass', overTotal ? 'FAIL' : 'PASS');
+  const summary = `${shown.length} page(s) measured · ${overTotal ? overTotal + ' metric(s) over budget' : 'all budgets met'}`;
+  const rows = shown.map(p => {
+    const s = p.summary;
+    const cells = PERF_METRICS.filter(m => m.budget).map(m =>
+      `${esc(m.label)}: ${fmtMetric(s.medians[m.key], m)} (budget ${fmtMetric(run.budgets[m.budget], m)}) — ${s.verdicts[m.key] === 'over' ? 'OVER' : 'OK'}`
+    ).join('<br>');
+    return `<tr><td>${esc(shortUrl(p.url))}</td><td>${cells}</td></tr>`;
+  }).join('');
+  const body = `<table class="rpt-table"><thead><tr><th>Page</th><th>Metrics vs budget</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="rpt-muted">Measured in this browser on this machine and network — treat as relative comparison, not lab-grade absolutes.</p>`;
+  return rptSection(entry.name, badge, summary, body);
+}
+
+function rptSrSection(entry) {
+  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
+  const s = entry.data;
+  const items = srTimelineItems(s).slice(0, 300);
+  const badge = rptBadge('info', 'RECORDED');
+  const summary = `${s.label || 'Untitled session'} · ${fmtDur(s.duration || 0)} · ${(s.events || []).length} events · ${(s.pages || []).join(', ')}`;
+  const rows = items.map(e => {
+    const ts = fmtDur(e.t - s.startedAt);
+    const text = e.type === 'click' ? (e.sel ? e.sel + ' ' : '') + `(${Math.round(e.x)}, ${Math.round(e.y)})`
+      : e.type === 'scroll' ? `scrolled to ${e.depth}% depth`
+      : (e.text || '');
+    return `<tr><td>${ts}</td><td>${esc(e.type)}</td><td>${esc(text)}</td></tr>`;
+  }).join('');
+  const body = `<p class="rpt-muted">Recording mode is manual start/stop — this session was not part of the automatic run; it is included here as the most recently viewed/saved session.</p>
+    <table class="rpt-table"><thead><tr><th>Time</th><th>Type</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return rptSection(entry.name, badge, summary, body);
+}
+
+// ── Report document assembly (pure — no DOM reads, only formats data already
+// produced by each mode's own run) ────────────────────────────────────────────
+function buildFullReportHtml(sections) {
+  const { ts, pageUrls, modes } = sections;
+  const builders = {
+    1: rptQueueSection, 2: rptAbSection, 3: rptVrSection,
+    4: rptWcagSection, 5: rptCvaSection, 6: rptPerfSection, 7: rptSrSection,
+  };
+  const body = modes.map(entry => (builders[entry.mode] || (() => ''))(entry)).join('');
+  const urlsHtml = pageUrls.length
+    ? pageUrls.map(u => `<li>${esc(u)}</li>`).join('')
+    : '<li>No page URLs recorded.</li>';
+
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Selenite QA Report</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    margin: 0; padding: 24px; line-height: 1.5;
+    background: #f5f6f8; color: #1a1d23;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #16181d; color: #e6e8eb; }
+  }
+  .rpt-wrap { max-width: 960px; margin: 0 auto; }
+  .no-print {
+    display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px;
+  }
+  .no-print button {
+    font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid #888;
+    background: #2563eb; color: #fff; cursor: pointer;
+  }
+  header.rpt-header {
+    background: #fff; border: 1px solid #d8dbe0; border-radius: 8px;
+    padding: 20px; margin-bottom: 20px;
+  }
+  @media (prefers-color-scheme: dark) {
+    header.rpt-header { background: #1e2128; border-color: #333844; }
+  }
+  header.rpt-header h1 { margin: 0 0 6px; font-size: 22px; }
+  header.rpt-header .rpt-meta { font-size: 13px; color: #666; }
+  @media (prefers-color-scheme: dark) { header.rpt-header .rpt-meta { color: #9aa0aa; } }
+  header.rpt-header ul { margin: 8px 0 0; padding-left: 20px; font-size: 13px; }
+  .rpt-section {
+    background: #fff; border: 1px solid #d8dbe0; border-radius: 8px;
+    padding: 18px 20px; margin-bottom: 16px; page-break-inside: avoid;
+  }
+  @media (prefers-color-scheme: dark) {
+    .rpt-section { background: #1e2128; border-color: #333844; }
+  }
+  .rpt-section-hdr { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .rpt-section-hdr h2 { margin: 0; font-size: 17px; }
+  .rpt-summary { font-size: 13px; color: #555; margin: 6px 0 12px; }
+  @media (prefers-color-scheme: dark) { .rpt-summary { color: #aab0ba; } }
+  .rpt-muted { font-size: 12px; color: #777; }
+  @media (prefers-color-scheme: dark) { .rpt-muted { color: #8a909a; } }
+  h3 { font-size: 14px; margin: 14px 0 6px; }
+  .rpt-badge {
+    display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .03em;
+    padding: 4px 10px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap;
+  }
+  .rpt-badge-pass    { background: #e6f7ec; color: #146c2e; border-color: #b7e4c7; }
+  .rpt-badge-fail    { background: #fde8e8; color: #9b1c1c; border-color: #f5b5b5; }
+  .rpt-badge-issues  { background: #fff4e0; color: #8a5300; border-color: #fadfa1; }
+  .rpt-badge-skip    { background: #eceef1; color: #565c66; border-color: #d8dbe0; }
+  .rpt-badge-info    { background: #e7effe; color: #1d4ed8; border-color: #bcd2fb; }
+  @media (prefers-color-scheme: dark) {
+    .rpt-badge-pass   { background: #113a20; color: #7fe0a0; border-color: #1e5c37; }
+    .rpt-badge-fail   { background: #3a1414; color: #f29b9b; border-color: #5c2020; }
+    .rpt-badge-issues { background: #3a2c0e; color: #f2c675; border-color: #5c481e; }
+    .rpt-badge-skip   { background: #2a2d33; color: #b0b5bd; border-color: #3a3e46; }
+    .rpt-badge-info   { background: #16294f; color: #9db8f5; border-color: #234279; }
+  }
+  table.rpt-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.rpt-table th, table.rpt-table td {
+    text-align: left; padding: 6px 8px; border-bottom: 1px solid #e3e5e9; vertical-align: top;
+  }
+  @media (prefers-color-scheme: dark) { table.rpt-table th, table.rpt-table td { border-color: #333844; } }
+  table.rpt-table th { color: #444; font-weight: 600; }
+  @media (prefers-color-scheme: dark) { table.rpt-table th { color: #c3c8d1; } }
+  table.rpt-table tr { page-break-inside: avoid; }
+  ul { margin: 4px 0; padding-left: 18px; }
+  @media print {
+    .no-print { display: none; }
+    body { background: #fff; color: #000; padding: 0; }
+    .rpt-wrap { max-width: none; }
+    header.rpt-header, .rpt-section { border: 1px solid #ccc; background: #fff; }
+    .rpt-badge-pass, .rpt-badge-fail, .rpt-badge-issues, .rpt-badge-skip, .rpt-badge-info { border-width: 1px; }
+  }
+</style>
+</head>
+<body>
+  <div class="rpt-wrap">
+    <div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+    <header class="rpt-header">
+      <h1>Selenite QA Report</h1>
+      <div class="rpt-meta">Generated ${esc(new Date(ts).toLocaleString())}</div>
+      <div class="rpt-meta" style="margin-top:8px">Page(s) tested:</div>
+      <ul>${urlsHtml}</ul>
+    </header>
+    ${body}
+  </div>
+</body>
+</html>`;
 }

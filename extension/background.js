@@ -8,6 +8,99 @@ chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch(() => {});
 
+// ── Per-window state isolation ──────────────────────────────────────────────
+// Each browser window's side panel is its own instance (like a DevTools
+// window). The panel includes its window id (winId) in every message that makes
+// this worker write session state, so a window's panel reads back only its own
+// run logs / status / capture feed. This worker is a profile-wide singleton for
+// queue/Test-Mode runs (one at a time), so a single owning-window pointer is
+// enough for those domains — but console capture now runs concurrently, one
+// per window (see "Passive per-window capture" below), since chrome.debugger
+// allows attaching to many different tabs at once and a tab is only ever the
+// active tab of one window. Incognito runs an entirely separate worker via the
+// manifest's "incognito": "split". Saved libraries/settings live in
+// storage.local / storage.sync and are intentionally left shared across windows.
+let _runWin  = null;   // logs, running, metricsLog, *Progress (falls back to the following window's capture — see resolveFeedWin)
+let _srWin   = null;   // srStatus, srFinishedSession
+let _pickWin = null;   // pickerResult
+
+// Namespaced facade over chrome.storage.session for a given window id. Mirrors
+// the get/set/remove surface (string key, array of keys, or object literal),
+// transparently prefixing keys and returning results under their bare names.
+function ns(win) {
+  const px = win != null ? `w${win}:` : '';
+  const strip = (k) => (px && k.startsWith(px) ? k.slice(px.length) : k);
+  return {
+    get(keys) {
+      const arr = Array.isArray(keys) ? keys : [keys];
+      return chrome.storage.session.get(arr.map(k => px + k)).then(res => {
+        const out = {};
+        for (const [k, v] of Object.entries(res)) out[strip(k)] = v;
+        return out;
+      });
+    },
+    set(obj) {
+      const p = {};
+      for (const [k, v] of Object.entries(obj)) p[px + k] = v;
+      return chrome.storage.session.set(p);
+    },
+    remove(keys) {
+      const arr = Array.isArray(keys) ? keys : [keys];
+      return chrome.storage.session.remove(arr.map(k => px + k));
+    },
+  };
+}
+
+// ── Passive per-window capture ───────────────────────────────────────────────
+// Each window's panel passively follows whatever tab is focused in that window
+// — no manual toggle, no test run required. winFollow/tabToWin replace the old
+// single global "one captured tab, extension-wide" model.
+const winFollow = new Map();       // winId -> { tabId, attached, attaching, capturable, error }
+const tabToWin  = new Map();       // tabId -> winId (a tab is the active tab of at most one window)
+const connectedPanels = new Map(); // winId -> Port, which windows currently have a panel open
+const followLocks = new Map();     // winId -> Promise, serializes follow/unfollow per window
+const expectedDetach = new Set();  // tabIds we're intentionally detaching (suppresses an onDetach status flap)
+
+// The window whose Test-Results / metrics feeds are currently being written:
+// the active run if one is in progress, else the requesting/capturing window.
+const resolveFeedWin = (winId) => (_runWin != null ? _runWin : winId);
+
+// The owning-window pointers live in module state, which an MV3 worker teardown
+// wipes. Mirror them into session storage under a reserved key so the
+// event-driven handlers (tab/debugger events) can recover them after a
+// restart. (The real CDP debugger session and in-memory op buffers like
+// _srSession don't survive a worker restart either way, but winFollow/tabToWin
+// just need reconstructing so events route to the right window again.)
+async function persistWins() {
+  const follow = {};
+  for (const [winId, rec] of winFollow) follow[winId] = { tabId: rec.tabId, attached: rec.attached };
+  await chrome.storage.session.set({ _wins: { run: _runWin, sr: _srWin, pick: _pickWin, follow } });
+}
+async function restoreWins() {
+  const { _wins } = await chrome.storage.session.get('_wins');
+  if (!_wins) return;
+  if (_runWin  == null) _runWin  = _wins.run  ?? null;
+  if (_srWin   == null) _srWin   = _wins.sr   ?? null;
+  if (_pickWin == null) _pickWin = _wins.pick ?? null;
+}
+// winFollow/tabToWin specifically are rebuilt lazily (only once, only if
+// empty) since they're keyed by every window+tab pair, not a handful of
+// scalars — see restoreFollowState().
+let _followRestored = false;
+async function restoreFollowState() {
+  if (_followRestored) return;
+  _followRestored = true;
+  const { _wins } = await chrome.storage.session.get('_wins');
+  const follow = _wins?.follow;
+  if (!follow) return;
+  for (const [winIdStr, rec] of Object.entries(follow)) {
+    const winId = Number(winIdStr);
+    if (winFollow.has(winId)) continue;
+    winFollow.set(winId, { tabId: rec.tabId, attached: !!rec.attached, attaching: false, capturable: true, error: null });
+    if (rec.tabId != null) tabToWin.set(rec.tabId, winId);
+  }
+}
+
 // ── Persistent console capture ────────────────────────────────────────────
 // Re-inject both capture scripts whenever the captured tab finishes loading.
 // console-capture.js runs in MAIN world (can override console.*).
@@ -25,22 +118,23 @@ async function injectCapture(tabId) {
 // an approximation.
 const CDP_VERSION = '1.3';
 const BROWSER_CONSOLE_CAP = 1000;
-let debuggerTabId = null;
 
-async function addBrowserConsoleLog(entry) {
-  const { browserConsoleLogs = [] } = await chrome.storage.session.get('browserConsoleLogs');
+async function addBrowserConsoleLog(winId, entry) {
+  const store = ns(winId);
+  const { browserConsoleLogs = [] } = await store.get('browserConsoleLogs');
   browserConsoleLogs.push({ ts: new Date().toLocaleTimeString(), ...entry });
   if (browserConsoleLogs.length > BROWSER_CONSOLE_CAP) {
     const evicted = browserConsoleLogs.splice(0, browserConsoleLogs.length - BROWSER_CONSOLE_CAP);
     // Release remote object handles for evicted expandable entries so long
     // sessions don't pin objects in the page's memory indefinitely.
+    const tabId = winFollow.get(winId)?.tabId;
     for (const e of evicted) {
-      if (e.objectId && debuggerTabId) {
-        chrome.debugger.sendCommand({ tabId: debuggerTabId }, 'Runtime.releaseObject', { objectId: e.objectId }).catch(() => {});
+      if (e.objectId && tabId) {
+        chrome.debugger.sendCommand({ tabId }, 'Runtime.releaseObject', { objectId: e.objectId }).catch(() => {});
       }
     }
   }
-  await chrome.storage.session.set({ browserConsoleLogs });
+  await store.set({ browserConsoleLogs });
 }
 
 // ── Metrics (Build tab) ─────────────────────────────────────────────────────
@@ -48,11 +142,12 @@ async function addBrowserConsoleLog(entry) {
 // tab's Metrics section can aggregate fires independently of the console
 // panels' caps and Clear buttons.
 const METRICS_CAP = 500;
-async function addMetric(level, text) {
-  const { metricsLog = [] } = await chrome.storage.session.get('metricsLog');
+async function addMetric(winId, level, text) {
+  const store = ns(resolveFeedWin(winId));
+  const { metricsLog = [] } = await store.get('metricsLog');
   metricsLog.push({ ts: new Date().toLocaleTimeString(), t: Date.now(), level, text });
   if (metricsLog.length > METRICS_CAP) metricsLog.splice(0, metricsLog.length - METRICS_CAP);
-  await chrome.storage.session.set({ metricsLog });
+  await store.set({ metricsLog });
 }
 
 function formatRemoteArg(o) {
@@ -100,11 +195,11 @@ function formatConsoleArgs(args) {
 const CONSOLE_TYPE_MAP = { error: 'ERROR', assert: 'ERROR', warning: 'WARNING', info: 'INFO', table: 'INFO', count: 'INFO' };
 const LOG_LEVEL_MAP    = { verbose: 'BROWSER', info: 'INFO', warning: 'WARNING', error: 'ERROR' };
 
-async function setDebuggerStatus(status) {
-  await chrome.storage.session.set({ debuggerStatus: status });
+async function setDebuggerStatus(winId, status) {
+  await ns(winId).set({ debuggerStatus: status });
 }
 
-async function attachDebugger(tabId) {
+async function attachDebugger(tabId, winId) {
   try {
     await chrome.debugger.attach({ tabId }, CDP_VERSION);
   } catch (e) {
@@ -112,15 +207,115 @@ async function attachDebugger(tabId) {
   }
   await chrome.debugger.sendCommand({ tabId }, 'Runtime.enable');
   await chrome.debugger.sendCommand({ tabId }, 'Log.enable');
-  debuggerTabId = tabId;
-  await setDebuggerStatus({ attached: true, tabId, error: null });
+  tabToWin.set(tabId, winId);
+  const rec = winFollow.get(winId);
+  if (rec) { rec.attached = true; rec.error = null; }
+  await setDebuggerStatus(winId, { attached: true, tabId, error: null });
 }
 
-async function detachDebugger(tabId) {
+// Marks the tabId as an intentional detach first, so the chrome.debugger.onDetach
+// listener (which fires for ANY detach, ours or external) can tell the two apart
+// and skip flapping the status it might otherwise correctly report as-is.
+async function detachDebugger(tabId, winId) {
   if (!tabId) return;
-  try { await chrome.debugger.detach({ tabId }); } catch (_) {}
-  if (debuggerTabId === tabId) debuggerTabId = null;
-  await setDebuggerStatus({ attached: false, tabId: null, error: null });
+  expectedDetach.add(tabId);
+  try {
+    await chrome.debugger.detach({ tabId });
+  } catch (_) {
+    // Wasn't actually attached (e.g. already detached) — no onDetach event will
+    // arrive to consume the marker, so clean it up ourselves to avoid a leak.
+    expectedDetach.delete(tabId);
+  }
+  if (tabToWin.get(tabId) === winId) tabToWin.delete(tabId);
+  await setDebuggerStatus(winId, { attached: false, tabId: null, error: null });
+}
+
+// ── Passive per-window follow-active-tab capture ─────────────────────────────
+function isCapturableUrl(url) {
+  return /^https?:\/\//i.test(url || '');
+}
+
+// The single source of truth for "what tab is window winId currently
+// capturing." Called from tab-activation/navigation events, panel connect,
+// and (with force:true) by run-starters that need a specific tab captured
+// regardless of what's focused. Never throws, retries, or alerts — this runs
+// on every tab focus change, so failures are recorded as status, not surfaced
+// as interruptions.
+async function followTab(winId, tabId, { force = false } = {}) {
+  await restoreFollowState();
+  if (!force && _runWin === winId) return; // a queue/Test-Mode run owns this window's tabs right now
+
+  const prev = followLocks.get(winId) || Promise.resolve();
+  const next = prev.then(() => doFollow(winId, tabId)).catch(() => {});
+  followLocks.set(winId, next);
+  return next;
+}
+
+async function doFollow(winId, tabId) {
+  const existing = winFollow.get(winId);
+  if (existing && existing.tabId === tabId && (existing.attached || existing.attaching)) return;
+  if (existing && existing.tabId !== tabId) await releaseFollow(winId, existing.tabId);
+
+  let tab;
+  try { tab = await chrome.tabs.get(tabId); } catch (_) { tab = null; }
+  const capturable = !!tab && isCapturableUrl(tab.url);
+
+  if (!tab || !capturable) {
+    winFollow.set(winId, { tabId, attached: false, attaching: false, capturable, error: null });
+    await ns(winId).set({ captureStatus: { tabId, title: tab?.title || '', url: tab?.url || '', capturable } });
+    await setDebuggerStatus(winId, { attached: false, tabId: null, error: null });
+    await persistWins();
+    return;
+  }
+
+  const { captureEnabled } = await ns(winId).get('captureEnabled');
+  if (captureEnabled === false) {
+    winFollow.set(winId, { tabId, attached: false, attaching: false, capturable: true, error: null });
+    await ns(winId).set({ captureStatus: { tabId, title: tab.title || '', url: tab.url || '', capturable: true } });
+    await persistWins();
+    return;
+  }
+
+  winFollow.set(winId, { tabId, attached: false, attaching: true, capturable: true, error: null });
+  try { await injectCapture(tabId); } catch (_) {}
+  try {
+    await attachDebugger(tabId, winId);
+  } catch (e) {
+    const rec = winFollow.get(winId);
+    if (rec) { rec.attaching = false; rec.error = e.message; }
+    await setDebuggerStatus(winId, { attached: false, tabId, error: e.message });
+  }
+  const rec = winFollow.get(winId);
+  if (rec) rec.attaching = false;
+  await ns(winId).set({ captureTabId: tabId, captureStatus: { tabId, title: tab.title || '', url: tab.url || '', capturable: true } });
+  await persistWins();
+}
+
+// Detach + restore console for the tab winId was following, without touching
+// winFollow's bookkeeping for winId itself (doFollow calls this mid-switch;
+// unfollowTab calls it then clears the record).
+async function releaseFollow(winId, tabId) {
+  if (tabId == null) return;
+  tabToWin.delete(tabId);
+  try { await detachDebugger(tabId, winId); } catch (_) {}
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => { if (window.__seleniteCaptureRestore) window.__seleniteCaptureRestore(); },
+    });
+  } catch (_) {}
+}
+
+// Stop following entirely for a window — panel closed, or capture paused.
+// Leaves logs/browserConsoleLogs alone so history is still there if the panel
+// reopens or capture resumes.
+async function unfollowTab(winId) {
+  const rec = winFollow.get(winId);
+  if (rec?.tabId != null) await releaseFollow(winId, rec.tabId);
+  winFollow.delete(winId);
+  await ns(winId).remove('captureTabId');
+  await setDebuggerStatus(winId, { attached: false, tabId: null, error: null });
+  await persistWins();
 }
 
 // ── Trusted input helpers ($click/$hover in the eval REPL) ─────────────────
@@ -163,7 +358,8 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
     }
     return;
   }
-  if (source.tabId !== debuggerTabId) return;
+  const winId = tabToWin.get(source.tabId);
+  if (winId == null) return;
   if (method === 'Runtime.consoleAPICalled') {
     const level  = CONSOLE_TYPE_MAP[params.type] || 'BROWSER';
     const text   = formatConsoleArgs(params.args || []);
@@ -172,65 +368,116 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
     // expandable reference — multi-arg calls keep the flattened text only.
     const single   = params.args && params.args.length === 1 ? params.args[0] : null;
     const objectId = single?.objectId || null;
-    addBrowserConsoleLog({ level, text, source: 'console', tagged, objectId, expandable: !!objectId });
-    if (tagged) addMetric(level, text);
+    addBrowserConsoleLog(winId, { level, text, source: 'console', tagged, objectId, expandable: !!objectId });
+    if (tagged) addMetric(winId, level, text);
   } else if (method === 'Runtime.exceptionThrown') {
     const d    = params.exceptionDetails || {};
     const text = d.exception?.description || d.text || 'Uncaught exception';
-    addBrowserConsoleLog({ level: 'ERROR', text: `Uncaught: ${text.split('\n')[0]}`, source: 'exception' });
+    addBrowserConsoleLog(winId, { level: 'ERROR', text: `Uncaught: ${text.split('\n')[0]}`, source: 'exception' });
   } else if (method === 'Log.entryAdded') {
     const e     = params.entry || {};
     const level = LOG_LEVEL_MAP[e.level] || 'BROWSER';
-    addBrowserConsoleLog({ level, text: `[${e.source}] ${e.text}`, source: 'log' });
+    addBrowserConsoleLog(winId, { level, text: `[${e.source}] ${e.text}`, source: 'log' });
   }
 });
 
-chrome.debugger.onDetach.addListener((source, reason) => {
-  if (source.tabId !== debuggerTabId) return;
-  debuggerTabId = null;
-  setDebuggerStatus({ attached: false, tabId: null, error: `Disconnected (${reason})` });
+chrome.debugger.onDetach.addListener(async (source, reason) => {
+  const tabId = source.tabId;
+  if (expectedDetach.delete(tabId)) return; // our own detachDebugger() call — already handled the status
+  const winId = tabToWin.get(tabId);
+  if (winId == null) return;
+  tabToWin.delete(tabId);
+  const rec = winFollow.get(winId);
+  if (rec && rec.tabId === tabId) { rec.attached = false; rec.error = `Disconnected (${reason})`; }
+  await setDebuggerStatus(winId, { attached: false, tabId: null, error: `Disconnected (${reason})` });
+  await persistWins();
+  // Don't auto-retry here (e.g. the user may have just clicked "Cancel" on
+  // Chrome's native debugging banner) — the next real tab-focus/navigation
+  // event for this window will naturally call followTab again.
+});
+
+const _activateDebounce = new Map(); // windowId -> timer
+chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+  if (!connectedPanels.has(windowId)) return; // no panel open for this window — nothing to follow
+  // Debounced so fast tab-cycling (e.g. Ctrl+Tab) doesn't thrash the native
+  // debugger banner with an attach/detach pair per intermediate tab.
+  clearTimeout(_activateDebounce.get(windowId));
+  _activateDebounce.set(windowId, setTimeout(() => { followTab(windowId, tabId); }, 250));
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, info) => {
   if (info.status !== 'complete') return;
+  await restoreWins();
   // Recording follows same-tab navigations: re-inject the recorder (it posts a
   // fresh segment) whenever the recorded tab finishes loading a new document.
   if (_srSession && tabId === _srSession.tabId) {
     try { await srInjectRecorder(tabId); } catch (_) {}
   }
-  const { captureTabId } = await chrome.storage.session.get('captureTabId');
-  if (tabId !== captureTabId) return;
-  try { await injectCapture(tabId); } catch (_) {}
-  if (debuggerTabId !== tabId) {
-    try { await attachDebugger(tabId); } catch (_) {}
-  } else {
-    // The CDP session survives navigation, but re-enabling defensively covers
-    // the case where a new execution context drops domain state.
-    try {
-      await chrome.debugger.sendCommand({ tabId }, 'Runtime.enable');
-      await chrome.debugger.sendCommand({ tabId }, 'Log.enable');
-    } catch (_) {}
-  }
+  await restoreFollowState();
+  const winId = tabToWin.get(tabId);
+  // Re-runs capturability/inject/attach idempotently — also correctly handles
+  // the followed tab navigating across the capturable/non-capturable boundary.
+  // Forced because tabToWin only maps a window to whatever tab it's ALREADY
+  // attached to (run-owned or passively-followed) — a navigation event for
+  // that same tab should always refresh it, run or no run; it can never steal
+  // a *different* tab away from an in-progress run (doFollow already released
+  // any prior tab for this window before the run's own attach took its place).
+  if (winId != null) await followTab(winId, tabId, { force: true });
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
-  const { captureTabId } = await chrome.storage.session.get('captureTabId');
-  if (tabId === captureTabId) await chrome.storage.session.remove('captureTabId');
-  if (tabId === debuggerTabId) await detachDebugger(tabId);
+  await restoreWins();
+  await restoreFollowState();
+  const winId = tabToWin.get(tabId);
+  if (winId != null) await unfollowTab(winId);
   // Recorded tab closed mid-session: finalize and stash the session so the
   // panel can pick it up and persist it on its next status poll.
   if (_srSession && tabId === _srSession.tabId) {
     const session = srFinalize();
-    if (session) await chrome.storage.session.set({ srFinishedSession: session });
+    if (session) await ns(_srWin).set({ srFinishedSession: session });
     await srSyncStatus();
   }
 });
 
+// A tab moved to a different window (dragged out, or moved via API) — drop
+// the stale ownership mapping so events for it don't keep routing to the old
+// window. The tab becoming the new window's active tab (if it does) fires its
+// own onActivated there, which follows it fresh — no onAttached handler needed.
+chrome.tabs.onDetached.addListener(async (tabId, { oldWindowId }) => {
+  await restoreFollowState();
+  const winId = tabToWin.get(tabId);
+  if (winId === oldWindowId) await unfollowTab(winId);
+});
+
+// ── Panel lifecycle (passive capture, per window) ───────────────────────────
+// Each panel opens a long-lived port on load so its disconnect (panel closed,
+// window closed, or the document otherwise torn down) is detected reliably —
+// that's what releases the debugger attachment/banner for that window.
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'selenite-panel') return;
+  let boundWinId = null;
+  port.onMessage.addListener(async (msg) => {
+    if (msg.action !== 'hello') return;
+    boundWinId = msg.winId;
+    connectedPanels.set(boundWinId, port);
+    await restoreFollowState();
+    let tab;
+    try { [tab] = await chrome.tabs.query({ active: true, windowId: boundWinId }); } catch (_) { tab = null; }
+    if (tab && _runWin !== boundWinId) await followTab(boundWinId, tab.id);
+  });
+  port.onDisconnect.addListener(async () => {
+    if (boundWinId == null) return;
+    connectedPanels.delete(boundWinId);
+    await unfollowTab(boundWinId);
+  });
+});
+
 // ── Logging ───────────────────────────────────────────────────────────────
-async function addLog(level, text, meta) {
-  const { logs = [] } = await chrome.storage.session.get('logs');
+async function addLog(winId, level, text, meta) {
+  const store = ns(resolveFeedWin(winId));
+  const { logs = [] } = await store.get('logs');
   logs.push({ level, text, ts: new Date().toLocaleTimeString(), ...(meta || {}) });
-  await chrome.storage.session.set({ logs });
+  await store.set({ logs });
 }
 
 // ── URL normalization ─────────────────────────────────────────────────────
@@ -452,13 +699,13 @@ const ACTIONS = {
   switch_to: async (_tabId, { target, value }) => {
     switch (target) {
       case 'frame':
-        await addLog('INFO', `Frame switching is not required in extension mode — scripting targets all frames. (Frame: ${value})`);
+        await addLog(null, 'INFO', `Frame switching is not required in extension mode — scripting targets all frames. (Frame: ${value})`);
         break;
       case 'main':
-        await addLog('INFO', 'Switch to main page — no-op in extension mode.');
+        await addLog(null, 'INFO', 'Switch to main page — no-op in extension mode.');
         break;
       case 'parent':
-        await addLog('INFO', 'Switch to parent frame — no-op in extension mode.');
+        await addLog(null, 'INFO', 'Switch to parent frame — no-op in extension mode.');
         break;
       case 'window': {
         const tabs = await chrome.tabs.query({ title: value });
@@ -474,13 +721,13 @@ const ACTIONS = {
   alert: async (_tabId, { action }) => {
     switch (action) {
       case 'accept':
-        await addLog('WARNING', 'Accept alert: alerts are auto-dismissed in extensions. Use wait_seconds before this step if timing is needed.');
+        await addLog(null, 'WARNING', 'Accept alert: alerts are auto-dismissed in extensions. Use wait_seconds before this step if timing is needed.');
         break;
       case 'dismiss':
-        await addLog('WARNING', 'Dismiss alert: alerts are auto-dismissed in extensions.');
+        await addLog(null, 'WARNING', 'Dismiss alert: alerts are auto-dismissed in extensions.');
         break;
       case 'get_text':
-        await addLog('WARNING', 'Get alert text: not available in extensions — alerts are handled by the browser natively.');
+        await addLog(null, 'WARNING', 'Get alert text: not available in extensions — alerts are handled by the browser natively.');
         break;
       default:
         throw new Error(`Unknown alert action: ${action}`);
@@ -490,14 +737,14 @@ const ACTIONS = {
   track_metric: async (_tabId, { metric }) => {
     const value = (metric || '').trim();
     if (!value) throw new Error('No metric selected — define one in the Metrics section');
-    const { metricsLog = [] } = await chrome.storage.session.get('metricsLog');
+    const { metricsLog = [] } = await ns(resolveFeedWin(null)).get('metricsLog');
     // Only count fires from the current run, not leftovers from earlier sessions.
     const fires = metricsLog.filter(e =>
       (e.t || 0) >= _runStartedAt && e.text.toLowerCase().includes(value.toLowerCase()));
     // A missed metric is a failed assertion, not a broken step — log it and
     // let the rest of the queue keep running.
     if (!fires.length) {
-      await addLog('ERROR', `✖ Metric did not fire: ${value}`);
+      await addLog(null, 'ERROR', `✖ Metric did not fire: ${value}`);
       return;
     }
     return `Metric fired ×${fires.length}: ${value}`;
@@ -509,10 +756,14 @@ let _running = false;
 let _stopRequested = false;
 let _runStartedAt = 0;  // track_metric only counts fires recorded after this
 
-async function runQueue({ queue, mode, targetTabId, universalDelay }) {
+async function runQueue({ queue, mode, targetTabId, universalDelay, winId }) {
   _running = true;
   _stopRequested = false;
-  await chrome.storage.session.set({ running: true });
+  // This run — and the capture it attaches to its test tab — belong to the
+  // window whose panel started it, so its feeds route back only to that panel.
+  _runWin = winId ?? null;
+  await persistWins();
+  await ns(_runWin).set({ running: true });
 
   // Resolve target tab — use provided tabId or open a new blank tab.
   // The queue's own leading "Open URL" step navigates it to the target URL.
@@ -523,12 +774,14 @@ async function runQueue({ queue, mode, targetTabId, universalDelay }) {
     await waitForLoad(tabId);
   }
 
-  // Reset console feed and auto-attach capture to the test tab
+  // Reset console feed and attach capture to the test tab — followTab is the
+  // single source of truth for capture state, forced past the "a run owns
+  // this window" guard since this call IS that run claiming its own tab.
   _runStartedAt = Date.now();
-  await chrome.storage.session.set({ logs: [], captureTabId: tabId });
-  try { await injectCapture(tabId); } catch (_) {}
+  await ns(_runWin).set({ logs: [] });
+  await followTab(_runWin, tabId, { force: true });
 
-  await addLog('INFO', `Started on tab ${tabId}`);
+  await addLog(null, 'INFO', `Started on tab ${tabId}`);
 
   const fullQueue = [...queue];
 
@@ -544,7 +797,7 @@ async function runQueue({ queue, mode, targetTabId, universalDelay }) {
         if (delaySec > 0) await new Promise(r => setTimeout(r, delaySec * 1000));
 
         const fn = ACTIONS[step.func];
-        if (!fn) { await addLog('ERROR', `Unknown function: ${step.func}`); continue; }
+        if (!fn) { await addLog(null, 'ERROR', `Unknown function: ${step.func}`); continue; }
 
         const argNames = ARG_NAMES[step.func] || [];
         const argMap = {};
@@ -552,26 +805,37 @@ async function runQueue({ queue, mode, targetTabId, universalDelay }) {
 
         const label = DISPLAY_NAMES[step.func] || step.func;
         const argStr = argNames.map(a => `${a}=${JSON.stringify(argMap[a])}`).join(', ');
-        await addLog('INFO', `→ ${label}(${argStr})`);
+        await addLog(null, 'INFO', `→ ${label}(${argStr})`);
 
         try {
           const result = await fn(tabId, argMap);
-          if (result != null) await addLog('INFO', `← ${result}`);
+          if (result != null) await addLog(null, 'INFO', `← ${result}`);
         } catch (err) {
-          await addLog('ERROR', `✖ ${label}: ${err.message}`);
+          await addLog(null, 'ERROR', `✖ ${label}: ${err.message}`);
           throw err;
         }
       }
       if (_stopRequested) break;
     } while (mode === 'loop');
 
-    await addLog('INFO', 'Complete');
+    await addLog(null, 'INFO', 'Complete');
   } catch (e) {
     // already logged
   } finally {
     _running = false;
     _stopRequested = false;
-    await chrome.storage.session.set({ running: false });
+    await ns(_runWin).set({ running: false });
+    // The run is over — hand the window back to passive follow-mode, resolved
+    // against whatever tab the user is actually focused on right now (not
+    // assumed to be the run's own tab; they may have switched away mid-run).
+    _runWin = null;
+    await persistWins();
+    if (connectedPanels.has(winId)) {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, windowId: winId });
+        if (tab) await followTab(winId, tab.id);
+      } catch (_) {}
+    }
   }
 }
 
@@ -585,7 +849,7 @@ let _abStopRequested = false;
 let _abCapture = null;   // { tabId, lines: [] } while a variant tab is being captured
 
 async function setAbProgress(p) {
-  await chrome.storage.session.set({ abProgress: p });
+  await ns(_runWin).set({ abProgress: p });
 }
 
 // waitForLoad with a hard timeout; unlike waitForLoad it removes its listener
@@ -1182,7 +1446,33 @@ async function performWcagAudit(tabId, checks, scope) {
 let _tmStopRequested = false;
 
 async function setTmProgress(key, p) {
-  await chrome.storage.session.set({ [key]: p });
+  await ns(_runWin).set({ [key]: p });
+}
+
+// Test-Mode runs (variant / visual / cross-variant / performance) write their
+// progress and tagged-console feeds (via setTmProgress / setAbProgress / addLog
+// / addMetric, all keyed on resolveFeedWin() → _runWin) into the panel window
+// that started them. They create their own scratch tabs and attach the CDP
+// debugger directly to those, so while a run owns a window, followTab() skips
+// that window entirely (see the `_runWin === winId` guard) to avoid two
+// debugger clients racing for the same tab. beginTmRun binds the run-owner
+// pointer from the payload's winId; endTmRun clears it and hands the window
+// back to passive follow-mode, re-resolved against whatever tab the user is
+// actually focused on now (not assumed to be the run's own tab).
+async function beginTmRun(payload) {
+  _runWin = (payload && payload.winId != null) ? payload.winId : null;
+  await persistWins();
+}
+async function endTmRun() {
+  const winId = _runWin;
+  _runWin = null;
+  await persistWins();
+  if (winId != null && connectedPanels.has(winId)) {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, windowId: winId });
+      if (tab) await followTab(winId, tab.id);
+    } catch (_) {}
+  }
 }
 
 // Open a URL in a fresh tab, wait for load + settle, and return the tab id.
@@ -1446,7 +1736,7 @@ const SR_EVENT_CAP = 10000;
 let _srSession = null;   // { tabId, label, startedAt, captureMove, events: [], segments: [], capped }
 
 async function srSyncStatus() {
-  await chrome.storage.session.set({
+  await ns(_srWin).set({
     srStatus: _srSession
       ? {
           recording: true, tabId: _srSession.tabId, label: _srSession.label,
@@ -1565,68 +1855,60 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     sendResponse({ functions: data });
 
-  } else if (msg.action === 'getTabs') {
-    chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] }, (tabs) => {
-      sendResponse({ tabs: tabs.map(t => ({ id: t.id, title: t.title || '', url: t.url || '' })) });
-    });
-    return true;
-
   } else if (msg.action === 'startCapture') {
+    // Pause/resume switch — target is always "whatever this window's active
+    // tab is right now," resolved here, not chosen by the caller.
     (async () => {
-      const tabId = msg.tabId;
-      if (!tabId) { sendResponse({ ok: false, error: 'No tab specified' }); return; }
-      try {
-        await injectCapture(tabId);
-        await chrome.storage.session.set({ captureTabId: tabId });
-        let debuggerError = null;
-        try { await attachDebugger(tabId); } catch (e) { debuggerError = e.message; }
-        sendResponse({ ok: true, tabId, debuggerError });
-      } catch (e) {
-        sendResponse({ ok: false, error: e.message });
-      }
+      await ns(msg.winId).set({ captureEnabled: true });
+      let tab;
+      try { [tab] = await chrome.tabs.query({ active: true, windowId: msg.winId }); } catch (_) { tab = null; }
+      if (tab) await followTab(msg.winId, tab.id);
+      sendResponse({ ok: true });
     })();
     return true;
 
   } else if (msg.action === 'stopCapture') {
     (async () => {
-      const { captureTabId } = await chrome.storage.session.get('captureTabId');
-      await chrome.storage.session.remove('captureTabId');
-      if (captureTabId) {
-        try {
-          await chrome.scripting.executeScript({
-            target: { tabId: captureTabId },
-            func: () => { if (window.__seleniteCaptureRestore) window.__seleniteCaptureRestore(); }
-          });
-        } catch (_) {}
-        await detachDebugger(captureTabId);
-      }
+      await ns(msg.winId).set({ captureEnabled: false });
+      await unfollowTab(msg.winId);
       sendResponse({ ok: true });
     })();
     return true;
 
   } else if (msg.action === 'browserLog') {
-    addLog(msg.level, `[browser] ${msg.text}`, { browser: true, tagged: !!msg.tagged });
-    // While a variant comparison is capturing, tagged lines from the variant's
-    // own tab are also buffered per variant for the post-run diff.
-    if (_abCapture && sender?.tab?.id === _abCapture.tabId && msg.tagged) {
-      _abCapture.lines.push({ level: msg.level, text: msg.text });
-    }
-    // While a session recording is live, tagged lines from the recorded tab
-    // interleave into the session timeline as metric-fire events.
-    if (_srSession && sender?.tab?.id === _srSession.tabId && msg.tagged) {
-      srAppendEvents([{ type: 'metric', t: Date.now(), level: msg.level, text: msg.text }]);
-    }
-    // The CDP mirror sees the same console call when the debugger is attached
-    // to this tab — only record the metric from this fallback path when it
-    // isn't, so a single fire never counts twice.
-    if (msg.tagged && sender?.tab?.id !== debuggerTabId) addMetric(msg.level, msg.text);
-    sendResponse({ ok: true });
+    (async () => {
+      await restoreFollowState();
+      const winId = tabToWin.get(sender?.tab?.id);
+      if (winId == null) { sendResponse({ ok: true }); return; } // stray relay from an unfollowed/just-detached tab
+      addLog(winId, msg.level, `[browser] ${msg.text}`, { browser: true, tagged: !!msg.tagged });
+      // While a variant comparison is capturing, tagged lines from the variant's
+      // own tab are also buffered per variant for the post-run diff.
+      if (_abCapture && sender?.tab?.id === _abCapture.tabId && msg.tagged) {
+        _abCapture.lines.push({ level: msg.level, text: msg.text });
+      }
+      // While a session recording is live, tagged lines from the recorded tab
+      // interleave into the session timeline as metric-fire events.
+      if (_srSession && sender?.tab?.id === _srSession.tabId && msg.tagged) {
+        srAppendEvents([{ type: 'metric', t: Date.now(), level: msg.level, text: msg.text }]);
+      }
+      // The CDP mirror sees the same console call when the debugger is
+      // genuinely attached to this tab — only record the metric from this
+      // fallback path when it isn't (attach still pending, failed, or this
+      // isn't the followed tab), so a single fire never counts twice.
+      const rec = winFollow.get(winId);
+      const cdpCovers = !!rec && rec.attached && rec.tabId === sender?.tab?.id;
+      if (msg.tagged && !cdpCovers) addMetric(winId, msg.level, msg.text);
+      sendResponse({ ok: true });
+    })();
+    return true;
 
   } else if (msg.action === 'bcEval') {
     (async () => {
-      if (!debuggerTabId) { sendResponse({ ok: false, error: 'Not attached' }); return; }
-      const tabId = debuggerTabId;
-      await addBrowserConsoleLog({ level: 'CMD', text: msg.expression, source: 'eval-input' });
+      await restoreFollowState();
+      const rec = winFollow.get(msg.winId);
+      if (!rec || !rec.attached) { sendResponse({ ok: false, error: 'Not attached' }); return; }
+      const tabId = rec.tabId;
+      await addBrowserConsoleLog(msg.winId, { level: 'CMD', text: msg.expression, source: 'eval-input' });
       try {
         // $click('sel') / $hover('sel') — trusted-input helpers, handled here
         // (not passed to Runtime.evaluate) because they need chrome.debugger's
@@ -1636,13 +1918,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const [, action, , selector] = helper;
           const center = await resolveElementCenter(tabId, selector);
           if (!center) {
-            await addBrowserConsoleLog({ level: 'ERROR', text: `No element matches: ${selector}`, source: 'eval-result' });
+            await addBrowserConsoleLog(msg.winId, { level: 'ERROR', text: `No element matches: ${selector}`, source: 'eval-result' });
           } else if (action === 'hover') {
             await dispatchTrustedHover(tabId, center.x, center.y);
-            await addBrowserConsoleLog({ level: 'BROWSER', text: `Hovered (${Math.round(center.x)}, ${Math.round(center.y)})`, source: 'eval-result' });
+            await addBrowserConsoleLog(msg.winId, { level: 'BROWSER', text: `Hovered (${Math.round(center.x)}, ${Math.round(center.y)})`, source: 'eval-result' });
           } else {
             await dispatchTrustedClick(tabId, center.x, center.y);
-            await addBrowserConsoleLog({ level: 'BROWSER', text: `Clicked (${Math.round(center.x)}, ${Math.round(center.y)})`, source: 'eval-result' });
+            await addBrowserConsoleLog(msg.winId, { level: 'BROWSER', text: `Clicked (${Math.round(center.x)}, ${Math.round(center.y)})`, source: 'eval-result' });
           }
           sendResponse({ ok: true });
           return;
@@ -1655,17 +1937,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (res.exceptionDetails) {
           const d = res.exceptionDetails;
           const text = d.exception?.description || d.text || 'Error';
-          await addBrowserConsoleLog({ level: 'ERROR', text, source: 'eval-result' });
+          await addBrowserConsoleLog(msg.winId, { level: 'ERROR', text, source: 'eval-result' });
         } else {
           const objectId = res.result?.objectId || null;
-          await addBrowserConsoleLog({
+          await addBrowserConsoleLog(msg.winId, {
             level: 'BROWSER', text: formatEvalResult(res.result), source: 'eval-result',
             objectId, expandable: !!objectId,
           });
         }
         sendResponse({ ok: true });
       } catch (e) {
-        await addBrowserConsoleLog({ level: 'ERROR', text: e.message, source: 'eval-result' });
+        await addBrowserConsoleLog(msg.winId, { level: 'ERROR', text: e.message, source: 'eval-result' });
         sendResponse({ ok: false, error: e.message });
       }
     })();
@@ -1673,9 +1955,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   } else if (msg.action === 'bcExpand') {
     (async () => {
-      if (!debuggerTabId) { sendResponse({ ok: false, error: 'Not attached' }); return; }
+      await restoreFollowState();
+      const rec = winFollow.get(msg.winId);
+      if (!rec || !rec.attached) { sendResponse({ ok: false, error: 'Not attached' }); return; }
       try {
-        const res = await chrome.debugger.sendCommand({ tabId: debuggerTabId }, 'Runtime.getProperties', {
+        const res = await chrome.debugger.sendCommand({ tabId: rec.tabId }, 'Runtime.getProperties', {
           objectId: msg.objectId,
           ownProperties: true,
           generatePreview: true,
@@ -1708,6 +1992,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
 
   } else if (msg.action === 'startPicker') {
+    // The picked selector belongs to the panel that started the picker.
+    _pickWin = msg.winId ?? null;
+    persistWins();
     // Inject picker into the active tab
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
       const tabId = tabs[0]?.id;
@@ -1722,18 +2009,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // async
 
   } else if (msg.action === 'pickerResult') {
-    // Content script sends result → store in session so popup can poll for it
-    chrome.storage.session.set({ pickerResult: { selector: msg.selector, ts: Date.now() } });
+    // Content script sends result → store in the picker-owner window's namespace
+    // so only that panel polls it up. (The content script carries no winId, so
+    // recover the owner pointer if a worker restart cleared it.)
+    (async () => {
+      if (_pickWin == null) await restoreWins();
+      await ns(_pickWin).set({ pickerResult: { selector: msg.selector, ts: Date.now() } });
+    })();
     sendResponse({ ok: true });
 
   } else if (msg.action === 'runVariantComparison') {
     (async () => {
+      await beginTmRun(msg.payload);
       try {
         const results = await runVariantComparison(msg.payload || {});
         sendResponse({ ok: true, results });
       } catch (e) {
         try { await setAbProgress({ running: false }); } catch (_) {}
         sendResponse({ ok: false, error: e.message });
+      } finally {
+        await endTmRun();
       }
     })();
     return true;
@@ -1756,36 +2051,45 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   } else if (msg.action === 'runCrossVariantAudit') {
     (async () => {
+      await beginTmRun(msg.payload);
       try {
         const results = await runCrossVariantAudit(msg.payload || {});
         sendResponse({ ok: true, results });
       } catch (e) {
         try { await setTmProgress('cvaProgress', { running: false }); } catch (_) {}
         sendResponse({ ok: false, error: e.message });
+      } finally {
+        await endTmRun();
       }
     })();
     return true;
 
   } else if (msg.action === 'runVisualCapture') {
     (async () => {
+      await beginTmRun(msg.payload);
       try {
         const results = await runVisualCapture(msg.payload || {});
         sendResponse({ ok: true, results });
       } catch (e) {
         try { await setTmProgress('vrProgress', { running: false }); } catch (_) {}
         sendResponse({ ok: false, error: e.message });
+      } finally {
+        await endTmRun();
       }
     })();
     return true;
 
   } else if (msg.action === 'runPerfMeasurement') {
     (async () => {
+      await beginTmRun(msg.payload);
       try {
         const results = await runPerfMeasurement(msg.payload || {});
         sendResponse({ ok: true, results });
       } catch (e) {
         try { await setTmProgress('perfProgress', { running: false }); } catch (_) {}
         sendResponse({ ok: false, error: e.message });
+      } finally {
+        await endTmRun();
       }
     })();
     return true;
@@ -1793,6 +2097,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   } else if (msg.action === 'sessionRecordStart') {
     (async () => {
       if (_srSession) { sendResponse({ ok: false, error: 'Already recording' }); return; }
+      // The recording status/handoff belong to the panel window that started it.
+      _srWin = msg.winId ?? null;
+      await persistWins();
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id || !/^https?:/i.test(tab.url || '')) {
         sendResponse({ ok: false, error: 'Open a regular webpage in the active tab first' });

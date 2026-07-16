@@ -154,6 +154,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Test Agent tab
   const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
   if (anthropicApiKey) document.getElementById('ta-api-key').value = anthropicApiKey;
+  const { funnelState: savedFunnel } = await sessionNS.get('funnelState');
+  if (savedFunnel) funnelState = { start: '', middles: [], end: '', ...savedFunnel };
   document.getElementById('btn-ta-save-key').addEventListener('click', () => {
     chrome.storage.sync.set({ anthropicApiKey: document.getElementById('ta-api-key').value.trim() });
   });
@@ -268,29 +270,121 @@ const TA_MODES = {
     isConfigured: () => tmPagesFor('6').length > 0,
     getData: () => _perfLastRun,
   },
+  // Test-Agent-native — no bodyId/homeParentId (nothing is reparented for funnel).
+  'funnel': {
+    label: 'Funnel Crawl',
+    run: () => runFunnelCrawl(),
+    isConfigured: () => !!(funnelState.start.trim() && funnelState.end.trim()),
+    getData: () => _funnelLastRun,
+  },
 };
-let _taActiveBody = null;        // '2' | '4' | '6' | null — which mode's body currently sits in #ta-settings-slot
+let _taActiveBody = null;        // '2' | '4' | '6' | 'funnel' | null — which mode currently owns #ta-settings-slot
 const taQueuedExtra = new Set(); // mode ids checked in the "Also Run" list, not persisted across popup reopen
 let _taStopRequested = false;
 
+// ── Funnel Crawl (Test Agent-native — no Test Modes submenu to reparent) ──────
+let funnelState = { start: '', middles: [], end: '' };  // waypoint URLs, persisted to sessionNS
+let _funnelLastRun = null;
+let _taCheckboxPrior = null;      // remembers agentic-checkbox state while funnel force-enables both
+
+function persistFunnel() { sessionNS.set({ funnelState }); }
+
+function funnelWaypoints() {
+  return [funnelState.start, ...funnelState.middles, funnelState.end]
+    .map(s => (s || '').trim()).filter(Boolean);
+}
+
+function syncFunnelRunEnabled() {
+  if (document.getElementById('ta-primary-select').value !== 'funnel') return;
+  document.getElementById('btn-ta-run').disabled = !(funnelState.start.trim() && funnelState.end.trim());
+}
+
+function taRenderFunnel() {
+  const slot = document.getElementById('ta-settings-slot');
+  const midRows = funnelState.middles.map((u, i) => `
+    <div class="row" style="gap:6px;margin-bottom:4px">
+      <input type="text" class="fn-mid" data-i="${i}" value="${esc(u)}" placeholder="Middle waypoint URL" style="flex:1">
+      <button class="btn danger sm fn-rm-mid" data-i="${i}">✕</button>
+    </div>`).join('');
+  slot.innerHTML = `
+    <div class="card">
+      <div class="card-title">Funnel Waypoints</div>
+      <div style="font-size:10px;color:var(--fg3);margin-bottom:8px">An AI agent (Sonnet) clicks through the live UI to navigate Start → each Middle (in order) → End, verifying the funnel actually connects. Requires an API key; Agentic Testing + Analysis are forced on for this mode.</div>
+      <label class="cap">Start (required)</label>
+      <input type="text" id="fn-start" value="${esc(funnelState.start)}" placeholder="https://example.com/landing" style="width:100%;margin-bottom:8px">
+      <label class="cap">Middle waypoints (optional, in order)</label>
+      <div id="fn-mid-list">${midRows}</div>
+      <button class="btn sm" id="fn-add-mid" style="margin:2px 0 8px">+ Add Waypoint</button>
+      <label class="cap">End (required)</label>
+      <input type="text" id="fn-end" value="${esc(funnelState.end)}" placeholder="https://example.com/confirmation" style="width:100%">
+      <div id="fn-results" style="margin-top:8px"></div>
+    </div>`;
+
+  slot.querySelector('#fn-start').addEventListener('input', e => { funnelState.start = e.target.value; persistFunnel(); syncFunnelRunEnabled(); });
+  slot.querySelector('#fn-end').addEventListener('input', e => { funnelState.end = e.target.value; persistFunnel(); syncFunnelRunEnabled(); });
+  slot.querySelectorAll('.fn-mid').forEach(inp => inp.addEventListener('input', e => {
+    funnelState.middles[+e.target.dataset.i] = e.target.value; persistFunnel();
+  }));
+  slot.querySelectorAll('.fn-rm-mid').forEach(btn => btn.addEventListener('click', () => {
+    funnelState.middles.splice(+btn.dataset.i, 1); persistFunnel(); taRenderFunnel();
+  }));
+  slot.querySelector('#fn-add-mid').addEventListener('click', () => {
+    funnelState.middles.push(''); persistFunnel(); taRenderFunnel();
+  });
+}
+
+function renderFunnelResults(el, run) {
+  if (run.error && !(run.segments || []).length) {
+    el.innerHTML = `<div style="color:var(--err);font-size:12px;padding:6px 0">${esc(run.error)}</div>`;
+    return;
+  }
+  const rows = (run.segments || []).map(s => `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--stroke)">
+    ${s.reached ? '✅' : '❌'} ${esc(shortUrl(s.from))} → ${esc(shortUrl(s.to))} <span style="color:var(--fg3)">(${s.steps} step${s.steps === 1 ? '' : 's'}${s.error ? ' · ' + esc(s.error) : ''})</span></div>`).join('');
+  el.innerHTML = `<div style="font-weight:600;font-size:12px;margin-bottom:4px">${run.reachedEnd ? 'Reached End ✅' : 'Did not reach End ❌'}</div>${rows}`;
+}
+
+async function runFunnelCrawl() {
+  const resultsEl = document.getElementById('fn-results');
+  if (resultsEl) resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;padding:6px 0">Crawling funnel…</div>';
+  const res = await chrome.runtime.sendMessage({ action: 'runFunnelCrawl', payload: { waypoints: funnelWaypoints(), winId: WIN_ID } });
+  _funnelLastRun = res?.ok
+    ? { ts: Date.now(), segments: res.segments || [], reachedEnd: !!res.reachedEnd, error: res.error || null }
+    : { ts: Date.now(), segments: [], reachedEnd: false, error: res?.error || 'Funnel crawl failed' };
+  if (resultsEl) renderFunnelResults(resultsEl, _funnelLastRun);
+}
+
 function taMoveBodyHome(n) {
-  const home = document.getElementById(TA_MODES[n].homeParentId);
-  const body = document.getElementById(TA_MODES[n].bodyId);
+  const mode = TA_MODES[n];
+  if (!mode || !mode.bodyId) return;   // funnel is Test-Agent-native; nothing to move home
+  const home = document.getElementById(mode.homeParentId);
+  const body = document.getElementById(mode.bodyId);
   if (home && body) home.appendChild(body);
 }
 
 function taShowPrimary() {
   const val = document.getElementById('ta-primary-select').value;
-  if (_taActiveBody && _taActiveBody !== val) taMoveBodyHome(_taActiveBody);
+  if (_taActiveBody && _taActiveBody !== val) taMoveBodyHome(_taActiveBody);  // no-op for funnel
 
   const slot = document.getElementById('ta-settings-slot');
   const runBtn = document.getElementById('btn-ta-run');
+  const testChk = document.getElementById('ta-agentic-testing');
+  const analysisChk = document.getElementById('ta-agentic-analysis');
+
+  // Leaving funnel: restore the agentic checkboxes to the user's prior state.
+  if (val !== 'funnel' && _taCheckboxPrior) {
+    testChk.checked = _taCheckboxPrior.testing; testChk.disabled = false;
+    analysisChk.checked = _taCheckboxPrior.analysis; analysisChk.disabled = false;
+    _taCheckboxPrior = null;
+  }
 
   if (val === 'funnel') {
-    _taActiveBody = null;
-    slot.innerHTML = '<div class="card"><div class="card-title">Funnel Crawl</div>' +
-      '<div style="font-size:12px;color:var(--fg3)">Not implemented yet — coming soon.</div></div>';
-    runBtn.disabled = true;
+    // Funnel's engine IS the AI loop — force both agentic capabilities on and lock them.
+    if (!_taCheckboxPrior) _taCheckboxPrior = { testing: testChk.checked, analysis: analysisChk.checked };
+    testChk.checked = true;  testChk.disabled = true;
+    analysisChk.checked = true; analysisChk.disabled = true;
+    _taActiveBody = 'funnel';
+    taRenderFunnel();
+    syncFunnelRunEnabled();
   } else if (TA_MODES[val]) {
     slot.innerHTML = '';
     slot.appendChild(document.getElementById(TA_MODES[val].bodyId));
@@ -307,7 +401,9 @@ function taShowPrimary() {
 function taRenderMultiList() {
   const card = document.getElementById('ta-multi-card');
   const list = document.getElementById('ta-multi-list');
-  const others = Object.keys(TA_MODES).filter(n => n !== _taActiveBody);
+  // Funnel is a heavy standalone operation — no "Also Run" batching for it.
+  if (_taActiveBody === 'funnel') { card.style.display = 'none'; list.innerHTML = ''; taQueuedExtra.clear(); return; }
+  const others = Object.keys(TA_MODES).filter(n => n !== _taActiveBody && n !== 'funnel');
 
   for (const n of [...taQueuedExtra]) if (!others.includes(n)) taQueuedExtra.delete(n);
 
@@ -339,17 +435,19 @@ async function runTestAgent() {
   try {
     for (const n of sequence) {
       const m = TA_MODES[n];
+      const modeKey = /^\d+$/.test(n) ? +n : n;   // 'funnel' stays a string; numeric modes become numbers
       if (_taStopRequested) {
-        modeResults.push({ mode: +n, name: m.label, status: 'skipped', reason: 'Stopped before this mode started.' });
+        modeResults.push({ mode: modeKey, name: m.label, status: 'skipped', reason: 'Stopped before this mode started.' });
         continue;
       }
       if (!m.isConfigured()) {
-        modeResults.push({ mode: +n, name: m.label, status: 'skipped', reason: 'Not configured.' });
+        const reason = n === 'funnel' ? 'Funnel Crawl needs a Start and End waypoint.' : 'Not configured.';
+        modeResults.push({ mode: modeKey, name: m.label, status: 'skipped', reason });
         continue;
       }
       status.textContent = `Running ${m.label}…`;
       await m.run();
-      modeResults.push({ mode: +n, name: m.label, status: 'ran', data: m.getData() });
+      modeResults.push({ mode: modeKey, name: m.label, status: 'ran', data: m.getData() });
     }
 
     const anyRan = modeResults.some(r => r.status === 'ran');
@@ -4297,6 +4395,27 @@ function rptSrSection(entry) {
   return rptSection(entry.name, badge, summary, body);
 }
 
+function rptFunnelSection(entry) {
+  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
+  const run = entry.data || {};
+  if (run.error && !(run.segments || []).length) return rptSkipped(entry.name, run.error);
+  const segments = run.segments || [];
+  const badge = rptBadge(run.reachedEnd ? 'pass' : 'fail', run.reachedEnd ? 'REACHED END' : 'BROKE');
+  const failedAt = segments.find(s => !s.reached);
+  const summary = run.reachedEnd
+    ? `Agent navigated all ${segments.length} segment(s) to End`
+    : `Funnel broke at ${failedAt ? esc(shortUrl(failedAt.from)) + ' → ' + esc(shortUrl(failedAt.to)) : 'an early segment'}`;
+  const rows = segments.map(s => `<tr>
+    <td>${esc(shortUrl(s.from))} → ${esc(shortUrl(s.to))}</td>
+    <td>${s.reached ? 'REACHED' : 'FAILED'}</td>
+    <td>${s.steps} step${s.steps === 1 ? '' : 's'}${s.error ? ' · ' + esc(s.error) : ''}</td>
+  </tr>`).join('');
+  let body = `<table class="rpt-table"><thead><tr><th>Segment</th><th>Result</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="rpt-muted">An AI agent (Sonnet) navigated by clicking the live UI, up to ~10 actions per segment. A segment fails if the next waypoint wasn't reached within that budget.</p>`;
+  for (const s of segments) if (s.note) body += rptAgenticNoteHtml(s.note, `${shortUrl(s.from)} → ${shortUrl(s.to)} — Agent notes (Sonnet)`);
+  return rptSection(entry.name, badge, summary, body);
+}
+
 // ── Report document assembly (pure — no DOM reads, only formats data already
 // produced by each mode's own run) ────────────────────────────────────────────
 function buildFullReportHtml(sections) {
@@ -4304,6 +4423,7 @@ function buildFullReportHtml(sections) {
   const builders = {
     1: rptQueueSection, 2: rptAbSection, 3: rptVrSection,
     4: rptWcagSection, 5: rptCvaSection, 6: rptPerfSection, 7: rptSrSection,
+    funnel: rptFunnelSection,
   };
   const body = (extraHtml || '') + modes.map(entry => (builders[entry.mode] || (() => ''))(entry)).join('');
   const urlsHtml = pageUrls.length

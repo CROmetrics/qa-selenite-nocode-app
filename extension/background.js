@@ -1595,6 +1595,20 @@ async function captureViewportScreenshot(tabId) {
   }
 }
 
+// Funnel Crawl: capture at a 1-CSS-px-per-image-px clip so the screenshot's
+// pixel space equals both the computer-use tool's declared display size AND the
+// CSS-pixel space CDP Input.dispatchMouseEvent clicks in — Claude's returned
+// coordinates then map 1:1 to a trusted click. Assumes the debugger is ALREADY
+// attached to `target` (the crawl loop attaches once per segment).
+async function captureClipped(target, width, height) {
+  const shot = await chrome.debugger.sendCommand(target, 'Page.captureScreenshot', {
+    format: 'png',
+    clip: { x: 0, y: 0, width, height, scale: 1 },
+    captureBeyondViewport: false,
+  });
+  return 'data:image/png;base64,' + shot.data;
+}
+
 async function captureFullPage(tabId, ignoreSelectors) {
   const info = await exec(tabId, (sels) => {
     const doc = document.documentElement;
@@ -2014,6 +2028,207 @@ async function callClaudeVision({ images, prompt, maxTokens }) {
   }
 }
 
+// ── Funnel Crawl (Test Agent tab) ───────────────────────────────────────────
+// A Claude computer-use agent clicks through the live UI to navigate from one
+// waypoint to the next, verifying the funnel actually connects step-to-step.
+// No deterministic core — the AI loop IS the engine. One tab, reused across all
+// segments; the debugger is attached once per segment for screenshots + clicks.
+let _funnelStopRequested = false;
+
+// Normalize for arrival comparison: strip protocol, trailing slash, hash.
+function funnelUrlKey(url) {
+  return normalizeUrl(url || '').replace(/^https?:\/\//i, '').replace(/#.*$/, '').replace(/\/+$/, '').toLowerCase();
+}
+
+// One waypoint→next-waypoint hop. Returns { from, to, reached, steps, note, error }.
+async function crawlSegment(tabId, fromUrl, target, stepBudget) {
+  const out = { from: fromUrl, to: target, reached: false, steps: 0, note: '', error: null };
+  const targetKey = funnelUrlKey(target);
+  const dbg = { tabId };
+  const notes = [];
+  let attached = false;
+
+  // Arrival can happen the moment we land on the segment's start (e.g. Start === already-open page),
+  // so check before spending any agent steps.
+  try {
+    const cur = await chrome.tabs.get(tabId);
+    if (funnelUrlKey(cur.url) === targetKey) { out.reached = true; return out; }
+  } catch (_) {}
+
+  try {
+    await chrome.debugger.attach(dbg, CDP_VERSION);
+    attached = true;
+  } catch (e) {
+    out.error = `Could not attach for crawl (is DevTools open?): ${e.message}`;
+    return out;
+  }
+
+  try {
+    const dims = await exec(tabId, () => ({ w: window.innerWidth, h: window.innerHeight }));
+    const dispW = dims?.w || 1280;
+    const dispH = dims?.h || 800;
+    const tools = [{ type: 'computer_20251124', name: 'computer', display_width_px: dispW, display_height_px: dispH }];
+    const messages = [];
+    const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
+    if (!anthropicApiKey) { out.error = 'No API key configured'; return out; }
+
+    // Seed the conversation with the goal + the first screenshot.
+    let shot = await captureClipped(dbg, dispW, dispH);
+    messages.push({
+      role: 'user',
+      content: [
+        { type: 'text', text:
+          `You are QA-testing a conversion funnel by navigating a real web page. Goal: reach the page ` +
+          `"${target}" by clicking the appropriate link/button (call-to-action) that advances toward it. ` +
+          `Take one action at a time. As you go, briefly note any alternative paths, edge cases, broken ` +
+          `elements, or issues you observe — but do NOT backtrack to explore them exhaustively; your job is ` +
+          `to reach the goal. When the visible page appears to be the goal, stop and say you've arrived.` },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: shot.replace(/^data:image\/png;base64,/, '') } },
+      ],
+    });
+
+    for (let step = 0; step < stepBudget; step++) {
+      if (_funnelStopRequested) { out.error = 'Stopped'; break; }
+
+      _visionAbortController = new AbortController();
+      let data;
+      try {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          signal: _visionAbortController.signal,
+          headers: {
+            'x-api-key': anthropicApiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+            'anthropic-beta': 'computer-use-2025-11-24',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1024, tools, messages }),
+        });
+        data = await res.json();
+        if (!res.ok) { out.error = data?.error?.message || res.statusText; break; }
+      } catch (e) {
+        out.error = e.name === 'AbortError' ? 'Stopped' : e.message;
+        break;
+      } finally {
+        _visionAbortController = null;
+      }
+
+      out.steps = step + 1;
+      const blocks = data.content || [];
+      for (const b of blocks) if (b.type === 'text' && b.text.trim()) notes.push(b.text.trim());
+      messages.push({ role: 'assistant', content: blocks });
+
+      // Model finished talking without a tool call (e.g. it clicked, landed, and
+      // says it arrived) → decide arrival by the URL, not the model's say-so.
+      if (data.stop_reason !== 'tool_use') {
+        try {
+          const cur = await chrome.tabs.get(tabId);
+          if (funnelUrlKey(cur.url) === targetKey) out.reached = true;
+        } catch (_) {}
+        break;
+      }
+
+      // Execute each computer tool_use, returning a fresh screenshot as its result.
+      const toolResults = [];
+      for (const b of blocks) {
+        if (b.type !== 'tool_use' || b.name !== 'computer') continue;
+        const action = b.input?.action;
+        const [x, y] = b.input?.coordinate || [];
+        try {
+          if (action === 'left_click' || action === 'right_click' || action === 'middle_click') {
+            await dispatchTrustedClick(tabId, x, y);
+            await new Promise(r => setTimeout(r, 1200)); // let any navigation/settle happen
+          } else if (action === 'scroll') {
+            const dir = b.input?.scroll_direction, amt = (b.input?.scroll_amount || 3) * 100;
+            const dx = dir === 'right' ? amt : dir === 'left' ? -amt : 0;
+            const dy = dir === 'down' ? amt : dir === 'up' ? -amt : 0;
+            await chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent', { type: 'mouseWheel', x: x || dispW / 2, y: y || dispH / 2, deltaX: dx, deltaY: dy });
+            await new Promise(r => setTimeout(r, 400));
+          } else if (action === 'type') {
+            for (const ch of String(b.input?.text || '')) {
+              await chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent', { type: 'char', text: ch });
+            }
+          } else if (action === 'key') {
+            // best-effort: submit the common case
+            await new Promise(r => setTimeout(r, 100));
+          }
+          // 'screenshot' and any unhandled action just fall through to re-capture.
+        } catch (e) {
+          notes.push(`Action "${action}" failed: ${e.message}`);
+        }
+        shot = await captureClipped(dbg, dispW, dispH);
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: b.id,
+          content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: shot.replace(/^data:image\/png;base64,/, '') } }],
+        });
+      }
+      messages.push({ role: 'user', content: toolResults });
+
+      // Bound token growth: keep only the most recent screenshot in history.
+      for (let i = 0; i < messages.length - 1; i++) {
+        const m = messages[i];
+        if (!Array.isArray(m.content)) continue;
+        for (const c of m.content) {
+          if (c.type === 'image') { c.type = 'text'; c.text = '[earlier screenshot omitted]'; delete c.source; }
+          else if (c.type === 'tool_result' && Array.isArray(c.content)) c.content = [{ type: 'text', text: '[earlier screenshot omitted]' }];
+        }
+      }
+
+      // Arrival check.
+      try {
+        const cur = await chrome.tabs.get(tabId);
+        if (funnelUrlKey(cur.url) === targetKey) { out.reached = true; break; }
+      } catch (_) {}
+    }
+  } catch (e) {
+    out.error = out.error || e.message;
+  } finally {
+    if (attached) { try { await chrome.debugger.detach(dbg); } catch (_) {} }
+  }
+
+  out.note = notes.join(' ').slice(0, 1500);
+  return out;
+}
+
+async function runFunnelCrawl({ waypoints = [], stepBudget = 10 }) {
+  _funnelStopRequested = false;
+  const clean = waypoints.map(w => String(w || '').trim()).filter(Boolean);
+  if (clean.length < 2) return { segments: [], reachedEnd: false, error: 'Need at least a Start and End waypoint.' };
+
+  const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
+  if (!anthropicApiKey) return { segments: [], reachedEnd: false, error: 'Funnel Crawl requires an Anthropic API key (set it in the AI Summary card).' };
+
+  const segments = [];
+  let tab = null;
+  try {
+    tab = await chrome.tabs.create({ url: normalizeUrl(clean[0]), active: true });
+    await waitForLoadTimeout(tab.id, 30000);
+
+    let fromUrl = clean[0];
+    for (let i = 1; i < clean.length; i++) {
+      if (_funnelStopRequested) {
+        segments.push({ from: fromUrl, to: clean[i], reached: false, steps: 0, note: '', error: 'Stopped' });
+        continue;
+      }
+      await setTmProgress('funnelProgress', { running: true, index: i, total: clean.length - 1, label: clean[i] });
+      const seg = await crawlSegment(tab.id, fromUrl, clean[i], stepBudget);
+      segments.push(seg);
+      fromUrl = clean[i];
+      if (!seg.reached) break; // funnel is broken at this segment — stop
+    }
+  } catch (e) {
+    segments.push({ from: '', to: '', reached: false, steps: 0, note: '', error: e.message });
+  } finally {
+    await setTmProgress('funnelProgress', { running: false });
+    if (tab) { try { await chrome.tabs.remove(tab.id); } catch (_) {} }
+  }
+
+  const reachedEnd = segments.length > 0 && segments.every(s => s.reached) && segments[segments.length - 1].to === clean[clean.length - 1];
+  return { segments, reachedEnd };
+}
+
 // ── Message listener ───────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'run') {
@@ -2024,7 +2239,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     _stopRequested = true;
     _abStopRequested = true;   // shared stop: also halts a variant comparison run
     _tmStopRequested = true;   // …and any visual/cross-variant/performance run
-    _visionAbortController?.abort();   // …and any in-flight Agentic Testing vision call
+    _funnelStopRequested = true;   // …and any funnel crawl
+    _visionAbortController?.abort();   // …and any in-flight Agentic Testing / funnel vision call
     sendResponse({ ok: true });
 
   } else if (msg.action === 'status') {
@@ -2273,6 +2489,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true, results });
       } catch (e) {
         try { await setTmProgress('perfProgress', { running: false }); } catch (_) {}
+        sendResponse({ ok: false, error: e.message });
+      } finally {
+        await endTmRun();
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'runFunnelCrawl') {
+    (async () => {
+      await beginTmRun(msg.payload);
+      try {
+        const result = await runFunnelCrawl(msg.payload || {});
+        sendResponse({ ok: true, ...result });
+      } catch (e) {
+        try { await setTmProgress('funnelProgress', { running: false }); } catch (_) {}
         sendResponse({ ok: false, error: e.message });
       } finally {
         await endTmRun();

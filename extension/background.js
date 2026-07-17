@@ -117,6 +117,19 @@ async function injectCapture(tabId) {
 // the same event stream DevTools itself uses, so this is a genuine mirror, not
 // an approximation.
 const CDP_VERSION = '1.3';
+
+const FUNNEL_CRAWL_PRIMARY_PROMPT = `You are a QA agent inside Selenite, a no-code browser testing tool. Your job is funnel crawling: proving that a real visitor can get from one point in a conversion funnel to another using the page's actual UI, the way a human would — not by any shortcut.
+
+How you work:
+- Take exactly one action, then look at the next screenshot before deciding your next move. Never plan several moves ahead in one turn.
+- Move with purpose toward the destination you're given. Use the primary path — the CTA, link, or form a typical visitor would use. Don't exhaustively explore the page. If you notice something worth flagging (a broken element, a confusing dead end, an alternate route), note it in one short sentence and keep moving; don't stop to investigate it.
+- Clear anything that blocks the primary path — cookie/consent banners, promotional modals, chat-widget bubbles — by taking the least-committal option (decline non-essential cookies, close the modal). Only engage with a popup as the actual path if it plainly is one.
+- If a form sits on the path (signup, search, shipping info, etc.), fill it with obviously fake QA data — a placeholder name, an address like "qa-test@example.com", a placeholder phone/address — unless the tester's notes below give you specific values to use instead.
+- Never submit real payment details, and never complete an actual purchase, subscription, donation, or any other action that moves real money or creates a real financial obligation. If reaching the destination would require entering billing/card information or clicking a final purchase, order, or payment-confirmation button, stop there without clicking it and report that a real transaction would be required to continue.
+- Never try to solve, bypass, or trick a CAPTCHA, bot-check, or login wall. If one blocks the path, stop and report it — unless the tester's notes below give you working test credentials for it.
+- Only interact through the page itself — click, scroll, type, submit with Enter. Don't reach the destination by any means other than the on-page UI a visitor would use (e.g. never type a URL directly); the point of the crawl is to prove that UI path exists.
+- When the page in front of you matches the destination, stop taking actions and say so in plain text. Don't keep clicking to double-check.`;
+
 const BROWSER_CONSOLE_CAP = 1000;
 
 async function addBrowserConsoleLog(winId, entry) {
@@ -2041,7 +2054,7 @@ function funnelUrlKey(url) {
 }
 
 // One waypoint→next-waypoint hop. Returns { from, to, reached, steps, note, error }.
-async function crawlSegment(tabId, fromUrl, target, stepBudget) {
+async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalPrompt = '') {
   const out = { from: fromUrl, to: target, reached: false, steps: 0, note: '', error: null };
   const targetKey = funnelUrlKey(target);
   const dbg = { tabId };
@@ -2074,15 +2087,12 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget) {
 
     // Seed the conversation with the goal + the first screenshot.
     let shot = await captureClipped(dbg, dispW, dispH);
+    const supplementalText = supplementalPrompt.trim() ? `\n\nTester's notes:\n${supplementalPrompt}` : '';
+    const systemPrompt = `${FUNNEL_CRAWL_PRIMARY_PROMPT}\n\nYour specific task: navigate from "${fromUrl}" to "${target}".${supplementalText}`;
     messages.push({
       role: 'user',
       content: [
-        { type: 'text', text:
-          `You are QA-testing a conversion funnel by navigating a real web page. Goal: reach the page ` +
-          `"${target}" by clicking the appropriate link/button (call-to-action) that advances toward it. ` +
-          `Take one action at a time. As you go, briefly note any alternative paths, edge cases, broken ` +
-          `elements, or issues you observe — but do NOT backtrack to explore them exhaustively; your job is ` +
-          `to reach the goal. When the visible page appears to be the goal, stop and say you've arrived.` },
+        { type: 'text', text: systemPrompt },
         { type: 'image', source: { type: 'base64', media_type: 'image/png', data: shot.replace(/^data:image\/png;base64,/, '') } },
       ],
     });
@@ -2192,7 +2202,7 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget) {
   return out;
 }
 
-async function runFunnelCrawl({ waypoints = [], stepBudget = 10 }) {
+async function runFunnelCrawl({ waypoints = [], supplementalPrompt = '', stepBudget = 10 }) {
   _funnelStopRequested = false;
   const clean = waypoints.map(w => String(w || '').trim()).filter(Boolean);
   if (clean.length < 2) return { segments: [], reachedEnd: false, error: 'Need at least a Start and End waypoint.' };
@@ -2213,7 +2223,7 @@ async function runFunnelCrawl({ waypoints = [], stepBudget = 10 }) {
         continue;
       }
       await setTmProgress('funnelProgress', { running: true, index: i, total: clean.length - 1, label: clean[i] });
-      const seg = await crawlSegment(tab.id, fromUrl, clean[i], stepBudget);
+      const seg = await crawlSegment(tab.id, fromUrl, clean[i], stepBudget, supplementalPrompt);
       segments.push(seg);
       fromUrl = clean[i];
       if (!seg.reached) break; // funnel is broken at this segment — stop

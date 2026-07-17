@@ -155,7 +155,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
   if (anthropicApiKey) document.getElementById('ta-api-key').value = anthropicApiKey;
   const { funnelState: savedFunnel } = await sessionNS.get('funnelState');
-  if (savedFunnel) funnelState = { start: '', middles: [], end: '', ...savedFunnel };
+  if (savedFunnel) funnelState = { start: '', middles: [], end: '', supplementalPrompt: '', ...savedFunnel };
   document.getElementById('btn-ta-save-key').addEventListener('click', () => {
     chrome.storage.sync.set({ anthropicApiKey: document.getElementById('ta-api-key').value.trim() });
   });
@@ -283,7 +283,7 @@ const taQueuedExtra = new Set(); // mode ids checked in the "Also Run" list, not
 let _taStopRequested = false;
 
 // ── Funnel Crawl (Test Agent-native — no Test Modes submenu to reparent) ──────
-let funnelState = { start: '', middles: [], end: '' };  // waypoint URLs, persisted to sessionNS
+let funnelState = { start: '', middles: [], end: '', supplementalPrompt: '' };  // waypoint URLs + optional supplemental prompt, persisted to sessionNS
 let _funnelLastRun = null;
 let _taCheckboxPrior = null;      // remembers agentic-checkbox state while funnel force-enables both
 
@@ -316,12 +316,15 @@ function taRenderFunnel() {
       <div id="fn-mid-list">${midRows}</div>
       <button class="btn sm" id="fn-add-mid" style="margin:2px 0 8px">+ Add Waypoint</button>
       <label class="cap">End (required)</label>
-      <input type="text" id="fn-end" value="${esc(funnelState.end)}" placeholder="https://example.com/confirmation" style="width:100%">
+      <input type="text" id="fn-end" value="${esc(funnelState.end)}" placeholder="https://example.com/confirmation" style="width:100%;margin-bottom:8px">
+      <label class="cap">Supplemental Instructions (optional)</label>
+      <textarea id="fn-supplemental" placeholder="Add any special instructions or site-specific notes here (e.g., test credentials, specific paths to avoid, form field mappings)" style="width:100%;height:80px;font-family:monospace;font-size:11px;margin-bottom:8px">${esc(funnelState.supplementalPrompt)}</textarea>
       <div id="fn-results" style="margin-top:8px"></div>
     </div>`;
 
   slot.querySelector('#fn-start').addEventListener('input', e => { funnelState.start = e.target.value; persistFunnel(); syncFunnelRunEnabled(); });
   slot.querySelector('#fn-end').addEventListener('input', e => { funnelState.end = e.target.value; persistFunnel(); syncFunnelRunEnabled(); });
+  slot.querySelector('#fn-supplemental').addEventListener('input', e => { funnelState.supplementalPrompt = e.target.value; persistFunnel(); });
   slot.querySelectorAll('.fn-mid').forEach(inp => inp.addEventListener('input', e => {
     funnelState.middles[+e.target.dataset.i] = e.target.value; persistFunnel();
   }));
@@ -346,7 +349,7 @@ function renderFunnelResults(el, run) {
 async function runFunnelCrawl() {
   const resultsEl = document.getElementById('fn-results');
   if (resultsEl) resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;padding:6px 0">Crawling funnel…</div>';
-  const res = await chrome.runtime.sendMessage({ action: 'runFunnelCrawl', payload: { waypoints: funnelWaypoints(), winId: WIN_ID } });
+  const res = await chrome.runtime.sendMessage({ action: 'runFunnelCrawl', payload: { waypoints: funnelWaypoints(), supplementalPrompt: funnelState.supplementalPrompt, winId: WIN_ID } });
   _funnelLastRun = res?.ok
     ? { ts: Date.now(), segments: res.segments || [], reachedEnd: !!res.reachedEnd, error: res.error || null }
     : { ts: Date.now(), segments: [], reachedEnd: false, error: res?.error || 'Funnel crawl failed' };

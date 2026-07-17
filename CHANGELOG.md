@@ -2,6 +2,22 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-07-17
+
+### Changed
+
+The Test Modes tab is retired. Every capability it held either relocated or was folded into an existing feature — no engine (`runVariantComparison`, `performWcagAudit`, `runPerfMode`/`runPerfMeasurement`, `runCrossVariantAudit`, `runVisualCapture`/`captureFullPage`, `recorder.js`, `sessionShowOverlay`) changed behavior; this was a relocation/wiring pass.
+
+- **Build tab renamed "Functional Testing"** (display label only — `panel-build` and its element ids are unchanged).
+- **Visual Regression** moved into the Functional Testing tab as its own accordion (`#acc-vr`), alongside the function queue. Same ids, same pixel-diff logic (`vrDiffImages`), same IndexedDB baselines — only the DOM host moved. `#testmode-sub-3` is gone.
+- **Cross-Variant Accessibility** is now a first-class Test Agent mode (`TA_MODES['5']`), selectable in the **Test Mode** dropdown and batchable via **Also Run**, with its own report section. Its settings UI was wrapped in a new `#tm5-body` (mirroring the existing `tm2-body`/`tm4-body`/`tm6-body` pattern) so Test Agent can reparent it the same way. The standalone **Run Cross-Variant Audit** button stays inside `tm5-body` (same convention as A/B's and WCAG's own inline run buttons — hidden via existing CSS while parked in `#ta-settings-slot`).
+- **A/B Variant Comparison** gained an opt-in **interaction heatmap**: with **Keep tabs open** checked, a new **Record interaction heatmap** toggle lets the tester record a walk on each kept-open variant tab (via the retained `sessionRecordStart`/`sessionRecordStop`/`recorder.js` pipeline) and view it as a click/scroll overlay (`sessionShowOverlay`) per variant. Off by default; a normal A/B run is unaffected. Recordings live in memory only for the current run.
+- **Session Replay's timeline and saved-sessions browser were dropped** (`sr-session-list`, `sr-viewer`, filter buttons, and their rendering code) — that review UI is no longer wanted. The underlying recorder and overlay-drawing engine survive as the mechanism behind A/B's new heatmap.
+- **Mode 1 (Functional Testing Mode)** and the whole Test Modes shell — `#testmodes-menu`, `#testmode-sub-1`..`7`, `#panel-testmodes`, the `testmodes` tab, `btn-run-all-report`/`runAllModesAndReport()` (the old 7-mode combined report) — are deleted. The Test Agent tab's own report (`runTestAgent()` → `buildFullReportHtml`) covers the modes that moved there.
+- The four reparented mode bodies (`tm2-body`, `tm4-body`, `tm5-body`, `tm6-body`) now live permanently in a new hidden `#ta-mode-homes` inside the Test Agent panel (each mode's `homeParentId` in `TA_MODES` points there) instead of a Test Modes subpage — `taShowPrimary()`/`taMoveBodyHome()` needed no logic change, just updated `homeParentId` values.
+- Dead code removed along the way: `showTestModeSub()`, the old standalone `srShowOverlay()`/timeline/session-browser functions, `rptQueueSection`/`rptSrSection` (both now unreachable), and `runQueueAndWait()` (its only caller was `runAllModesAndReport`).
+- All markup changes were applied to **both** `popup.html` and `sidepanel.html` — the two hand-synced UI files that share `popup.js` (`sidepanel.html` is the actual side-panel per the manifest's `side_panel.default_path`). They keep cosmetic CSS differences but must stay structurally identical, since `popup.js` targets the same element ids in both.
+
 ## 2026-07-15
 
 ### Added

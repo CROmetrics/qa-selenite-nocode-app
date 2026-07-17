@@ -128,28 +128,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     t.addEventListener('click', () => showTab(t.dataset.tab));
   });
 
-  // Test Modes: WCAG / Accessibility Mode
+  // WCAG / Accessibility mode
   document.getElementById('btn-run-wcag')?.addEventListener('click', runWcagAudit);
   initSuiteTooltips();
   await initWcagMode();
-  // Test Modes: A/B Variant Comparison Mode
+  // A/B Variant Comparison mode
   await initAbCompare();
 
-  // Test Modes tab — each mode button opens its submenu, Back returns to the menu
-  document.querySelectorAll('.testmode-btn').forEach(b => {
-    b.addEventListener('click', () => showTestModeSub(b.dataset.testmode));
-  });
-  document.querySelectorAll('.testmode-back').forEach(b => {
-    b.addEventListener('click', () => showTestModeSub(null));
-  });
-  document.getElementById('btn-run-all-report')?.addEventListener('click', runAllModesAndReport);
   await initTestModePages();
-  // Test Modes: Visual Regression / Cross-Variant Accessibility /
-  // Performance / Session Replay (each is a no-op if its subpage is absent).
+  // Visual Regression / Cross-Variant Accessibility / Performance (each is a
+  // no-op if its host markup is absent).
   await initVrMode();
   await initCvaMode();
   await initPerfMode();
-  await initSrMode();
 
   // Test Agent tab
   const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
@@ -230,42 +221,57 @@ function showTab(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-' + name)?.classList.add('active');
 
-  // Test Agent parks a mode's settings body away from its Test Modes tab home
-  // while active — moving away/back here (rather than in showTestModeSub)
-  // covers every navigation path, so the Test Modes tab is never left showing
-  // a submenu whose body is actually sitting in the Test Agent tab.
+  // Test Agent borrows a mode's settings body from its permanent home
+  // (#ta-mode-homes) while active, and parks it back there on the way out —
+  // covers every navigation path, so a mode's settings are never stranded
+  // mid-move.
   if (name === 'testagent') {
     taShowPrimary();
   } else if (_taActiveBody) {
     taMoveBodyHome(_taActiveBody);
     _taActiveBody = null;
   }
+
+  // Visual Regression's baseline list reflects the Pages list above it, which
+  // may have been edited since the last visit — refresh on entry.
+  if (name === 'build') renderVrBaselines();
 }
 
 // ── Test Agent ───────────────────────────────────────────────────────────────
-// Reuses the Test Modes tab's own settings UI by reparenting it (not copying —
-// WCAG's checks share name="wcag-check" with no per-checkbox id, and
-// wcagCheckboxes() queries the whole document, so a literal duplicate would
-// silently merge two sets of checkboxes into one).
+// Reuses each mode's own settings UI (permanently parked in #ta-mode-homes) by
+// reparenting it, not copying — WCAG's checks share name="wcag-check" with no
+// per-checkbox id, and wcagCheckboxes() queries the whole document, so a
+// literal duplicate would silently merge two sets of checkboxes into one.
 function taAgenticTestingEnabled() {
   return !!document.getElementById('ta-agentic-testing')?.checked;
 }
 
 const TA_MODES = {
   '2': {
-    label: 'A/B Variant Comparison', bodyId: 'tm2-body', homeParentId: 'testmode-sub-2',
+    label: 'A/B Variant Comparison', bodyId: 'tm2-body', homeParentId: 'ta-mode-homes',
     run: () => runAbComparison({ agenticTesting: taAgenticTestingEnabled() }),
     isConfigured: () => (abState ? abState.targets.map(t => abComposeUrl(t)).filter(Boolean) : []).length >= 2,
     getData: () => _abLastRun,
   },
   '4': {
-    label: 'WCAG / Accessibility', bodyId: 'tm4-body', homeParentId: 'testmode-sub-4',
+    label: 'WCAG / Accessibility', bodyId: 'tm4-body', homeParentId: 'ta-mode-homes',
     run: () => runWcagAudit({ agenticTesting: taAgenticTestingEnabled() }),
     isConfigured: () => wcagCheckboxes().some(cb => cb.checked),
     getData: () => _wcagCurrentRun,
   },
+  '5': {
+    label: 'Cross-Variant Accessibility', bodyId: 'tm5-body', homeParentId: 'ta-mode-homes',
+    run: () => runCvaAudit(),
+    isConfigured: () => {
+      if (!cvaState) return false;
+      const targets = cvaState.targets.map(t => composeVariantUrl(t, cvaState.baseUrl, cvaState.qaMode)).filter(Boolean);
+      const autoChecks = cvaState.checks.filter(k => WCAG_CHECKS.some(c => c.key === k && !c.manual));
+      return targets.length >= 2 && autoChecks.length > 0;
+    },
+    getData: () => _cvaLastRun,
+  },
   '6': {
-    label: 'Performance / Load', bodyId: 'tm6-body', homeParentId: 'testmode-sub-6',
+    label: 'Performance / Load', bodyId: 'tm6-body', homeParentId: 'ta-mode-homes',
     run: () => runPerfMode({ agenticTesting: taAgenticTestingEnabled() }),
     isConfigured: () => tmPagesFor('6').length > 0,
     getData: () => _perfLastRun,
@@ -420,8 +426,8 @@ function taRenderMultiList() {
 }
 
 // Sequential batch execution: primary mode + whichever "Also Run" modes are
-// checked, in order — mirrors runAllModesAndReport's skip-if-unconfigured +
-// collect-results pattern, scoped to just the modes selected here.
+// checked, in order — skip-if-unconfigured, collect each mode's result, and
+// (if anything ran) compile a report.
 async function runTestAgent() {
   const primary = _taActiveBody;
   if (!primary) return;
@@ -599,19 +605,6 @@ function persistTmPages() {
     };
   }
   sessionNS.set({ tmPagesState: state });
-}
-
-// Show one Test Mode submenu (by its data-testmode number), or pass null to
-// return to the mode menu.
-function showTestModeSub(n) {
-  const menu = document.getElementById('testmodes-menu');
-  if (menu) menu.style.display = n ? 'none' : '';
-  document.querySelectorAll('.testmode-sub').forEach(s => {
-    s.style.display = (n && s.id === 'testmode-sub-' + n) ? '' : 'none';
-  });
-  // Visual Regression's baseline list reflects the Pages list above it, which
-  // may have been edited since the last visit — refresh on entry.
-  if (n === '3') renderVrBaselines();
 }
 
 // ── Accordions ────────────────────────────────────────────────────────────
@@ -1801,7 +1794,7 @@ function initSuiteTooltips() {
   });
 }
 
-// ── Test Modes: WCAG / Accessibility Mode subpage ─────────────────────────────
+// ── Test Agent mode: WCAG / Accessibility (#tm4-body) ─────────────────────────
 // The audit engine (heuristics + axe-core merge) lives in background.js and is
 // unchanged; this side owns scoping, presets, run history, export, and the
 // results view. Fully independent of the Build tab queue.
@@ -2056,7 +2049,7 @@ async function initWcagMode() {
   await renderWcagHistoryList();
 }
 
-// ── Test Modes: A/B Variant Comparison Mode subpage ──────────────────────────
+// ── Test Agent mode: A/B Variant Comparison (#tm2-body) ───────────────────────
 // Static load-and-compare mode: opens each variant target once (background owns
 // the tab lifecycle and capture), then diffs every variant against the first
 // target — the baseline, typically Control. Differences are surfaced neutrally:
@@ -2064,12 +2057,19 @@ async function initWcagMode() {
 // failures are styled as errors. This mode never reads or executes the Build
 // tab queue.
 
-let abState = null;   // { baseUrl, qaMode, settleSec, keepTabs, targets: [{label,url,override}], selectors: [] }
+let abState = null;   // { baseUrl, qaMode, settleSec, keepTabs, recordHeatmap, targets: [{label,url,override}], selectors: [] }
 let _abLastRun = null;   // last comparison, for the Run All & Generate Report mode
+
+// Optional per-variant interaction heatmap (opt-in, requires keepTabs) — reuses
+// the Session Replay recording/overlay engine (sessionRecordStart/Stop,
+// sessionShowOverlay/HideOverlay) against each kept-open variant tab. Sessions
+// are kept in memory only, keyed by tabId, and reset on every new run.
+let _abHeatmapSessions = {};       // { [tabId]: recordedSession }
+let _abHeatmapRecordingTabId = null;
 
 function abDefaultState() {
   return {
-    baseUrl: '', qaMode: false, settleSec: '3', keepTabs: false,
+    baseUrl: '', qaMode: false, settleSec: '3', keepTabs: false, recordHeatmap: false,
     targets: [
       { label: 'Control',   url: '', override: '' },
       { label: 'Variant A', url: '', override: '' },
@@ -2090,7 +2090,17 @@ async function initAbCompare() {
   document.getElementById('ab-base-url').addEventListener('input',   e => { abState.baseUrl  = e.target.value;   persistAbState(); });
   document.getElementById('ab-qa-mode').addEventListener('change',   e => { abState.qaMode   = e.target.checked; persistAbState(); });
   document.getElementById('ab-settle').addEventListener('input',     e => { abState.settleSec = e.target.value;  persistAbState(); });
-  document.getElementById('ab-keep-tabs').addEventListener('change', e => { abState.keepTabs = e.target.checked; persistAbState(); });
+  document.getElementById('ab-keep-tabs').addEventListener('change', e => {
+    abState.keepTabs = e.target.checked;
+    const hmChk = document.getElementById('ab-record-heatmap');
+    hmChk.disabled = !abState.keepTabs;
+    if (!abState.keepTabs && hmChk.checked) { hmChk.checked = false; abState.recordHeatmap = false; }
+    persistAbState();
+  });
+  document.getElementById('ab-record-heatmap').addEventListener('change', e => {
+    abState.recordHeatmap = e.target.checked;
+    persistAbState();
+  });
 
   document.getElementById('btn-ab-add-target').addEventListener('click', () => {
     // Default labels continue the sequence: Control, Variant A, Variant B, …
@@ -2123,6 +2133,8 @@ function applyAbStateToInputs() {
   document.getElementById('ab-qa-mode').checked   = !!abState.qaMode;
   document.getElementById('ab-settle').value      = abState.settleSec || '3';
   document.getElementById('ab-keep-tabs').checked = !!abState.keepTabs;
+  document.getElementById('ab-record-heatmap').checked  = !!abState.recordHeatmap;
+  document.getElementById('ab-record-heatmap').disabled = !abState.keepTabs;
 }
 
 function persistAbState() {
@@ -2286,6 +2298,11 @@ async function runAbComparison(opts = {}) {
 
   const metricsList = metrics.map(m => m.trim()).filter(Boolean);
   const selectors   = abState.selectors.map(s => s.trim()).filter(Boolean);
+
+  // A new run invalidates any in-memory heatmap recordings from the last one
+  // (their variant tabs are about to be replaced or closed).
+  _abHeatmapSessions = {};
+  _abHeatmapRecordingTabId = null;
 
   btn.disabled = true;
   btn.textContent = 'Running…';
@@ -2513,12 +2530,114 @@ function renderAbResults(allCaptures, metricsList, selectors) {
       </div>
     </div>
     <div style="font-size:10px;color:var(--fg3);padding:0 2px 6px">Differences are expected in an A/B test — review whether each delta matches the intended variant change. Only errors and load failures are defects.${skippedCount ? ` · ${skippedCount} variant${skippedCount !== 1 ? 's' : ''} skipped (stopped)` : ''}${abState.keepTabs ? ' · Variant tabs were left open for inspection.' : ''}</div>
+    <div id="ab-heatmap-block"></div>
     <div style="display:flex;flex-direction:column;gap:4px">${sections.join('')}</div>`;
 
   el.querySelectorAll('[data-suite-row] .a11y-row-hdr').forEach(hdr => {
     hdr.addEventListener('click', () => hdr.closest('[data-suite-row]').classList.toggle('open'));
   });
   el.querySelector('[data-clear-results]')?.addEventListener('click', () => { el.innerHTML = ''; });
+
+  if (abState.keepTabs && abState.recordHeatmap) renderAbHeatmapBlock();
+}
+
+// ── Optional per-variant interaction heatmap (opt-in extra on Keep tabs open) ─
+// Reuses the Session Replay recording/overlay engine unmodified: sessionRecordStart/
+// Stop capture one tab at a time (background enforces this — only one recording
+// globally), sessionShowOverlay/HideOverlay draw into whichever tab is active. Each
+// action here briefly focuses the target variant tab first so those handlers land
+// on the right one. Sessions live in _abHeatmapSessions only for this run.
+function abHeatmapEligibleCaptures() {
+  return (_abLastRun?.captures || []).filter(c => !c.skipped && c.tabId);
+}
+
+function renderAbHeatmapBlock() {
+  const el = document.getElementById('ab-heatmap-block');
+  if (!el) return;
+  const captures = abHeatmapEligibleCaptures();
+  if (!captures.length) { el.innerHTML = ''; return; }
+
+  el.innerHTML = `
+    <div class="a11y-summary-bar" style="margin-bottom:4px">
+      <span>Interaction Heatmap — record your own walk on a variant tab, then view it as an overlay</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
+      ${captures.map(c => abHeatmapRowHtml(c)).join('')}
+    </div>`;
+
+  captures.forEach(c => {
+    const row = el.querySelector(`[data-heatmap-tab="${c.tabId}"]`);
+    if (!row) return;
+    row.querySelector('[data-hm-record]')?.addEventListener('click', () => abHeatmapStart(c));
+    row.querySelector('[data-hm-stop]')?.addEventListener('click', () => abHeatmapStop(c));
+    row.querySelector('[data-hm-show]')?.addEventListener('click', () => abHeatmapShowOverlay(c));
+    row.querySelector('[data-hm-hide]')?.addEventListener('click', () => abHeatmapHideOverlay(c));
+  });
+}
+
+function abHeatmapRowHtml(c) {
+  const recording = _abHeatmapRecordingTabId === c.tabId;
+  const blockedByOther = _abHeatmapRecordingTabId && !recording;
+  const session = _abHeatmapSessions[c.tabId];
+  return `
+    <div class="ab-line" data-heatmap-tab="${c.tabId}">
+      <b>${esc(c.label)}</b>
+      <span class="row" style="gap:5px;margin-top:4px;flex-wrap:wrap">
+        ${recording
+          ? `<button class="btn danger sm" data-hm-stop>■ Stop Recording</button><span style="font-size:11px;color:var(--fg3)">● Recording — walk the tab, then Stop</span>`
+          : `<button class="btn sm" data-hm-record${blockedByOther ? ' disabled title="Recording in progress on another variant tab"' : ''}>● Record walk</button>`}
+        ${session ? `
+          <button class="btn sm" data-hm-show>Show heatmap overlay</button>
+          <button class="btn sm" data-hm-hide>Hide overlay</button>
+          <span style="font-size:10px;color:var(--fg3)">${(session.events || []).length} event${(session.events || []).length !== 1 ? 's' : ''} captured</span>` : ''}
+      </span>
+    </div>`;
+}
+
+async function abHeatmapStart(capture) {
+  if (_abHeatmapRecordingTabId) { alert('Already recording another variant tab — stop it first.'); return; }
+  try {
+    await chrome.tabs.update(capture.tabId, { active: true });
+  } catch (e) {
+    alert('Could not focus that variant tab (it may have been closed): ' + e.message);
+    return;
+  }
+  const res = await chrome.runtime.sendMessage({
+    action: 'sessionRecordStart', label: capture.label, captureMove: true, winId: WIN_ID,
+  });
+  if (!res?.ok) { alert('Could not start recording: ' + (res?.error || 'unknown error')); return; }
+  _abHeatmapRecordingTabId = capture.tabId;
+  renderAbHeatmapBlock();
+}
+
+async function abHeatmapStop(capture) {
+  const res = await chrome.runtime.sendMessage({ action: 'sessionRecordStop' });
+  _abHeatmapRecordingTabId = null;
+  if (res?.ok && res.session) _abHeatmapSessions[capture.tabId] = res.session;
+  else if (!res?.ok) alert('Could not stop recording: ' + (res?.error || 'unknown error'));
+  renderAbHeatmapBlock();
+}
+
+async function abHeatmapShowOverlay(capture) {
+  const session = _abHeatmapSessions[capture.tabId];
+  if (!session) return;
+  try { await chrome.tabs.update(capture.tabId, { active: true }); } catch (_) {}
+  const events = session.events || [];
+  const ref = (session.segments || [])[0] || {};
+  const payload = {
+    label: session.label || capture.label || '',
+    segPageW: ref.pageW, segPageH: ref.pageH,
+    clicks: events.filter(e => e.type === 'click').map(e => ({ x: e.x, y: e.y })),
+    trail: events.filter(e => e.type === 'move').slice(0, 3000).map(e => ({ x: e.x, y: e.y })),
+    maxDepth: Math.max(0, ...events.filter(e => e.type === 'scroll').map(e => e.maxDepth || e.depth || 0)),
+  };
+  const res = await chrome.runtime.sendMessage({ action: 'sessionShowOverlay', payload });
+  if (!res?.ok) alert('Could not show overlay: ' + (res?.error || 'unknown error'));
+}
+
+async function abHeatmapHideOverlay(capture) {
+  try { await chrome.tabs.update(capture.tabId, { active: true }); } catch (_) {}
+  await chrome.runtime.sendMessage({ action: 'sessionHideOverlay' });
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -2645,12 +2764,12 @@ async function openImageInTab(dataUrl) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Test Modes: Visual Regression Mode subpage (#testmode-sub-3)
+// Functional Testing tab: Visual Regression (#acc-vr)
 // ═════════════════════════════════════════════════════════════════════════════
 // Capture-and-diff regression testing for a page over time. Background owns the
 // tab lifecycle and CDP full-page capture; this side owns config, IndexedDB
-// image storage, the canvas pixel diff, and rendering. Never touches the Build
-// tab queue.
+// image storage, the canvas pixel diff, and rendering. Never touches the
+// Functional Testing tab's function queue.
 
 let vrState = null;       // { settleSec, threshold, keepTabs, ignoreSelectors: [] }
 let _vrLastRun = null;    // last comparison, for export (images stay in IndexedDB)
@@ -3054,7 +3173,7 @@ async function renderVrResults(pages) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Test Modes: Cross-Variant Accessibility Mode subpage (#testmode-sub-5)
+// Test Agent mode: Cross-Variant Accessibility (#tm5-body)
 // ═════════════════════════════════════════════════════════════════════════════
 // Hybrid of the WCAG mode (audit engine — performWcagAudit in background) and
 // the A/B mode (variant-loading machinery). Runs the same audit against every
@@ -3517,7 +3636,7 @@ function exportCvaResults(diff, run) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Test Modes: Performance/Load Mode subpage (#testmode-sub-6)
+// Test Agent mode: Performance/Load (#tm6-body)
 // ═════════════════════════════════════════════════════════════════════════════
 // Background loads each page N times (fresh tab per run, sequential, cache
 // optionally disabled over CDP) and returns raw per-run metrics; this side owns
@@ -3831,380 +3950,6 @@ async function viewPerfHistoryRun() {
   el.querySelector('[data-clear-results]')?.addEventListener('click', () => { el.innerHTML = ''; });
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Test Modes: Session Replay / Heatmap Mode subpage (#testmode-sub-7)
-// ═════════════════════════════════════════════════════════════════════════════
-// Records the tester's OWN session on the active tab (clicks, scroll, metric
-// fires) and plays it back as an overlay + timeline. Background owns the live
-// buffer (recording survives the panel closing); this side owns IndexedDB
-// session storage, the saved-sessions list, timeline rendering, and overlay
-// orchestration. No data ever leaves the browser.
-
-const SR_SESSION_CAP = 20;
-let _srViewedSession = null;
-let _srFilter = '';
-let _srStatusPoller = null;
-
-function fmtDur(ms) {
-  const s = Math.max(0, Math.round(ms / 1000));
-  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
-}
-
-async function initSrMode() {
-  if (!document.getElementById('btn-sr-record')) return;
-
-  document.getElementById('btn-sr-record').addEventListener('click', srStartRecording);
-  document.getElementById('btn-sr-stop').addEventListener('click', srStopRecording);
-  document.getElementById('btn-sr-overlay-show').addEventListener('click', srShowOverlay);
-  document.getElementById('btn-sr-overlay-hide').addEventListener('click', () =>
-    chrome.runtime.sendMessage({ action: 'sessionHideOverlay' }));
-
-  document.querySelectorAll('#sr-filter-btns [data-sr-filter]').forEach(b => {
-    b.addEventListener('click', () => {
-      _srFilter = b.dataset.srFilter;
-      document.querySelectorAll('#sr-filter-btns [data-sr-filter]').forEach(x => {
-        x.style.background = x === b ? 'var(--brand)' : '';
-        x.style.color = x === b ? '#fff' : '';
-      });
-      renderSrTimeline();
-    });
-  });
-
-  // Background is the source of truth for a live recording — the panel just
-  // re-syncs on open and keeps polling, so recording survives close/reopen.
-  await syncSrStatus();
-  _srStatusPoller = setInterval(syncSrStatus, 800);
-  await renderSrSessions();
-}
-
-async function srStartRecording() {
-  const label = document.getElementById('sr-label').value.trim();
-  const captureMove = document.getElementById('sr-capture-move').checked;
-  const res = await chrome.runtime.sendMessage({ action: 'sessionRecordStart', label, captureMove, winId: WIN_ID });
-  if (!res?.ok) alert('Could not start recording: ' + (res?.error || 'unknown error'));
-  await syncSrStatus();
-}
-
-async function srStopRecording() {
-  const res = await chrome.runtime.sendMessage({ action: 'sessionRecordStop' });
-  if (res?.ok && res.session) await srSaveSession(res.session);
-  await syncSrStatus();
-}
-
-async function syncSrStatus() {
-  const { srStatus, srFinishedSession } = await sessionNS.get(['srStatus', 'srFinishedSession']);
-  // A recording whose tab was closed finalizes in background — pick it up here.
-  if (srFinishedSession) {
-    await sessionNS.remove('srFinishedSession');
-    await srSaveSession(srFinishedSession);
-  }
-  const rec = !!srStatus?.recording;
-  const recordBtn = document.getElementById('btn-sr-record');
-  const stopBtn   = document.getElementById('btn-sr-stop');
-  const live      = document.getElementById('sr-live');
-  if (!recordBtn) return;
-  recordBtn.disabled = rec;
-  stopBtn.disabled = !rec;
-  if (rec) {
-    live.innerHTML = `<span style="color:var(--err)">●</span> Recording${srStatus.label ? ' “' + esc(srStatus.label) + '”' : ''} — ${fmtDur(Date.now() - srStatus.startedAt)} · ${srStatus.eventCount} event${srStatus.eventCount !== 1 ? 's' : ''}${srStatus.capped ? ' · <span class="ab-warn">capped at 10k</span>' : ''}`;
-  } else {
-    live.textContent = '○ Not recording';
-  }
-}
-
-async function srSaveSession(session) {
-  const pages = [...new Set((session.segments || []).map(s => shortUrl(s.url)))];
-  const rec = { ...session, pages, duration: (session.endedAt || Date.now()) - session.startedAt };
-  try {
-    await idbPut('sessions', rec);
-    // Retention cap — oldest-first eviction.
-    const all = await idbGetAll('sessions');
-    if (all.length > SR_SESSION_CAP) {
-      all.sort((a, b) => a.startedAt - b.startedAt);
-      for (const s of all.slice(0, all.length - SR_SESSION_CAP)) await idbDelete('sessions', s.id);
-    }
-  } catch (e) {
-    alert('Could not save session: ' + e.message);
-  }
-  await renderSrSessions();
-}
-
-async function renderSrSessions() {
-  const el = document.getElementById('sr-session-list');
-  if (!el) return;
-  let sessions = [];
-  try { sessions = await idbGetAll('sessions'); } catch (_) {}
-  sessions.sort((a, b) => b.startedAt - a.startedAt);
-  if (!sessions.length) {
-    el.innerHTML = '<div style="font-size:11px;color:var(--fg3)">No saved sessions yet — click Record, walk the page, then Stop.</div>';
-    return;
-  }
-  el.innerHTML = sessions.map(s => `
-    <div class="sr-session-row" data-sr-id="${s.id}">
-      <div class="sr-session-main">
-        <div>${esc(s.label || 'Untitled session')}${s.capped ? ' <span class="ab-warn">(capped)</span>' : ''}</div>
-        <div class="sr-session-sub">${new Date(s.startedAt).toLocaleString()} · ${fmtDur(s.duration || 0)} · ${(s.events || []).length} events · ${esc((s.pages || []).slice(0, 2).join(', '))}${(s.pages || []).length > 2 ? ' +' + (s.pages.length - 2) : ''}</div>
-      </div>
-      <button class="btn sm" data-sr-view>View</button>
-      <button class="btn-icon" data-sr-export title="Export session JSON">⭳</button>
-      <button class="btn-icon" data-sr-delete title="Delete session" style="color:var(--err)">✕</button>
-    </div>`).join('');
-
-  el.querySelectorAll('.sr-session-row').forEach(row => {
-    const id = +row.dataset.srId;
-    row.querySelector('[data-sr-view]').addEventListener('click', () => viewSrSession(id));
-    row.querySelector('[data-sr-export]').addEventListener('click', async () => {
-      const s = await idbGet('sessions', id);
-      if (s) downloadJson(s, 'session-' + (s.label || 'untitled').replace(/[^\w-]+/g, '-').toLowerCase() + '-' + new Date(s.startedAt).toISOString().replace(/[:.]/g, '-') + '.json');
-    });
-    row.querySelector('[data-sr-delete]').addEventListener('click', async () => {
-      if (!confirm('Delete this session?')) return;
-      await idbDelete('sessions', id);
-      if (_srViewedSession?.id === id) {
-        _srViewedSession = null;
-        document.getElementById('sr-viewer').style.display = 'none';
-      }
-      await renderSrSessions();
-    });
-  });
-}
-
-async function viewSrSession(id) {
-  const s = await idbGet('sessions', id);
-  if (!s) return;
-  _srViewedSession = s;
-  document.getElementById('sr-viewer').style.display = '';
-  document.getElementById('sr-viewer-title').textContent =
-    (s.label || 'Untitled session') + ' — ' + new Date(s.startedAt).toLocaleString();
-  document.getElementById('sr-overlay-warn').textContent = '';
-  renderSrTimeline();
-}
-
-// Chronological items for the timeline: navigations (from segments), clicks,
-// scroll milestones, and metric fires. Mouse-movement samples are overlay-only.
-function srTimelineItems(s) {
-  const items = [];
-  (s.segments || []).forEach((seg, i) => items.push({ type: 'nav', t: seg.t, text: seg.url, seg: i }));
-  let lastDepth = -100;
-  for (const e of (s.events || [])) {
-    if (e.type === 'move') continue;
-    if (e.type === 'scroll') {
-      // Milestones only — raw samples arrive ~4/sec and would flood the list.
-      if (Math.abs((e.depth || 0) - lastDepth) < 10) continue;
-      lastDepth = e.depth || 0;
-    }
-    items.push(e);
-  }
-  items.sort((a, b) => a.t - b.t);
-  return items;
-}
-
-function renderSrTimeline() {
-  const el = document.getElementById('sr-timeline');
-  const s = _srViewedSession;
-  if (!el || !s) return;
-  const items = srTimelineItems(s).filter(e => !_srFilter || e.type === _srFilter);
-  if (!items.length) {
-    el.innerHTML = '<div style="font-size:11px;color:var(--fg3);padding:8px">No events' + (_srFilter ? ' of this type' : '') + '.</div>';
-    return;
-  }
-  const badge = { click: 'CLICK', scroll: 'SCROLL', metric: 'METRIC', nav: 'NAV' };
-  el.innerHTML = items.map(e => {
-    const ts = fmtDur(e.t - s.startedAt);
-    let text, cls = '';
-    if (e.type === 'click') {
-      text = (e.sel ? e.sel + ' ' : '') + `(${Math.round(e.x)}, ${Math.round(e.y)})`;
-      cls = ' sr-ev-click';
-    } else if (e.type === 'scroll') {
-      text = `scrolled to ${e.depth}% depth`;
-    } else if (e.type === 'metric') {
-      text = e.text;
-    } else {
-      text = e.text;
-    }
-    return `
-      <div class="sr-ev${cls}"${e.type === 'click' && e.sel ? ` data-sr-sel="${esc(e.sel).replace(/"/g, '&quot;')}" title="Click to highlight this element on the page"` : ''}>
-        <span class="sr-ev-ts">${ts}</span>
-        <span class="sr-ev-badge${e.type === 'metric' ? ' sr-ev-metric-badge' : ''}">${badge[e.type] || e.type}</span>
-        <span class="sr-ev-text">${esc(text || '')}</span>
-      </div>`;
-  }).join('');
-
-  el.querySelectorAll('[data-sr-sel]').forEach(row => {
-    row.addEventListener('click', async () => {
-      const res = await chrome.runtime.sendMessage({ action: 'highlightElement', tabId: null, selector: row.dataset.srSel });
-      if ((!res?.ok || !res.found) && !row.querySelector('.a11y-loc-miss')) {
-        const note = document.createElement('span');
-        note.className = 'a11y-loc-miss';
-        note.textContent = ' — not found on the current page';
-        note.style.color = 'var(--fg3)';
-        row.appendChild(note);
-        setTimeout(() => note.remove(), 2500);
-      }
-    });
-  });
-}
-
-async function srShowOverlay() {
-  const s = _srViewedSession;
-  if (!s) return;
-  const warnEl = document.getElementById('sr-overlay-warn');
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const strip = u => { try { const x = new URL(u); return x.origin + x.pathname; } catch (_) { return u || ''; } };
-  const cur = strip(tab?.url);
-
-  // Prefer segments recorded at the current page's URL; fall back to all
-  // segments with a warning if the tab is somewhere else.
-  let segIdxs = (s.segments || []).map((seg, i) => (strip(seg.url) === cur ? i : -1)).filter(i => i >= 0);
-  if (!segIdxs.length) {
-    segIdxs = (s.segments || []).map((_, i) => i);
-    warnEl.textContent = '⚠ The active tab is not at this session’s URL — overlay points may not line up.';
-  } else {
-    warnEl.textContent = '';
-  }
-  const segSet = new Set(segIdxs);
-  const ref = (s.segments || [])[segIdxs[0]] || {};
-  const events = s.events || [];
-  const payload = {
-    label: s.label || '',
-    segPageW: ref.pageW, segPageH: ref.pageH,
-    clicks: events.filter(e => e.type === 'click' && segSet.has(e.seg)).map(e => ({ x: e.x, y: e.y })),
-    trail: events.filter(e => e.type === 'move' && segSet.has(e.seg)).slice(0, 3000).map(e => ({ x: e.x, y: e.y })),
-    maxDepth: Math.max(0, ...events.filter(e => e.type === 'scroll' && segSet.has(e.seg)).map(e => e.maxDepth || e.depth || 0)),
-  };
-  const res = await chrome.runtime.sendMessage({ action: 'sessionShowOverlay', payload });
-  if (!res?.ok) warnEl.textContent = 'Could not show overlay: ' + (res?.error || 'unknown error');
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// Test Modes: Run All & Generate Report
-// ═════════════════════════════════════════════════════════════════════════════
-// Runs every configured mode 1-6 in sequence (reusing each mode's own run
-// function untouched) and compiles a single self-contained HTML report opened
-// in a new tab. Session Replay (mode 7) is recording-based, not "run and get a
-// result" — it's excluded from the automatic run, but the most recently
-// viewed/saved session (if any) is folded into the report as a reference.
-
-// runQueue() only dispatches the background run and resolves immediately —
-// unlike the other modes' run functions, which already await full completion.
-// This mirrors syncRunState()'s own polling of the same 'running' flag.
-async function runQueueAndWait() {
-  await runQueue();
-  await new Promise(resolve => {
-    const poll = setInterval(async () => {
-      const { running } = await sessionNS.get('running');
-      if (!running) { clearInterval(poll); resolve(); }
-    }, 400);
-  });
-  const { logs = [] } = await sessionNS.get('logs');
-  logData = logs;
-}
-
-async function runAllModesAndReport() {
-  const btn = document.getElementById('btn-run-all-report');
-  if (btn) { btn.disabled = true; btn.textContent = 'Running all modes…'; }
-
-  const pageUrls = new Set();
-  const modeResults = [];
-
-  try {
-    // Mode 1 — Functional Testing (Build tab queue)
-    if (steps.length > 0) {
-      const openStep = steps.find(s => s.func === OPEN_URL_FUNC);
-      if (openStep?.inputs?.url) pageUrls.add(openStep.inputs.url);
-      await runQueueAndWait();
-      modeResults.push({ mode: 1, name: 'Functional Testing Mode', status: 'ran', logData: [...logData] });
-    } else {
-      modeResults.push({ mode: 1, name: 'Functional Testing Mode', status: 'skipped', reason: 'No queue steps defined.' });
-    }
-
-    // Mode 2 — A/B Variant Comparison
-    const abTargets = abState
-      ? abState.targets.map(t => ({ label: (t.label || '').trim() || 'Variant', url: abComposeUrl(t) })).filter(t => t.url)
-      : [];
-    if (abTargets.length >= 2) {
-      abTargets.forEach(t => pageUrls.add(t.url));
-      await runAbComparison();
-      modeResults.push({ mode: 2, name: 'A/B Variant Comparison Mode', status: 'ran', data: _abLastRun });
-    } else {
-      modeResults.push({ mode: 2, name: 'A/B Variant Comparison Mode', status: 'skipped', reason: 'Fewer than two variant targets with a URL configured.' });
-    }
-
-    // Mode 3 — Visual Regression
-    const vrPages = tmPagesFor('3');
-    const { vrMeta: _vrMetaCheck = {} } = await chrome.storage.local.get('vrMeta');
-    const vrHasBaseline = vrPages.some(p => _vrMetaCheck[p.url]?.baseline);
-    if (vrPages.length && vrHasBaseline) {
-      vrPages.forEach(p => pageUrls.add(p.url));
-      await runVrCapture('compare');
-      modeResults.push({ mode: 3, name: 'Visual Regression Mode', status: 'ran', data: _vrLastRun });
-    } else {
-      modeResults.push({
-        mode: 3, name: 'Visual Regression Mode', status: 'skipped',
-        reason: vrPages.length ? 'No stored baseline for the configured page(s) — set a baseline first.' : 'No page URL configured.',
-      });
-    }
-
-    // Mode 4 — WCAG / Accessibility (runs against the active tab)
-    const wcagChecks = wcagCheckboxes().filter(cb => cb.checked);
-    if (wcagChecks.length) {
-      await runWcagAudit();
-      if (_wcagCurrentRun?.url) pageUrls.add(_wcagCurrentRun.url);
-      modeResults.push({ mode: 4, name: 'WCAG / Accessibility Mode', status: 'ran', data: _wcagCurrentRun });
-    } else {
-      modeResults.push({ mode: 4, name: 'WCAG / Accessibility Mode', status: 'skipped', reason: 'No checks selected.' });
-    }
-
-    // Mode 5 — Cross-Variant Accessibility
-    const cvaTargets = cvaState
-      ? cvaState.targets.map(t => ({ label: (t.label || '').trim() || 'Variant', url: composeVariantUrl(t, cvaState.baseUrl, cvaState.qaMode) })).filter(t => t.url)
-      : [];
-    const cvaAutoChecks = cvaState ? cvaState.checks.filter(k => WCAG_CHECKS.some(c => c.key === k && !c.manual)) : [];
-    if (cvaTargets.length >= 2 && cvaAutoChecks.length) {
-      cvaTargets.forEach(t => pageUrls.add(t.url));
-      await runCvaAudit();
-      modeResults.push({ mode: 5, name: 'Cross-Variant Accessibility Mode', status: 'ran', data: _cvaLastRun });
-    } else {
-      modeResults.push({
-        mode: 5, name: 'Cross-Variant Accessibility Mode', status: 'skipped',
-        reason: 'Fewer than two variant targets with a URL, or no automated checks selected.',
-      });
-    }
-
-    // Mode 6 — Performance/Load
-    const perfPages = tmPagesFor('6');
-    if (perfPages.length) {
-      perfPages.forEach(p => pageUrls.add(p.url));
-      await runPerfMode();
-      modeResults.push({ mode: 6, name: 'Performance/Load Mode', status: 'ran', data: _perfLastRun });
-    } else {
-      modeResults.push({ mode: 6, name: 'Performance/Load Mode', status: 'skipped', reason: 'No page URL configured.' });
-    }
-
-    // Mode 7 — Session Replay: never auto-run (manual start/stop recording),
-    // but fold in the most recently viewed/saved session if one exists.
-    let srSession = _srViewedSession;
-    if (!srSession) {
-      try {
-        const all = await idbGetAll('sessions');
-        if (all.length) { all.sort((a, b) => b.startedAt - a.startedAt); srSession = all[0]; }
-      } catch (_) {}
-    }
-    modeResults.push({
-      mode: 7, name: 'Session Replay / Heatmap Mode',
-      status: srSession ? 'included' : 'skipped',
-      data: srSession || null,
-      reason: srSession ? null : 'Manual recording mode — no saved session available to include.',
-    });
-
-    const html = buildFullReportHtml({ ts: Date.now(), pageUrls: [...pageUrls], modes: modeResults });
-    const blob = new Blob([html], { type: 'text/html' });
-    chrome.tabs.create({ url: URL.createObjectURL(blob) });
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Run All & Generate Report'; }
-  }
-}
-
 // ── Report badge / section shell ──────────────────────────────────────────────
 function rptBadge(kind, label) {
   return `<span class="rpt-badge rpt-badge-${kind}">${esc(label)}</span>`;
@@ -4239,18 +3984,6 @@ function rptAiSummarySection(summary, error) {
 
 // ── Per-mode report bodies (reuse each mode's own diff/summarize helpers —
 // no new data is invented here, only reformatted for print) ──────────────────
-function rptQueueSection(entry) {
-  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
-  const logs = entry.logData || [];
-  const errCount = logs.filter(l => l.level === 'ERROR').length;
-  const badge = rptBadge(errCount ? 'fail' : 'pass', errCount ? 'FAIL' : 'PASS');
-  const summary = `${logs.length} log line${logs.length !== 1 ? 's' : ''} · ${errCount} error${errCount !== 1 ? 's' : ''}`;
-  const rows = logs.map(l => `<tr><td>${esc(l.ts)}</td><td>${esc(l.level)}</td><td>${esc(l.text)}</td></tr>`).join('');
-  const body = logs.length
-    ? `<table class="rpt-table"><thead><tr><th>Time</th><th>Level</th><th>Message</th></tr></thead><tbody>${rows}</tbody></table>`
-    : '<p class="rpt-muted">No log entries.</p>';
-  return rptSection(entry.name, badge, summary, body);
-}
 
 // Agentic Testing: a supplemental Sonnet judgment call, never a replacement
 // for the deterministic result rendered above it.
@@ -4380,24 +4113,6 @@ function rptPerfSection(entry) {
   return rptSection(entry.name, badge, summary, body);
 }
 
-function rptSrSection(entry) {
-  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
-  const s = entry.data;
-  const items = srTimelineItems(s).slice(0, 300);
-  const badge = rptBadge('info', 'RECORDED');
-  const summary = `${s.label || 'Untitled session'} · ${fmtDur(s.duration || 0)} · ${(s.events || []).length} events · ${(s.pages || []).join(', ')}`;
-  const rows = items.map(e => {
-    const ts = fmtDur(e.t - s.startedAt);
-    const text = e.type === 'click' ? (e.sel ? e.sel + ' ' : '') + `(${Math.round(e.x)}, ${Math.round(e.y)})`
-      : e.type === 'scroll' ? `scrolled to ${e.depth}% depth`
-      : (e.text || '');
-    return `<tr><td>${ts}</td><td>${esc(e.type)}</td><td>${esc(text)}</td></tr>`;
-  }).join('');
-  const body = `<p class="rpt-muted">Recording mode is manual start/stop — this session was not part of the automatic run; it is included here as the most recently viewed/saved session.</p>
-    <table class="rpt-table"><thead><tr><th>Time</th><th>Type</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table>`;
-  return rptSection(entry.name, badge, summary, body);
-}
-
 function rptFunnelSection(entry) {
   if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
   const run = entry.data || {};
@@ -4424,8 +4139,8 @@ function rptFunnelSection(entry) {
 function buildFullReportHtml(sections) {
   const { ts, pageUrls, modes, extraHtml } = sections;
   const builders = {
-    1: rptQueueSection, 2: rptAbSection, 3: rptVrSection,
-    4: rptWcagSection, 5: rptCvaSection, 6: rptPerfSection, 7: rptSrSection,
+    2: rptAbSection, 3: rptVrSection,
+    4: rptWcagSection, 5: rptCvaSection, 6: rptPerfSection,
     funnel: rptFunnelSection,
   };
   const body = (extraHtml || '') + modes.map(entry => (builders[entry.mode] || (() => ''))(entry)).join('');

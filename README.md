@@ -13,13 +13,14 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - Two execution modes: **close after run** or **loop continuously**
 - Tab targeting: run on the **active tab** or open a **new tab**
 - Console log with live output and INFO / WARN / ERR filtering, plus a live browser-console mirror with a CRO (`[PJS]`/`[cro]`) filter
-- **Test Modes** tab — a menu of self-contained testing modes, each on its own subpage
+- Visual Regression — full-page screenshot baselines per URL with pixel diffing, ignore regions, and a mismatch threshold (Functional Testing tab)
+- **Test Agent** tab — run WCAG, A/B, Cross-Variant Accessibility, Performance, or Funnel Crawl one at a time or batched together via **Also Run**, with an optional AI-written summary
 - WCAG / Accessibility mode — full WCAG 2.2 audit (heuristics + axe-core) with region scoping, check presets, click-to-highlight findings, JSON export, and per-URL run history
-- A/B Variant Comparison mode — load each experiment variant once and diff page state, metric fires, and tagged console output against control
-- Visual Regression mode — full-page screenshot baselines per URL with pixel diffing, ignore regions, and a mismatch threshold
+- A/B Variant Comparison mode — load each experiment variant once and diff page state, metric fires, and tagged console output against control, with an optional per-variant interaction heatmap
 - Cross-Variant Accessibility mode — run the WCAG audit against every experiment variant and diff findings vs control (introduced / resolved / pre-existing)
 - Performance/Load mode — median page-load metrics (TTFB, FCP, LCP, CLS, long tasks, resources) over N runs, checked against Core Web Vitals budgets, with per-URL history
-- Session Replay / Heatmap mode — record your own QA walk (clicks, scroll, metric fires) and review it as an on-page overlay plus an event timeline
+- Funnel Crawl — an AI agent clicks through Start → Middle waypoint(s) → End to verify a funnel actually connects
+- Agentic Testing (Sonnet) and Agentic Analysis (Opus) — optional AI-powered vision judgment and result summaries via Anthropic's API
 - Stop execution at any time
 
 ## Installation
@@ -49,7 +50,7 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 ### Tracking Metrics
 
-1. Open the **Metrics** section at the top of the Build tab and click **+ Add Metric** for each console value you want to track (e.g. `Tagging: hero_cta_click`). Metrics persist across sessions.
+1. Open the **Metrics** section at the top of the Functional Testing tab and click **+ Add Metric** for each console value you want to track (e.g. `Tagging: hero_cta_click`). Metrics persist across sessions.
 2. Add a **Track Metric** step to the queue and pick a metric from the dropdown.
 3. When the step runs, it checks the `[PJS]`/`[cro]`-tagged console output captured during the current run for that value (case-insensitive substring match). A hit logs how many times it fired; a miss logs an error without stopping the queue.
 
@@ -59,9 +60,25 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - Open the **Load Script** accordion to load or delete a saved script.
 - Scripts are saved to Chrome sync storage and persist across sessions.
 
-### Test Modes
+### Visual Regression
 
-The **Test Modes** tab lists the available testing modes; clicking one opens its subpage (use **‹ Back** to return to the list). Modes are fully independent of the Build tab's queue.
+Lives in the **Functional Testing** tab, alongside the function queue. Catches unintended visual changes on a page over time: capture full-page screenshots as a named baseline, then diff later runs against it — layout shifts, broken styling, missing elements.
+
+1. Add the page URL(s) to test (Single or Multi scope). Each page row carries its own QA Mode toggle and URL params; a shared **Settle** delay waits for experiment scripts and lazy content.
+2. Optionally add **Ignore Regions** (CSS selectors, pickable with `🎯`) — matched regions are masked out of the comparison, for carousels, timestamps, ads, and other legitimately dynamic content.
+3. Click **Set Baseline** to capture and store the reference screenshots (kept per URL in IndexedDB; replace any page's baseline with its ✕ reset control).
+4. Click **Run Comparison** to capture fresh screenshots and diff pixel-by-pixel against the baseline. A page fails when its mismatch percentage exceeds the editable **Threshold** (default 0.1%). Results show pass/fail, mismatch %, and baseline/current/diff images (click to open full size), with changed pixels highlighted in red.
+5. If the window width differs from the baseline's, the page is flagged with a viewport warning and the pixel diff is skipped — dimension-mismatched diffs are noise. Height changes are diffed over the shared region and the delta counts toward the mismatch.
+
+Screenshots are captured over CDP (`Page.captureScreenshot` with `captureBeyondViewport`) — no scrolling and stitching, no new permissions. **Export** downloads the run's verdicts as JSON (images stay in the panel).
+
+### Test Agent
+
+The **Test Agent** tab runs one testing mode at a time: pick it from the **Test Mode** dropdown, configure its settings, and click **Execute Test**. Every automated mode (everything except Funnel Crawl) can also be batched together via **Also Run** — check any additional modes and they run in sequence after the primary one, each skipped automatically if it isn't configured. Once at least one mode has run, Selenite compiles a single report (opened in a new tab) covering every mode that ran, optionally with an AI-written plain-English summary.
+
+- **Agentic Testing** (Sonnet) — lets a mode capture a screenshot per page/variant and asks Claude to judge whether a visual difference looks like an intended change or a likely bug. Off by default.
+- **Agentic Analysis** (Opus) — summarizes the full set of results in the report. On by default.
+- Both require an **Anthropic API key** (saved locally in Chrome sync storage; calls go directly from the extension to `api.anthropic.com`). Funnel Crawl forces both on, since the agent's navigation *is* the test.
 
 #### WCAG / Accessibility Mode
 
@@ -75,28 +92,18 @@ Runs a WCAG 2.2 accessibility audit (19 heuristic check suites plus axe-core as 
 
 #### A/B Variant Comparison Mode
 
-Open the **Test Modes** tab and choose **A/B Variant Comparison Mode**. This mode QAs an A/B experiment (Optimizely, Convert, or similar) by loading the same page once per variant and diffing the captures — no interaction steps, just load and compare. Differences are shown neutrally (a variant is *supposed* to differ from control); only JS errors and load failures are styled as errors.
+Select **A/B Variant Comparison** in the Test Agent mode dropdown. This mode QAs an A/B experiment (Optimizely, Convert, or similar) by loading the same page once per variant and diffing the captures — no interaction steps, just load and compare. Differences are shown neutrally (a variant is *supposed* to differ from control); only JS errors and load failures are styled as errors.
 
 1. Set the **Base URL** the variants share (each target can override it with its own URL).
 2. Define at least two **Variant Targets**. The first is the baseline (typically Control). Each target has a label and an **Override** — the query string that forces the variant, e.g. Optimizely's `optimizely_x=<variationId>`.
 3. Optionally add **Watched Selectors** (use `🎯` to pick them from the page) — each is compared across variants for existence, visibility, text, and key computed styles.
 4. Optional settings: **QA Mode** appends `cro_mode=qa` to every variant URL; **Settle** waits after load so experiment scripts can apply changes (default 3s); **Keep tabs open** leaves each variant tab open for manual inspection.
-5. Click **Run Comparison**. Each variant loads sequentially in its own tab; captures include page title/URL, `[PJS]`/`[cro]`-tagged console lines, Metrics fires (from the Build tab's Metrics list), JS errors, and watched-selector state.
+5. Click **Run Comparison**. Each variant loads sequentially in its own tab; captures include page title/URL, `[PJS]`/`[cro]`-tagged console lines, Metrics fires (from the Functional Testing tab's Metrics list), JS errors, and watched-selector state.
 6. Results are grouped diffs vs the baseline — identical facts are greyed and collapsed, deltas are highlighted, and errors are always flagged red.
 
-Variant target sets can be saved by name (stored in Chrome sync storage) and re-run in one click. The comparison never touches the Build tab's queue.
+Variant target sets can be saved by name (stored in Chrome sync storage) and re-run in one click. The comparison never touches the Functional Testing tab's queue.
 
-#### Visual Regression Mode
-
-Catches unintended visual changes on a page over time: capture full-page screenshots as a named baseline, then diff later runs against it — layout shifts, broken styling, missing elements.
-
-1. Add the page URL(s) to test (Single or Multi scope). Each page row carries its own QA Mode toggle and URL params; a shared **Settle** delay waits for experiment scripts and lazy content.
-2. Optionally add **Ignore Regions** (CSS selectors, pickable with `🎯`) — matched regions are masked out of the comparison, for carousels, timestamps, ads, and other legitimately dynamic content.
-3. Click **Set Baseline** to capture and store the reference screenshots (kept per URL in IndexedDB; replace any page's baseline with its ✕ reset control).
-4. Click **Run Comparison** to capture fresh screenshots and diff pixel-by-pixel against the baseline. A page fails when its mismatch percentage exceeds the editable **Threshold** (default 0.1%). Results show pass/fail, mismatch %, and baseline/current/diff images (click to open full size), with changed pixels highlighted in red.
-5. If the window width differs from the baseline's, the page is flagged with a viewport warning and the pixel diff is skipped — dimension-mismatched diffs are noise. Height changes are diffed over the shared region and the delta counts toward the mismatch.
-
-Screenshots are captured over CDP (`Page.captureScreenshot` with `captureBeyondViewport`) — no scrolling and stitching, no new permissions. **Export** downloads the run's verdicts as JSON (images stay in the panel).
+**Optional: interaction heatmap** — with **Keep tabs open** checked, also check **Record interaction heatmap**. After the comparison, each variant's kept-open tab gets a small recorder control: click **Record walk**, interact with that tab the way a real visitor would, then **Stop Recording**; **Show heatmap overlay** draws click-density dots, a mouse-trail line, and a scroll-depth gutter onto that tab. Only one variant can record at a time, and recordings are kept in memory only for the current run (nothing is saved to disk, and nothing ever leaves the browser — keystrokes and typed values are never captured). Off by default; a normal A/B run is unaffected.
 
 #### Cross-Variant Accessibility Mode
 
@@ -125,16 +132,14 @@ Measures page-load performance so experiment work that "visually passes" doesn't
 
 Numbers come from a real browser on your machine and network — useful for relative comparison (page vs page, run vs run, before vs after), not lab-grade absolutes.
 
-#### Session Replay / Heatmap Mode
+#### Funnel Crawl
 
-Records **the QA tester's own session** on the active tab — clicks, scroll behavior, sampled mouse movement, and `[PJS]`/`[cro]` metric fires — and renders it back as a heatmap overlay plus an event timeline: "here's exactly where I interacted and what fired while I walked this variant."
+An AI agent (Sonnet) clicks through the live page to verify a funnel actually connects, end to end — Start → each Middle waypoint (in order) → End.
 
-This is deliberately *not* a real-user analytics tool — aggregated visitor heatmaps and true session replay remain the domain of platforms like PostHog or OpenReplay. Nothing recorded here is ever sent anywhere, and keystrokes/typed values are never captured.
-
-1. Optionally set a **session label** (e.g. "Variant B — checkout walk") — labels are how variant walks stay distinguishable when reviewing sessions side by side.
-2. Click **Record** and walk the page in the active tab. The live indicator shows elapsed time and event count; recording follows same-tab navigations (each page becomes a session segment) and survives the side panel being closed and reopened. Sessions cap at 10k events with a visible "capped" flag.
-3. Click **Stop**. Sessions persist in IndexedDB (last 20, oldest evicted) with View, Export (JSON), and Delete.
-4. **Review**: **Show overlay** draws click dots, an optional mouse trail, and a scroll-depth gutter onto the current tab (coordinates rescale to the current page size; a warning appears if the tab isn't at the session's URL). The **timeline** lists clicks (click one to highlight its element), scroll milestones, metric fires, and navigations, filterable by type — the metric-fire interleaving shows which interaction preceded which fire.
+1. Enter the **Start** and **End** waypoint URLs (both required); optionally add **Middle** waypoints in between, in order.
+2. Optionally add **Supplemental Instructions** — free-text notes for the agent (test credentials, paths to avoid, form field mappings, etc.).
+3. Click **Execute Test**. Agentic Testing and Analysis are forced on for this mode and require an Anthropic API key.
+4. Results show each segment (Start→Middle, Middle→Middle, Middle→End) as reached or not, with step counts and any error. Funnel Crawl always runs alone — it isn't batchable via Also Run.
 
 ## Available Functions
 
@@ -165,7 +170,7 @@ extension/
 ├── background.js       # Service worker (queue execution, console capture, metrics)
 ├── picker.js           # In-page element picker (injected on demand)
 ├── selector.js         # Shared CSS-selector builder (used by picker.js and recorder.js)
-├── recorder.js         # Session Replay recorder (clicks/scroll/movement, injected on demand)
+├── recorder.js         # Interaction recorder for A/B's heatmap (clicks/scroll/movement, injected on demand)
 ├── console-capture.js  # MAIN-world console patch (relays [PJS]/[cro] tagged output)
 ├── console-bridge.js   # ISOLATED-world bridge to the service worker
 ├── axe.min.js          # axe-core, used by the WCAG audit suite

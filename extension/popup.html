@@ -43,7 +43,7 @@
 
   /* Forms */
   label.cap{font-size:10px;color:var(--fg2);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:3px}
-  input[type=text],input[type=url],select,textarea{
+  input[type=text],input[type=url],input[type=password],select,textarea{
     width:100%;background:var(--overlay);border:1px solid var(--stroke);border-radius:4px;
     color:var(--fg1);padding:5px 8px;font-size:12px;outline:none;
     font-family:inherit;transition:border .15s;
@@ -322,9 +322,10 @@
 </div>
 
 <div id="tabs">
+  <div class="tab" data-tab="init">Initialize</div>
+  <div class="tab" data-tab="testagent">Test Agent</div>
   <div class="tab active" data-tab="build">Functional Testing</div>
   <div class="tab" data-tab="console">Console <span id="run-indicator" style="display:none" class="run-dot"></span></div>
-  <div class="tab" data-tab="testagent">Test Agent</div>
 </div>
 
 <div id="panels">
@@ -593,6 +594,11 @@
         <button class="btn sm" id="btn-ab-save-set">Save</button>
       </div>
 
+      <div class="row" style="gap:6px;margin-bottom:8px">
+        <button class="btn sm" id="btn-ab-fill-ticket" disabled title="Populate Base URL and the variant list from the ticket context committed on the Initialize tab">Fill from ticket</button>
+        <span id="ab-fill-hint" style="font-size:10px;color:var(--fg3)">No committed ticket context — use the Initialize tab</span>
+      </div>
+
       <div class="arg-row" style="margin-bottom:6px">
         <span class="arg-lbl">Base URL</span>
         <input type="text" id="ab-base-url" placeholder="https://example.com — shared by all variants">
@@ -809,6 +815,55 @@
         <button class="btn danger sm" id="btn-ta-stop" style="display:none">Stop Test</button>
       </div>
       <div id="ta-status" style="font-size:11px;color:var(--fg3);margin-top:6px"></div>
+    </div>
+
+  </div>
+
+  <!-- Initialize panel — pulls a Jira ticket into a reviewable Test Context.
+       Context provider only: nothing here runs a test, and other modes read the
+       committed context solely via their own explicit "Fill from ticket" action. -->
+  <div class="panel" id="panel-init">
+
+    <div class="accordion" id="acc-jira-config">
+      <div class="acc-hdr" data-acc="acc-jira-config">
+        <span>Jira Configuration</span>
+        <span class="acc-chevron">›</span>
+      </div>
+      <div class="acc-body">
+        <div class="arg-row">
+          <span class="arg-lbl">Site URL</span>
+          <input type="text" id="jira-site" placeholder="https://yourteam.atlassian.net">
+        </div>
+        <div class="arg-row">
+          <span class="arg-lbl">Email</span>
+          <input type="text" id="jira-email" placeholder="user@company.com">
+        </div>
+        <div class="arg-row">
+          <span class="arg-lbl">API Token</span>
+          <input type="password" id="jira-token" placeholder="Jira API token">
+        </div>
+        <button class="btn primary sm" id="btn-jira-save" style="align-self:flex-start">Save &amp; Resolve Fields</button>
+        <div id="jira-config-status" style="font-size:11px;color:var(--fg3)"></div>
+        <div style="font-size:10px;color:var(--fg3)">Stored in Chrome sync storage and used only to fetch tickets from your Jira site. Saving also looks up this site's IDs for the "Platform Experiment ID" and "QA Test Plan" custom fields — both are required before a ticket can be fetched.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Pull Ticket</div>
+      <div class="script-row">
+        <input type="text" id="init-ticket-key" placeholder="Ticket key — e.g. ABC-123">
+        <button class="btn primary sm" id="btn-init-fetch">Fetch</button>
+      </div>
+      <div id="init-fetch-status" style="font-size:11px;color:var(--fg3);margin-top:6px"></div>
+    </div>
+
+    <!-- Extracted-but-uncommitted context renders here for review -->
+    <div id="init-review"></div>
+
+    <div class="card" id="init-active-card" style="display:none">
+      <div class="card-title">Active Test Context</div>
+      <div id="init-active-body" style="font-size:11px;color:var(--fg2);line-height:1.6"></div>
+      <button class="btn danger sm" id="btn-init-clear" style="margin-top:8px">Clear Context</button>
     </div>
 
   </div>

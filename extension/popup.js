@@ -142,6 +142,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initCvaMode();
   await initPerfMode();
 
+  // Initialize tab (Jira ticket → Test Context). Isolated in its own
+  // try/catch: a failure here (e.g. a storage hiccup) must never abort the
+  // rest of this init chain — Test Agent, Metrics, Queue, Console tab
+  // bindings below all depend on this handler continuing past this point.
+  try {
+    await initInitializeTab();
+  } catch (e) {
+    console.error('Selenite: Initialize tab failed to load —', e);
+  }
+
   // Test Agent tab
   const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
   if (anthropicApiKey) document.getElementById('ta-api-key').value = anthropicApiKey;
@@ -2119,6 +2129,15 @@ async function initAbCompare() {
   document.getElementById('btn-ab-save-set').addEventListener('click', saveAbSet);
   document.getElementById('btn-ab-load-set').addEventListener('click', loadAbSet);
   document.getElementById('btn-ab-delete-set').addEventListener('click', deleteAbSet);
+  // Initialize-tab hook: user-initiated only — never fires on tab load.
+  // Isolated in its own try/catch: a failure reading the committed ticket
+  // context must never block the Run/Stop bindings right after it.
+  document.getElementById('btn-ab-fill-ticket')?.addEventListener('click', abFillFromTicket);
+  try {
+    await refreshAbFillButton();
+  } catch (e) {
+    console.error('Selenite: could not read ticket context for the A/B "Fill from ticket" button —', e);
+  }
   document.getElementById('btn-run-abcompare').addEventListener('click', runAbComparison);
   document.getElementById('btn-stop-abcompare').addEventListener('click', () =>
     chrome.runtime.sendMessage({ action: 'stop' }));
@@ -4244,4 +4263,629 @@ function buildFullReportHtml(sections) {
   </div>
 </body>
 </html>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Initialize tab — Jira ticket → reviewable Test Context
+//
+// Context provider, not a test mode. Extraction is fully deterministic — no
+// LLM call anywhere in this pipeline (deliberate v1 scope). Direct Jira field
+// values always win over anything parsed from description text. The parsed
+// result is held in _initDraft until the user reviews and clicks Commit; only
+// the committed object (chrome.storage.local `seleniteTestContext`, with
+// reviewed:true) is ever readable by other modes, and they read it solely via
+// their own explicit "Fill from ticket" action — nothing is pushed to them.
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _jiraConfig = null;   // { site, email, apiToken, fieldKeys: { experimentId, qaTestPlan } } (storage.sync)
+let _initDraft = null;    // extracted-but-uncommitted context; reviewed stays false until Commit
+let _initWarnings = [];   // review-time flags: missing sections, preview-link diff mismatch, …
+
+async function initInitializeTab() {
+  if (!document.getElementById('panel-init')) return;
+
+  const { jiraConfig } = await chrome.storage.sync.get('jiraConfig');
+  _jiraConfig = jiraConfig || null;
+  if (_jiraConfig) {
+    document.getElementById('jira-site').value  = _jiraConfig.site || '';
+    document.getElementById('jira-email').value = _jiraConfig.email || '';
+    document.getElementById('jira-token').value = _jiraConfig.apiToken || '';
+  } else {
+    // Fresh install — surface the one-time setup instead of hiding it.
+    document.getElementById('acc-jira-config').classList.add('open');
+  }
+  renderJiraConfigStatus();
+
+  document.getElementById('btn-jira-save').addEventListener('click', saveJiraConfig);
+  document.getElementById('btn-init-fetch').addEventListener('click', fetchJiraTicket);
+  document.getElementById('init-ticket-key').addEventListener('keydown', e => { if (e.key === 'Enter') fetchJiraTicket(); });
+  document.getElementById('btn-init-clear').addEventListener('click', clearTestContext);
+
+  // The review form re-renders wholesale on structural edits, so its handlers
+  // are delegated once here rather than rebound per render.
+  const reviewHost = document.getElementById('init-review');
+  reviewHost.addEventListener('input',  onInitReviewInput);
+  reviewHost.addEventListener('change', onInitReviewChange);
+  reviewHost.addEventListener('click',  onInitReviewClick);
+
+  await renderActiveContext();
+
+  // Commit/clear from another window: keep the active-context card and the
+  // A/B mode's fill button in step. (Never fills anything — display only.)
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.seleniteTestContext) {
+      renderActiveContext();
+      refreshAbFillButton();
+    }
+  });
+}
+
+// ── Jira config & field resolution ───────────────────────────────────────────
+function renderJiraConfigStatus(msg, isError) {
+  const el = document.getElementById('jira-config-status');
+  if (msg) { el.textContent = msg; el.style.color = isError ? 'var(--err)' : 'var(--fg3)'; return; }
+  if (!_jiraConfig) { el.textContent = 'Not configured.'; el.style.color = 'var(--fg3)'; return; }
+  const fk = _jiraConfig.fieldKeys || {};
+  if (fk.experimentId && fk.qaTestPlan) {
+    el.textContent = `Fields resolved — Platform Experiment ID: ${fk.experimentId} · QA Test Plan: ${fk.qaTestPlan}`;
+    el.style.color = 'var(--ok)';
+  } else {
+    const missing = [!fk.experimentId && '"Platform Experiment ID"', !fk.qaTestPlan && '"QA Test Plan"']
+      .filter(Boolean).join(' and ');
+    el.textContent = `Saved, but not found on this Jira site: ${missing}. Ticket fetch is blocked until both fields resolve.`;
+    el.style.color = 'var(--err)';
+  }
+}
+
+async function saveJiraConfig() {
+  const site     = document.getElementById('jira-site').value.trim().replace(/\/+$/, '');
+  const email    = document.getElementById('jira-email').value.trim();
+  const apiToken = document.getElementById('jira-token').value.trim();
+  if (!site || !email || !apiToken) { renderJiraConfigStatus('Site URL, email, and API token are all required.', true); return; }
+  if (!/^https?:\/\//i.test(site))  { renderJiraConfigStatus('Site URL must start with https://', true); return; }
+
+  const btn = document.getElementById('btn-jira-save');
+  btn.disabled = true;
+  renderJiraConfigStatus('Resolving custom field IDs…');
+  try {
+    const res = await chrome.runtime.sendMessage({ action: 'jiraResolveFields', payload: { site, email, apiToken } });
+    if (!res?.ok) throw new Error(res?.error || 'Field resolution failed');
+    _jiraConfig = { site, email, apiToken, fieldKeys: res.fieldKeys };
+    await chrome.storage.sync.set({ jiraConfig: _jiraConfig });
+    renderJiraConfigStatus();
+    if (res.fieldKeys.experimentId && res.fieldKeys.qaTestPlan) {
+      document.getElementById('acc-jira-config').classList.remove('open');
+    }
+  } catch (e) {
+    renderJiraConfigStatus('Error: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Fetch + extraction pipeline (v1 — fully deterministic, no LLM) ───────────
+async function fetchJiraTicket() {
+  const statusEl = document.getElementById('init-fetch-status');
+  const setStatus = (t, color) => { statusEl.textContent = t; statusEl.style.color = color || 'var(--fg3)'; };
+
+  const key = document.getElementById('init-ticket-key').value.trim().toUpperCase();
+  if (!key) { setStatus('Enter a ticket key.', 'var(--err)'); return; }
+  if (!/^[A-Z][A-Z0-9]*-\d+$/.test(key)) { setStatus(`"${key}" doesn't look like a ticket key (expected e.g. ABC-123).`, 'var(--err)'); return; }
+  if (!_jiraConfig) { setStatus('Configure Jira first — open Jira Configuration above.', 'var(--err)'); return; }
+  const fk = _jiraConfig.fieldKeys || {};
+  if (!fk.experimentId || !fk.qaTestPlan) {
+    setStatus('Custom field IDs not resolved yet — open Jira Configuration and click "Save & Resolve Fields".', 'var(--err)');
+    return;
+  }
+
+  const btn = document.getElementById('btn-init-fetch');
+  btn.disabled = true;
+  setStatus(`Fetching ${key}…`);
+  try {
+    const res = await chrome.runtime.sendMessage({ action: 'jiraFetchIssue', payload: { ticketKey: key } });
+    if (!res?.ok) throw new Error(res?.error || 'Fetch failed');
+    extractTestContext(res.issue);
+    renderInitReview();
+    setStatus(`Extracted from ${res.issue?.key || key} — review below, then commit.`, 'var(--ok)');
+  } catch (e) {
+    _initDraft = null; _initWarnings = [];
+    document.getElementById('init-review').innerHTML = '';
+    setStatus('Error: ' + e.message, 'var(--err)');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Custom-field values arrive as strings (URL/text fields), numbers, option
+// objects ({value}), or rich-text ADF docs — normalize to a plain string.
+function jiraFieldString(v) {
+  if (v == null) return null;
+  if (typeof v === 'string') return v.trim() || null;
+  if (typeof v === 'number') return String(v);
+  if (typeof v === 'object') {
+    if (v.type === 'doc') return adfText(v).trim() || null;
+    if (typeof v.value === 'string') return v.value.trim() || null;
+  }
+  return null;
+}
+
+function extractTestContext(issue) {
+  const f = issue.fields || {};
+  const warnings = [];
+
+  // Step 1 — direct fields (always win over anything parsed from text)
+  const ticketKey = issue.key;
+  const ticketUrl = `${_jiraConfig.site}/browse/${ticketKey}`;
+  const summary = f.summary || '';
+  const labels = Array.isArray(f.labels) ? f.labels : [];
+  const platform = labels.includes('Optimizely') ? 'Optimizely'
+                 : labels.includes('Convert')    ? 'Convert' : null;
+  if (!platform) warnings.push('Neither "Optimizely" nor "Convert" is in the ticket\'s Labels — platform is unset.');
+  const experimentId  = jiraFieldString(f[_jiraConfig.fieldKeys.experimentId]);
+  const qaTestPlanUrl = jiraFieldString(f[_jiraConfig.fieldKeys.qaTestPlan]);
+  if (!experimentId) warnings.push('"Platform Experiment ID" field is empty on this ticket.');
+
+  const adf = (f.description && typeof f.description === 'object') ? f.description : null;
+  if (!adf) warnings.push('Ticket has no description — no sections to extract from.');
+
+  // Step 3 — variants from "Test Specifications"
+  const specNodes = adf ? adfSectionNodes(adf, 'Test Specifications') : null;
+  if (adf && specNodes === null) warnings.push('"Test Specifications" heading not found in the ticket description.');
+  const variants = splitVariantBlocks(adfSectionLines(specNodes || [])).map(b => ({
+    id: b.id,
+    // v0 is control by convention, always — never inferred from content.
+    isControl: b.id === 'v0',
+    rawDescription: b.texts.join('\n').trim(),   // verbatim; no summarization
+  }));
+  if (specNodes && !variants.length) warnings.push('"Test Specifications" section found, but no v0/v1/… markers inside it.');
+
+  // Step 4 — preview links
+  const linkNodes = adf ? adfSectionNodes(adf, 'Preview Links') : null;
+  if (adf && linkNodes === null) warnings.push('"Preview Links" heading not found in the ticket description.');
+  const previewLinks = splitVariantBlocks(adfSectionLines(linkNodes || [])).map(b => ({
+    id: b.id,
+    url: (b.urls[0] || (b.texts.join(' ').match(/https?:\/\/\S+/) || [])[0] || '').trim(),
+  })).filter(l => l.url);
+  if (linkNodes && !previewLinks.length) warnings.push('"Preview Links" section found, but no v#-marked URLs inside it.');
+  const derived = derivePreviewPattern(previewLinks);
+  if (derived.warning) warnings.push(derived.warning);
+
+  // Step 5 — goals. These are business-level KPIs, NOT [PJS]-tagged console
+  // strings — they must never be auto-written into the Functional Testing
+  // metrics list (a QA run would silently pass/fail against the wrong signal).
+  const goalNodes = adf ? adfSectionNodes(adf, 'Goals') : null;
+  if (adf && goalNodes === null) warnings.push('"Goals" heading not found in the ticket description.');
+  const goals = adfSectionLines(goalNodes || []).filter(l => l.text).map(l => {
+    let text = l.text;
+    const isNew = text.includes('[NEW]');
+    if (isNew) text = text.replace('[NEW]', '').replace(/\s{2,}/g, ' ').trim();
+    let convertMetricId = null, resolutionNeeded = false;
+    if (platform === 'Convert') {
+      // Convert metric ids are long numeric tokens; "TBD" (or no id at all)
+      // means it must be looked up in the QA Test Plan sheet, not guessed.
+      const idTok = text.match(/\b(\d{6,})\b/);
+      if (idTok && !/\bTBD\b/i.test(text)) convertMetricId = idTok[1];
+      else resolutionNeeded = true;
+    }
+    return { text, isNew, convertMetricId, resolutionNeeded };
+  });
+
+  // Step 6 — assemble and hold for review. Nothing touches storage yet.
+  _initDraft = {
+    ticketKey, ticketUrl, summary, platform, experimentId,
+    variants, previewLinks,
+    previewLinkBaseUrl: derived.previewLinkBaseUrl,
+    previewLinkParam:   derived.previewLinkParam,
+    goals, qaTestPlanUrl,
+    extractedAt: new Date().toISOString(),
+    reviewed: false,
+  };
+  _initWarnings = warnings;
+}
+
+// ── ADF (Atlassian Document Format) utilities ────────────────────────────────
+
+// All visible text inside a node, depth-first. hardBreak → newline so callers
+// can split multi-line paragraphs; cards contribute their URL.
+function adfText(node) {
+  if (!node) return '';
+  if (Array.isArray(node)) return node.map(adfText).join('');
+  if (node.type === 'text') return node.text || '';
+  if (node.type === 'hardBreak') return '\n';
+  if (node.type === 'inlineCard' || node.type === 'blockCard' || node.type === 'embedCard') return node.attrs?.url || '';
+  return adfText(node.content || []);
+}
+
+// Section locator (shared by all three sections): find the heading whose text
+// matches (case-insensitive, trimmed) anywhere in the tree, and return its
+// sibling nodes up to the next heading of equal-or-higher level. Returns null
+// when the heading isn't found — callers distinguish "section missing" (null)
+// from "section empty" ([]).
+function adfSectionNodes(doc, headingText) {
+  const want = headingText.trim().toLowerCase();
+  let result = null;
+  (function walk(nodes) {
+    if (!Array.isArray(nodes) || result) return;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (n?.type === 'heading' && adfText(n).trim().toLowerCase() === want) {
+        const level = n.attrs?.level ?? 1;
+        const out = [];
+        for (let j = i + 1; j < nodes.length; j++) {
+          const s = nodes[j];
+          if (s?.type === 'heading' && (s.attrs?.level ?? 1) <= level) break;
+          out.push(s);
+        }
+        result = out;
+        return;
+      }
+    }
+    for (const n of nodes) { if (n?.content) walk(n.content); if (result) return; }
+  })(doc?.content);
+  return result;
+}
+
+// Flatten one block node into logical lines. Each line keeps the URLs of any
+// links inside it (link marks, inline/block cards) — preview links are often
+// authored as clickable links whose href is the real URL, not the shown text.
+function adfBlockLines(node) {
+  const lines = [];
+  let cur = { text: '', urls: [] };
+  const flush = () => {
+    if (cur.text.trim() || cur.urls.length) lines.push({ text: cur.text.trim(), urls: cur.urls });
+    cur = { text: '', urls: [] };
+  };
+  (function walk(n) {
+    if (!n) return;
+    if (Array.isArray(n)) { n.forEach(walk); return; }
+    if (n.type === 'hardBreak') { flush(); return; }
+    if (n.type === 'text') {
+      cur.text += n.text || '';
+      const href = (n.marks || []).find(m => m.type === 'link')?.attrs?.href;
+      if (href) cur.urls.push(href);
+      return;
+    }
+    if (n.type === 'inlineCard' || n.type === 'blockCard' || n.type === 'embedCard') {
+      const url = n.attrs?.url;
+      if (url) { cur.urls.push(url); cur.text += (cur.text ? ' ' : '') + url; }
+      return;
+    }
+    // Block boundaries force a new line.
+    if (n.type === 'paragraph' || n.type === 'listItem' || n.type === 'heading' || n.type === 'tableRow') {
+      walk(n.content); flush(); return;
+    }
+    walk(n.content);
+  })(node);
+  flush();
+  return lines;
+}
+
+function adfSectionLines(nodes) {
+  return (nodes || []).flatMap(adfBlockLines);
+}
+
+// Split section lines into per-variant blocks on the `v<number>` marker
+// convention (v0, v1, …). Lines before the first marker are ignored; lines
+// after a marker accumulate into that variant's block.
+function splitVariantBlocks(lines) {
+  const re = /^v(\d+)\s*[:.\-–—]?\s*/i;
+  const blocks = [];
+  let cur = null;
+  for (const line of lines) {
+    const m = line.text.match(re);
+    if (m) {
+      cur = { id: 'v' + m[1], texts: [], urls: [...line.urls] };
+      const rest = line.text.replace(re, '').trim();
+      if (rest) cur.texts.push(rest);
+      blocks.push(cur);
+    } else if (cur) {
+      if (line.text) cur.texts.push(line.text);
+      cur.urls.push(...line.urls);
+    }
+  }
+  return blocks;
+}
+
+// Diff the preview-link URLs: exactly one query param whose value varies while
+// every other part of the URL stays identical → that's the override param, and
+// the URL with it stripped is the shared base. Anything else is flagged in the
+// review UI rather than silently guessed; the raw per-variant links are always
+// kept either way.
+function derivePreviewPattern(links) {
+  const out = { previewLinkBaseUrl: null, previewLinkParam: null, warning: null };
+  if (links.length < 2) return out;
+  let parsed;
+  try { parsed = links.map(l => new URL(l.url)); }
+  catch (_) { out.warning = 'One or more preview links are not valid URLs — base URL / override param not derived.'; return out; }
+
+  const common  = [...parsed[0].searchParams.keys()].filter(k => parsed.every(u => u.searchParams.has(k)));
+  const varying = common.filter(k => new Set(parsed.map(u => u.searchParams.get(k))).size > 1);
+  if (varying.length !== 1) {
+    out.warning = varying.length === 0
+      ? 'Preview links: no query param that appears on every link varies across variants — base URL / override param not derived.'
+      : `Preview links: multiple query params vary across variants (${varying.join(', ')}) — override param is ambiguous, not derived.`;
+    return out;
+  }
+  const param = varying[0];
+  const stripped = parsed.map(u => {
+    const c = new URL(u.href);
+    c.searchParams.delete(param);
+    const qs = c.searchParams.toString();
+    return c.origin + c.pathname + (qs ? '?' + qs : '');
+  });
+  if (new Set(stripped).size > 1) {
+    out.warning = `Preview links: "${param}" varies, but the rest of the URLs don't match — no common base URL derived. Full per-variant links are kept.`;
+    return out;
+  }
+  out.previewLinkParam = param;
+  out.previewLinkBaseUrl = stripped[0];
+  return out;
+}
+
+// ── Review / Commit UI ───────────────────────────────────────────────────────
+// Every extracted field renders editable — including unambiguous ones — so a
+// bad parse is caught here, before it can propagate anywhere.
+function renderInitReview() {
+  const host = document.getElementById('init-review');
+  if (!_initDraft) { host.innerHTML = ''; return; }
+  const d = _initDraft;
+  const q = s => esc(s || '').replace(/"/g, '&quot;');
+  const taStyle = 'flex:1;resize:vertical;background:var(--overlay);border:1px solid var(--stroke);border-radius:4px;color:var(--fg1);padding:5px 8px;font-size:12px;font-family:inherit;outline:none';
+
+  const warnHtml = _initWarnings.length ? `
+    <div style="background:rgba(204,167,0,.08);border:1px solid rgba(204,167,0,.4);border-radius:4px;padding:6px 9px;margin-bottom:8px">
+      ${_initWarnings.map(w => `<div style="font-size:11px;color:var(--warn);line-height:1.5">⚠ ${esc(w)}</div>`).join('')}
+    </div>` : '';
+
+  const variantRows = d.variants.length ? d.variants.map((v, i) => `
+    <div class="ab-target">
+      <div class="arg-row">
+        <span class="arg-lbl">ID</span>
+        <input type="text" data-init="variants.${i}.id" value="${q(v.id)}" style="max-width:70px;flex:0 1 auto">
+        ${(v.id || '').trim() === 'v0' ? '<span style="font-size:10px;color:var(--info);flex-shrink:0">control (v0, by convention)</span>' : ''}
+        <span style="flex:1"></span>
+        <button class="btn-icon" data-init-rm="variants.${i}" title="Remove" style="color:var(--err)">✕</button>
+      </div>
+      <div class="arg-row" style="align-items:flex-start">
+        <span class="arg-lbl">Description</span>
+        <textarea data-init="variants.${i}.rawDescription" rows="3" style="${taStyle}">${esc(v.rawDescription)}</textarea>
+      </div>
+    </div>`).join('')
+    : '<div style="font-size:11px;color:var(--fg3)">Not found in ticket — no variants extracted.</div>';
+
+  const linkRows = d.previewLinks.length ? d.previewLinks.map((l, i) => `
+    <div class="ab-sel-row">
+      <input type="text" data-init="previewLinks.${i}.id" value="${q(l.id)}" style="max-width:56px;flex:0 1 auto">
+      <input type="text" data-init="previewLinks.${i}.url" value="${q(l.url)}" placeholder="https://…">
+      <button class="btn-icon" data-init-rm="previewLinks.${i}" title="Remove" style="color:var(--err)">✕</button>
+    </div>`).join('')
+    : '<div style="font-size:11px;color:var(--fg3)">Not found in ticket — no preview links extracted.</div>';
+
+  const goalRows = d.goals.length ? d.goals.map((g, i) => `
+    <div class="ab-sel-row" style="flex-wrap:wrap">
+      <input type="text" data-init="goals.${i}.text" value="${q(g.text)}" placeholder="Goal text" style="font-family:inherit">
+      <label class="row" style="gap:3px;font-size:10px;color:var(--fg2);cursor:pointer;flex-shrink:0" title="Goal was flagged [NEW] in the ticket">
+        <input type="checkbox" data-init="goals.${i}.isNew" ${g.isNew ? 'checked' : ''} style="accent-color:var(--brand)">NEW
+      </label>
+      ${d.platform === 'Convert' ? `<input type="text" data-init="goals.${i}.convertMetricId" value="${q(g.convertMetricId || '')}" placeholder="Convert ID" style="max-width:90px;flex:0 1 auto">` : ''}
+      <button class="btn-icon" data-init-rm="goals.${i}" title="Remove" style="color:var(--err)">✕</button>
+    </div>
+    ${g.resolutionNeeded ? `<div style="font-size:10px;color:var(--warn);margin:-2px 0 4px 2px">ID not in Jira — ${d.qaTestPlanUrl ? `<a href="${q(d.qaTestPlanUrl)}" target="_blank" style="color:var(--info)">check test plan</a>` : 'check the QA test plan'}</div>` : ''}`).join('')
+    : '<div style="font-size:11px;color:var(--fg3)">Not found in ticket — no goals extracted.</div>';
+
+  host.innerHTML = `
+  <div class="card">
+    <div class="card-title" style="margin-bottom:1px">Review — ${esc(d.ticketKey)}</div>
+    <div style="font-size:10px;color:var(--fg3);margin-bottom:8px">Nothing is saved until you commit. <a href="${q(d.ticketUrl)}" target="_blank" style="color:var(--info)">Open ticket ↗</a></div>
+    ${warnHtml}
+    <div class="arg-row" style="margin-bottom:5px">
+      <span class="arg-lbl">Summary</span>
+      <input type="text" data-init="summary" value="${q(d.summary)}">
+    </div>
+    <div class="arg-row" style="margin-bottom:5px">
+      <span class="arg-lbl">Platform</span>
+      <select data-init="platform">
+        <option value="" ${!d.platform ? 'selected' : ''} disabled>— not detected —</option>
+        <option value="Optimizely" ${d.platform === 'Optimizely' ? 'selected' : ''}>Optimizely</option>
+        <option value="Convert" ${d.platform === 'Convert' ? 'selected' : ''}>Convert</option>
+      </select>
+    </div>
+    <div class="arg-row" style="margin-bottom:5px">
+      <span class="arg-lbl">Experiment ID</span>
+      <input type="text" data-init="experimentId" value="${q(d.experimentId || '')}" placeholder="from Platform Experiment ID field">
+    </div>
+    <div class="arg-row" style="margin-bottom:10px">
+      <span class="arg-lbl">QA Test Plan</span>
+      <input type="text" data-init="qaTestPlanUrl" value="${q(d.qaTestPlanUrl || '')}" placeholder="link only — not parsed">
+      ${d.qaTestPlanUrl ? `<a href="${q(d.qaTestPlanUrl)}" target="_blank" style="font-size:11px;color:var(--info);flex-shrink:0">open ↗</a>` : ''}
+    </div>
+
+    <label class="cap">Variants (Test Specifications)</label>
+    <div style="display:flex;flex-direction:column;gap:5px">${variantRows}</div>
+    <button class="btn sm" data-init-add="variants" style="margin:5px 0 10px">+ Add Variant</button>
+
+    <label class="cap">Preview Links</label>
+    <div class="arg-row" style="margin-bottom:4px">
+      <span class="arg-lbl">Base URL</span>
+      <input type="text" data-init="previewLinkBaseUrl" value="${q(d.previewLinkBaseUrl || '')}" placeholder="not derived — see warnings">
+    </div>
+    <div class="arg-row" style="margin-bottom:6px">
+      <span class="arg-lbl">Override param</span>
+      <input type="text" data-init="previewLinkParam" value="${q(d.previewLinkParam || '')}" placeholder="not derived — see warnings">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">${linkRows}</div>
+    <button class="btn sm" data-init-add="previewLinks" style="margin:5px 0 10px">+ Add Preview Link</button>
+
+    <label class="cap">Goals — reference only, never auto-added to the Metrics list</label>
+    <div style="display:flex;flex-direction:column;gap:4px">${goalRows}</div>
+    <button class="btn sm" data-init-add="goals" style="margin:5px 0 10px">+ Add Goal</button>
+
+    <div class="row" style="gap:6px;margin-top:4px">
+      <button class="btn primary sm" id="btn-init-commit">Commit Test Context</button>
+      <button class="btn sm" id="btn-init-discard">Discard</button>
+    </div>
+  </div>`;
+}
+
+function setInitPath(path, value) {
+  const parts = path.split('.');
+  let obj = _initDraft;
+  for (let i = 0; i < parts.length - 1; i++) obj = obj?.[parts[i]];
+  if (obj) obj[parts[parts.length - 1]] = value;
+}
+
+function onInitReviewInput(e) {
+  const path = e.target?.dataset?.init;
+  if (!path || !_initDraft || e.target.type === 'checkbox') return;
+  setInitPath(path, e.target.value);
+}
+
+function onInitReviewChange(e) {
+  const path = e.target?.dataset?.init;
+  if (!path || !_initDraft) return;
+  if (e.target.type === 'checkbox') { setInitPath(path, e.target.checked); return; }
+  // Platform switch shows/hides the Convert-ID column, so re-render.
+  if (path === 'platform') { _initDraft.platform = e.target.value || null; renderInitReview(); }
+}
+
+function onInitReviewClick(e) {
+  if (!_initDraft) return;
+  const t = e.target.closest('[data-init-rm],[data-init-add],#btn-init-commit,#btn-init-discard');
+  if (!t) return;
+  if (t.id === 'btn-init-commit') { commitInitContext(); return; }
+  if (t.id === 'btn-init-discard') {
+    if (!confirm('Discard the extracted context? Nothing was saved.')) return;
+    _initDraft = null; _initWarnings = [];
+    document.getElementById('init-review').innerHTML = '';
+    document.getElementById('init-fetch-status').textContent = '';
+    return;
+  }
+  if (t.dataset.initRm) {
+    const [list, idx] = t.dataset.initRm.split('.');
+    _initDraft[list].splice(+idx, 1);
+    renderInitReview();
+    return;
+  }
+  if (t.dataset.initAdd) {
+    const list = t.dataset.initAdd;
+    if (list === 'variants')     _initDraft.variants.push({ id: 'v' + _initDraft.variants.length, isControl: false, rawDescription: '' });
+    if (list === 'previewLinks') _initDraft.previewLinks.push({ id: 'v' + _initDraft.previewLinks.length, url: '' });
+    if (list === 'goals')        _initDraft.goals.push({ text: '', isNew: false, convertMetricId: null, resolutionNeeded: false });
+    renderInitReview();
+  }
+}
+
+// Commit is the only path that writes seleniteTestContext — and the only
+// context other modes will ever read is one with reviewed:true.
+async function commitInitContext() {
+  if (!_initDraft) return;
+  const d = _initDraft;
+  // Recompute derived flags from the possibly user-edited values.
+  d.variants = d.variants
+    .map(v => ({ id: (v.id || '').trim(), isControl: (v.id || '').trim() === 'v0', rawDescription: (v.rawDescription || '').trim() }))
+    .filter(v => v.id || v.rawDescription);
+  d.previewLinks = d.previewLinks
+    .map(l => ({ id: (l.id || '').trim(), url: (l.url || '').trim() }))
+    .filter(l => l.url);
+  d.previewLinkBaseUrl = (d.previewLinkBaseUrl || '').trim() || null;
+  d.previewLinkParam   = (d.previewLinkParam || '').trim() || null;
+  d.goals = d.goals.map(g => {
+    const text = (g.text || '').trim();
+    const rawId = (g.convertMetricId || '').toString().trim();
+    const hasId = d.platform === 'Convert' && rawId && !/^TBD$/i.test(rawId);
+    return {
+      text, isNew: !!g.isNew,
+      convertMetricId: hasId ? rawId : null,
+      resolutionNeeded: d.platform === 'Convert' && !hasId,
+    };
+  }).filter(g => g.text);
+
+  const ctx = { ...d, summary: (d.summary || '').trim(), experimentId: (d.experimentId || '').trim() || null, qaTestPlanUrl: (d.qaTestPlanUrl || '').trim() || null, reviewed: true };
+  await chrome.storage.local.set({ seleniteTestContext: ctx });
+
+  _initDraft = null; _initWarnings = [];
+  document.getElementById('init-review').innerHTML = '';
+  const statusEl = document.getElementById('init-fetch-status');
+  statusEl.textContent = `Committed ${ctx.ticketKey} as the active Test Context.`;
+  statusEl.style.color = 'var(--ok)';
+  await renderActiveContext();
+  await refreshAbFillButton();
+}
+
+async function clearTestContext() {
+  if (!confirm('Clear the active Test Context? Modes already filled from it keep their values.')) return;
+  await chrome.storage.local.remove('seleniteTestContext');
+  await renderActiveContext();
+  await refreshAbFillButton();
+}
+
+async function renderActiveContext() {
+  const card = document.getElementById('init-active-card');
+  if (!card) return;
+  const body = document.getElementById('init-active-body');
+  const { seleniteTestContext: ctx } = await chrome.storage.local.get('seleniteTestContext');
+  if (!ctx?.reviewed) { card.style.display = 'none'; body.innerHTML = ''; return; }
+  card.style.display = '';
+  const q = s => esc(s || '').replace(/"/g, '&quot;');
+
+  const goalsHtml = (ctx.goals || []).map((g, i) => `
+    <div class="ab-line" style="display:flex;align-items:center;gap:6px">
+      <span style="flex:1">${esc(g.text)}${g.isNew ? ' <span style="color:var(--info);font-size:9px;font-weight:700">NEW</span>' : ''}${g.convertMetricId ? ` <span style="color:var(--fg3)">· Convert ${esc(g.convertMetricId)}</span>` : ''}${g.resolutionNeeded ? ` <span style="color:var(--warn)">· ID TBD${ctx.qaTestPlanUrl ? ` — <a href="${q(ctx.qaTestPlanUrl)}" target="_blank" style="color:var(--info)">test plan</a>` : ''}</span>` : ''}</span>
+      <button class="btn sm" data-goal-metric="${i}" title="Add this goal's text to the Functional Testing Metrics list — manual, never automatic">+ Metric</button>
+    </div>`).join('');
+
+  body.innerHTML = `
+    <div><b><a href="${q(ctx.ticketUrl)}" target="_blank" style="color:var(--info)">${esc(ctx.ticketKey)}</a></b> — ${esc(ctx.summary || '')}</div>
+    <div>Platform: <b>${esc(ctx.platform || '—')}</b> · Experiment ID: <b>${esc(ctx.experimentId || '—')}</b></div>
+    <div>${(ctx.variants || []).length} variant(s) · ${(ctx.previewLinks || []).length} preview link(s) · committed ${esc(new Date(ctx.extractedAt).toLocaleString())}</div>
+    ${goalsHtml ? `<label class="cap" style="margin-top:8px">Goals (reference only)</label>${goalsHtml}` : ''}`;
+
+  body.querySelectorAll('[data-goal-metric]').forEach(btn => btn.addEventListener('click', () => {
+    const g = (ctx.goals || [])[+btn.dataset.goalMetric];
+    if (!g?.text) return;
+    metrics.push(g.text);
+    persistMetrics();
+    renderMetrics();
+    refreshTrackMetricSteps();
+    btn.textContent = 'Added ✓';
+    btn.disabled = true;
+  }));
+}
+
+// ── Consumption: A/B Variant Comparison "Fill from ticket" ───────────────────
+async function refreshAbFillButton() {
+  const btn = document.getElementById('btn-ab-fill-ticket');
+  if (!btn) return;
+  const hint = document.getElementById('ab-fill-hint');
+  const { seleniteTestContext: ctx } = await chrome.storage.local.get('seleniteTestContext');
+  const ready = !!(ctx?.reviewed && ctx.previewLinks?.length);
+  btn.disabled = !ready;
+  if (hint) hint.textContent = ready
+    ? `From ${ctx.ticketKey} — ${ctx.previewLinks.length} preview link(s)`
+    : 'No committed ticket context — use the Initialize tab';
+}
+
+// User-initiated only — never fires on tab load. Base URL + per-variant
+// override come from the committed context's derived preview-link pattern;
+// when derivation failed (no common base), each variant gets its full preview
+// URL instead so nothing is lost.
+async function abFillFromTicket() {
+  const { seleniteTestContext: ctx } = await chrome.storage.local.get('seleniteTestContext');
+  if (!ctx?.reviewed || !ctx.previewLinks?.length) { await refreshAbFillButton(); return; }
+  const base  = ctx.previewLinkBaseUrl || '';
+  const param = ctx.previewLinkParam || null;
+  abState.baseUrl = base;
+  abState.targets = ctx.previewLinks.map(l => {
+    let override = '';
+    if (base && param) {
+      try {
+        const v = new URL(l.url).searchParams.get(param);
+        if (v != null) override = `${param}=${v}`;
+      } catch (_) {}
+    }
+    return { label: l.id, url: base ? '' : l.url, override };
+  });
+  applyAbStateToInputs();
+  renderAbTargets();
+  persistAbState();
 }

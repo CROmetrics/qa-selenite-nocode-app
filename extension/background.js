@@ -2240,6 +2240,19 @@ async function runFunnelCrawl({ waypoints = [], supplementalPrompt = '', stepBud
 }
 
 // ── Message listener ───────────────────────────────────────────────────────
+// Jira REST errors carry their message in errorMessages[] (and sometimes an
+// errors{} map); surface those verbatim rather than a generic "fetch failed".
+function jiraApiError(res, data) {
+  const msgs = [
+    ...(Array.isArray(data?.errorMessages) ? data.errorMessages : []),
+    ...Object.values(data?.errors || {}),
+  ].filter(Boolean);
+  if (msgs.length) return msgs.join(' · ');
+  if (res.status === 401) return 'Jira rejected the credentials (401) — check the email and API token.';
+  if (res.status === 403) return 'Jira denied access (403) — the account may lack permission for this ticket.';
+  return `Jira responded ${res.status} ${res.statusText}`;
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'run') {
     runQueue(msg.payload).catch(() => {});
@@ -2544,6 +2557,55 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!res.ok) { sendResponse({ ok: false, error: data?.error?.message || res.statusText }); return; }
         const text = data.content?.find(b => b.type === 'text')?.text || '';
         sendResponse({ ok: true, summary: text });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'jiraResolveFields') {
+    // Initialize tab: look up this Jira site's opaque custom-field keys by
+    // display name. Config comes in the payload (not storage) so the popup can
+    // resolve before committing a not-yet-validated config to storage.sync.
+    (async () => {
+      try {
+        const { site, email, apiToken } = msg.payload || {};
+        const res = await fetch(`${site}/rest/api/3/field`, {
+          headers: { 'Authorization': 'Basic ' + btoa(`${email}:${apiToken}`), 'Accept': 'application/json' },
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) { sendResponse({ ok: false, error: jiraApiError(res, data) }); return; }
+        const byName = (name) => {
+          const f = (data || []).find(f => (f.name || '').trim().toLowerCase() === name.toLowerCase());
+          return f ? (f.key || f.id) : null;
+        };
+        sendResponse({ ok: true, fieldKeys: {
+          experimentId: byName('Platform Experiment ID'),
+          qaTestPlan:   byName('QA Test Plan'),
+        } });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'jiraFetchIssue') {
+    (async () => {
+      try {
+        const { jiraConfig } = await chrome.storage.sync.get('jiraConfig');
+        if (!jiraConfig?.site || !jiraConfig?.email || !jiraConfig?.apiToken) {
+          sendResponse({ ok: false, error: 'Jira is not configured — save site, email, and API token first.' });
+          return;
+        }
+        const fk = jiraConfig.fieldKeys || {};
+        const fields = ['summary', 'labels', 'description', fk.experimentId, fk.qaTestPlan].filter(Boolean).join(',');
+        const url = `${jiraConfig.site}/rest/api/3/issue/${encodeURIComponent((msg.payload?.ticketKey || '').trim())}?fields=${encodeURIComponent(fields)}`;
+        const res = await fetch(url, {
+          headers: { 'Authorization': 'Basic ' + btoa(`${jiraConfig.email}:${jiraConfig.apiToken}`), 'Accept': 'application/json' },
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) { sendResponse({ ok: false, error: jiraApiError(res, data) }); return; }
+        sendResponse({ ok: true, issue: data });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }

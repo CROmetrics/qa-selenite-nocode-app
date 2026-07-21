@@ -1,8 +1,9 @@
 // Selenite popup logic
 
 let FN_META = {};     // { funcName: { label, args } }
-let steps = [];       // [{ id, enabled, func, delay, inputs }]
+let steps = [];       // [{ id, enabled, func, delay, inputs, groupId, groupName }]
 let nextId = 1;
+let nextGroupId = 1;  // groupId values are 'g' + this counter, scoped to the live session
 let logData = [];
 let filterLevel = null;
 let bcLogData = [];
@@ -103,6 +104,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const firstData = (rest[0]?.func === OPEN_URL_FUNC) ? rest.shift() : null;
   ensureOpenUrlFirst(firstData);
   rest.forEach(s => addStep(s));
+  // Restored steps may carry groupIds from a previous session — nest them
+  // into their .step-group wrappers now that they're all in the DOM.
+  renderGroups();
+  // Group ids restored above are already session-scoped; keep new ones from
+  // colliding with the highest one seen.
+  for (const s of rest) {
+    const n = parseInt(String(s.groupId || '').slice(1), 10);
+    if (Number.isFinite(n) && n >= nextGroupId) nextGroupId = n + 1;
+  }
 
   await refreshScripts();
   await syncLogs();
@@ -178,6 +188,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Queue buttons
   document.getElementById('btn-add-step').addEventListener('click', () => addStep());
   document.getElementById('btn-clear-steps')?.addEventListener('click', clearSteps);
+  document.getElementById('btn-group-mode')?.addEventListener('click', enterGroupSelectMode);
+  document.getElementById('btn-group-confirm')?.addEventListener('click', combineSelectedIntoGroup);
+  document.getElementById('btn-group-cancel')?.addEventListener('click', exitGroupSelectMode);
   document.getElementById('btn-run').addEventListener('click', runQueue);
   document.getElementById('btn-stop').addEventListener('click', stopQueue);
 
@@ -214,6 +227,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('bcfb-warn')?.addEventListener('click', function() { setBcFilter('WARNING', this); });
   document.getElementById('bcfb-err')?.addEventListener('click',  function() { setBcFilter('ERROR',   this); });
   document.getElementById('btn-clear-bc-log')?.addEventListener('click', clearBcLog);
+  document.getElementById('btn-bc-reconnect')?.addEventListener('click', reconnectBcFeed);
   document.getElementById('bc-tag-filter-enabled')?.addEventListener('change', onBcTagFilterToggle);
   document.getElementById('bc-eval-input')?.addEventListener('keydown', onBcEvalKeydown);
   document.getElementById('bc-log-out')?.addEventListener('click', onBcLogClick);
@@ -875,16 +889,35 @@ async function syncBcStatus() {
     input.placeholder = attached ? '> Type a JS expression and press Enter…' : '> Not attached';
   }
   const el = document.getElementById('bc-status');
+  const reconnectBtn = document.getElementById('btn-bc-reconnect');
   if (!el) return;
   if (attached) {
     el.textContent = '● Live — mirroring the captured tab';
     el.style.color = 'var(--brand)';
+    if (reconnectBtn) reconnectBtn.style.display = 'none';
   } else if (debuggerStatus?.error) {
     el.textContent = `○ Not attached — ${debuggerStatus.error}`;
     el.style.color = 'var(--err)';
+    if (reconnectBtn) reconnectBtn.style.display = '';
   } else {
     el.textContent = '○ Not attached — waiting for a capturable tab';
     el.style.color = 'var(--fg3)';
+    if (reconnectBtn) reconnectBtn.style.display = 'none';
+  }
+}
+
+// Manual retry when the CDP feed drops — background's onDetach handler
+// deliberately doesn't auto-retry, so this is the only way back short of
+// switching tabs away and back onto the captured one.
+async function reconnectBcFeed() {
+  const btn = document.getElementById('btn-bc-reconnect');
+  if (btn) btn.disabled = true;
+  try {
+    await chrome.runtime.sendMessage({ action: 'reconnectCapture', winId: WIN_ID });
+    await syncBcStatus();
+    await syncCaptureStatus();
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -1085,7 +1118,8 @@ async function saveScript() {
   const { scripts = {} } = await chrome.storage.local.get('scripts');
   scripts[name] = {
     steps: steps.map(s => ({
-      func: s.func, enabled: s.enabled, delay: s.delay, inputs: { ...s.inputs }
+      func: s.func, enabled: s.enabled, delay: s.delay, inputs: { ...s.inputs },
+      groupId: s.groupId || null, groupName: s.groupName || null,
     })),
     target: collectTarget(),
   };
@@ -1100,9 +1134,12 @@ async function appendScripts() {
   const name = getSelectedScriptName();
   if (!name) { alert('Select a saved script first.'); return; }
   const { scripts = {} } = await chrome.storage.local.get('scripts');
-  const stepArr = scriptSteps(scripts[name]);
+  // Remap group ids so the appended script's groups never collide with (and
+  // silently merge into) a group already present in the current queue.
+  const stepArr = remapGroupIds(scriptSteps(scripts[name]));
   if (!stepArr.length) { alert('The selected script had no steps.'); return; }
   stepArr.forEach(s => addStep(s));
+  renderGroups();
   openAccordion('acc-queue');
 }
 
@@ -1115,13 +1152,14 @@ async function loadScript() {
     '<div id="empty-msg">No steps yet — click + Add Step to begin</div>';
   steps = [];
   nextId = 1;
+  nextGroupId = 1; // full replace — no prior groups to collide with
   const rest = [...scriptSteps(scripts[name])];
   const firstData = (rest[0]?.func === OPEN_URL_FUNC) ? rest.shift() : null;
   ensureOpenUrlFirst(firstData);
   rest.forEach(s => addStep(s));
   // Restore Target info saved with the script, if any.
   applyTarget(scriptTarget(scripts[name]));
-  updateCount();
+  renderGroups();
   persistQueue();
   openAccordion('acc-queue');
 }
@@ -1153,6 +1191,8 @@ function addStep(data, opts = {}) {
     delay:  data?.delay ?? '0',
     inputs: { ...(data?.inputs || {}) },
     locked,
+    groupId:   data?.groupId   ?? null,
+    groupName: data?.groupName ?? null,
   };
   steps.push(step);
 
@@ -1176,6 +1216,7 @@ function addStep(data, opts = {}) {
     el.querySelector('.up-btn').addEventListener('click', () => moveStep(id, -1));
     el.querySelector('.dn-btn').addEventListener('click', () => moveStep(id, 1));
     el.querySelector('.dup-btn').addEventListener('click', () => duplicateStep(id));
+    el.querySelector('.grp-chk').addEventListener('change', updateGroupSelectionUI);
   }
   el.querySelector('.en-chk').addEventListener('change', e => {
     step.enabled = e.target.checked;
@@ -1223,10 +1264,11 @@ function buildStepHTML(step, fnNames) {
 
   const dupButton = locked ? '' : `<button class="btn-icon dup-btn" title="Duplicate">⧉</button>`;
   const rmButton  = locked ? '' : `<button class="btn-icon rm-btn" style="color:var(--err)" title="Remove">✕</button>`;
+  const grpChk    = locked ? '' : `<input type="checkbox" class="grp-chk" title="Select for grouping">`;
 
   return `
     <div class="step-ctrl">
-      <input type="checkbox" class="en-chk"${step.enabled ? ' checked' : ''}>${moveButtons}
+      <input type="checkbox" class="en-chk"${step.enabled ? ' checked' : ''}>${moveButtons}${grpChk}
     </div>
     <div class="step-main">
       <div class="step-fn-row">
@@ -1561,8 +1603,7 @@ function removeStep(id) {
   const i = steps.findIndex(s => s.id === id);
   if (i < 0 || steps[i].locked) return;
   steps.splice(i, 1);
-  document.getElementById('step-' + id)?.remove();
-  updateCount();
+  renderGroups(); // also dissolves the step's group wrapper if it just emptied out
   persistQueue();
 }
 
@@ -1571,8 +1612,7 @@ function clearSteps() {
   if (!removable.length) return;
   if (!confirm(`Remove all ${removable.length} step${removable.length !== 1 ? 's' : ''} from the queue?`)) return;
   steps = steps.filter(s => s.locked);
-  document.querySelectorAll('#step-list .step:not(.step-locked)').forEach(el => el.remove());
-  updateCount();
+  renderGroups();
   persistQueue();
 }
 
@@ -1582,38 +1622,199 @@ function duplicateStep(id) {
   const src = steps[i];
 
   // Create the copy (deep-clone inputs so nested arrays/objects aren't shared).
+  // Carries the source's group along, so duplicating a step inside a group
+  // keeps the copy in that same group.
   const copy = addStep({
-    func:    src.func,
-    enabled: src.enabled,
-    delay:   src.delay,
-    inputs:  structuredClone(src.inputs),
+    func:      src.func,
+    enabled:   src.enabled,
+    delay:     src.delay,
+    inputs:    structuredClone(src.inputs),
+    groupId:   src.groupId,
+    groupName: src.groupName,
   });
 
   // addStep() appends to the end; move the copy to sit right after its source.
-  const from = steps.length - 1;
-  const to   = i + 1;
-  if (to !== from) {
-    steps.splice(from, 1);
-    steps.splice(to, 0, copy);
-    const srcEl = document.getElementById('step-' + id);
-    const copyEl = document.getElementById('step-' + copy.id);
-    srcEl.after(copyEl);
-  }
-
+  steps.splice(steps.length - 1, 1);
+  steps.splice(i + 1, 0, copy);
+  renderGroups();
   persistQueue();
 }
 
+// A step can reorder freely within its own group, but ↑/↓ can't carry it past
+// a group boundary — crossing one would silently either join or abandon a
+// group depending on direction, which is confusing without an explicit action.
 function moveStep(id, dir) {
   const i = steps.findIndex(s => s.id === id);
   const j = i + dir;
   if (i < 0 || j < 0 || j >= steps.length) return;
   if (steps[i].locked || steps[j].locked) return;
+  if (steps[i].groupId !== steps[j].groupId) return;
   [steps[i], steps[j]] = [steps[j], steps[i]];
-  const list = document.getElementById('step-list');
-  const all  = [...list.querySelectorAll('.step')];
-  const a = all[i], b = all[j];
-  if (dir < 0) list.insertBefore(a, b); else list.insertBefore(b, a);
+  renderGroups();
   persistQueue();
+}
+
+// ── Step groups ──────────────────────────────────────────────────────────
+// A group is a purely organizational overlay on the flat `steps` array: any
+// run of steps sharing the same non-null groupId renders inside one wrapper
+// and can be duplicated/ungrouped as a unit. background.js's run loop only
+// ever sees the flat, ordered {func,enabled,delay,inputs} list — groupId/
+// groupName travel along for persistence (persistQueue/saveScript) but the
+// executor ignores them entirely.
+let groupSelecting = false;
+
+function buildGroupWrapper(groupId, groupName) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'step-group';
+  wrapper.dataset.groupId = groupId;
+  wrapper.innerHTML = `
+    <div class="step-group-hdr">
+      <input type="text" class="step-group-name" placeholder="Group name" value="${esc(groupName || '').replace(/"/g, '&quot;')}">
+      <button class="btn-icon step-group-dup" title="Duplicate group">⧉</button>
+      <button class="btn ghost btn-icon step-group-ungroup" title="Ungroup — steps stay, just no longer combined">Ungroup</button>
+    </div>
+    <div class="step-group-body"></div>`;
+  wrapper.querySelector('.step-group-name').addEventListener('input', e => renameGroup(groupId, e.target.value));
+  wrapper.querySelector('.step-group-dup').addEventListener('click', () => duplicateGroup(groupId));
+  wrapper.querySelector('.step-group-ungroup').addEventListener('click', () => ungroupSteps(groupId));
+  return wrapper;
+}
+
+// Rebuilds #step-list so contiguous same-groupId steps nest inside a
+// .step-group wrapper — moves existing step elements rather than recreating
+// them, so their listeners/inputs/focus survive. The single place group
+// nesting is reconciled with the `steps` array after any structural change
+// (add/remove/move/duplicate/group/ungroup).
+function renderGroups() {
+  const list = document.getElementById('step-list');
+  const frag = document.createDocumentFragment();
+  let i = 0;
+  while (i < steps.length) {
+    const s  = steps[i];
+    const el = document.getElementById('step-' + s.id);
+    if (!el) { i++; continue; }
+    if (!s.groupId) { frag.appendChild(el); i++; continue; }
+    const gid = s.groupId;
+    const wrapper = buildGroupWrapper(gid, s.groupName);
+    const body = wrapper.querySelector('.step-group-body');
+    while (i < steps.length && steps[i].groupId === gid) {
+      const memberEl = document.getElementById('step-' + steps[i].id);
+      if (memberEl) body.appendChild(memberEl);
+      i++;
+    }
+    frag.appendChild(wrapper);
+  }
+  list.innerHTML = '<div id="empty-msg">No steps yet — click + Add Step to begin</div>';
+  list.appendChild(frag);
+  updateCount();
+}
+
+function renameGroup(groupId, name) {
+  steps.forEach(s => { if (s.groupId === groupId) s.groupName = name; });
+  persistQueue();
+}
+
+function ungroupSteps(groupId) {
+  steps.forEach(s => { if (s.groupId === groupId) { s.groupId = null; s.groupName = null; } });
+  renderGroups();
+  persistQueue();
+}
+
+// Clones every step in the group (deep-cloning inputs, same as duplicateStep)
+// into a new group with the same name, inserted right after the source group.
+function duplicateGroup(groupId) {
+  const memberIdxs = [];
+  steps.forEach((s, idx) => { if (s.groupId === groupId) memberIdxs.push(idx); });
+  if (!memberIdxs.length) return;
+  const members   = memberIdxs.map(idx => steps[idx]);
+  const lastIdx   = memberIdxs[memberIdxs.length - 1];
+  const groupName = members[0].groupName;
+  const newGroupId = 'g' + (nextGroupId++);
+
+  members.forEach(src => addStep({
+    func:      src.func,
+    enabled:   src.enabled,
+    delay:     src.delay,
+    inputs:    structuredClone(src.inputs),
+    groupId:   newGroupId,
+    groupName,
+  }));
+
+  // Each addStep() call above appended one copy to the very end, in source
+  // order — pull that trailing block out and reinsert it after the source.
+  const copies = steps.splice(steps.length - members.length, members.length);
+  steps.splice(lastIdx + 1, 0, ...copies);
+
+  renderGroups();
+  persistQueue();
+}
+
+function updateGroupSelectionUI() {
+  const n = document.querySelectorAll('.grp-chk:checked').length;
+  const btn = document.getElementById('btn-group-confirm');
+  if (!btn) return;
+  btn.textContent = `Combine (${n})`;
+  btn.disabled = n < 2;
+}
+
+function enterGroupSelectMode() {
+  groupSelecting = true;
+  document.getElementById('step-list').classList.add('selecting');
+  document.getElementById('btn-group-mode').style.display = 'none';
+  document.getElementById('btn-group-confirm').style.display = '';
+  document.getElementById('btn-group-cancel').style.display = '';
+  updateGroupSelectionUI();
+}
+
+function exitGroupSelectMode() {
+  groupSelecting = false;
+  document.querySelectorAll('.grp-chk').forEach(c => { c.checked = false; });
+  document.getElementById('step-list').classList.remove('selecting');
+  document.getElementById('btn-group-mode').style.display = '';
+  document.getElementById('btn-group-confirm').style.display = 'none';
+  document.getElementById('btn-group-cancel').style.display = 'none';
+}
+
+// Combines the checked steps into a new group, moving them to sit
+// contiguously at the position of the first selected step.
+function combineSelectedIntoGroup() {
+  const ids = new Set(
+    [...document.querySelectorAll('.grp-chk:checked')]
+      .map(c => Number(c.closest('.step')?.id.replace('step-', '')))
+  );
+  const selected = steps.filter(s => ids.has(s.id));
+  if (selected.length < 2) return;
+
+  const name = prompt('Group name:', `Group ${nextGroupId}`);
+  if (name == null) return; // cancelled
+
+  const groupId = 'g' + (nextGroupId++);
+  selected.forEach(s => { s.groupId = groupId; s.groupName = name; });
+
+  // Reinsert the selected steps as a contiguous block right where the first
+  // selected step used to sit, relative to the untouched (unselected) steps.
+  const firstIdx = steps.findIndex(s => ids.has(s.id));
+  const insertAt = steps.slice(0, firstIdx).filter(s => !ids.has(s.id)).length;
+  const rest = steps.filter(s => !ids.has(s.id));
+  rest.splice(insertAt, 0, ...selected);
+  steps = rest;
+
+  exitGroupSelectMode();
+  renderGroups();
+  persistQueue();
+}
+
+// Loading/appending a saved script must never let its stored groupIds collide
+// with (and silently merge into) a group that already exists in the live
+// queue — remap each distinct incoming groupId to a fresh session-scoped id,
+// preserving which steps share one (the grouping structure), not its label.
+function remapGroupIds(stepDataArr) {
+  const map = new Map();
+  return stepDataArr.map(s => {
+    if (!s.groupId) return s;
+    if (!map.has(s.groupId)) map.set(s.groupId, 'g' + (nextGroupId++));
+    return { ...s, groupId: map.get(s.groupId) };
+  });
 }
 
 function updateCount() {
@@ -1626,7 +1827,8 @@ function updateCount() {
 function persistQueue() {
   sessionNS.set({
     queueState: steps.map(s => ({
-      func: s.func, enabled: s.enabled, delay: s.delay, inputs: { ...s.inputs }
+      func: s.func, enabled: s.enabled, delay: s.delay, inputs: { ...s.inputs },
+      groupId: s.groupId || null, groupName: s.groupName || null,
     }))
   });
 }

@@ -501,6 +501,17 @@ function normalizeUrl(url) {
   return 'https://' + url;
 }
 
+// scheme://host:port only — Storage.clearDataForOrigin needs a bare origin,
+// and only http(s) pages have session data worth clearing.
+function originOf(url) {
+  try {
+    const u = new URL(url);
+    return /^https?:$/.test(u.protocol) ? u.origin : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 // ── Tab helpers ───────────────────────────────────────────────────────────
 function waitForLoad(tabId) {
   return new Promise((resolve) => {
@@ -761,6 +772,40 @@ const ACTIONS = {
       return;
     }
     return `Metric fired ×${fires.length}: ${value}`;
+  },
+
+  // DevTools' Application panel "Clear site data" button issues this exact
+  // CDP command. The run's own tab already has a debugger session attached
+  // for the passive console mirror (see followTab, called by runQueue before
+  // this loop starts) — chrome.debugger allows only one attached client per
+  // tab, so reuse that session via sendCommand instead of attaching a second
+  // one (which would throw). Only attach fresh in the rarer case where no
+  // session is present (capture paused, or the tab isn't yet followed).
+  clear_session_data: async (tabId) => {
+    const tab = await chrome.tabs.get(tabId);
+    const origin = originOf(tab.url);
+    if (!origin) throw new Error(`Can't clear session data for this page: ${tab.url}`);
+
+    await restoreFollowState();
+    const winId = tabToWin.get(tabId);
+    const rec = winId != null ? winFollow.get(winId) : null;
+    const alreadyAttached = !!rec && rec.attached && rec.tabId === tabId;
+
+    if (alreadyAttached) {
+      await chrome.debugger.sendCommand({ tabId }, 'Storage.clearDataForOrigin', { origin, storageTypes: 'all' });
+    } else {
+      try {
+        await chrome.debugger.attach({ tabId }, CDP_VERSION);
+      } catch (e) {
+        throw new Error(`Could not attach to clear session data: ${e.message}`);
+      }
+      try {
+        await chrome.debugger.sendCommand({ tabId }, 'Storage.clearDataForOrigin', { origin, storageTypes: 'all' });
+      } finally {
+        try { await chrome.debugger.detach({ tabId }); } catch (_) {}
+      }
+    }
+    return `Cleared cookies, storage & cache for ${origin}`;
   },
 };
 
@@ -1041,6 +1086,7 @@ const DESCRIPTIONS = {
   alert:                     'Handles a JavaScript alert dialog. Choose Accept (OK), Dismiss (Cancel), or Get Text to log the message.',
   wait_seconds:              'Pauses execution for an exact number of seconds before running the next step.',
   track_metric:              'Checks the console output captured during this run for the selected metric (defined in the Metrics section) and reports whether it fired. A missed metric logs an error but does not stop the queue.',
+  clear_session_data:       "Clears cookies, local storage, session storage, IndexedDB, and cache for the current page's origin — the same as DevTools' Application panel \"Clear site data\" button. The already-loaded page isn't reloaded, so its in-memory state is untouched; follow with a Refresh Page or Open URL step to test as a fresh session.",
 };
 
 // ── Display names ──────────────────────────────────────────────────────────
@@ -1058,6 +1104,7 @@ const DISPLAY_NAMES = {
   alert:                     'Alert',
   wait_seconds:              'Wait (seconds)',
   track_metric:              'Track Metric',
+  clear_session_data:        'Clear Session Data',
 };
 
 // ── WCAG audit engine (shared) ──────────────────────────────────────────────
@@ -2296,6 +2343,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       await ns(msg.winId).set({ captureEnabled: false });
       await unfollowTab(msg.winId);
+      sendResponse({ ok: true });
+    })();
+    return true;
+
+  } else if (msg.action === 'reconnectCapture') {
+    // Manual retry for when the CDP feed drops (DevTools opened on the tab,
+    // the native "this tab is being debugged" banner got dismissed, etc.) —
+    // onDetach deliberately doesn't auto-retry (see its listener below), so
+    // this is the only way back short of switching tabs away and back.
+    // force:true so it works even if a queue/Test-Mode run owns this window.
+    (async () => {
+      let tab;
+      try { [tab] = await chrome.tabs.query({ active: true, windowId: msg.winId }); } catch (_) { tab = null; }
+      if (tab) await followTab(msg.winId, tab.id, { force: true });
       sendResponse({ ok: true });
     })();
     return true;

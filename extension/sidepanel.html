@@ -125,6 +125,18 @@
   .delay-row{display:flex;align-items:center;gap:6px;margin-top:5px}
   .delay-row input{width:60px}
 
+  /* Step groups — a wrapper around a contiguous run of same-groupId steps */
+  .grp-chk{display:none}
+  #step-list.selecting .grp-chk{display:inline-block}
+  .step-group{border:1px dashed var(--brand);border-radius:6px;padding:6px;
+    display:flex;flex-direction:column;gap:6px}
+  .step-group-hdr{display:flex;align-items:center;gap:6px}
+  .step-group-name{flex:1;font-size:12px;font-weight:600;color:var(--brand);
+    background:transparent;border:1px solid transparent;border-radius:3px;
+    padding:2px 5px;font-family:inherit}
+  .step-group-name:hover,.step-group-name:focus{border-color:var(--stroke);background:var(--surface)}
+  .step-group-body{display:flex;flex-direction:column;gap:6px}
+
   /* Console */
   #console-wrap{display:flex;flex-direction:column;gap:7px;flex:1}
   #con-hdr,#bc-hdr{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
@@ -422,8 +434,11 @@
             <span style="font-size:11px;color:var(--fg2)">sec</span>
           </div>
         </div>
-        <div style="display:flex;gap:6px;align-self:flex-start">
+        <div style="display:flex;gap:6px;align-self:flex-start;flex-wrap:wrap">
           <button class="btn" id="btn-add-step">+ Add Step</button>
+          <button class="btn" id="btn-group-mode" title="Select steps to combine into a group">Group Steps…</button>
+          <button class="btn primary" id="btn-group-confirm" style="display:none" disabled>Combine (0)</button>
+          <button class="btn ghost" id="btn-group-cancel" style="display:none">Cancel</button>
           <button class="btn danger" id="btn-clear-steps" title="Remove all steps from the queue">Clear All</button>
         </div>
         <div id="step-list">
@@ -518,7 +533,10 @@
 
       <!-- Browser Console: genuine live mirror of the page's console via CDP -->
       <div class="console-subpanel active" id="subpanel-browser-console">
-        <div id="bc-status" style="font-size:11px;color:var(--fg3)">○ Not attached — enable Capture above</div>
+        <div id="bc-status-row" style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <span id="bc-status" style="flex:1;min-width:0;font-size:11px;color:var(--fg3)">○ Not attached — enable Capture above</span>
+          <button class="btn ghost btn-icon" id="btn-bc-reconnect" style="display:none">Reconnect</button>
+        </div>
         <div id="bc-hdr">
           <input type="text" id="bc-filter-input" placeholder="Filter…"
             style="flex:1;max-width:140px;padding:5px 8px;font-size:11px">

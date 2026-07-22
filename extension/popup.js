@@ -23,9 +23,13 @@ const OPEN_URL_FUNC = 'open_url';
 // that leaks state across windows is chrome.storage. To make each window behave
 // like its own Chrome DevTools instance, every chrome.storage.session key — all
 // of it working/runtime state — is namespaced by this window's id via the
-// sessionNS wrapper below. Incognito is separated at the process level by the
-// manifest's "incognito": "split". Saved libraries and settings live in
-// storage.local / storage.sync and stay shared across windows on purpose (like
+// sessionNS wrapper below (this applies within normal and within incognito
+// alike — chrome.storage.session doesn't span the incognito boundary on its
+// own regardless of the manifest's incognito mode). The manifest's
+// "incognito": "spanning" is what lets storage.local's initContexts be saved
+// in a normal window and read in an incognito one (see initInitializeTab).
+// Saved libraries and settings live in storage.local / storage.sync and stay
+// shared across windows on purpose (like
 // DevTools snippets/settings), so those are left un-namespaced.
 let WIN_ID = null;
 const nsPrefix = () => (WIN_ID != null ? `w${WIN_ID}:` : '');
@@ -489,7 +493,15 @@ async function runTestAgent() {
       let aiSectionHtml;
       if (analysisEnabled) {
         status.textContent = 'Generating AI summary…';
-        const summaryRes = await chrome.runtime.sendMessage({ action: 'summarizeTestAgentResults', payload: { modeResults } });
+        // Grounds the summary in what the experiment was actually testing —
+        // reference-only fields (summary/goals), never anything that drives
+        // pass/fail itself.
+        const activeCtx = await getActiveContext().catch(() => null);
+        const ticketContext = activeCtx?.reviewed ? {
+          ticketKey: activeCtx.ticketKey, experimentId: activeCtx.experimentId,
+          summary: activeCtx.summary, goals: activeCtx.goals,
+        } : null;
+        const summaryRes = await chrome.runtime.sendMessage({ action: 'summarizeTestAgentResults', payload: { modeResults, ticketContext } });
         aiSectionHtml = rptAiSummarySection(summaryRes?.ok ? summaryRes.summary : null, summaryRes?.ok ? null : summaryRes?.error);
       } else {
         aiSectionHtml = rptAiSummarySection(null, 'Agentic Analysis is off — enable it in Test Controls for an AI-written summary.');
@@ -554,8 +566,20 @@ async function initTestModePages() {
       persistTmPages();
     });
 
+    document.querySelector(`.tm-fill-ticket[data-mode="${n}"]`)?.addEventListener('click', () => fillPagesFromTicket(n));
+
     renderTmPages(n);
   });
+
+  // Initialize-tab hook: user-initiated only — never fires on tab load.
+  // Isolated in its own try/catch, same as A/B's — a failure reading the
+  // active ticket context must never block whatever inits after this one
+  // (initVrMode/initCvaMode/initPerfMode/initInitializeTab all follow it).
+  try {
+    await refreshTmFillButtons();
+  } catch (e) {
+    console.error('Selenite: could not read ticket context for the Visual Regression/Performance "Fill from ticket" buttons —', e);
+  }
 }
 
 function renderTmPages(n) {
@@ -3452,6 +3476,10 @@ async function initCvaMode() {
   document.getElementById('btn-cva-save-set').addEventListener('click', saveCvaSet);
   document.getElementById('btn-cva-load-set').addEventListener('click', loadCvaSet);
   document.getElementById('btn-cva-delete-set').addEventListener('click', deleteCvaSet);
+  // Initialize-tab hook: user-initiated only — never fires on tab load.
+  // Isolated in its own try/catch, same as A/B's — a failure reading the
+  // active ticket context must never block the Run/Stop bindings right after it.
+  document.getElementById('btn-cva-fill-ticket')?.addEventListener('click', cvaFillFromTicket);
   document.getElementById('btn-run-cva').addEventListener('click', runCvaAudit);
   document.getElementById('btn-cva-stop').addEventListener('click', () =>
     chrome.runtime.sendMessage({ action: 'stop' }));
@@ -3459,6 +3487,11 @@ async function initCvaMode() {
   renderCvaTargets();
   renderCvaChecks();
   await refreshCvaSets();
+  try {
+    await refreshCvaFillButton();
+  } catch (e) {
+    console.error('Selenite: could not read ticket context for the CVA "Fill from ticket" button —', e);
+  }
 }
 
 function applyCvaStateToInputs() {
@@ -4471,37 +4504,33 @@ function buildFullReportHtml(sections) {
 // Initialize tab — Jira ticket → reviewable Test Context
 //
 // Context provider, not a test mode. Extraction is fully deterministic — no
-// LLM call anywhere in this pipeline (deliberate v1 scope). Direct Jira field
-// values always win over anything parsed from description text. The parsed
-// result is held in _initDraft until the user reviews and clicks Commit; only
-// the committed object (chrome.storage.local `seleniteTestContext`, with
-// reviewed:true) is ever readable by other modes, and they read it solely via
-// their own explicit "Fill from ticket" action — nothing is pushed to them.
+// LLM call anywhere in this pipeline (deliberate v1 scope). No API token:
+// authentication rides the user's existing Jira session via a same-origin
+// fetch from a content script injected into the open ticket tab (see
+// initPageExtractorFn below) — a service-worker cross-origin fetch would
+// 401 silently on SameSite cookies. Custom fields resolve per-extraction from
+// the issue response's own `names` map (expand=names) — nothing is cached.
+// Direct Jira field values always win over anything parsed from description
+// text. The parsed result is held in _initDraft until the user reviews and
+// saves it; only named entries under chrome.storage.local `initContexts`
+// (each reviewed:true) are ever readable by other modes, and only the one
+// named by `activeInitContext` — read solely via their own explicit
+// "Fill from ticket" action. Nothing is pushed to them.
 // ═══════════════════════════════════════════════════════════════════════════
 
-let _jiraConfig = null;   // { site, email, apiToken, fieldKeys: { experimentId, qaTestPlan } } (storage.sync)
-let _initDraft = null;    // extracted-but-uncommitted context; reviewed stays false until Commit
+let _initDraft = null;    // extracted-but-uncommitted context; reviewed stays false until Save
 let _initWarnings = [];   // review-time flags: missing sections, preview-link diff mismatch, …
 
 async function initInitializeTab() {
   if (!document.getElementById('panel-init')) return;
 
-  const { jiraConfig } = await chrome.storage.sync.get('jiraConfig');
-  _jiraConfig = jiraConfig || null;
-  if (_jiraConfig) {
-    document.getElementById('jira-site').value  = _jiraConfig.site || '';
-    document.getElementById('jira-email').value = _jiraConfig.email || '';
-    document.getElementById('jira-token').value = _jiraConfig.apiToken || '';
-  } else {
-    // Fresh install — surface the one-time setup instead of hiding it.
-    document.getElementById('acc-jira-config').classList.add('open');
-  }
-  renderJiraConfigStatus();
+  await renderIncognitoGuard();
 
-  document.getElementById('btn-jira-save').addEventListener('click', saveJiraConfig);
-  document.getElementById('btn-init-fetch').addEventListener('click', fetchJiraTicket);
-  document.getElementById('init-ticket-key').addEventListener('keydown', e => { if (e.key === 'Enter') fetchJiraTicket(); });
-  document.getElementById('btn-init-clear').addEventListener('click', clearTestContext);
+  document.getElementById('btn-init-fetch').addEventListener('click', extractFromActiveTab);
+  document.getElementById('init-ticket-key').addEventListener('keydown', e => { if (e.key === 'Enter') extractFromActiveTab(); });
+  document.getElementById('btn-init-clear').addEventListener('click', clearActiveContext);
+  document.getElementById('btn-init-activate').addEventListener('click', activateSelectedContext);
+  document.getElementById('btn-init-delete').addEventListener('click', deleteSelectedContext);
 
   // The review form re-renders wholesale on structural edits, so its handlers
   // are delegated once here rather than rebound per render.
@@ -4510,85 +4539,124 @@ async function initInitializeTab() {
   reviewHost.addEventListener('change', onInitReviewChange);
   reviewHost.addEventListener('click',  onInitReviewClick);
 
+  await refreshInitContextSelect();
   await renderActiveContext();
 
-  // Commit/clear from another window: keep the active-context card and the
-  // A/B mode's fill button in step. (Never fills anything — display only.)
+  // Save/clear/activate from another window: keep the saved list, the
+  // active-context card, and every consuming mode's fill button in step.
+  // (Never fills anything — display only.)
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.seleniteTestContext) {
+    if (area === 'local' && (changes.initContexts || changes.activeInitContext)) {
+      refreshInitContextSelect();
       renderActiveContext();
       refreshAbFillButton();
+      refreshCvaFillButton();
+      refreshTmFillButtons();
     }
   });
 }
 
-// ── Jira config & field resolution ───────────────────────────────────────────
-function renderJiraConfigStatus(msg, isError) {
-  const el = document.getElementById('jira-config-status');
-  if (msg) { el.textContent = msg; el.style.color = isError ? 'var(--err)' : 'var(--fg3)'; return; }
-  if (!_jiraConfig) { el.textContent = 'Not configured.'; el.style.color = 'var(--fg3)'; return; }
-  const fk = _jiraConfig.fieldKeys || {};
-  if (fk.experimentId && fk.qaTestPlan) {
-    el.textContent = `Fields resolved — Platform Experiment ID: ${fk.experimentId} · QA Test Plan: ${fk.qaTestPlan}`;
-    el.style.color = 'var(--ok)';
-  } else {
-    const missing = [!fk.experimentId && '"Platform Experiment ID"', !fk.qaTestPlan && '"QA Test Plan"']
-      .filter(Boolean).join(' and ');
-    el.textContent = `Saved, but not found on this Jira site: ${missing}. Ticket fetch is blocked until both fields resolve.`;
-    el.style.color = 'var(--err)';
-  }
+// ── Prerequisite guard: allow-in-incognito (manual, per-install toggle) ─────
+// This can't be set programmatically — if it's off, the incognito window
+// never gets an extension instance at all (not just an empty Initialize tab).
+// Surfaced here, in the normal window, since that's the only place it can be.
+function isAllowedIncognitoAccess() {
+  return new Promise(resolve => {
+    try { chrome.extension.isAllowedIncognitoAccess(resolve); } catch (_) { resolve(true); }
+  });
 }
 
-async function saveJiraConfig() {
-  const site     = document.getElementById('jira-site').value.trim().replace(/\/+$/, '');
-  const email    = document.getElementById('jira-email').value.trim();
-  const apiToken = document.getElementById('jira-token').value.trim();
-  if (!site || !email || !apiToken) { renderJiraConfigStatus('Site URL, email, and API token are all required.', true); return; }
-  if (!/^https?:\/\//i.test(site))  { renderJiraConfigStatus('Site URL must start with https://', true); return; }
+async function renderIncognitoGuard() {
+  const el = document.getElementById('init-incognito-warn');
+  if (!el) return;
+  el.style.display = (await isAllowedIncognitoAccess()) ? 'none' : '';
+}
 
-  const btn = document.getElementById('btn-jira-save');
-  btn.disabled = true;
-  renderJiraConfigStatus('Resolving custom field IDs…');
+// ── Jira field resolution (dynamic — resolved per fetch from `names`) ───────
+function resolveJiraFieldKey(names, label) {
+  const want = label.trim().toLowerCase();
+  for (const [key, name] of Object.entries(names || {})) {
+    if ((name || '').trim().toLowerCase() === want) return key;
+  }
+  return null;
+}
+
+// Runs INSIDE the open Jira ticket tab via chrome.scripting.executeScript —
+// no closures over popup.js state, everything comes in through `overrideKey`.
+// Same-origin fetch means the tab's session cookie attaches automatically.
+async function initPageExtractorFn(overrideKey) {
   try {
-    const res = await chrome.runtime.sendMessage({ action: 'jiraResolveFields', payload: { site, email, apiToken } });
-    if (!res?.ok) throw new Error(res?.error || 'Field resolution failed');
-    _jiraConfig = { site, email, apiToken, fieldKeys: res.fieldKeys };
-    await chrome.storage.sync.set({ jiraConfig: _jiraConfig });
-    renderJiraConfigStatus();
-    if (res.fieldKeys.experimentId && res.fieldKeys.qaTestPlan) {
-      document.getElementById('acc-jira-config').classList.remove('open');
+    const m = location.pathname.match(/\/browse\/([A-Za-z][A-Za-z0-9]*-\d+)/);
+    const key = ((overrideKey || '').trim() || (m ? m[1] : '')).toUpperCase();
+    if (!key) return { ok: false, error: 'NOT_A_TICKET' };
+
+    const res = await fetch(`${location.origin}/rest/api/3/issue/${encodeURIComponent(key)}?expand=names`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    });
+    if (res.status === 401 || res.status === 403) return { ok: false, error: 'SESSION_EXPIRED' };
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) return { ok: false, error: 'SESSION_EXPIRED' }; // logged-out HTML redirect
+    const issue = await res.json().catch(() => null);
+    if (!res.ok || !issue) {
+      const detail = [...(issue?.errorMessages || []), ...Object.values(issue?.errors || {})].filter(Boolean).join(' · ');
+      return { ok: false, error: 'FETCH_FAILED', status: res.status, detail: detail || res.statusText };
     }
+
+    // Best-effort scrape of the rendered "Preview Links" section — the popup
+    // falls back to the ADF description if this finds nothing, since Jira's
+    // issue-view markup varies by version/theme.
+    const previewLinksDom = [];
+    const headingLike = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]'));
+    const heading = headingLike.find(h => (h.textContent || '').trim().toLowerCase() === 'preview links');
+    if (heading) {
+      const stopTag = heading.tagName;
+      let node = heading.nextElementSibling;
+      while (node && node.tagName !== stopTag) {
+        node.querySelectorAll?.('a[href]').forEach(a => previewLinksDom.push({ text: (a.textContent || '').trim(), url: a.href }));
+        node = node.nextElementSibling;
+      }
+    }
+
+    return { ok: true, issue, previewLinksDom, origin: location.origin, ticketKey: key };
   } catch (e) {
-    renderJiraConfigStatus('Error: ' + e.message, true);
-  } finally {
-    btn.disabled = false;
+    return { ok: false, error: 'EXCEPTION', detail: e?.message || String(e) };
   }
 }
 
-// ── Fetch + extraction pipeline (v1 — fully deterministic, no LLM) ───────────
-async function fetchJiraTicket() {
+// ── Extraction pipeline (v1 — fully deterministic, no LLM, no token) ────────
+async function extractFromActiveTab() {
   const statusEl = document.getElementById('init-fetch-status');
   const setStatus = (t, color) => { statusEl.textContent = t; statusEl.style.color = color || 'var(--fg3)'; };
 
-  const key = document.getElementById('init-ticket-key').value.trim().toUpperCase();
-  if (!key) { setStatus('Enter a ticket key.', 'var(--err)'); return; }
-  if (!/^[A-Z][A-Z0-9]*-\d+$/.test(key)) { setStatus(`"${key}" doesn't look like a ticket key (expected e.g. ABC-123).`, 'var(--err)'); return; }
-  if (!_jiraConfig) { setStatus('Configure Jira first — open Jira Configuration above.', 'var(--err)'); return; }
-  const fk = _jiraConfig.fieldKeys || {};
-  if (!fk.experimentId || !fk.qaTestPlan) {
-    setStatus('Custom field IDs not resolved yet — open Jira Configuration and click "Save & Resolve Fields".', 'var(--err)');
+  const overrideKey = document.getElementById('init-ticket-key').value.trim().toUpperCase();
+  if (overrideKey && !/^[A-Z][A-Z0-9]*-\d+$/.test(overrideKey)) {
+    setStatus(`"${overrideKey}" doesn't look like a ticket key (expected e.g. ABC-123).`, 'var(--err)');
     return;
   }
 
   const btn = document.getElementById('btn-init-fetch');
   btn.disabled = true;
-  setStatus(`Fetching ${key}…`);
+  setStatus('Extracting from the active tab…');
   try {
-    const res = await chrome.runtime.sendMessage({ action: 'jiraFetchIssue', payload: { ticketKey: key } });
-    if (!res?.ok) throw new Error(res?.error || 'Fetch failed');
-    extractTestContext(res.issue);
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !/^https?:/i.test(tab.url || '')) throw new Error("Open the Jira ticket in this window's active tab first.");
+
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: initPageExtractorFn,
+      args: [overrideKey],
+    });
+    const r = injected?.result;
+    if (!r) throw new Error('Could not run the extractor on this tab.');
+    if (!r.ok) {
+      if (r.error === 'NOT_A_TICKET')    throw new Error("This doesn't look like a Jira ticket — open the ticket (a /browse/KEY URL) in this window's active tab, or enter its key above.");
+      if (r.error === 'SESSION_EXPIRED') throw new Error('Your Jira session looks expired — open/refresh the ticket tab, log in, and try again.');
+      throw new Error(r.detail || `Fetch failed (${r.status || 'error'})`);
+    }
+    extractTestContext(r.issue, r.previewLinksDom, r.origin, r.ticketKey);
     renderInitReview();
-    setStatus(`Extracted from ${res.issue?.key || key} — review below, then commit.`, 'var(--ok)');
+    setStatus(`Extracted from ${_initDraft.ticketKey} — review below, then save.`, 'var(--ok)');
   } catch (e) {
     _initDraft = null; _initWarnings = [];
     document.getElementById('init-review').innerHTML = '';
@@ -4611,21 +4679,27 @@ function jiraFieldString(v) {
   return null;
 }
 
-function extractTestContext(issue) {
+function extractTestContext(issue, previewLinksDom, origin, ticketKeyFromPage) {
   const f = issue.fields || {};
+  const names = issue.names || {};
   const warnings = [];
 
   // Step 1 — direct fields (always win over anything parsed from text)
-  const ticketKey = issue.key;
-  const ticketUrl = `${_jiraConfig.site}/browse/${ticketKey}`;
+  const ticketKey = issue.key || ticketKeyFromPage;
+  const ticketUrl = `${origin}/browse/${ticketKey}`;
   const summary = f.summary || '';
   const labels = Array.isArray(f.labels) ? f.labels : [];
   const platform = labels.includes('Optimizely') ? 'Optimizely'
                  : labels.includes('Convert')    ? 'Convert' : null;
   if (!platform) warnings.push('Neither "Optimizely" nor "Convert" is in the ticket\'s Labels — platform is unset.');
-  const experimentId  = jiraFieldString(f[_jiraConfig.fieldKeys.experimentId]);
-  const qaTestPlanUrl = jiraFieldString(f[_jiraConfig.fieldKeys.qaTestPlan]);
-  if (!experimentId) warnings.push('"Platform Experiment ID" field is empty on this ticket.');
+
+  const experimentIdKey = resolveJiraFieldKey(names, 'Platform Experiment ID');
+  const qaTestPlanKey   = resolveJiraFieldKey(names, 'QA Test Plan');
+  if (!experimentIdKey) warnings.push('No field named "Platform Experiment ID" was found on this ticket — check the field\'s display name on this Jira site.');
+  if (!qaTestPlanKey)   warnings.push('No field named "QA Test Plan" was found on this ticket — check the field\'s display name on this Jira site.');
+  const experimentId  = experimentIdKey ? jiraFieldString(f[experimentIdKey]) : null;
+  const qaTestPlanUrl = qaTestPlanKey   ? jiraFieldString(f[qaTestPlanKey])   : null;
+  if (experimentIdKey && !experimentId) warnings.push('"Platform Experiment ID" field is empty on this ticket.');
 
   const adf = (f.description && typeof f.description === 'object') ? f.description : null;
   if (!adf) warnings.push('Ticket has no description — no sections to extract from.');
@@ -4641,14 +4715,23 @@ function extractTestContext(issue) {
   }));
   if (specNodes && !variants.length) warnings.push('"Test Specifications" section found, but no v0/v1/… markers inside it.');
 
-  // Step 4 — preview links
-  const linkNodes = adf ? adfSectionNodes(adf, 'Preview Links') : null;
-  if (adf && linkNodes === null) warnings.push('"Preview Links" heading not found in the ticket description.');
-  const previewLinks = splitVariantBlocks(adfSectionLines(linkNodes || [])).map(b => ({
-    id: b.id,
-    url: (b.urls[0] || (b.texts.join(' ').match(/https?:\/\/\S+/) || [])[0] || '').trim(),
-  })).filter(l => l.url);
-  if (linkNodes && !previewLinks.length) warnings.push('"Preview Links" section found, but no v#-marked URLs inside it.');
+  // Step 4 — preview links, pulled as rendered <a> tags from the ticket DOM
+  // (the content script is already on the page) rather than walked out of
+  // the ADF tree. Falls back to the ADF "Preview Links" section only if the
+  // DOM scrape finds nothing.
+  let previewLinks = (previewLinksDom || [])
+    .map((l, i) => ({ id: `v${i}`, url: (l.url || '').trim() }))
+    .filter(l => l.url);
+  if (!previewLinks.length) {
+    const linkNodes = adf ? adfSectionNodes(adf, 'Preview Links') : null;
+    if (adf && linkNodes === null) warnings.push('"Preview Links" heading not found in the rendered ticket or its description.');
+    previewLinks = splitVariantBlocks(adfSectionLines(linkNodes || [])).map(b => ({
+      id: b.id,
+      url: (b.urls[0] || (b.texts.join(' ').match(/https?:\/\/\S+/) || [])[0] || '').trim(),
+    })).filter(l => l.url);
+    if (linkNodes && !previewLinks.length) warnings.push('"Preview Links" section found, but no v#-marked URLs inside it.');
+    if (previewLinks.length) warnings.push('Preview links recovered from the ADF description — the rendered-page scrape found none there; double-check them.');
+  }
   const derived = derivePreviewPattern(previewLinks);
   if (derived.warning) warnings.push(derived.warning);
 
@@ -4922,8 +5005,12 @@ function renderInitReview() {
     <div style="display:flex;flex-direction:column;gap:4px">${goalRows}</div>
     <button class="btn sm" data-init-add="goals" style="margin:5px 0 10px">+ Add Goal</button>
 
+    <div class="arg-row" style="margin-top:8px">
+      <span class="arg-lbl">Save as</span>
+      <input type="text" id="init-save-name" value="${q(d.ticketKey)}">
+    </div>
     <div class="row" style="gap:6px;margin-top:4px">
-      <button class="btn primary sm" id="btn-init-commit">Commit Test Context</button>
+      <button class="btn primary sm" id="btn-init-commit">Save Test Context</button>
       <button class="btn sm" id="btn-init-discard">Discard</button>
     </div>
   </div>`;
@@ -4977,8 +5064,62 @@ function onInitReviewClick(e) {
   }
 }
 
-// Commit is the only path that writes seleniteTestContext — and the only
-// context other modes will ever read is one with reviewed:true.
+// ── Persistence (initContexts, named — mirrors the `scripts` save/load pattern
+// at refreshScripts/saveScript/loadScript/deleteScript above) ───────────────
+async function getInitContexts() {
+  const { initContexts = {} } = await chrome.storage.local.get('initContexts');
+  return initContexts;
+}
+
+// The one committed context other modes may read — null until the user picks
+// one from the saved list via "Set Active".
+async function getActiveContext() {
+  const { initContexts = {}, activeInitContext } = await chrome.storage.local.get(['initContexts', 'activeInitContext']);
+  return activeInitContext ? (initContexts[activeInitContext] || null) : null;
+}
+
+async function refreshInitContextSelect() {
+  const sel = document.getElementById('init-context-select');
+  if (!sel) return;
+  const initContexts = await getInitContexts();
+  const { activeInitContext } = await chrome.storage.local.get('activeInitContext');
+  const names = Object.keys(initContexts).sort();
+  sel.innerHTML = names.length
+    ? names.map(n => {
+        const c = initContexts[n];
+        const mark = n === activeInitContext ? '★ ' : '';
+        return `<option value="${esc(n)}">${mark}${esc(n)} — ${esc(c.ticketKey)} · extracted ${esc(new Date(c.extractedAt).toLocaleString())}</option>`;
+      }).join('')
+    : '<option disabled>&lt;none saved&gt;</option>';
+}
+
+async function activateSelectedContext() {
+  const sel = document.getElementById('init-context-select');
+  const name = sel?.value;
+  if (!name) { alert('Select a saved context first.'); return; }
+  await chrome.storage.local.set({ activeInitContext: name });
+  await refreshInitContextSelect();
+  await renderActiveContext();
+  await refreshAbFillButton();
+}
+
+async function deleteSelectedContext() {
+  const sel = document.getElementById('init-context-select');
+  const name = sel?.value;
+  if (!name) return;
+  if (!confirm(`Delete saved context "${name}"?`)) return;
+  const initContexts = await getInitContexts();
+  delete initContexts[name];
+  await chrome.storage.local.set({ initContexts });
+  const { activeInitContext } = await chrome.storage.local.get('activeInitContext');
+  if (activeInitContext === name) await chrome.storage.local.remove('activeInitContext');
+  await refreshInitContextSelect();
+  await renderActiveContext();
+  await refreshAbFillButton();
+}
+
+// Save is the only path that writes into initContexts — and the only context
+// other modes will ever read is the active one, which always has reviewed:true.
 async function commitInitContext() {
   if (!_initDraft) return;
   const d = _initDraft;
@@ -5003,20 +5144,27 @@ async function commitInitContext() {
   }).filter(g => g.text);
 
   const ctx = { ...d, summary: (d.summary || '').trim(), experimentId: (d.experimentId || '').trim() || null, qaTestPlanUrl: (d.qaTestPlanUrl || '').trim() || null, reviewed: true };
-  await chrome.storage.local.set({ seleniteTestContext: ctx });
+
+  const nameInput = document.getElementById('init-save-name');
+  const name = (nameInput?.value || '').trim() || ctx.ticketKey;
+  const initContexts = await getInitContexts();
+  initContexts[name] = ctx;
+  await chrome.storage.local.set({ initContexts, activeInitContext: name });
 
   _initDraft = null; _initWarnings = [];
   document.getElementById('init-review').innerHTML = '';
   const statusEl = document.getElementById('init-fetch-status');
-  statusEl.textContent = `Committed ${ctx.ticketKey} as the active Test Context.`;
+  statusEl.textContent = `Saved "${name}" (${ctx.ticketKey}) and set it active.`;
   statusEl.style.color = 'var(--ok)';
+  await refreshInitContextSelect();
   await renderActiveContext();
   await refreshAbFillButton();
 }
 
-async function clearTestContext() {
-  if (!confirm('Clear the active Test Context? Modes already filled from it keep their values.')) return;
-  await chrome.storage.local.remove('seleniteTestContext');
+async function clearActiveContext() {
+  if (!confirm('Clear the active Test Context? The saved entry is kept — this only unsets which one A/B fills from.')) return;
+  await chrome.storage.local.remove('activeInitContext');
+  await refreshInitContextSelect();
   await renderActiveContext();
   await refreshAbFillButton();
 }
@@ -5025,7 +5173,7 @@ async function renderActiveContext() {
   const card = document.getElementById('init-active-card');
   if (!card) return;
   const body = document.getElementById('init-active-body');
-  const { seleniteTestContext: ctx } = await chrome.storage.local.get('seleniteTestContext');
+  const ctx = await getActiveContext();
   if (!ctx?.reviewed) { card.style.display = 'none'; body.innerHTML = ''; return; }
   card.style.display = '';
   const q = s => esc(s || '').replace(/"/g, '&quot;');
@@ -5059,20 +5207,20 @@ async function refreshAbFillButton() {
   const btn = document.getElementById('btn-ab-fill-ticket');
   if (!btn) return;
   const hint = document.getElementById('ab-fill-hint');
-  const { seleniteTestContext: ctx } = await chrome.storage.local.get('seleniteTestContext');
+  const ctx = await getActiveContext();
   const ready = !!(ctx?.reviewed && ctx.previewLinks?.length);
   btn.disabled = !ready;
   if (hint) hint.textContent = ready
     ? `From ${ctx.ticketKey} — ${ctx.previewLinks.length} preview link(s)`
-    : 'No committed ticket context — use the Initialize tab';
+    : 'No active ticket context — use the Initialize tab';
 }
 
 // User-initiated only — never fires on tab load. Base URL + per-variant
-// override come from the committed context's derived preview-link pattern;
-// when derivation failed (no common base), each variant gets its full preview
-// URL instead so nothing is lost.
+// override come from the active context's derived preview-link pattern; when
+// derivation failed (no common base), each variant gets its full preview URL
+// instead so nothing is lost.
 async function abFillFromTicket() {
-  const { seleniteTestContext: ctx } = await chrome.storage.local.get('seleniteTestContext');
+  const ctx = await getActiveContext();
   if (!ctx?.reviewed || !ctx.previewLinks?.length) { await refreshAbFillButton(); return; }
   const base  = ctx.previewLinkBaseUrl || '';
   const param = ctx.previewLinkParam || null;
@@ -5090,4 +5238,70 @@ async function abFillFromTicket() {
   applyAbStateToInputs();
   renderAbTargets();
   persistAbState();
+}
+
+// ── Consumption: Cross-Variant Accessibility "Fill from ticket" ─────────────
+// Same {label,url,override} target shape as A/B, so this mirrors
+// abFillFromTicket/refreshAbFillButton exactly, against cvaState instead.
+async function refreshCvaFillButton() {
+  const btn = document.getElementById('btn-cva-fill-ticket');
+  if (!btn) return;
+  const hint = document.getElementById('cva-fill-hint');
+  const ctx = await getActiveContext();
+  const ready = !!(ctx?.reviewed && ctx.previewLinks?.length);
+  btn.disabled = !ready;
+  if (hint) hint.textContent = ready
+    ? `From ${ctx.ticketKey} — ${ctx.previewLinks.length} preview link(s)`
+    : 'No active ticket context — use the Initialize tab';
+}
+
+async function cvaFillFromTicket() {
+  const ctx = await getActiveContext();
+  if (!ctx?.reviewed || !ctx.previewLinks?.length) { await refreshCvaFillButton(); return; }
+  const base  = ctx.previewLinkBaseUrl || '';
+  const param = ctx.previewLinkParam || null;
+  cvaState.baseUrl = base;
+  cvaState.targets = ctx.previewLinks.map(l => {
+    let override = '';
+    if (base && param) {
+      try {
+        const v = new URL(l.url).searchParams.get(param);
+        if (v != null) override = `${param}=${v}`;
+      } catch (_) {}
+    }
+    return { label: l.id, url: base ? '' : l.url, override };
+  });
+  applyCvaStateToInputs();
+  renderCvaTargets();
+  persistCvaState();
+}
+
+// ── Consumption: Visual Regression / Performance "Fill from ticket" ─────────
+// Unlike A/B/CVA, these modes hold a flat Open-URL-step list (tmModes[n].pages)
+// with no label/override fields — each variant's preview URL becomes one page,
+// tested independently (Performance's own UI hint already recommends this
+// pattern for comparing variants; Visual Regression diffs each page slot
+// against its own stored baseline the same way). Shared by both modes' buttons
+// via the .tm-fill-ticket/.tm-fill-hint classes, one refresh for both.
+async function refreshTmFillButtons() {
+  const ctx = await getActiveContext();
+  const ready = !!(ctx?.reviewed && ctx.previewLinks?.length);
+  document.querySelectorAll('.tm-fill-ticket').forEach(btn => { btn.disabled = !ready; });
+  document.querySelectorAll('.tm-fill-hint').forEach(hint => {
+    hint.textContent = ready
+      ? `From ${ctx.ticketKey} — ${ctx.previewLinks.length} preview link(s)`
+      : 'No active ticket context — use the Initialize tab';
+  });
+}
+
+async function fillPagesFromTicket(modeId) {
+  const ctx = await getActiveContext();
+  if (!ctx?.reviewed || !ctx.previewLinks?.length) { await refreshTmFillButtons(); return; }
+  const mode = tmModes[modeId];
+  if (!mode) return;
+  mode.scope = ctx.previewLinks.length > 1 ? 'multi' : 'single';
+  document.querySelectorAll(`input[name="tm-scope-${modeId}"]`).forEach(r => { r.checked = r.value === mode.scope; });
+  mode.pages = ctx.previewLinks.map(l => tmNewPage({ inputs: { url: l.url } }));
+  renderTmPages(modeId);
+  persistTmPages();
 }

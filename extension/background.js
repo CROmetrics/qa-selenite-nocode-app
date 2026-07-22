@@ -2029,7 +2029,7 @@ function renderSessionOverlay(data) {
 // Condenses Test Agent's modeResults into a compact plain-text prompt asking
 // for a short human verdict — capped per mode so a large result set doesn't
 // blow up the request.
-function buildTestAgentSummaryPrompt(modeResults) {
+function buildTestAgentSummaryPrompt(modeResults, ticketContext) {
   const parts = modeResults.map(entry => {
     if (entry.status !== 'ran') {
       return `${entry.name}: skipped (${entry.reason || 'not configured'})`;
@@ -2038,9 +2038,23 @@ function buildTestAgentSummaryPrompt(modeResults) {
     const trimmed = json.length > 4000 ? json.slice(0, 4000) + '…' : json;
     return `${entry.name}: ran\n${trimmed}`;
   });
-  return 'You are reviewing QA test results from a browser extension. For each mode below, ' +
-    'write a short, plain-English summary of what happened — call out real issues vs. likely noise. ' +
-    'Keep the whole summary under 150 words.\n\n' + parts.join('\n\n');
+
+  // Reference-only grounding from the Initialize tab's active Test Context —
+  // never influences pass/fail, only gives the model what the experiment was
+  // actually trying to validate.
+  const ctxLines = ticketContext ? [
+    `Ticket: ${ticketContext.ticketKey}${ticketContext.experimentId ? ` (Experiment ID ${ticketContext.experimentId})` : ''}`,
+    ticketContext.summary ? `Summary: ${ticketContext.summary}` : null,
+    ticketContext.goals?.length ? `Goals:\n${ticketContext.goals.map(g => `- ${g.text}`).join('\n')}` : null,
+  ].filter(Boolean).join('\n') : null;
+
+  return 'You are reviewing QA test results from a browser extension' +
+    (ctxLines ? ' for the experiment described below' : '') + '. For each mode below, ' +
+    'write a short, plain-English summary of what happened — call out real issues vs. likely noise' +
+    (ctxLines ? ", and note anything that looks inconsistent with the experiment's goals" : '') + '. ' +
+    'Keep the whole summary under 150 words.\n\n' +
+    (ctxLines ? `Experiment context (reference only):\n${ctxLines}\n\n` : '') +
+    parts.join('\n\n');
 }
 
 // Agentic Testing: a supplemental vision pass over screenshot(s) already
@@ -2287,19 +2301,6 @@ async function runFunnelCrawl({ waypoints = [], supplementalPrompt = '', stepBud
 }
 
 // ── Message listener ───────────────────────────────────────────────────────
-// Jira REST errors carry their message in errorMessages[] (and sometimes an
-// errors{} map); surface those verbatim rather than a generic "fetch failed".
-function jiraApiError(res, data) {
-  const msgs = [
-    ...(Array.isArray(data?.errorMessages) ? data.errorMessages : []),
-    ...Object.values(data?.errors || {}),
-  ].filter(Boolean);
-  if (msgs.length) return msgs.join(' · ');
-  if (res.status === 401) return 'Jira rejected the credentials (401) — check the email and API token.';
-  if (res.status === 403) return 'Jira denied access (403) — the account may lack permission for this ticket.';
-  return `Jira responded ${res.status} ${res.statusText}`;
-}
-
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'run') {
     runQueue(msg.payload).catch(() => {});
@@ -2611,62 +2612,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           body: JSON.stringify({
             model: 'claude-opus-4-8',
             max_tokens: 1024,
-            messages: [{ role: 'user', content: buildTestAgentSummaryPrompt(msg.payload?.modeResults || []) }],
+            messages: [{ role: 'user', content: buildTestAgentSummaryPrompt(msg.payload?.modeResults || [], msg.payload?.ticketContext || null) }],
           }),
         });
         const data = await res.json();
         if (!res.ok) { sendResponse({ ok: false, error: data?.error?.message || res.statusText }); return; }
         const text = data.content?.find(b => b.type === 'text')?.text || '';
         sendResponse({ ok: true, summary: text });
-      } catch (e) {
-        sendResponse({ ok: false, error: e.message });
-      }
-    })();
-    return true;
-
-  } else if (msg.action === 'jiraResolveFields') {
-    // Initialize tab: look up this Jira site's opaque custom-field keys by
-    // display name. Config comes in the payload (not storage) so the popup can
-    // resolve before committing a not-yet-validated config to storage.sync.
-    (async () => {
-      try {
-        const { site, email, apiToken } = msg.payload || {};
-        const res = await fetch(`${site}/rest/api/3/field`, {
-          headers: { 'Authorization': 'Basic ' + btoa(`${email}:${apiToken}`), 'Accept': 'application/json' },
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok) { sendResponse({ ok: false, error: jiraApiError(res, data) }); return; }
-        const byName = (name) => {
-          const f = (data || []).find(f => (f.name || '').trim().toLowerCase() === name.toLowerCase());
-          return f ? (f.key || f.id) : null;
-        };
-        sendResponse({ ok: true, fieldKeys: {
-          experimentId: byName('Platform Experiment ID'),
-          qaTestPlan:   byName('QA Test Plan'),
-        } });
-      } catch (e) {
-        sendResponse({ ok: false, error: e.message });
-      }
-    })();
-    return true;
-
-  } else if (msg.action === 'jiraFetchIssue') {
-    (async () => {
-      try {
-        const { jiraConfig } = await chrome.storage.sync.get('jiraConfig');
-        if (!jiraConfig?.site || !jiraConfig?.email || !jiraConfig?.apiToken) {
-          sendResponse({ ok: false, error: 'Jira is not configured — save site, email, and API token first.' });
-          return;
-        }
-        const fk = jiraConfig.fieldKeys || {};
-        const fields = ['summary', 'labels', 'description', fk.experimentId, fk.qaTestPlan].filter(Boolean).join(',');
-        const url = `${jiraConfig.site}/rest/api/3/issue/${encodeURIComponent((msg.payload?.ticketKey || '').trim())}?fields=${encodeURIComponent(fields)}`;
-        const res = await fetch(url, {
-          headers: { 'Authorization': 'Basic ' + btoa(`${jiraConfig.email}:${jiraConfig.apiToken}`), 'Accept': 'application/json' },
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok) { sendResponse({ ok: false, error: jiraApiError(res, data) }); return; }
-        sendResponse({ ok: true, issue: data });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }

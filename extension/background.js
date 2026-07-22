@@ -1629,6 +1629,75 @@ async function runCrossVariantAudit({ targets = [], settleSeconds, keepTabs, che
   return results;
 }
 
+// ── Matrix Auditor (Matrix Auditor tab) ─────────────────────────────────────
+// Batch element inspection across many URLs, one URL per call so the popup's
+// manual "Next URL" button maps directly onto one bounded message round trip
+// — no progress polling needed, unlike the unattended CVA/VR/Perf loops
+// above. Each call audits ONE url for a caller-resolved list of
+// {id, selector, checkSettings} entries — the popup already merged
+// global/per-selector settings before sending, so this stays a dumb executor,
+// the same shape as the spec's runInspector, just looped across every
+// selector in one injection instead of one per selector.
+function matrixInspectSelectors(entries) {
+  return entries.map(({ id, selector, checkSettings }) => {
+    const result = {
+      id, exists: false, visible: null, displayProperty: null,
+      visibilityProperty: null, boundingBox: null, text: null, attributes: {}, error: null,
+    };
+    try {
+      const el = document.querySelector(selector);
+      result.exists = el !== null;
+      if (el && checkSettings.checkExistence !== false) {
+        if (checkSettings.checkVisibility) {
+          const style = window.getComputedStyle(el);
+          if (checkSettings.checkDisplayProperty) result.displayProperty = style.display;
+          if (checkSettings.checkVisibilityProperty) result.visibilityProperty = style.visibility;
+          if (checkSettings.checkBoundingBox) {
+            const box = el.getBoundingClientRect();
+            result.boundingBox = { width: box.width, height: box.height, top: box.top, left: box.left };
+          }
+          result.visible = style.display !== 'none' && style.visibility !== 'hidden';
+        }
+        if (checkSettings.checkText) result.text = el.innerText || el.textContent || '';
+        if (checkSettings.attributesToCheck && checkSettings.attributesToCheck.length) {
+          checkSettings.attributesToCheck.forEach(attr => {
+            if (el.hasAttribute(attr)) result.attributes[attr] = el.getAttribute(attr);
+          });
+        }
+      }
+    } catch (e) {
+      result.error = e.message;
+    }
+    return result;
+  });
+}
+
+// Opens `url` in a fresh tab, waits for load + the caller's waitTime, runs
+// matrixInspectSelectors once for every selector, then closes the tab. One
+// retry on load failure (a nav timeout and a network failure look identical
+// from the tabs API), matching the spec's "retry once, then skip" requirement.
+async function runMatrixAuditStep({ url, entries = [], waitTime }) {
+  const out = { finalUrl: '', loadError: null, findings: {} };
+  const settleMs = Math.max(0, parseInt(waitTime, 10) || 0);
+  let tabId = null;
+  try {
+    try {
+      tabId = await openSettledTab(url, settleMs);
+    } catch (e) {
+      tabId = await openSettledTab(url, settleMs);
+    }
+    const tab = await chrome.tabs.get(tabId);
+    out.finalUrl = tab.url || '';
+    const results = await exec(tabId, matrixInspectSelectors, [entries]);
+    results.forEach(r => { out.findings[r.id] = r; });
+  } catch (e) {
+    out.loadError = e.message;
+  } finally {
+    if (tabId) { try { await chrome.tabs.remove(tabId); } catch (_) {} }
+  }
+  return out;
+}
+
 // ── Visual Regression capture (Test Modes tab) ──────────────────────────────
 // Opens each page sequentially and takes a full-page screenshot over CDP
 // (Page.captureScreenshot + captureBeyondViewport — no scroll-and-stitch).
@@ -2589,6 +2658,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true, ...result });
       } catch (e) {
         try { await setTmProgress('funnelProgress', { running: false }); } catch (_) {}
+        sendResponse({ ok: false, error: e.message });
+      } finally {
+        await endTmRun();
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'runMatrixAuditStep') {
+    (async () => {
+      await beginTmRun(msg.payload);
+      try {
+        const result = await runMatrixAuditStep(msg.payload || {});
+        sendResponse({ ok: true, ...result });
+      } catch (e) {
         sendResponse({ ok: false, error: e.message });
       } finally {
         await endTmRun();

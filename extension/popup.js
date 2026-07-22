@@ -166,6 +166,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('Selenite: Initialize tab failed to load —', e);
   }
 
+  // Matrix Auditor tab. Isolated in its own try/catch for the same reason as
+  // Initialize above — a failure here must not cascade into the Test Agent /
+  // Console bindings still to come.
+  try {
+    await initMatrixAuditor();
+  } catch (e) {
+    console.error('Selenite: Matrix Auditor tab failed to load —', e);
+  }
+
   // Test Agent tab
   const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
   if (anthropicApiKey) document.getElementById('ta-api-key').value = anthropicApiKey;
@@ -5304,4 +5313,617 @@ async function fillPagesFromTicket(modeId) {
   mode.pages = ctx.previewLinks.map(l => tmNewPage({ inputs: { url: l.url } }));
   renderTmPages(modeId);
   persistTmPages();
+}
+
+// ── Matrix Auditor ───────────────────────────────────────────────────────────
+// Batch element-inspection across many URLs with global + per-selector
+// checks. Live editing state (links/selectors/settings) lives in sessionNS,
+// same as A/B's abState; named, run audits (config + result history) are
+// saved to chrome.storage.local under `matrixAudits` — NOT storage.sync as
+// first sketched, since a single run easily exceeds sync's 8KB-per-item cap
+// (the same reason vrConfig/wcagHistory/perfHistory all live in local).
+// Each URL is audited by its own `runMatrixAuditStep` message round-trip so
+// the "Next URL" button in the spec maps directly onto one bounded await —
+// no session-storage progress polling needed, unlike the CVA/VR/Perf loops
+// that run unattended across many pages in one background call.
+let mxState = null;
+let mxRun = null;          // { runId, index, total, results: { [url]: {...} } } while a run is active/complete
+let mxNextSelId = 1;
+let mxGroupFilter = null;
+let _mxRunning = false;
+
+function mxDefaultGlobalSettings() {
+  return {
+    waitTime: 1500,
+    checkExistence: true,
+    checkVisibility: true,
+    checkDisplayProperty: true,
+    checkVisibilityProperty: true,
+    checkBoundingBox: true,
+    checkText: true,
+    attributesToCheck: ['data-qa', 'aria-label', 'data-test'],
+  };
+}
+
+function mxDefaultState() {
+  return {
+    id: null,
+    name: '',
+    linksRaw: '',
+    links: [],          // [{ url, group }]
+    selectors: [],       // [{ id, selector, useGlobalSettings, overrides }]
+    globalSettings: mxDefaultGlobalSettings(),
+  };
+}
+
+// ── Links parsing — full URLs, CSV (url,group), and a Base + Pages template,
+// freely mixed line-by-line in the same textarea. Pure function, no DOM/async
+// — testable in isolation. ──────────────────────────────────────────────────
+function mxJoinBaseUrl(base, page, params) {
+  let url = String(base || '').trim().replace(/\/+$/, '') + '/' + String(page || '').trim().replace(/^\/+/, '');
+  params = String(params || '').trim().replace(/^[?&]/, '');
+  if (params) url += (url.includes('?') ? '&' : '?') + params;
+  return url;
+}
+
+function parseMatrixLinks(raw) {
+  const lines = String(raw || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const template = { base: '', pages: [], forcedParams: '', qaParams: '' };
+  const links = [];
+  const seen = new Set();
+  const addLink = (url, group) => {
+    url = String(url || '').trim();
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    links.push({ url, group: group || 'ungrouped' });
+  };
+
+  for (const line of lines) {
+    const baseM   = line.match(/^base\s*:\s*(.+)$/i);
+    const pagesM  = line.match(/^pages\s*:\s*(.+)$/i);
+    const forcedM = line.match(/^forced\s*params\s*:\s*(.+)$/i);
+    const qaM     = line.match(/^qa\s*params\s*:\s*(.+)$/i);
+    if (baseM)   { template.base = baseM[1].trim(); continue; }
+    if (pagesM)  { template.pages = pagesM[1].split(',').map(p => p.trim()).filter(Boolean); continue; }
+    if (forcedM) { template.forcedParams = forcedM[1].trim(); continue; }
+    if (qaM)     { template.qaParams = qaM[1].trim(); continue; }
+
+    if (/^https?:\/\//i.test(line)) {
+      const csvM = line.match(/^(https?:\/\/\S+?),\s*(.+)$/i);
+      if (csvM) addLink(csvM[1], csvM[2].trim());
+      else addLink(line, null);
+    }
+    // Anything else (blank template keys, stray notes) is silently skipped.
+  }
+
+  if (template.base && template.pages.length) {
+    for (const page of template.pages) {
+      if (template.forcedParams) addLink(mxJoinBaseUrl(template.base, page, template.forcedParams), 'forced');
+      if (template.qaParams)     addLink(mxJoinBaseUrl(template.base, page, template.qaParams), 'qa_mode');
+      if (!template.forcedParams && !template.qaParams) addLink(mxJoinBaseUrl(template.base, page, ''), 'ungrouped');
+    }
+  }
+
+  return links;
+}
+
+// ── Session persistence (live editing state, namespaced per window) ────────
+async function persistMxState() {
+  await sessionNS.set({ mxState: {
+    id: mxState.id, name: mxState.name, linksRaw: mxState.linksRaw,
+    links: mxState.links, selectors: mxState.selectors, globalSettings: mxState.globalSettings,
+  } });
+}
+
+function mxBumpSelectorCounter() {
+  for (const s of mxState.selectors) {
+    const n = parseInt(String(s.id || '').replace('sel_', ''), 10);
+    if (Number.isFinite(n) && n >= mxNextSelId) mxNextSelId = n + 1;
+  }
+}
+
+// ── Links panel ──────────────────────────────────────────────────────────────
+function mxUpdateLinkCount() {
+  const n = mxState.links.length;
+  document.getElementById('mx-link-preview').textContent = `${n} URL${n === 1 ? '' : 's'} ready to audit`;
+  document.getElementById('mx-link-count').textContent = `${n} URL${n === 1 ? '' : 's'} ready`;
+}
+
+function mxRenderLinkGroups() {
+  const wrap = document.getElementById('mx-link-groups');
+  const groups = [...new Set(mxState.links.map(l => l.group || 'ungrouped'))];
+  if (groups.length <= 1) { wrap.innerHTML = ''; return; }
+  const chip = (label, value, count) =>
+    `<button type="button" class="btn sm${mxGroupFilter === value ? ' primary' : ''}" data-mx-grp="${esc(value || '')}">${esc(label)} (${count})</button>`;
+  wrap.innerHTML = chip('All', '', mxState.links.length) +
+    groups.map(g => chip(g, g, mxState.links.filter(l => (l.group || 'ungrouped') === g).length)).join('');
+  wrap.querySelectorAll('[data-mx-grp]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      mxGroupFilter = btn.dataset.mxGrp || null;
+      mxRenderLinkGroups();
+      mxRenderLinkList();
+    });
+  });
+}
+
+function mxRenderLinkList() {
+  const list = document.getElementById('mx-link-list');
+  const filtered = mxGroupFilter ? mxState.links.filter(l => (l.group || 'ungrouped') === mxGroupFilter) : mxState.links;
+  list.innerHTML = filtered.map(l => `<div style="font-size:11px;color:var(--fg2);padding:2px 4px;
+    border-bottom:1px solid var(--stroke);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+    title="${esc(l.url)}">${esc(l.url)} <span style="color:var(--fg3)">· ${esc(l.group || 'ungrouped')}</span></div>`).join('');
+}
+
+function mxOnLinksInput() {
+  mxState.linksRaw = document.getElementById('mx-links-input').value;
+  mxState.links = parseMatrixLinks(mxState.linksRaw);
+  mxGroupFilter = null;
+  mxRenderLinkGroups();
+  mxRenderLinkList();
+  mxUpdateLinkCount();
+  persistMxState();
+}
+
+function mxClearLinks() {
+  document.getElementById('mx-links-input').value = '';
+  mxState.linksRaw = '';
+  mxState.links = [];
+  mxGroupFilter = null;
+  mxRenderLinkGroups();
+  mxRenderLinkList();
+  mxUpdateLinkCount();
+  persistMxState();
+}
+
+// ── Selectors panel ──────────────────────────────────────────────────────────
+function mxNewSelector(over) {
+  return Object.assign({ id: 'sel_' + (mxNextSelId++), selector: '', useGlobalSettings: true, overrides: null }, over || {});
+}
+
+function mxParseAttrs(str) {
+  return String(str || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function mxDefaultOverrides(global) {
+  return {
+    checkExistence: true,
+    checkVisibility: !!global.checkVisibility,
+    checkText: !!global.checkText,
+    attributesToCheck: [...(global.attributesToCheck || [])],
+  };
+}
+
+// Per-selector overrides only expose one "Check visibility" toggle (no
+// display/visibility-property/bounding-box breakdown — that granularity is
+// global-only, per the spec's simpler per-selector toggle group), so an
+// override with checkVisibility on runs the full visibility detail.
+function mxResolveSettings(sel, global) {
+  if (sel.useGlobalSettings || !sel.overrides) {
+    return {
+      checkExistence: true,
+      checkVisibility: !!global.checkVisibility,
+      checkDisplayProperty: !!global.checkDisplayProperty,
+      checkVisibilityProperty: !!global.checkVisibilityProperty,
+      checkBoundingBox: !!global.checkBoundingBox,
+      checkText: !!global.checkText,
+      attributesToCheck: global.attributesToCheck || [],
+    };
+  }
+  const o = sel.overrides;
+  return {
+    checkExistence: o.checkExistence !== false,
+    checkVisibility: !!o.checkVisibility,
+    checkDisplayProperty: !!o.checkVisibility,
+    checkVisibilityProperty: !!o.checkVisibility,
+    checkBoundingBox: !!o.checkVisibility,
+    checkText: !!o.checkText,
+    attributesToCheck: o.attributesToCheck || [],
+  };
+}
+
+function mxRenderSelectors() {
+  const list = document.getElementById('mx-selector-list');
+  const q = s => esc(s || '').replace(/"/g, '&quot;');
+  document.getElementById('mx-sel-count').textContent = `${mxState.selectors.length} selector${mxState.selectors.length === 1 ? '' : 's'}`;
+  if (!mxState.selectors.length) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--fg3)">No selectors yet — click + Add Selector.</div>';
+    return;
+  }
+  list.innerHTML = mxState.selectors.map((s, i) => {
+    const ov = s.overrides || mxDefaultOverrides(mxState.globalSettings);
+    return `
+    <div class="mx-sel-row" data-mx-sel="${i}" style="background:var(--surface);border:1px solid var(--stroke);
+      border-radius:5px;padding:6px 8px;display:flex;flex-direction:column;gap:5px">
+      <div class="row" style="gap:5px">
+        <input type="text" data-mx-sel-input value="${q(s.selector)}" placeholder="[class*=...], #main-cta …"
+          style="flex:1;font-family:'Cascadia Code','Menlo',monospace;font-size:11px">
+        <button class="btn-pick" data-pick-arg="mx-sel" title="Pick element from page">🎯</button>
+        <button class="btn-icon" data-mx-rm-sel title="Remove" style="color:var(--err)">✕</button>
+      </div>
+      <label class="row" style="gap:5px;font-size:11px;color:var(--fg2);cursor:pointer">
+        <input type="checkbox" data-mx-sel-global ${s.useGlobalSettings ? 'checked' : ''}> Use global settings
+      </label>
+      ${s.useGlobalSettings ? '' : `
+      <div class="row" style="gap:12px;flex-wrap:wrap;padding-left:4px">
+        <label class="suite-check" style="padding:0"><input type="checkbox" data-mx-ov="checkExistence" ${ov.checkExistence ? 'checked' : ''}> Check existence</label>
+        <label class="suite-check" style="padding:0"><input type="checkbox" data-mx-ov="checkVisibility" ${ov.checkVisibility ? 'checked' : ''}> Check visibility</label>
+        <label class="suite-check" style="padding:0"><input type="checkbox" data-mx-ov="checkText" ${ov.checkText ? 'checked' : ''}> Check text content</label>
+      </div>
+      <input type="text" data-mx-ov-attrs value="${q((ov.attributesToCheck || []).join(', '))}"
+        placeholder="Attributes to check (comma-separated)" style="font-size:11px">
+      `}
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('[data-mx-sel]').forEach(row => {
+    const i = +row.dataset.mxSel;
+    const sel = mxState.selectors[i];
+    row.querySelector('[data-mx-sel-input]').addEventListener('input', e => {
+      sel.selector = e.target.value;
+      persistMxState();
+    });
+    row.querySelector('.btn-pick').addEventListener('click', () => {
+      startPicker(row, null, 'mx-sel', (picked) => {
+        const val = picked.css || (picked.idValue ? '#' + picked.idValue : '');
+        sel.selector = val;
+        row.querySelector('[data-mx-sel-input]').value = val;
+        persistMxState();
+      });
+    });
+    row.querySelector('[data-mx-rm-sel]').addEventListener('click', () => {
+      mxState.selectors.splice(i, 1);
+      mxRenderSelectors();
+      persistMxState();
+    });
+    row.querySelector('[data-mx-sel-global]').addEventListener('change', e => {
+      sel.useGlobalSettings = e.target.checked;
+      if (!sel.useGlobalSettings) sel.overrides = sel.overrides || mxDefaultOverrides(mxState.globalSettings);
+      mxRenderSelectors();
+      persistMxState();
+    });
+    row.querySelectorAll('[data-mx-ov]').forEach(chk => {
+      chk.addEventListener('change', e => {
+        sel.overrides = sel.overrides || mxDefaultOverrides(mxState.globalSettings);
+        sel.overrides[e.target.dataset.mxOv] = e.target.checked;
+        persistMxState();
+      });
+    });
+    row.querySelector('[data-mx-ov-attrs]')?.addEventListener('input', e => {
+      sel.overrides = sel.overrides || mxDefaultOverrides(mxState.globalSettings);
+      sel.overrides.attributesToCheck = mxParseAttrs(e.target.value);
+      persistMxState();
+    });
+  });
+}
+
+function mxAddSelector() {
+  mxState.selectors.push(mxNewSelector());
+  mxRenderSelectors();
+  persistMxState();
+}
+
+// ── Global Settings panel ───────────────────────────────────────────────────
+function mxApplyGlobalSettingsToInputs() {
+  const g = mxState.globalSettings;
+  document.getElementById('mx-wait-time').value = g.waitTime;
+  document.getElementById('mx-check-display').checked = !!g.checkDisplayProperty;
+  document.getElementById('mx-check-visibility').checked = !!g.checkVisibilityProperty;
+  document.getElementById('mx-check-bbox').checked = !!g.checkBoundingBox;
+  document.getElementById('mx-check-text').checked = !!g.checkText;
+  document.getElementById('mx-attrs').value = (g.attributesToCheck || []).join(', ');
+}
+
+function mxOnGlobalSettingsChange() {
+  const g = mxState.globalSettings;
+  g.waitTime = Math.max(0, parseInt(document.getElementById('mx-wait-time').value, 10) || 0);
+  g.checkDisplayProperty = document.getElementById('mx-check-display').checked;
+  g.checkVisibilityProperty = document.getElementById('mx-check-visibility').checked;
+  g.checkBoundingBox = document.getElementById('mx-check-bbox').checked;
+  g.checkVisibility = g.checkDisplayProperty || g.checkVisibilityProperty || g.checkBoundingBox;
+  g.checkText = document.getElementById('mx-check-text').checked;
+  g.attributesToCheck = mxParseAttrs(document.getElementById('mx-attrs').value);
+  persistMxState();
+}
+
+function mxResetGlobalSettings() {
+  mxState.globalSettings = mxDefaultGlobalSettings();
+  mxApplyGlobalSettingsToInputs();
+  persistMxState();
+}
+
+// ── Saved audits (chrome.storage.local, keyed by id — see comment above) ───
+const MX_MAX_AUDITS = 10;
+
+async function mxSaveAudit() {
+  if (!mxRun) return;
+  const { matrixAudits = {} } = await chrome.storage.local.get('matrixAudits');
+  const now = new Date().toISOString();
+  if (!mxState.id) mxState.id = 'audit_' + Date.now();
+  const existing = matrixAudits[mxState.id];
+  const typedName = document.getElementById('mx-audit-name').value.trim();
+  const name = typedName || mxState.name || existing?.name || `Matrix Audit ${new Date().toLocaleString()}`;
+  mxState.name = name;
+  matrixAudits[mxState.id] = {
+    id: mxState.id,
+    name,
+    createdAt: existing?.createdAt || now,
+    lastModified: now,
+    config: {
+      selectors: mxState.selectors,
+      links: mxState.links,
+      globalSettings: mxState.globalSettings,
+    },
+    results: {
+      ...(existing?.results || {}),
+      [mxRun.runId]: {
+        timestamp: now,
+        totalUrls: mxRun.total,
+        completedUrls: Object.keys(mxRun.results).length,
+        findings: mxRun.results,
+      },
+    },
+  };
+  // Keep only the most-recently-modified MX_MAX_AUDITS audits — chrome.storage.local
+  // is generous (~5-10MB) compared to sync, but an unbounded history still isn't free.
+  const ids = Object.keys(matrixAudits).sort((a, b) =>
+    new Date(matrixAudits[b].lastModified) - new Date(matrixAudits[a].lastModified));
+  const pruned = {};
+  ids.slice(0, MX_MAX_AUDITS).forEach(k => { pruned[k] = matrixAudits[k]; });
+  await chrome.storage.local.set({ matrixAudits: pruned });
+  await mxRefreshAuditDropdown();
+  await persistMxState();
+}
+
+async function mxRefreshAuditDropdown() {
+  const { matrixAudits = {} } = await chrome.storage.local.get('matrixAudits');
+  const sel = document.getElementById('mx-load-audit-select');
+  const ids = Object.keys(matrixAudits).sort((a, b) =>
+    new Date(matrixAudits[b].lastModified) - new Date(matrixAudits[a].lastModified));
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Load previous audit…</option>' +
+    ids.map(id => `<option value="${id}">${esc(matrixAudits[id].name || id)}</option>`).join('');
+  if (ids.includes(current)) sel.value = current;
+}
+
+async function mxLoadAudit(id) {
+  if (!id) return;
+  const { matrixAudits = {} } = await chrome.storage.local.get('matrixAudits');
+  const audit = matrixAudits[id];
+  if (!audit) return;
+  mxState.id = audit.id;
+  mxState.name = audit.name;
+  mxState.selectors = JSON.parse(JSON.stringify(audit.config.selectors || []));
+  mxState.links = JSON.parse(JSON.stringify(audit.config.links || []));
+  mxState.globalSettings = { ...mxDefaultGlobalSettings(), ...(audit.config.globalSettings || {}) };
+  mxState.linksRaw = mxState.links.map(l => `${l.url},${l.group || 'ungrouped'}`).join('\n');
+  mxBumpSelectorCounter();
+  mxRun = null;
+  document.getElementById('mx-links-input').value = mxState.linksRaw;
+  document.getElementById('mx-audit-name').value = mxState.name || '';
+  mxApplyGlobalSettingsToInputs();
+  mxRenderSelectors();
+  mxGroupFilter = null;
+  mxRenderLinkGroups();
+  mxRenderLinkList();
+  mxUpdateLinkCount();
+  document.getElementById('mx-results-table').innerHTML = '';
+  mxSetUiState('idle');
+  mxSetStatus('Loaded. Click "Run Audit" to start.');
+  await persistMxState();
+}
+
+async function mxDeleteAudit() {
+  const sel = document.getElementById('mx-load-audit-select');
+  const id = sel.value;
+  if (!id) return;
+  if (!confirm('Delete this saved audit?')) return;
+  const { matrixAudits = {} } = await chrome.storage.local.get('matrixAudits');
+  delete matrixAudits[id];
+  await chrome.storage.local.set({ matrixAudits });
+  if (mxState.id === id) {
+    mxState.id = null;
+    mxState.name = '';
+    document.getElementById('mx-audit-name').value = '';
+  }
+  await mxRefreshAuditDropdown();
+}
+
+// ── Results panel ────────────────────────────────────────────────────────────
+function mxSetStatus(text) {
+  document.getElementById('mx-status').textContent = text;
+}
+
+function mxSetUiState(state) {
+  const runBtn  = document.getElementById('btn-mx-run');
+  const nextBtn = document.getElementById('btn-mx-next');
+  const actions = document.getElementById('mx-results-actions');
+  runBtn.style.display  = (state === 'idle') ? '' : 'none';
+  nextBtn.style.display = (state === 'waiting-next') ? '' : 'none';
+  actions.style.display = (state === 'done') ? 'flex' : 'none';
+}
+
+function mxShortSelector(sel) {
+  const s = sel || '';
+  return s.length > 22 ? s.slice(0, 20) + '…' : s;
+}
+
+function mxDetailLines(finding) {
+  if (!finding) return [];
+  if (finding.error) return [`Error: ${finding.error}`];
+  if (!finding.exists) return ['Not present in the DOM.'];
+  const lines = [`Visible: ${finding.visible === null ? '—' : finding.visible}`];
+  if (finding.displayProperty != null) lines.push(`Display: ${finding.displayProperty}`);
+  if (finding.visibilityProperty != null) lines.push(`Visibility: ${finding.visibilityProperty}`);
+  if (finding.boundingBox) lines.push(`Box: ${Math.round(finding.boundingBox.width)}×${Math.round(finding.boundingBox.height)}`);
+  if (finding.text) lines.push(`Text: ${finding.text.slice(0, 140)}`);
+  const attrs = Object.entries(finding.attributes || {});
+  if (attrs.length) lines.push(`Attrs: ${attrs.map(([k, v]) => `${k}=${v}`).join(', ')}`);
+  return lines;
+}
+
+function mxRenderCell(finding) {
+  if (!finding) return '<td>—</td>';
+  const label = finding.error
+    ? '<span class="perf-over">ERROR</span>'
+    : finding.exists
+      ? '<span class="perf-ok">FOUND</span>'
+      : '<span class="perf-over">NOT FOUND</span>';
+  const lines = mxDetailLines(finding).map(l => esc(l || '')).join('<br>');
+  return `<td><details><summary style="cursor:pointer">${label}</summary>
+    <div style="font-size:10px;color:var(--fg2);margin-top:3px;line-height:1.5">${lines}</div>
+  </details></td>`;
+}
+
+function mxRenderResultsTable() {
+  const el = document.getElementById('mx-results-table');
+  if (!mxRun || !Object.keys(mxRun.results).length) { el.innerHTML = ''; return; }
+  const sels = mxState.selectors.filter(s => s.selector.trim());
+  const rows = mxState.links.filter(l => mxRun.results[l.url]);
+  el.innerHTML = `<div style="overflow-x:auto"><table class="perf-table">
+    <thead><tr>
+      <th>URL</th>
+      ${sels.map(s => `<th title="${esc(s.selector)}">${esc(mxShortSelector(s.selector))}</th>`).join('')}
+      <th>Status</th>
+    </tr></thead>
+    <tbody>${rows.map(l => {
+      const r = mxRun.results[l.url];
+      const status = r.loadError ? '<span class="perf-over">Error</span>' : '<span class="perf-ok">Complete</span>';
+      return `<tr>
+        <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(l.url)}">${esc(l.url)}</td>
+        ${sels.map(s => mxRenderCell(r.findings?.[s.id])).join('')}
+        <td>${status}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
+// ── Run orchestration — one background round-trip per URL, so the spec's
+// manual "Next URL" button maps directly onto one bounded await. No progress
+// polling needed (unlike CVA/VR/Perf, which run unattended across many pages
+// in a single background call). ─────────────────────────────────────────────
+async function runMatrixAuditStart() {
+  if (_mxRunning) return;
+  const validSelectors = mxState.selectors.filter(s => s.selector.trim());
+  if (!mxState.links.length) { alert('Add at least one URL first.'); return; }
+  if (!validSelectors.length) { alert('Add at least one selector first.'); return; }
+  mxRun = { runId: 'run_' + Date.now(), index: -1, total: mxState.links.length, results: {} };
+  document.getElementById('mx-results-table').innerHTML = '';
+  mxSetUiState('busy');
+  await mxRunNext();
+}
+
+async function mxRunNext() {
+  if (!mxRun || _mxRunning) return;
+  mxRun.index++;
+  if (mxRun.index >= mxRun.total) { await mxFinishRun(); return; }
+  const link = mxState.links[mxRun.index];
+  _mxRunning = true;
+  mxSetUiState('busy');
+  mxSetStatus(`Auditing URL ${mxRun.index + 1} of ${mxRun.total}… ${link.url}`);
+  const entries = mxState.selectors
+    .filter(s => s.selector.trim())
+    .map(s => ({ id: s.id, selector: s.selector.trim(), checkSettings: mxResolveSettings(s, mxState.globalSettings) }));
+  let res;
+  try {
+    res = await chrome.runtime.sendMessage({
+      action: 'runMatrixAuditStep',
+      payload: { url: link.url, entries, waitTime: mxState.globalSettings.waitTime, winId: WIN_ID },
+    });
+  } catch (e) {
+    res = { ok: false, error: e.message };
+  }
+  mxRun.results[link.url] = (res && res.ok)
+    ? { findings: res.findings || {}, finalUrl: res.finalUrl || '', loadError: res.loadError || null }
+    : { findings: {}, finalUrl: '', loadError: (res && res.error) || 'Unknown error' };
+  _mxRunning = false;
+  mxRenderResultsTable();
+  await mxSaveAudit();
+  if (mxRun.index + 1 >= mxRun.total) {
+    await mxFinishRun();
+  } else {
+    mxSetStatus(`Audited ${mxRun.index + 1} of ${mxRun.total}. Click "Next URL" to continue.`);
+    mxSetUiState('waiting-next');
+  }
+}
+
+async function mxFinishRun() {
+  mxSetStatus(`Complete — audited ${mxRun.total} URL${mxRun.total === 1 ? '' : 's'}.`);
+  mxSetUiState('done');
+}
+
+// ── CSV export ───────────────────────────────────────────────────────────────
+function mxCsvEscape(v) {
+  v = String(v ?? '');
+  return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+
+function mxDownloadCsv(rows, filename) {
+  const csv = rows.map(r => r.map(mxCsvEscape).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+}
+
+function exportMatrixResultsCsv() {
+  if (!mxRun) return;
+  const sels = mxState.selectors.filter(s => s.selector.trim());
+  const header = ['URL', ...sels.map(s => s.selector), 'Status'];
+  const rows = [header];
+  mxState.links.forEach(l => {
+    const r = mxRun.results[l.url];
+    if (!r) return;
+    const row = [l.url];
+    sels.forEach(s => {
+      const f = r.findings?.[s.id];
+      row.push(!f ? '' : f.error ? 'ERROR' : (f.exists ? 'FOUND' : 'NOT FOUND'));
+    });
+    row.push(r.loadError ? `Error: ${r.loadError}` : 'Complete');
+    rows.push(row);
+  });
+  mxDownloadCsv(rows, `matrix-audit-${mxRun.runId}.csv`);
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+async function initMatrixAuditor() {
+  mxState = mxDefaultState();
+  const { mxState: saved } = await sessionNS.get('mxState');
+  if (saved) {
+    mxState = { ...mxDefaultState(), ...saved, globalSettings: { ...mxDefaultGlobalSettings(), ...(saved.globalSettings || {}) } };
+    mxBumpSelectorCounter();
+  }
+
+  document.getElementById('mx-links-input').value = mxState.linksRaw || '';
+  document.getElementById('mx-audit-name').value = mxState.name || '';
+  mxApplyGlobalSettingsToInputs();
+  mxRenderSelectors();
+  mxRenderLinkGroups();
+  mxRenderLinkList();
+  mxUpdateLinkCount();
+  mxSetUiState('idle');
+  await mxRefreshAuditDropdown();
+
+  document.getElementById('mx-links-input').addEventListener('input', mxOnLinksInput);
+  document.getElementById('btn-mx-clear-links').addEventListener('click', mxClearLinks);
+  document.getElementById('btn-mx-add-selector').addEventListener('click', mxAddSelector);
+  document.getElementById('mx-load-audit-select').addEventListener('change', e => mxLoadAudit(e.target.value));
+  document.getElementById('btn-mx-delete-audit').addEventListener('click', mxDeleteAudit);
+  document.getElementById('mx-audit-name').addEventListener('input', () => {
+    mxState.name = document.getElementById('mx-audit-name').value;
+    persistMxState();
+  });
+
+  document.getElementById('mx-wait-time').addEventListener('input', mxOnGlobalSettingsChange);
+  document.getElementById('mx-check-display').addEventListener('change', mxOnGlobalSettingsChange);
+  document.getElementById('mx-check-visibility').addEventListener('change', mxOnGlobalSettingsChange);
+  document.getElementById('mx-check-bbox').addEventListener('change', mxOnGlobalSettingsChange);
+  document.getElementById('mx-check-text').addEventListener('change', mxOnGlobalSettingsChange);
+  document.getElementById('mx-attrs').addEventListener('input', mxOnGlobalSettingsChange);
+  document.getElementById('btn-mx-reset-settings').addEventListener('click', mxResetGlobalSettings);
+
+  document.getElementById('btn-mx-run').addEventListener('click', runMatrixAuditStart);
+  document.getElementById('btn-mx-next').addEventListener('click', mxRunNext);
+  document.getElementById('btn-mx-export-csv').addEventListener('click', exportMatrixResultsCsv);
+  document.getElementById('btn-mx-rerun').addEventListener('click', runMatrixAuditStart);
 }

@@ -337,6 +337,7 @@
   <div class="tab" data-tab="init">Initialize</div>
   <div class="tab" data-tab="testagent">Test Agent</div>
   <div class="tab active" data-tab="build">Functional Testing</div>
+  <div class="tab" data-tab="matrixauditor">Matrix Auditor</div>
   <div class="tab" data-tab="console">Console <span id="run-indicator" style="display:none" class="run-dot"></span></div>
 </div>
 
@@ -499,6 +500,94 @@
     </div>
 
   </div><!-- /panel-build -->
+
+  <!-- Matrix Auditor panel -->
+  <div class="panel" id="panel-matrixauditor">
+
+    <!-- Accordion 1: Links -->
+    <div class="accordion open" id="acc-mx-links">
+      <div class="acc-hdr" data-acc="acc-mx-links">
+        <span>Links <span id="mx-link-count" style="font-weight:400;color:var(--fg2);font-size:11px">0 URLs ready</span></span>
+        <span class="acc-chevron">›</span>
+      </div>
+      <div class="acc-body">
+        <div style="font-size:10px;color:var(--fg3)">Paste full URLs (one per line), CSV rows (<code>url,group</code>), or a Base + Pages template — formats can be mixed in the same box.</div>
+        <textarea id="mx-links-input" rows="6" placeholder="https://example.com/page?cro_mode=qa&#10;Base: https://example.com/learn/&#10;Pages: cyber-attack, cyber-security-threats&#10;Forced params: ?optimizely_x=123456&cro_mode=qa&#10;QA params: ?cro_mode=qa"></textarea>
+        <div class="row-spread">
+          <span id="mx-link-preview" style="font-size:11px;color:var(--fg2)">0 URLs ready to audit</span>
+          <button class="btn sm danger" id="btn-mx-clear-links">Clear</button>
+        </div>
+        <div id="mx-link-groups" class="row" style="gap:5px;flex-wrap:wrap"></div>
+        <div id="mx-link-list" style="max-height:130px;overflow-y:auto;display:flex;flex-direction:column"></div>
+      </div>
+    </div>
+
+    <!-- Accordion 2: Selectors -->
+    <div class="accordion open" id="acc-mx-selectors">
+      <div class="acc-hdr" data-acc="acc-mx-selectors">
+        <span>Selectors <span id="mx-sel-count" style="font-weight:400;color:var(--fg2);font-size:11px">0 selectors</span></span>
+        <span class="acc-chevron">›</span>
+      </div>
+      <div class="acc-body">
+        <div id="mx-selector-list" style="display:flex;flex-direction:column;gap:8px"></div>
+        <button class="btn sm" id="btn-mx-add-selector" style="align-self:flex-start">+ Add Selector</button>
+        <div style="border-top:1px solid var(--stroke);padding-top:8px;margin-top:2px;display:flex;flex-direction:column;gap:6px">
+          <input type="text" id="mx-audit-name" placeholder="Audit name (optional — auto-named if blank)">
+          <div class="row" style="gap:6px">
+            <select id="mx-load-audit-select" style="flex:1"><option value="">Load previous audit…</option></select>
+            <button class="btn sm danger" id="btn-mx-delete-audit">Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Accordion 3: Global Settings -->
+    <div class="accordion" id="acc-mx-settings">
+      <div class="acc-hdr" data-acc="acc-mx-settings">
+        <span>Global Settings</span>
+        <span class="acc-chevron">›</span>
+      </div>
+      <div class="acc-body">
+        <div class="arg-row">
+          <span class="arg-lbl">Wait Time (ms)</span>
+          <input type="text" id="mx-wait-time" value="1500">
+        </div>
+        <div>
+          <label class="cap">Visibility Checks</label>
+          <label class="suite-check"><input type="checkbox" id="mx-check-display" checked> Check <code>display</code> property</label>
+          <label class="suite-check"><input type="checkbox" id="mx-check-visibility" checked> Check <code>visibility</code> property</label>
+          <label class="suite-check"><input type="checkbox" id="mx-check-bbox" checked> Check bounding box (width/height &gt; 0)</label>
+        </div>
+        <div>
+          <label class="cap">Text Content</label>
+          <label class="suite-check"><input type="checkbox" id="mx-check-text" checked> Capture <code>innerText</code></label>
+        </div>
+        <div>
+          <label class="cap">Attributes to Check</label>
+          <input type="text" id="mx-attrs" value="data-qa, aria-label, data-test">
+        </div>
+        <button class="btn sm ghost" id="btn-mx-reset-settings" style="align-self:flex-start">Reset to Defaults</button>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div class="card" id="mx-results-card">
+      <div class="card-title">Results</div>
+      <div class="row-spread" style="margin-bottom:8px;flex-wrap:wrap">
+        <span id="mx-status" style="font-size:12px;color:var(--fg2)">Ready. Click "Run Audit" to start.</span>
+        <div class="row" style="gap:6px">
+          <button class="btn primary sm" id="btn-mx-run">Run Audit</button>
+          <button class="btn sm" id="btn-mx-next" style="display:none">Next URL</button>
+        </div>
+      </div>
+      <div id="mx-results-table"></div>
+      <div class="row" id="mx-results-actions" style="display:none;margin-top:8px;gap:6px">
+        <button class="btn sm" id="btn-mx-export-csv">Export as CSV</button>
+        <button class="btn sm" id="btn-mx-rerun">Re-run Audit</button>
+      </div>
+    </div>
+
+  </div><!-- /panel-matrixauditor -->
 
   <!-- Console panel -->
   <div class="panel" id="panel-console">

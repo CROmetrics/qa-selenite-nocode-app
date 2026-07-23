@@ -5794,13 +5794,18 @@ function mxSetStatus(text) {
 }
 
 function mxSetUiState(state) {
-  const runBtn  = document.getElementById('btn-mx-run');
-  const nextBtn = document.getElementById('btn-mx-next');
-  const stopBtn = document.getElementById('btn-mx-stop');
-  const actions = document.getElementById('mx-results-actions');
+  const runBtn   = document.getElementById('btn-mx-run');
+  const nextBtn  = document.getElementById('btn-mx-next');
+  const stopBtn  = document.getElementById('btn-mx-stop');
+  const resetBtn = document.getElementById('btn-mx-reset');
+  const actions  = document.getElementById('mx-results-actions');
   runBtn.style.display  = (state === 'idle') ? '' : 'none';
   nextBtn.style.display = (state === 'waiting-next') ? '' : 'none';
   stopBtn.style.display = (state === 'busy') ? '' : 'none';
+  // Reset is the escape hatch out of a paused/stopped/finished run (returns to
+  // idle without touching the config). During 'busy' the Stop button plays
+  // that role instead — clearing mxRun mid-audit would break the in-flight step.
+  if (resetBtn) resetBtn.style.display = (state === 'waiting-next' || state === 'done') ? '' : 'none';
   actions.style.display = (state === 'done') ? 'flex' : 'none';
 }
 
@@ -5895,6 +5900,10 @@ async function runMatrixAuditStart() {
 // calls this again to resume from wherever it left off.
 async function mxRunLoop() {
   if (!mxRun || _mxRunning) return;
+  // Fresh (re)entry — clear any prior Stop request so the "Next URL" button
+  // can resume a run that was stopped. A Stop clicked while this loop is
+  // running is still caught by the per-iteration check below.
+  _mxStopRequested = false;
   const mode = mxState.advanceMode || 'auto';
   while (true) {
     if (_mxStopRequested) {
@@ -5949,6 +5958,19 @@ async function mxAuditNext() {
 function mxStopRun() {
   _mxStopRequested = true;
   mxSetStatus('Stopping after the current URL…');
+}
+
+// Abandon the current run and return to a clean idle state. Leaves the audit
+// config (links, selectors, settings) untouched so the user can tweak and
+// re-run. Guarded against firing mid-audit — Reset is only offered when a run
+// is paused/stopped/finished, never while _mxRunning is in flight.
+function mxResetRun() {
+  if (_mxRunning) return;
+  _mxStopRequested = false;
+  mxRun = null;
+  document.getElementById('mx-results-table').innerHTML = '';
+  mxSetStatus('Ready. Click "Run Audit" to start.');
+  mxSetUiState('idle');
 }
 
 async function mxFinishRun() {
@@ -6045,6 +6067,7 @@ async function initMatrixAuditor() {
   document.getElementById('btn-mx-run').addEventListener('click', runMatrixAuditStart);
   document.getElementById('btn-mx-next').addEventListener('click', mxRunLoop);
   document.getElementById('btn-mx-stop').addEventListener('click', mxStopRun);
+  document.getElementById('btn-mx-reset').addEventListener('click', mxResetRun);
   document.getElementById('btn-mx-export-csv').addEventListener('click', exportMatrixResultsCsv);
   document.getElementById('btn-mx-rerun').addEventListener('click', runMatrixAuditStart);
 }

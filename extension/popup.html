@@ -512,7 +512,27 @@
       </div>
       <div class="acc-body">
         <div style="font-size:10px;color:var(--fg3)">Paste full URLs (one per line), CSV rows (<code>url,group</code>), or a Base + Pages template — formats can be mixed in the same box.</div>
-        <textarea id="mx-links-input" rows="6" placeholder="https://example.com/page?cro_mode=qa&#10;Base: https://example.com/learn/&#10;Pages: cyber-attack, cyber-security-threats&#10;Forced params: ?optimizely_x=123456&cro_mode=qa&#10;QA params: ?cro_mode=qa"></textarea>
+        <textarea id="mx-links-input" rows="6" placeholder="https://example.com/page&#10;Base: https://example.com/learn/&#10;Pages: cyber-attack, cyber-security-threats"></textarea>
+        <div>
+          <label class="cap">Link Mode</label>
+          <div class="row" style="gap:14px;flex-wrap:wrap;align-items:center">
+            <label class="toggle-wrap" title="Force a specific Optimizely variation on every link">
+              <input type="checkbox" id="mx-mode-forced">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <span style="font-size:12px;color:var(--fg2)">Forced Link</span>
+            <label class="toggle-wrap" title="Run every link in the wild in QA mode (cro_mode=qa)">
+              <input type="checkbox" id="mx-mode-itw">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <span style="font-size:12px;color:var(--fg2)">ITW</span>
+          </div>
+          <div style="font-size:10px;color:var(--fg3);margin-top:4px">Applied to every link when the audit runs. Pick one, or neither to use the links exactly as pasted.</div>
+        </div>
+        <div class="arg-row" id="mx-variation-row" style="display:none">
+          <span class="arg-lbl">Variation ID</span>
+          <input type="text" id="mx-variation-id" placeholder="optimizely_x value, e.g. 5291718573031424">
+        </div>
         <div class="row-spread">
           <span id="mx-link-preview" style="font-size:11px;color:var(--fg2)">0 URLs ready to audit</span>
           <button class="btn sm danger" id="btn-mx-clear-links">Clear</button>
@@ -573,11 +593,20 @@
     <!-- Results -->
     <div class="card" id="mx-results-card">
       <div class="card-title">Results</div>
+      <div class="row" style="gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="font-size:10px;color:var(--fg2);text-transform:uppercase;letter-spacing:.4px">Advance</span>
+        <select id="mx-advance-mode" style="flex:1;min-width:150px">
+          <option value="auto">Auto — run every URL</option>
+          <option value="pause">Auto, pause on problems</option>
+          <option value="manual">Manual — step through</option>
+        </select>
+      </div>
       <div class="row-spread" style="margin-bottom:8px;flex-wrap:wrap">
         <span id="mx-status" style="font-size:12px;color:var(--fg2)">Ready. Click "Run Audit" to start.</span>
         <div class="row" style="gap:6px">
           <button class="btn primary sm" id="btn-mx-run">Run Audit</button>
           <button class="btn sm" id="btn-mx-next" style="display:none">Next URL</button>
+          <button class="btn danger sm" id="btn-mx-stop" style="display:none">Stop</button>
         </div>
       </div>
       <div id="mx-results-table"></div>

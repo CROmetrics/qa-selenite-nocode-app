@@ -5327,10 +5327,11 @@ async function fillPagesFromTicket(modeId) {
 // no session-storage progress polling needed, unlike the CVA/VR/Perf loops
 // that run unattended across many pages in one background call.
 let mxState = null;
-let mxRun = null;          // { runId, index, total, results: { [url]: {...} } } while a run is active/complete
+let mxRun = null;          // { runId, index, total, targets: [{url, group}], results: { [url]: {...} } } while a run is active/complete
 let mxNextSelId = 1;
 let mxGroupFilter = null;
 let _mxRunning = false;
+let _mxStopRequested = false;
 
 function mxDefaultGlobalSettings() {
   return {
@@ -5350,10 +5351,44 @@ function mxDefaultState() {
     id: null,
     name: '',
     linksRaw: '',
-    links: [],          // [{ url, group }]
+    links: [],           // [{ url, group }] — base URLs as parsed, before link-mode params
+    linkMode: 'none',    // 'none' | 'itw' | 'forced' — how link params are composed at run time
+    variationId: '',     // optimizely_x value, used only in 'forced' mode
+    advanceMode: 'auto', // 'auto' | 'pause' | 'manual' — how hands-on the run is
     selectors: [],       // [{ id, selector, useGlobalSettings, overrides }]
     globalSettings: mxDefaultGlobalSettings(),
   };
+}
+
+// ── Link-mode composition — the "Forced Link" / "ITW" switches decide what
+// query params get stamped onto every base URL at run time (and in the live
+// preview). Params we own are stripped first so toggling never stacks
+// duplicates onto a URL the user pasted with its own cro_mode/optimizely_x.
+function mxComposeUrl(baseUrl, mode, variationId) {
+  let url = String(baseUrl || '').trim();
+  if (!url || mode === 'none' || !mode) return url;
+  const qi = url.indexOf('?');
+  const path = qi === -1 ? url : url.slice(0, qi);
+  const owned = ['cro_mode', 'optimizely_x', 'optimizely_force_tracking'];
+  let params = (qi === -1 ? '' : url.slice(qi + 1))
+    .split('&').filter(Boolean)
+    .filter(p => !owned.includes(p.split('=')[0].toLowerCase()));
+  if (mode === 'itw') {
+    params.push('cro_mode=qa');
+  } else if (mode === 'forced') {
+    params.push('optimizely_x=' + encodeURIComponent(String(variationId || '').trim()));
+    params.push('optimizely_force_tracking=true');
+    params.push('cro_mode=qa');
+  }
+  return path + (params.length ? '?' + params.join('&') : '');
+}
+
+// The links actually audited: base URLs with the current link mode applied.
+// Group labels stay as parsed (from CSV/template) so the group chips still work.
+function mxCurrentTargets() {
+  return mxState.links
+    .map(l => ({ baseUrl: l.url, url: mxComposeUrl(l.url, mxState.linkMode, mxState.variationId), group: l.group || 'ungrouped' }))
+    .filter(t => t.url);
 }
 
 // ── Links parsing — full URLs, CSV (url,group), and a Base + Pages template,
@@ -5411,7 +5446,8 @@ function parseMatrixLinks(raw) {
 async function persistMxState() {
   await sessionNS.set({ mxState: {
     id: mxState.id, name: mxState.name, linksRaw: mxState.linksRaw,
-    links: mxState.links, selectors: mxState.selectors, globalSettings: mxState.globalSettings,
+    links: mxState.links, linkMode: mxState.linkMode, variationId: mxState.variationId,
+    advanceMode: mxState.advanceMode, selectors: mxState.selectors, globalSettings: mxState.globalSettings,
   } });
 }
 
@@ -5424,9 +5460,26 @@ function mxBumpSelectorCounter() {
 
 // ── Links panel ──────────────────────────────────────────────────────────────
 function mxUpdateLinkCount() {
-  const n = mxState.links.length;
-  document.getElementById('mx-link-preview').textContent = `${n} URL${n === 1 ? '' : 's'} ready to audit`;
+  const n = mxCurrentTargets().length;
+  const modeNote = mxState.linkMode === 'forced' ? ' (forced)' : mxState.linkMode === 'itw' ? ' (ITW)' : '';
+  document.getElementById('mx-link-preview').textContent = `${n} URL${n === 1 ? '' : 's'} ready to audit${modeNote}`;
   document.getElementById('mx-link-count').textContent = `${n} URL${n === 1 ? '' : 's'} ready`;
+}
+
+// Forced Link and ITW are mutually exclusive — one, the other, or neither.
+// Setting a mode reconciles both checkboxes and the Variation ID field so the
+// two switches can never both be on.
+function mxSetLinkMode(mode) {
+  mxState.linkMode = (mode === 'forced' || mode === 'itw') ? mode : 'none';
+  const forced = document.getElementById('mx-mode-forced');
+  const itw = document.getElementById('mx-mode-itw');
+  const varRow = document.getElementById('mx-variation-row');
+  if (forced) forced.checked = mxState.linkMode === 'forced';
+  if (itw) itw.checked = mxState.linkMode === 'itw';
+  if (varRow) varRow.style.display = mxState.linkMode === 'forced' ? '' : 'none';
+  mxRenderLinkList();
+  mxUpdateLinkCount();
+  persistMxState();
 }
 
 function mxRenderLinkGroups() {
@@ -5448,10 +5501,11 @@ function mxRenderLinkGroups() {
 
 function mxRenderLinkList() {
   const list = document.getElementById('mx-link-list');
-  const filtered = mxGroupFilter ? mxState.links.filter(l => (l.group || 'ungrouped') === mxGroupFilter) : mxState.links;
-  list.innerHTML = filtered.map(l => `<div style="font-size:11px;color:var(--fg2);padding:2px 4px;
+  const targets = mxCurrentTargets();
+  const filtered = mxGroupFilter ? targets.filter(t => (t.group || 'ungrouped') === mxGroupFilter) : targets;
+  list.innerHTML = filtered.map(t => `<div style="font-size:11px;color:var(--fg2);padding:2px 4px;
     border-bottom:1px solid var(--stroke);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
-    title="${esc(l.url)}">${esc(l.url)} <span style="color:var(--fg3)">· ${esc(l.group || 'ungrouped')}</span></div>`).join('');
+    title="${esc(t.url)}">${esc(t.url)} <span style="color:var(--fg3)">· ${esc(t.group || 'ungrouped')}</span></div>`).join('');
 }
 
 function mxOnLinksInput() {
@@ -5651,6 +5705,8 @@ async function mxSaveAudit() {
     config: {
       selectors: mxState.selectors,
       links: mxState.links,
+      linkMode: mxState.linkMode,
+      variationId: mxState.variationId,
       globalSettings: mxState.globalSettings,
     },
     results: {
@@ -5694,12 +5750,16 @@ async function mxLoadAudit(id) {
   mxState.name = audit.name;
   mxState.selectors = JSON.parse(JSON.stringify(audit.config.selectors || []));
   mxState.links = JSON.parse(JSON.stringify(audit.config.links || []));
+  mxState.linkMode = audit.config.linkMode || 'none';
+  mxState.variationId = audit.config.variationId || '';
   mxState.globalSettings = { ...mxDefaultGlobalSettings(), ...(audit.config.globalSettings || {}) };
   mxState.linksRaw = mxState.links.map(l => `${l.url},${l.group || 'ungrouped'}`).join('\n');
   mxBumpSelectorCounter();
   mxRun = null;
   document.getElementById('mx-links-input').value = mxState.linksRaw;
   document.getElementById('mx-audit-name').value = mxState.name || '';
+  document.getElementById('mx-variation-id').value = mxState.variationId || '';
+  mxSetLinkMode(mxState.linkMode);
   mxApplyGlobalSettingsToInputs();
   mxRenderSelectors();
   mxGroupFilter = null;
@@ -5736,10 +5796,21 @@ function mxSetStatus(text) {
 function mxSetUiState(state) {
   const runBtn  = document.getElementById('btn-mx-run');
   const nextBtn = document.getElementById('btn-mx-next');
+  const stopBtn = document.getElementById('btn-mx-stop');
   const actions = document.getElementById('mx-results-actions');
   runBtn.style.display  = (state === 'idle') ? '' : 'none';
   nextBtn.style.display = (state === 'waiting-next') ? '' : 'none';
+  stopBtn.style.display = (state === 'busy') ? '' : 'none';
   actions.style.display = (state === 'done') ? 'flex' : 'none';
+}
+
+// A URL "has a problem" if the page failed to load, or any audited selector
+// errored or wasn't found — i.e. the cases where the user actually wants to
+// stop and look. Drives the "Auto, pause on problems" advance mode.
+function mxResultHasProblem(r) {
+  if (!r) return true;
+  if (r.loadError) return true;
+  return Object.values(r.findings || {}).some(f => f && (f.error || !f.exists));
 }
 
 function mxShortSelector(sel) {
@@ -5778,18 +5849,18 @@ function mxRenderResultsTable() {
   const el = document.getElementById('mx-results-table');
   if (!mxRun || !Object.keys(mxRun.results).length) { el.innerHTML = ''; return; }
   const sels = mxState.selectors.filter(s => s.selector.trim());
-  const rows = mxState.links.filter(l => mxRun.results[l.url]);
+  const rows = mxRun.targets.filter(t => mxRun.results[t.url]);
   el.innerHTML = `<div style="overflow-x:auto"><table class="perf-table">
     <thead><tr>
       <th>URL</th>
       ${sels.map(s => `<th title="${esc(s.selector)}">${esc(mxShortSelector(s.selector))}</th>`).join('')}
       <th>Status</th>
     </tr></thead>
-    <tbody>${rows.map(l => {
-      const r = mxRun.results[l.url];
+    <tbody>${rows.map(t => {
+      const r = mxRun.results[t.url];
       const status = r.loadError ? '<span class="perf-over">Error</span>' : '<span class="perf-ok">Complete</span>';
       return `<tr>
-        <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(l.url)}">${esc(l.url)}</td>
+        <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.url)}">${esc(t.url)}</td>
         ${sels.map(s => mxRenderCell(r.findings?.[s.id])).join('')}
         <td>${status}</td>
       </tr>`;
@@ -5797,29 +5868,63 @@ function mxRenderResultsTable() {
   </table></div>`;
 }
 
-// ── Run orchestration — one background round-trip per URL, so the spec's
-// manual "Next URL" button maps directly onto one bounded await. No progress
-// polling needed (unlike CVA/VR/Perf, which run unattended across many pages
-// in a single background call). ─────────────────────────────────────────────
+// ── Run orchestration — one background round-trip per URL. The Advance mode
+// decides how hands-on the run is: 'auto' walks every URL with no clicks,
+// 'pause' auto-advances but stops on any problem so the user can look, and
+// 'manual' stops after every URL (the original one-at-a-time behavior). Each
+// URL is still one bounded await, so resuming is just re-entering the loop —
+// no progress polling needed (unlike CVA/VR/Perf's single background call). ──
 async function runMatrixAuditStart() {
   if (_mxRunning) return;
   const validSelectors = mxState.selectors.filter(s => s.selector.trim());
-  if (!mxState.links.length) { alert('Add at least one URL first.'); return; }
+  const targets = mxCurrentTargets();
+  if (!targets.length) { alert('Add at least one URL first.'); return; }
   if (!validSelectors.length) { alert('Add at least one selector first.'); return; }
-  mxRun = { runId: 'run_' + Date.now(), index: -1, total: mxState.links.length, results: {} };
+  if (mxState.linkMode === 'forced' && !String(mxState.variationId).trim()) {
+    alert('Enter a Variation ID for Forced Link mode.'); return;
+  }
+  _mxStopRequested = false;
+  mxRun = { runId: 'run_' + Date.now(), index: -1, total: targets.length, targets, results: {} };
   document.getElementById('mx-results-table').innerHTML = '';
-  mxSetUiState('busy');
-  await mxRunNext();
+  await mxRunLoop();
 }
 
-async function mxRunNext() {
+// The driver. Audits URLs until it hits a natural stopping point (end of run,
+// a Stop request, a manual step boundary, or a problem in 'pause' mode), then
+// returns and leaves the UI in the right state. The "Next URL" button simply
+// calls this again to resume from wherever it left off.
+async function mxRunLoop() {
   if (!mxRun || _mxRunning) return;
+  const mode = mxState.advanceMode || 'auto';
+  while (true) {
+    if (_mxStopRequested) {
+      const done = mxRun.index + 1 >= mxRun.total;
+      mxSetStatus(`Stopped at ${mxRun.index + 1} of ${mxRun.total}.`);
+      mxSetUiState(done ? 'done' : 'waiting-next');
+      return;
+    }
+    if (mxRun.index + 1 >= mxRun.total) { await mxFinishRun(); return; }
+    const problem = await mxAuditNext();
+    if (mxRun.index + 1 >= mxRun.total) { await mxFinishRun(); return; }
+    if (mode === 'manual' || (mode === 'pause' && problem)) {
+      mxSetStatus(`Audited ${mxRun.index + 1} of ${mxRun.total}.${(mode === 'pause' && problem) ? ' Problem found —' : ''} Click "Next URL" to continue.`);
+      mxSetUiState('waiting-next');
+      return;
+    }
+    // Auto (or pause with a clean result): yield briefly so the table paints
+    // and a Stop click can register between URLs, then keep going.
+    await new Promise(r => setTimeout(r, 120));
+  }
+}
+
+// Audits the next URL, stores + renders + persists its result, and reports
+// whether it hit a problem (for 'pause' mode). Advances mxRun.index by one.
+async function mxAuditNext() {
   mxRun.index++;
-  if (mxRun.index >= mxRun.total) { await mxFinishRun(); return; }
-  const link = mxState.links[mxRun.index];
+  const target = mxRun.targets[mxRun.index];
   _mxRunning = true;
   mxSetUiState('busy');
-  mxSetStatus(`Auditing URL ${mxRun.index + 1} of ${mxRun.total}… ${link.url}`);
+  mxSetStatus(`Auditing URL ${mxRun.index + 1} of ${mxRun.total}… ${target.url}`);
   const entries = mxState.selectors
     .filter(s => s.selector.trim())
     .map(s => ({ id: s.id, selector: s.selector.trim(), checkSettings: mxResolveSettings(s, mxState.globalSettings) }));
@@ -5827,27 +5932,27 @@ async function mxRunNext() {
   try {
     res = await chrome.runtime.sendMessage({
       action: 'runMatrixAuditStep',
-      payload: { url: link.url, entries, waitTime: mxState.globalSettings.waitTime, winId: WIN_ID },
+      payload: { url: target.url, entries, waitTime: mxState.globalSettings.waitTime, winId: WIN_ID },
     });
   } catch (e) {
     res = { ok: false, error: e.message };
   }
-  mxRun.results[link.url] = (res && res.ok)
+  mxRun.results[target.url] = (res && res.ok)
     ? { findings: res.findings || {}, finalUrl: res.finalUrl || '', loadError: res.loadError || null }
     : { findings: {}, finalUrl: '', loadError: (res && res.error) || 'Unknown error' };
   _mxRunning = false;
   mxRenderResultsTable();
   await mxSaveAudit();
-  if (mxRun.index + 1 >= mxRun.total) {
-    await mxFinishRun();
-  } else {
-    mxSetStatus(`Audited ${mxRun.index + 1} of ${mxRun.total}. Click "Next URL" to continue.`);
-    mxSetUiState('waiting-next');
-  }
+  return mxResultHasProblem(mxRun.results[target.url]);
+}
+
+function mxStopRun() {
+  _mxStopRequested = true;
+  mxSetStatus('Stopping after the current URL…');
 }
 
 async function mxFinishRun() {
-  mxSetStatus(`Complete — audited ${mxRun.total} URL${mxRun.total === 1 ? '' : 's'}.`);
+  mxSetStatus(`Complete — audited ${Object.keys(mxRun.results).length} of ${mxRun.total} URL${mxRun.total === 1 ? '' : 's'}.`);
   mxSetUiState('done');
 }
 
@@ -5871,10 +5976,10 @@ function exportMatrixResultsCsv() {
   const sels = mxState.selectors.filter(s => s.selector.trim());
   const header = ['URL', ...sels.map(s => s.selector), 'Status'];
   const rows = [header];
-  mxState.links.forEach(l => {
-    const r = mxRun.results[l.url];
+  mxRun.targets.forEach(t => {
+    const r = mxRun.results[t.url];
     if (!r) return;
-    const row = [l.url];
+    const row = [t.url];
     sels.forEach(s => {
       const f = r.findings?.[s.id];
       row.push(!f ? '' : f.error ? 'ERROR' : (f.exists ? 'FOUND' : 'NOT FOUND'));
@@ -5896,6 +6001,9 @@ async function initMatrixAuditor() {
 
   document.getElementById('mx-links-input').value = mxState.linksRaw || '';
   document.getElementById('mx-audit-name').value = mxState.name || '';
+  document.getElementById('mx-variation-id').value = mxState.variationId || '';
+  document.getElementById('mx-advance-mode').value = mxState.advanceMode || 'auto';
+  mxSetLinkMode(mxState.linkMode || 'none');
   mxApplyGlobalSettingsToInputs();
   mxRenderSelectors();
   mxRenderLinkGroups();
@@ -5906,6 +6014,18 @@ async function initMatrixAuditor() {
 
   document.getElementById('mx-links-input').addEventListener('input', mxOnLinksInput);
   document.getElementById('btn-mx-clear-links').addEventListener('click', mxClearLinks);
+  document.getElementById('mx-mode-forced').addEventListener('change', e => mxSetLinkMode(e.target.checked ? 'forced' : 'none'));
+  document.getElementById('mx-mode-itw').addEventListener('change', e => mxSetLinkMode(e.target.checked ? 'itw' : 'none'));
+  document.getElementById('mx-variation-id').addEventListener('input', e => {
+    mxState.variationId = e.target.value;
+    mxRenderLinkList();
+    mxUpdateLinkCount();
+    persistMxState();
+  });
+  document.getElementById('mx-advance-mode').addEventListener('change', e => {
+    mxState.advanceMode = e.target.value;
+    persistMxState();
+  });
   document.getElementById('btn-mx-add-selector').addEventListener('click', mxAddSelector);
   document.getElementById('mx-load-audit-select').addEventListener('change', e => mxLoadAudit(e.target.value));
   document.getElementById('btn-mx-delete-audit').addEventListener('click', mxDeleteAudit);
@@ -5923,7 +6043,8 @@ async function initMatrixAuditor() {
   document.getElementById('btn-mx-reset-settings').addEventListener('click', mxResetGlobalSettings);
 
   document.getElementById('btn-mx-run').addEventListener('click', runMatrixAuditStart);
-  document.getElementById('btn-mx-next').addEventListener('click', mxRunNext);
+  document.getElementById('btn-mx-next').addEventListener('click', mxRunLoop);
+  document.getElementById('btn-mx-stop').addEventListener('click', mxStopRun);
   document.getElementById('btn-mx-export-csv').addEventListener('click', exportMatrixResultsCsv);
   document.getElementById('btn-mx-rerun').addEventListener('click', runMatrixAuditStart);
 }

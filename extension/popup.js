@@ -5974,8 +5974,9 @@ function mxResetRun() {
 }
 
 async function mxFinishRun() {
-  mxSetStatus(`Complete — audited ${Object.keys(mxRun.results).length} of ${mxRun.total} URL${mxRun.total === 1 ? '' : 's'}.`);
+  mxSetStatus(`Complete — audited ${Object.keys(mxRun.results).length} of ${mxRun.total} URL${mxRun.total === 1 ? '' : 's'}. Report opened in a new tab.`);
   mxSetUiState('done');
+  mxOpenReport();
 }
 
 // ── CSV export ───────────────────────────────────────────────────────────────
@@ -6010,6 +6011,138 @@ function exportMatrixResultsCsv() {
     rows.push(row);
   });
   mxDownloadCsv(rows, `matrix-audit-${mxRun.runId}.csv`);
+}
+
+// ── Full report (opens in a new tab, like the Test Agent QA report) ──────────
+// A self-contained HTML page — blob-URL tabs have no access to the panel's
+// stylesheet, so the report carries its own CSS. Reuses the same .rpt-* visual
+// language as buildFullReportHtml so both reports read as one family.
+function mxReportBadge(finding) {
+  if (!finding) return '<span class="rpt-badge rpt-badge-skip">—</span>';
+  if (finding.error) return '<span class="rpt-badge rpt-badge-fail">ERROR</span>';
+  return finding.exists
+    ? '<span class="rpt-badge rpt-badge-pass">FOUND</span>'
+    : '<span class="rpt-badge rpt-badge-fail">NOT FOUND</span>';
+}
+
+function mxBuildReportHtml() {
+  const sels = mxState.selectors.filter(s => s.selector.trim());
+  const targets = mxRun.targets.filter(t => mxRun.results[t.url]);
+  const modeLabel = mxState.linkMode === 'forced'
+    ? `Forced Link — optimizely_x=${esc(String(mxState.variationId || ''))}`
+    : mxState.linkMode === 'itw' ? 'ITW — cro_mode=qa' : 'None (links as pasted)';
+
+  const summaryRows = sels.map(s => {
+    const found = targets.filter(t => mxRun.results[t.url].findings?.[s.id]?.exists).length;
+    const cls = found === targets.length ? 'rpt-badge-pass' : found === 0 ? 'rpt-badge-fail' : 'rpt-badge-issues';
+    return `<tr><td><code>${esc(s.selector)}</code></td>
+      <td><span class="rpt-badge ${cls}">${found} / ${targets.length} found</span></td></tr>`;
+  }).join('');
+
+  const matrixHead = `<tr><th>URL</th>${sels.map(s => `<th><code>${esc(mxShortSelector(s.selector))}</code></th>`).join('')}<th>Status</th></tr>`;
+  const matrixBody = targets.map(t => {
+    const r = mxRun.results[t.url];
+    const status = r.loadError ? '<span class="rpt-badge rpt-badge-fail">Error</span>' : '<span class="rpt-badge rpt-badge-pass">Complete</span>';
+    return `<tr>
+      <td><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.url)}</a></td>
+      ${sels.map(s => `<td>${mxReportBadge(r.findings?.[s.id])}</td>`).join('')}
+      <td>${status}</td></tr>`;
+  }).join('');
+
+  const details = targets.map(t => {
+    const r = mxRun.results[t.url];
+    const err = r.loadError ? `<p class="rpt-muted">Load error: ${esc(r.loadError)}</p>` : '';
+    const perSel = sels.map(s => {
+      const f = r.findings?.[s.id];
+      const lines = mxDetailLines(f).map(l => `<li>${esc(l || '')}</li>`).join('') || '<li>—</li>';
+      return `<h3><code>${esc(s.selector)}</code> ${mxReportBadge(f)}</h3><ul>${lines}</ul>`;
+    }).join('');
+    return `<details class="rpt-section"><summary><b>${esc(t.url)}</b></summary>${err}${perSel}</details>`;
+  }).join('');
+
+  const name = mxState.name || 'Matrix Audit';
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${esc(name)} — Matrix Audit Report</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    margin: 0; padding: 24px; line-height: 1.5; background: #f5f6f8; color: #1a1d23; }
+  @media (prefers-color-scheme: dark) { body { background: #16181d; color: #e6e8eb; } }
+  .rpt-wrap { max-width: 1040px; margin: 0 auto; }
+  .no-print { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
+  .no-print button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid #888;
+    background: #2563eb; color: #fff; cursor: pointer; }
+  header.rpt-header { background: #fff; border: 1px solid #d8dbe0; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+  @media (prefers-color-scheme: dark) { header.rpt-header { background: #1e2128; border-color: #333844; } }
+  header.rpt-header h1 { margin: 0 0 6px; font-size: 22px; }
+  .rpt-meta { font-size: 13px; color: #666; }
+  @media (prefers-color-scheme: dark) { .rpt-meta { color: #9aa0aa; } }
+  .rpt-section { background: #fff; border: 1px solid #d8dbe0; border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; }
+  @media (prefers-color-scheme: dark) { .rpt-section { background: #1e2128; border-color: #333844; } }
+  .rpt-section > summary { cursor: pointer; font-size: 14px; }
+  .rpt-section[open] > summary { margin-bottom: 8px; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  h3 { font-size: 13px; margin: 12px 0 4px; }
+  .rpt-muted { font-size: 12px; color: #777; }
+  @media (prefers-color-scheme: dark) { .rpt-muted { color: #8a909a; } }
+  code { font-family: "Cascadia Code", "Menlo", monospace; font-size: 12px;
+    background: rgba(130,130,130,.15); padding: 1px 5px; border-radius: 4px; }
+  .rpt-badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .03em;
+    padding: 3px 9px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
+  .rpt-badge-pass   { background: #e6f7ec; color: #146c2e; border-color: #b7e4c7; }
+  .rpt-badge-fail   { background: #fde8e8; color: #9b1c1c; border-color: #f5b5b5; }
+  .rpt-badge-issues { background: #fff4e0; color: #8a5300; border-color: #fadfa1; }
+  .rpt-badge-skip   { background: #eceef1; color: #565c66; border-color: #d8dbe0; }
+  @media (prefers-color-scheme: dark) {
+    .rpt-badge-pass   { background: #113a20; color: #7fe0a0; border-color: #1e5c37; }
+    .rpt-badge-fail   { background: #3a1414; color: #f29b9b; border-color: #5c2020; }
+    .rpt-badge-issues { background: #3a2c0e; color: #f2c675; border-color: #5c481e; }
+    .rpt-badge-skip   { background: #2a2d33; color: #b0b5bd; border-color: #3a3e46; }
+  }
+  table.rpt-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.rpt-table th, table.rpt-table td { text-align: left; padding: 7px 9px;
+    border-bottom: 1px solid #e3e5e9; vertical-align: top; }
+  @media (prefers-color-scheme: dark) { table.rpt-table th, table.rpt-table td { border-color: #333844; } }
+  table.rpt-table th { color: #444; font-weight: 600; }
+  @media (prefers-color-scheme: dark) { table.rpt-table th { color: #c3c8d1; } }
+  table.rpt-table a { color: inherit; }
+  .rpt-scroll { overflow-x: auto; }
+  ul { margin: 4px 0; padding-left: 18px; }
+  @media print { .no-print { display: none; } body { background: #fff; color: #000; padding: 0; }
+    .rpt-section, header.rpt-header { border: 1px solid #ccc; background: #fff; } }
+</style>
+</head>
+<body>
+  <div class="rpt-wrap">
+    <div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+    <header class="rpt-header">
+      <h1>${esc(name)}</h1>
+      <div class="rpt-meta">Matrix Audit Report · generated ${esc(new Date().toLocaleString())}</div>
+      <div class="rpt-meta" style="margin-top:6px">${targets.length} URL${targets.length === 1 ? '' : 's'} · ${sels.length} selector${sels.length === 1 ? '' : 's'} · Link mode: ${modeLabel}</div>
+    </header>
+    <div class="rpt-section">
+      <h2>Selector summary</h2>
+      <table class="rpt-table"><tbody>${summaryRows || '<tr><td class="rpt-muted">No selectors.</td></tr>'}</tbody></table>
+    </div>
+    <div class="rpt-section">
+      <h2>Results matrix</h2>
+      <div class="rpt-scroll"><table class="rpt-table"><thead>${matrixHead}</thead><tbody>${matrixBody}</tbody></table></div>
+    </div>
+    <h2 style="margin:22px 0 12px">Per-URL detail</h2>
+    ${details}
+  </div>
+</body>
+</html>`;
+}
+
+function mxOpenReport() {
+  if (!mxRun || !Object.keys(mxRun.results).length) return;
+  const html = mxBuildReportHtml();
+  chrome.tabs.create({ url: URL.createObjectURL(new Blob([html], { type: 'text/html' })) });
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
@@ -6068,6 +6201,7 @@ async function initMatrixAuditor() {
   document.getElementById('btn-mx-next').addEventListener('click', mxRunLoop);
   document.getElementById('btn-mx-stop').addEventListener('click', mxStopRun);
   document.getElementById('btn-mx-reset').addEventListener('click', mxResetRun);
+  document.getElementById('btn-mx-view-report').addEventListener('click', mxOpenReport);
   document.getElementById('btn-mx-export-csv').addEventListener('click', exportMatrixResultsCsv);
   document.getElementById('btn-mx-rerun').addEventListener('click', runMatrixAuditStart);
 }

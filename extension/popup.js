@@ -5976,7 +5976,7 @@ function mxResetRun() {
 async function mxFinishRun() {
   mxSetStatus(`Complete — audited ${Object.keys(mxRun.results).length} of ${mxRun.total} URL${mxRun.total === 1 ? '' : 's'}. Report opened in a new tab.`);
   mxSetUiState('done');
-  mxOpenReport();
+  await mxOpenReport();
 }
 
 // ── CSV export ───────────────────────────────────────────────────────────────
@@ -6013,10 +6013,13 @@ function exportMatrixResultsCsv() {
   mxDownloadCsv(rows, `matrix-audit-${mxRun.runId}.csv`);
 }
 
-// ── Full report (opens in a new tab, like the Test Agent QA report) ──────────
-// A self-contained HTML page — blob-URL tabs have no access to the panel's
-// stylesheet, so the report carries its own CSS. Reuses the same .rpt-* visual
-// language as buildFullReportHtml so both reports read as one family.
+// ── Full report (opens in a bundled tab, like the Test Agent QA report) ──────
+// Renders the report BODY only (the CSS + page shell live in report.html). We
+// deliberately do NOT open a blob: URL — recent Chrome blocks top-level
+// navigation to extension-created blob: URLs (the tab loads with an error), so
+// the report content is handed to a bundled report.html page through
+// chrome.storage.session instead. Uses the same .rpt-* visual language as
+// buildFullReportHtml so both reports read as one family.
 function mxReportBadge(finding) {
   if (!finding) return '<span class="rpt-badge rpt-badge-skip">—</span>';
   if (finding.error) return '<span class="rpt-badge rpt-badge-fail">ERROR</span>';
@@ -6025,7 +6028,8 @@ function mxReportBadge(finding) {
     : '<span class="rpt-badge rpt-badge-fail">NOT FOUND</span>';
 }
 
-function mxBuildReportHtml() {
+// Just the inner markup that report.html drops into its .rpt-wrap container.
+function mxBuildReportBody() {
   const sels = mxState.selectors.filter(s => s.selector.trim());
   const targets = mxRun.targets.filter(t => mxRun.results[t.url]);
   const modeLabel = mxState.linkMode === 'forced'
@@ -6061,65 +6065,7 @@ function mxBuildReportHtml() {
   }).join('');
 
   const name = mxState.name || 'Matrix Audit';
-  return `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>${esc(name)} — Matrix Audit Report</title>
-<style>
-  :root { color-scheme: light dark; }
-  * { box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-    margin: 0; padding: 24px; line-height: 1.5; background: #f5f6f8; color: #1a1d23; }
-  @media (prefers-color-scheme: dark) { body { background: #16181d; color: #e6e8eb; } }
-  .rpt-wrap { max-width: 1040px; margin: 0 auto; }
-  .no-print { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
-  .no-print button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid #888;
-    background: #2563eb; color: #fff; cursor: pointer; }
-  header.rpt-header { background: #fff; border: 1px solid #d8dbe0; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-  @media (prefers-color-scheme: dark) { header.rpt-header { background: #1e2128; border-color: #333844; } }
-  header.rpt-header h1 { margin: 0 0 6px; font-size: 22px; }
-  .rpt-meta { font-size: 13px; color: #666; }
-  @media (prefers-color-scheme: dark) { .rpt-meta { color: #9aa0aa; } }
-  .rpt-section { background: #fff; border: 1px solid #d8dbe0; border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; }
-  @media (prefers-color-scheme: dark) { .rpt-section { background: #1e2128; border-color: #333844; } }
-  .rpt-section > summary { cursor: pointer; font-size: 14px; }
-  .rpt-section[open] > summary { margin-bottom: 8px; }
-  h2 { font-size: 17px; margin: 0 0 12px; }
-  h3 { font-size: 13px; margin: 12px 0 4px; }
-  .rpt-muted { font-size: 12px; color: #777; }
-  @media (prefers-color-scheme: dark) { .rpt-muted { color: #8a909a; } }
-  code { font-family: "Cascadia Code", "Menlo", monospace; font-size: 12px;
-    background: rgba(130,130,130,.15); padding: 1px 5px; border-radius: 4px; }
-  .rpt-badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .03em;
-    padding: 3px 9px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
-  .rpt-badge-pass   { background: #e6f7ec; color: #146c2e; border-color: #b7e4c7; }
-  .rpt-badge-fail   { background: #fde8e8; color: #9b1c1c; border-color: #f5b5b5; }
-  .rpt-badge-issues { background: #fff4e0; color: #8a5300; border-color: #fadfa1; }
-  .rpt-badge-skip   { background: #eceef1; color: #565c66; border-color: #d8dbe0; }
-  @media (prefers-color-scheme: dark) {
-    .rpt-badge-pass   { background: #113a20; color: #7fe0a0; border-color: #1e5c37; }
-    .rpt-badge-fail   { background: #3a1414; color: #f29b9b; border-color: #5c2020; }
-    .rpt-badge-issues { background: #3a2c0e; color: #f2c675; border-color: #5c481e; }
-    .rpt-badge-skip   { background: #2a2d33; color: #b0b5bd; border-color: #3a3e46; }
-  }
-  table.rpt-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  table.rpt-table th, table.rpt-table td { text-align: left; padding: 7px 9px;
-    border-bottom: 1px solid #e3e5e9; vertical-align: top; }
-  @media (prefers-color-scheme: dark) { table.rpt-table th, table.rpt-table td { border-color: #333844; } }
-  table.rpt-table th { color: #444; font-weight: 600; }
-  @media (prefers-color-scheme: dark) { table.rpt-table th { color: #c3c8d1; } }
-  table.rpt-table a { color: inherit; }
-  .rpt-scroll { overflow-x: auto; }
-  ul { margin: 4px 0; padding-left: 18px; }
-  @media print { .no-print { display: none; } body { background: #fff; color: #000; padding: 0; }
-    .rpt-section, header.rpt-header { border: 1px solid #ccc; background: #fff; } }
-</style>
-</head>
-<body>
-  <div class="rpt-wrap">
-    <div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
-    <header class="rpt-header">
+  return `<header class="rpt-header">
       <h1>${esc(name)}</h1>
       <div class="rpt-meta">Matrix Audit Report · generated ${esc(new Date().toLocaleString())}</div>
       <div class="rpt-meta" style="margin-top:6px">${targets.length} URL${targets.length === 1 ? '' : 's'} · ${sels.length} selector${sels.length === 1 ? '' : 's'} · Link mode: ${modeLabel}</div>
@@ -6133,16 +6079,22 @@ function mxBuildReportHtml() {
       <div class="rpt-scroll"><table class="rpt-table"><thead>${matrixHead}</thead><tbody>${matrixBody}</tbody></table></div>
     </div>
     <h2 style="margin:22px 0 12px">Per-URL detail</h2>
-    ${details}
-  </div>
-</body>
-</html>`;
+    ${details}`;
 }
 
-function mxOpenReport() {
+// Stash the rendered body under a fresh id in session storage (a non-namespaced
+// key so the bundled report.html page, which has no window id, can read it),
+// prune to the newest few, then open the bundled page pointed at that id.
+async function mxOpenReport() {
   if (!mxRun || !Object.keys(mxRun.results).length) return;
-  const html = mxBuildReportHtml();
-  chrome.tabs.create({ url: URL.createObjectURL(new Blob([html], { type: 'text/html' })) });
+  const id = 'r_' + Date.now();
+  const title = (mxState.name || 'Matrix Audit') + ' — Matrix Audit Report';
+  const { mxReports = {} } = await chrome.storage.session.get('mxReports');
+  mxReports[id] = { title, bodyHtml: mxBuildReportBody() };
+  const ids = Object.keys(mxReports).sort();
+  while (ids.length > 5) delete mxReports[ids.shift()];
+  await chrome.storage.session.set({ mxReports });
+  chrome.tabs.create({ url: chrome.runtime.getURL('report.html') + '?k=' + id });
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────

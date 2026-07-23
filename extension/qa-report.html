@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Selenite QA Report</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    margin: 0; padding: 24px; line-height: 1.5;
+    background: #f5f6f8; color: #1a1d23;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #16181d; color: #e6e8eb; }
+  }
+  .rpt-wrap { max-width: 960px; margin: 0 auto; }
+  .no-print {
+    display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px;
+  }
+  .no-print button {
+    font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid #888;
+    background: #2563eb; color: #fff; cursor: pointer;
+  }
+  header.rpt-header {
+    background: #fff; border: 1px solid #d8dbe0; border-radius: 8px;
+    padding: 20px; margin-bottom: 20px;
+  }
+  @media (prefers-color-scheme: dark) {
+    header.rpt-header { background: #1e2128; border-color: #333844; }
+  }
+  header.rpt-header h1 { margin: 0 0 6px; font-size: 22px; }
+  header.rpt-header .rpt-meta { font-size: 13px; color: #666; }
+  @media (prefers-color-scheme: dark) { header.rpt-header .rpt-meta { color: #9aa0aa; } }
+  header.rpt-header ul { margin: 8px 0 0; padding-left: 20px; font-size: 13px; }
+  .rpt-section {
+    background: #fff; border: 1px solid #d8dbe0; border-radius: 8px;
+    padding: 18px 20px; margin-bottom: 16px; page-break-inside: avoid;
+  }
+  @media (prefers-color-scheme: dark) {
+    .rpt-section { background: #1e2128; border-color: #333844; }
+  }
+  .rpt-section-hdr { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .rpt-section-hdr h2 { margin: 0; font-size: 17px; }
+  .rpt-summary { font-size: 13px; color: #555; margin: 6px 0 12px; }
+  @media (prefers-color-scheme: dark) { .rpt-summary { color: #aab0ba; } }
+  .rpt-muted { font-size: 12px; color: #777; }
+  @media (prefers-color-scheme: dark) { .rpt-muted { color: #8a909a; } }
+  h3 { font-size: 14px; margin: 14px 0 6px; }
+  .rpt-badge {
+    display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .03em;
+    padding: 4px 10px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap;
+  }
+  .rpt-badge-pass    { background: #e6f7ec; color: #146c2e; border-color: #b7e4c7; }
+  .rpt-badge-fail    { background: #fde8e8; color: #9b1c1c; border-color: #f5b5b5; }
+  .rpt-badge-issues  { background: #fff4e0; color: #8a5300; border-color: #fadfa1; }
+  .rpt-badge-skip    { background: #eceef1; color: #565c66; border-color: #d8dbe0; }
+  .rpt-badge-info    { background: #e7effe; color: #1d4ed8; border-color: #bcd2fb; }
+  @media (prefers-color-scheme: dark) {
+    .rpt-badge-pass   { background: #113a20; color: #7fe0a0; border-color: #1e5c37; }
+    .rpt-badge-fail   { background: #3a1414; color: #f29b9b; border-color: #5c2020; }
+    .rpt-badge-issues { background: #3a2c0e; color: #f2c675; border-color: #5c481e; }
+    .rpt-badge-skip   { background: #2a2d33; color: #b0b5bd; border-color: #3a3e46; }
+    .rpt-badge-info   { background: #16294f; color: #9db8f5; border-color: #234279; }
+  }
+  table.rpt-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.rpt-table th, table.rpt-table td {
+    text-align: left; padding: 6px 8px; border-bottom: 1px solid #e3e5e9; vertical-align: top;
+  }
+  @media (prefers-color-scheme: dark) { table.rpt-table th, table.rpt-table td { border-color: #333844; } }
+  table.rpt-table th { color: #444; font-weight: 600; }
+  @media (prefers-color-scheme: dark) { table.rpt-table th { color: #c3c8d1; } }
+  table.rpt-table tr { page-break-inside: avoid; }
+  ul { margin: 4px 0; padding-left: 18px; }
+  @media print {
+    .no-print { display: none; }
+    body { background: #fff; color: #000; padding: 0; }
+    .rpt-wrap { max-width: none; }
+    header.rpt-header, .rpt-section { border: 1px solid #ccc; background: #fff; }
+    .rpt-badge-pass, .rpt-badge-fail, .rpt-badge-issues, .rpt-badge-skip, .rpt-badge-info { border-width: 1px; }
+  }
+</style>
+</head>
+<body>
+  <div class="rpt-wrap">
+    <div class="no-print"><button id="qa-print-btn" type="button">Print / Save as PDF</button></div>
+    <div id="qa-report-content"><p class="rpt-muted" style="text-align:center;padding:40px">Loading report…</p></div>
+  </div>
+  <script src="qa-report.js"></script>
+</body>
+</html>

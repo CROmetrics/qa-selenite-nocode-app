@@ -516,8 +516,7 @@ async function runTestAgent() {
         aiSectionHtml = rptAiSummarySection(null, 'Agentic Analysis is off — enable it in Test Controls for an AI-written summary.');
       }
       status.textContent = 'Done — report opened in a new tab.';
-      const html = buildFullReportHtml({ ts: Date.now(), pageUrls: [], modes: modeResults, extraHtml: aiSectionHtml });
-      chrome.tabs.create({ url: URL.createObjectURL(new Blob([html], { type: 'text/html' })) });
+      await openReportTab({ ts: Date.now(), pageUrls: [], modes: modeResults, extraHtml: aiSectionHtml });
     } else {
       status.textContent = 'Done — nothing configured to run.';
     }
@@ -3008,12 +3007,29 @@ async function idbGetAll(store) {
   return idbReq((await idb()).transaction(store).objectStore(store).getAll());
 }
 
-// Data URLs can't be opened as a top-level navigation; hand the image to a new
-// tab as a blob URL instead (same-origin with the panel, so it renders).
+// Neither a data: URL nor an extension-created blob: URL can be opened as a
+// top-level navigation in recent Chrome (the tab loads with an error), so the
+// screenshot is handed to a bundled image.html viewer through
+// chrome.storage.session instead — same mechanism as the QA report tab, and a
+// non-namespaced key so the viewer page (which has no window id) can read it.
+// The map is pruned by total size (screenshots run to several MB each) so it
+// can't blow the ~10MB session-storage quota.
 async function openImageInTab(dataUrl) {
+  if (!dataUrl) return;
   try {
-    const blob = await (await fetch(dataUrl)).blob();
-    chrome.tabs.create({ url: URL.createObjectURL(blob) });
+    const id = 'img_' + Date.now();
+    const { taImages = {} } = await chrome.storage.session.get('taImages');
+    taImages[id] = dataUrl;
+    const BUDGET = 6 * 1024 * 1024;
+    const ids = Object.keys(taImages).sort();
+    let total = ids.reduce((n, k) => n + taImages[k].length, 0);
+    while (ids.length > 1 && total > BUDGET) {
+      const drop = ids.shift();
+      total -= taImages[drop].length;
+      delete taImages[drop];
+    }
+    await chrome.storage.session.set({ taImages });
+    chrome.tabs.create({ url: chrome.runtime.getURL('image.html') + '?k=' + id });
   } catch (_) {}
 }
 
@@ -4397,9 +4413,9 @@ function rptFunnelSection(entry) {
   return rptSection(entry.name, badge, summary, body);
 }
 
-// ── Report document assembly (pure — no DOM reads, only formats data already
-// produced by each mode's own run) ────────────────────────────────────────────
-function buildFullReportHtml(sections) {
+// ── Report assembly (pure body builder) + open in a bundled tab ─────────────
+// Formats data already produced by each mode's own run — no DOM reads.
+function buildReportBody(sections) {
   const { ts, pageUrls, modes, extraHtml } = sections;
   const builders = {
     2: rptAbSection, 3: rptVrSection,
@@ -4411,102 +4427,33 @@ function buildFullReportHtml(sections) {
     ? pageUrls.map(u => `<li>${esc(u)}</li>`).join('')
     : '<li>No page URLs recorded.</li>';
 
-  return `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>Selenite QA Report</title>
-<style>
-  :root { color-scheme: light dark; }
-  * { box-sizing: border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-    margin: 0; padding: 24px; line-height: 1.5;
-    background: #f5f6f8; color: #1a1d23;
-  }
-  @media (prefers-color-scheme: dark) {
-    body { background: #16181d; color: #e6e8eb; }
-  }
-  .rpt-wrap { max-width: 960px; margin: 0 auto; }
-  .no-print {
-    display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px;
-  }
-  .no-print button {
-    font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid #888;
-    background: #2563eb; color: #fff; cursor: pointer;
-  }
-  header.rpt-header {
-    background: #fff; border: 1px solid #d8dbe0; border-radius: 8px;
-    padding: 20px; margin-bottom: 20px;
-  }
-  @media (prefers-color-scheme: dark) {
-    header.rpt-header { background: #1e2128; border-color: #333844; }
-  }
-  header.rpt-header h1 { margin: 0 0 6px; font-size: 22px; }
-  header.rpt-header .rpt-meta { font-size: 13px; color: #666; }
-  @media (prefers-color-scheme: dark) { header.rpt-header .rpt-meta { color: #9aa0aa; } }
-  header.rpt-header ul { margin: 8px 0 0; padding-left: 20px; font-size: 13px; }
-  .rpt-section {
-    background: #fff; border: 1px solid #d8dbe0; border-radius: 8px;
-    padding: 18px 20px; margin-bottom: 16px; page-break-inside: avoid;
-  }
-  @media (prefers-color-scheme: dark) {
-    .rpt-section { background: #1e2128; border-color: #333844; }
-  }
-  .rpt-section-hdr { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .rpt-section-hdr h2 { margin: 0; font-size: 17px; }
-  .rpt-summary { font-size: 13px; color: #555; margin: 6px 0 12px; }
-  @media (prefers-color-scheme: dark) { .rpt-summary { color: #aab0ba; } }
-  .rpt-muted { font-size: 12px; color: #777; }
-  @media (prefers-color-scheme: dark) { .rpt-muted { color: #8a909a; } }
-  h3 { font-size: 14px; margin: 14px 0 6px; }
-  .rpt-badge {
-    display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .03em;
-    padding: 4px 10px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap;
-  }
-  .rpt-badge-pass    { background: #e6f7ec; color: #146c2e; border-color: #b7e4c7; }
-  .rpt-badge-fail    { background: #fde8e8; color: #9b1c1c; border-color: #f5b5b5; }
-  .rpt-badge-issues  { background: #fff4e0; color: #8a5300; border-color: #fadfa1; }
-  .rpt-badge-skip    { background: #eceef1; color: #565c66; border-color: #d8dbe0; }
-  .rpt-badge-info    { background: #e7effe; color: #1d4ed8; border-color: #bcd2fb; }
-  @media (prefers-color-scheme: dark) {
-    .rpt-badge-pass   { background: #113a20; color: #7fe0a0; border-color: #1e5c37; }
-    .rpt-badge-fail   { background: #3a1414; color: #f29b9b; border-color: #5c2020; }
-    .rpt-badge-issues { background: #3a2c0e; color: #f2c675; border-color: #5c481e; }
-    .rpt-badge-skip   { background: #2a2d33; color: #b0b5bd; border-color: #3a3e46; }
-    .rpt-badge-info   { background: #16294f; color: #9db8f5; border-color: #234279; }
-  }
-  table.rpt-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  table.rpt-table th, table.rpt-table td {
-    text-align: left; padding: 6px 8px; border-bottom: 1px solid #e3e5e9; vertical-align: top;
-  }
-  @media (prefers-color-scheme: dark) { table.rpt-table th, table.rpt-table td { border-color: #333844; } }
-  table.rpt-table th { color: #444; font-weight: 600; }
-  @media (prefers-color-scheme: dark) { table.rpt-table th { color: #c3c8d1; } }
-  table.rpt-table tr { page-break-inside: avoid; }
-  ul { margin: 4px 0; padding-left: 18px; }
-  @media print {
-    .no-print { display: none; }
-    body { background: #fff; color: #000; padding: 0; }
-    .rpt-wrap { max-width: none; }
-    header.rpt-header, .rpt-section { border: 1px solid #ccc; background: #fff; }
-    .rpt-badge-pass, .rpt-badge-fail, .rpt-badge-issues, .rpt-badge-skip, .rpt-badge-info { border-width: 1px; }
-  }
-</style>
-</head>
-<body>
-  <div class="rpt-wrap">
-    <div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
-    <header class="rpt-header">
+  // Just the inner markup that qa-report.html drops into its .rpt-wrap
+  // container. Deliberately NOT a full HTML document opened via a blob: URL —
+  // recent Chrome blocks top-level navigation to extension-created blob: URLs
+  // (the tab loads with an error), so openReportTab stashes this body in
+  // chrome.storage.session and opens the bundled qa-report.html page instead.
+  // The CSS + page shell + print button live in qa-report.html.
+  return `<header class="rpt-header">
       <h1>Selenite QA Report</h1>
       <div class="rpt-meta">Generated ${esc(new Date(ts).toLocaleString())}</div>
       <div class="rpt-meta" style="margin-top:8px">Page(s) tested:</div>
       <ul>${urlsHtml}</ul>
     </header>
-    ${body}
-  </div>
-</body>
-</html>`;
+    ${body}`;
+}
+
+// Stash the rendered report body under a fresh id in session storage (a
+// non-namespaced key so the bundled qa-report.html page, which has no window
+// id, can read it — mirrors mxOpenReport), prune to the newest few, then open
+// the bundled page pointed at that id.
+async function openReportTab(sections) {
+  const id = 'r_' + Date.now();
+  const { taReports = {} } = await chrome.storage.session.get('taReports');
+  taReports[id] = { title: 'Selenite QA Report', bodyHtml: buildReportBody(sections) };
+  const ids = Object.keys(taReports).sort();
+  while (ids.length > 5) delete taReports[ids.shift()];
+  await chrome.storage.session.set({ taReports });
+  chrome.tabs.create({ url: chrome.runtime.getURL('qa-report.html') + '?k=' + id });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -6019,7 +5966,7 @@ function exportMatrixResultsCsv() {
 // navigation to extension-created blob: URLs (the tab loads with an error), so
 // the report content is handed to a bundled report.html page through
 // chrome.storage.session instead. Uses the same .rpt-* visual language as
-// buildFullReportHtml so both reports read as one family.
+// buildReportBody so both reports read as one family.
 function mxReportBadge(finding) {
   if (!finding) return '<span class="rpt-badge rpt-badge-skip">—</span>';
   if (finding.error) return '<span class="rpt-badge rpt-badge-fail">ERROR</span>';

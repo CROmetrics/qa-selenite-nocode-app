@@ -1,0 +1,2170 @@
+// Visual Diff regression suite — deterministic matching/diffing engine plus the
+// debug-log diagnostics built on top of it.
+//
+//   RUN:  cd extension/tests && jsc vd-diff.test.js
+//   (jsc ships with macOS at
+//    /System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc
+//    — add it to PATH or invoke by full path.)
+//
+// NOT wired into .github/workflows/run-tests.yml, which runs pytest against a
+// `tests/` directory that does not exist in this repo. Left alone deliberately:
+// the Python backend is out of scope for extension work.
+//
+// Every assertion below traces to a REAL failure observed on a real page, not to
+// a hypothetical. The comments name which one, because that is the difference
+// between a test that gets maintained and a test that gets deleted as noise:
+//
+//   * reflow bands overlapping in y collapsed shift segmentation into untrusted
+//     singletons (97 segments / 95 untrusted), leaking ~49 pure-reflow elements
+//     per variant as false "moved" findings.
+//   * horizontal shifts were assumed not to cascade; a wrapping template-link
+//     grid re-flowed twelve chips by ~126px and reported each one separately.
+//   * captures were never pinned to a common viewport — Control at 1693px vs
+//     variants at 1470px silently invalidated an entire run while still
+//     reporting a tidy two-finding result.
+//   * React 19 useId values (`_R_84qnmlb_-MCP`, `_r_5_-MCP`) were accepted as
+//     stable ids and used as structural path ANCHORS, poisoning the path key for
+//     everything beneath them.
+//   * the DOM walk was clamped to the screenshot's 8000px ceiling, so 60% of a
+//     19845px page was never walked on either side and nothing below the fold
+//     could be reported at all.
+//
+// vd-diff.js is loaded directly; the two functions that live in popup.js and
+// background.js are sliced out of those files rather than copied, so this suite
+// exercises the real shipping code and breaks loudly if either is renamed.
+
+load('../vd-config.js');
+load('../vd-diff.js');
+
+var _pu = readFile('../popup.js');
+eval(_pu.slice(_pu.indexOf('function vdCollectProblems(sections)'),
+                _pu.indexOf('function buildDebugLog(sections)')));
+// buildDebugLog carries the findings projection that becomes the exported JSON.
+eval(_pu.slice(_pu.indexOf('function buildDebugLog(sections)'),
+                _pu.indexOf('\n// Stash the rendered report body')));
+// Control-vs-Control detectors and shared-finding extraction, sliced from the
+// pipeline they guard.
+eval(_pu.slice(_pu.indexOf('function vdFindingIdentity(f)'),
+                _pu.indexOf('async function runVisualDiffPipeline')));
+eval(_pu.slice(_pu.indexOf('function vdNormalizeTargetUrl(u)'),
+                _pu.indexOf('function vdFindingIdentity(f)')));
+// The gate that decides whether grading is withheld for a run, and the
+// configured-URL parse that variant verification depends on.
+eval(_pu.slice(_pu.indexOf('function vdCaptureVerification(cap)'),
+                _pu.indexOf('\nasync function runVisualDiffPipeline')));
+
+var _bg = readFile('../background.js');
+eval(_bg.slice(_bg.indexOf('const VD_DEBUG_SAMPLE_CAP'),
+                _bg.indexOf('// ── Visual Diff Stage 3')));
+
+// The two pixel-dependent stages, sliced out for the below-capture guards.
+// Stubs stand in for the browser-only bits they call.
+// buildDebugLog (sliced above, for the findings projection) reads three browser
+// globals. They must be declared at FILE scope, not inside the test's IIFE:
+// the sliced functions are eval'd here at global scope and resolve their free
+// variables there, so a `var chrome` inside a test function is invisible to
+// them. Nothing else in this suite depends on these.
+var chrome = { runtime: { getManifest: function () { return { version: '1.0.0' }; } } };
+var navigator = { userAgent: 'jsc' };
+var abState = { qaMode: false, settleSec: '3', keepTabs: false, visualDiff: true,
+                visualDiffCrops: true, agenticTesting: true, summaryOfChanges: '' };
+
+var VIS_BLOCK_PIXEL_MIN_AREA = 400, VIS_CROP_PAD = 12;
+function pixelmatch() { throw new Error('pixelmatch should not be reached in these tests'); }
+function clampBox(box, w, h) {
+  var x = Math.max(0, Math.min(box.x, w)), y = Math.max(0, Math.min(box.y, h));
+  return { x: x, y: y, w: Math.max(0, Math.min(box.w, w - x)), h: Math.max(0, Math.min(box.h, h - y)) };
+}
+function cropAndDownscale() { return 'data:image/png;base64,STUB'; }
+eval(_bg.slice(_bg.indexOf('function vdPixelCheckMatchedPairs'),
+                _bg.indexOf('// ── Visual Diff: coarse pixel-similarity backstop') !== -1
+                  ? _bg.indexOf('// ── Visual Diff: coarse pixel-similarity backstop')
+                  : _bg.indexOf('\n// ──', _bg.indexOf('function vdPixelCheckMatchedPairs'))));
+eval(_bg.slice(_bg.indexOf('function cropVisualDiffBlock'),
+                _bg.indexOf('\n// ──', _bg.indexOf('function cropVisualDiffBlock'))));
+// CSS-px rects vs device-px bitmaps — the correction both stages depend on.
+eval(_bg.slice(_bg.indexOf('function vdImageScale'),
+                _bg.indexOf('function clampBox')));
+
+// ── harness ────────────────────────────────────────────────────────────────
+var pass = 0, fail = 0, failures = [];
+function ok(name, cond, detail) {
+  if (cond) { pass++; return; }
+  fail++;
+  failures.push(name + (detail !== undefined ? '  -> ' + JSON.stringify(detail).slice(0, 300) : ''));
+}
+function eq(name, actual, expected) {
+  ok(name, actual === expected, { actual: actual, expected: expected });
+}
+function section(t) { print('\n' + t); }
+
+// Builds a candidate record the way domCandidateWalkFn does, so hashes and
+// normalization come from the real helpers rather than being hand-faked.
+var _id = 0;
+function cand(o) {
+  var raw = o.text || '';
+  var norm = vdNormText(raw);
+  return {
+    candidateId: o.id || ('c' + (_id++)),
+    tag: o.tag || 'p',
+    rect: { x: o.x || 0, y: o.y || 0, w: o.w || 300, h: o.h || 40 },
+    text: raw, textNorm: norm,
+    textHash: vdHash32(norm), shapeHash: vdHash32(vdTextShape(norm)),
+    path: o.path || ('/body[1]/main[1]/' + (o.tag || 'p') + '[1]'),
+    ppath: o.ppath || '/body[1]/main[1]',
+    region: o.region || 'main',
+    inLiveRegion: !!o.inLiveRegion,
+    attrs: {
+      role: o.role || null, ariaLabel: o.ariaLabel || null, alt: o.alt || null,
+      href: o.href || null, testid: o.testid || null,
+    },
+    stableId: o.rawId && vdIsStableId(o.rawId) ? o.rawId : null,
+    hrefKey: o.href ? vdNormalizeHref(o.href, 'https://example.com') : null,
+    styles: Object.assign({
+      display: 'block', color: 'rgb(0, 0, 0)', backgroundColor: 'rgba(0, 0, 0, 0)',
+      backgroundImage: null, border: null, boxShadow: null, opacity: null,
+      fontSize: '16px', fontWeight: '400', fontFamily: 'Arial',
+      textAlign: 'left', textDecorationLine: 'none', borderRadius: null,
+      visibility: 'visible',
+    }, o.styles || {}),
+  };
+}
+
+// ── 1. framework-generated ids must never anchor a path ────────────────────
+section('framework id rejection (vdIsStableId)');
+[ '_R_84qnmlb_-MCP', '_r_5_-MCP', '_R_1_', '_r_2h_',   // React 19 — both seen live
+  ':r3h:', '«r0»',                            // React 18 / legacy
+  'radix-:r3h:', 'headlessui-menu-button-3', 'ember1234',
+  'react-aria-123', 'mui-12', 'chakra-modal-1', 'mantine-abc',
+  'field-99999', 'a:b',
+].forEach(function (id) { ok('rejects generated id ' + id, !vdIsStableId(id)); });
+
+[ 'main', 'hero', 'nav-primary', 'site-footer', 'pricing_table',
+  'signup-form', 'cta2', 'section-3', '_internal-hero',
+].forEach(function (id) { ok('accepts authored id ' + id, vdIsStableId(id)); });
+
+// ── 2. normalization ladder ────────────────────────────────────────────────
+section('text normalization');
+function sameNorm(a, b) { return vdNormText(a) === vdNormText(b); }
+ok('em dash vs period',        sameNorm('Save time — fast', 'Save time. fast'));
+ok('pipes vs middots',         sameNorm('A | B | C', 'A · B · C'));
+ok('newline vs space',         sameNorm('Two\nlines', 'Two lines'));
+ok('bang vs question',         sameNorm('Really!', 'Really?'));
+ok('curly vs straight quote',  sameNorm('it’s', "it's"));
+ok('thousands separator',      sameNorm('$1,000', '$1000'));
+ok('real copy change survives', !sameNorm('Buy Now', 'Add to Cart'));
+ok('digit change survives',    !sameNorm('6,000+ apps', '6,500+ apps'));
+ok('numeric shape folds digits',
+   vdTextShape(vdNormText('6,000+ apps')) === vdTextShape(vdNormText('6,500+ apps')));
+ok('shape keeps words distinct',
+   vdTextShape(vdNormText('6,000 apps')) !== vdTextShape(vdNormText('6,000 users')));
+
+// ── 3. identity matching ───────────────────────────────────────────────────
+section('matching');
+(function identicalPages() {
+  var a = [cand({ text: 'One', y: 0 }), cand({ text: 'Two', y: 50 })];
+  var b = a.map(function (c) { return Object.assign({}, c); });
+  var m = vdMatchCandidates(a, b);
+  eq('identical pages: all matched', m.pairs.length, 2);
+  eq('identical pages: nothing removed', m.removed.length, 0);
+  eq('identical pages: nothing added', m.added.length, 0);
+  var s = vdSuppressFindings(m.pairs);
+  eq('identical pages: no reportable findings',
+     s.findings.filter(function (f) { return f.changeClass !== 'unchanged'; }).length, 0);
+})();
+
+(function wrapperInsertion() {
+  // THE load-bearing case. A <div> inserted as body's first child shifts every
+  // structural path, so path-based matching cannot help — text identity must
+  // carry it. If this regresses, every copy change on a restructured page
+  // becomes a false remove+add pair.
+  var a = [], b = [];
+  for (var i = 0; i < 8; i++) {
+    a.push(cand({ text: 'Row ' + i, y: i * 60, path: '/body[1]/div[' + (i + 1) + ']' }));
+    b.push(cand({ text: 'Row ' + i, y: i * 60, path: '/body[1]/div[' + (i + 2) + ']' }));
+  }
+  var m = vdMatchCandidates(a, b);
+  eq('wrapper insertion: everything still pairs', m.pairs.length, 8);
+  eq('wrapper insertion: no phantom removals', m.removed.length, 0);
+  eq('wrapper insertion: no phantom additions', m.added.length, 0);
+})();
+
+(function pathOnlyMustNotMisfire() {
+  // Text-identity passes MUST run before path-only. Run the other way round,
+  // path-only confidently pairs an element with whatever unrelated content now
+  // occupies its old slot instead of failing cleanly.
+  var a = [cand({ text: 'Alpha', y: 0, path: '/body[1]/p[1]' }),
+           cand({ text: 'Beta',  y: 50, path: '/body[1]/p[2]' })];
+  var b = [cand({ text: 'Inserted', y: 0,  path: '/body[1]/p[1]' }),
+           cand({ text: 'Alpha',    y: 50, path: '/body[1]/p[2]' }),
+           cand({ text: 'Beta',     y: 100, path: '/body[1]/p[3]' })];
+  var m = vdMatchCandidates(a, b);
+  var alpha = m.pairs.filter(function (p) { return p.a.text === 'Alpha'; })[0];
+  var beta  = m.pairs.filter(function (p) { return p.a.text === 'Beta'; })[0];
+  ok('shifted sibling: Alpha pairs with Alpha', alpha && alpha.b.text === 'Alpha',
+     alpha && alpha.b.text);
+  ok('shifted sibling: Beta pairs with Beta', beta && beta.b.text === 'Beta',
+     beta && beta.b.text);
+  eq('shifted sibling: only the new element is added', m.added.length, 1);
+  eq('shifted sibling: nothing reported removed', m.removed.length, 0);
+})();
+
+(function generatedIdDoesNotSplit() {
+  // Same element, regenerated React id between captures — must still pair.
+  var a = [cand({ text: 'MCP', tag: 'button', rawId: '_R_84qnmlb_-MCP', y: 100 })];
+  var b = [cand({ text: 'MCP', tag: 'button', rawId: '_r_5_-MCP', y: 100 })];
+  ok('generated id is not promoted to stableId', a[0].stableId === null && b[0].stableId === null);
+  var m = vdMatchCandidates(a, b);
+  eq('regenerated id: still one pair', m.pairs.length, 1);
+  eq('regenerated id: no add/remove', m.removed.length + m.added.length, 0);
+})();
+
+(function duplicateLinks() {
+  var a = [], b = [];
+  for (var i = 0; i < 12; i++) {
+    a.push(cand({ text: 'Learn more', tag: 'a', href: '/x', y: i * 40, path: '/body[1]/a[' + (i + 1) + ']' }));
+  }
+  for (var j = 0; j < 11; j++) {
+    b.push(cand({ text: 'Learn more', tag: 'a', href: '/x', y: j * 40, path: '/body[1]/a[' + (j + 1) + ']' }));
+  }
+  var m = vdMatchCandidates(a, b);
+  eq('12 identical links, one gone: exactly one removed', m.removed.length, 1);
+  eq('12 identical links, one gone: nothing added', m.added.length, 0);
+})();
+
+(function copyRewriteInPlace() {
+  var a = [cand({ text: 'Buy Now', tag: 'h1', y: 0, path: '/body[1]/h1[1]' })];
+  var b = [cand({ text: 'Add to Cart', tag: 'h1', y: 0, path: '/body[1]/h1[1]' })];
+  var m = vdMatchCandidates(a, b);
+  eq('copy rewrite: one pair, not remove+add', m.pairs.length, 1);
+  eq('copy rewrite: matched on path', m.pairs[0].tier, 'path');
+  var s = vdSuppressFindings(m.pairs);
+  eq('copy rewrite: reported as text-changed', s.findings[0].changeClass, 'text-changed');
+})();
+
+// Texted anchors that pair cleanly, so matchedFraction stays above
+// VD_REDESIGN_MATCH_FLOOR and the cases below are judged in 'normal' mode
+// rather than short-circuiting into region rollup.
+function anchors(n) {
+  var out = [];
+  for (var i = 0; i < n; i++) {
+    out.push(cand({ tag: 'p', text: 'Anchor line ' + i, y: i * 50,
+                    path: '/body[1]/main[1]/p[' + i + ']' }));
+  }
+  return out;
+}
+
+(function textlessIsNotAnIdentity() {
+  // An element with no text still has a textHash — vdHash32('') is the
+  // ordinary hash 811c9dc5 — so before keyText/keyShapePpath required real
+  // text, "textless" WAS an identity. Measured: three unrelated textless
+  // divs per side paired all three at tier `text`, across different subtrees
+  // and up to 5000px apart, because vdRunExactPass's count-equality guard is
+  // satisfied by both sides merely having the same NUMBER of textless
+  // elements. Every one of those pairs then classified as moved/resized —
+  // false findings manufactured out of the absence of evidence.
+  function spray(prefix, ys) {
+    return ys.map(function (y, i) {
+      return cand({ tag: 'div', y: y, path: '/body[1]/' + prefix + '[' + i + ']/div[1]' });
+    });
+  }
+  var m = vdMatchCandidates(anchors(10).concat(spray('a', [100, 900, 2000])),
+                            anchors(10).concat(spray('z', [3000, 5000, 7000])));
+  eq('textless: mode stays normal', m.mode, 'normal');
+  eq('textless: only the anchors pair', m.pairs.length, 10);
+  ok('textless: nothing paired on empty text',
+     m.pairs.every(function (pr) { return !!pr.a.textNorm; }),
+     m.pairs.filter(function (pr) { return !pr.a.textNorm; }).map(function (pr) { return pr.tier; }));
+  eq('textless: all three surface as removed', m.removed.length, 3);
+  eq('textless: all three surface as added', m.added.length, 3);
+})();
+
+(function textlessStillPairsOnStructure() {
+  // The complement of the case above: refusing empty text as evidence must
+  // not make textless elements unmatchable. vdFuzzyScore redistributes the
+  // text weight instead of zeroing it, so structural agreement still carries
+  // a pair — a shared 4-deep path tail at any distance (0.80), or a
+  // near-identical y (0.66) — while same-tag-and-nothing-else lands at 0.44
+  // and fails. Before the fix all three of these paired, the last two at an
+  // identical 0.759, so which textless candidates claimed each other came
+  // down to sort order inside a diff that is meant to be deterministic.
+  var a = anchors(20).concat([
+    // Wrapper inserted above it: full path differs, last four segments agree.
+    cand({ id: 'TAIL', tag: 'span', y: 700, path: '/body[1]/main[1]/section[3]/aside[1]/span[4]' }),
+    // Same slot content-wise, 5px of reflow.
+    cand({ id: 'NEARY', tag: 'div', y: 500, path: '/body[1]/main[1]/section[1]/div[2]' }),
+    // Shares nothing but its tag, 4900px away.
+    cand({ id: 'JUNK', tag: 'em', y: 100, path: '/body[1]/header[1]/nav[1]/em[3]' }),
+  ]);
+  var b = anchors(20).concat([
+    cand({ id: 'TAIL', tag: 'span', y: 6200, path: '/body[1]/wrap[1]/main[1]/section[3]/aside[1]/span[4]' }),
+    cand({ id: 'NEARY', tag: 'div', y: 505, path: '/body[1]/wrap[1]/main[1]/section[1]/div[2]' }),
+    cand({ id: 'JUNK', tag: 'em', y: 5000, path: '/body[1]/footer[1]/aside[7]/em[9]' }),
+  ]);
+  var m = vdMatchCandidates(a, b);
+  function pairedTags(tier) {
+    return m.pairs.filter(function (pr) { return pr.tier === tier; })
+             .map(function (pr) { return pr.a.tag; }).sort().join(',');
+  }
+  eq('textless structure: shared path tail and near-y both pair, junk does not',
+     pairedTags('fuzzy'), 'div,span');
+  eq('textless structure: the evidence-free pair is the only removal', m.removed.length, 1);
+  eq('textless structure: and the only addition', m.added.length, 1);
+  // Guarded rather than indexed: when this regresses, removed[] is EMPTY,
+  // and a throw here would abort the suite before the 200-odd cases below it.
+  ok('textless structure: removed is the junk element',
+     m.removed.length === 1 && m.removed[0].tag === 'em',
+     m.removed.map(function (c) { return c.tag; }));
+})();
+
+// ── 4. reflow suppression — the cascade bug ─────────────────────────────────
+(function forcedIdComesFromTheConfiguredUrl() {
+  // Must read cap.url, never cap.finalUrl — the whole point is that a redirect
+  // strips the parameter before the probe can see it.
+  var HAVE = typeof vdForcedVariationId === 'function';
+  ok('vdForcedVariationId is defined', HAVE);
+  if (!HAVE) return;
+  eq('the real ENOC-97 target url',
+     vdForcedVariationId('http://ondeck.com/soc/b?optimizely_x=4749145360039936&optimizely_token=abc&cro_mode=qa'),
+     '4749145360039936');
+  eq('a Convert forced param', vdForcedVariationId('https://x.test/p?_conv_eforce=9001'), '9001');
+  eq('the post-redirect url has nothing to give', vdForcedVariationId('https://www.ondeck.com/soc/b?cro_mode=qa'), null);
+  eq('no url at all', vdForcedVariationId(null), null);
+  eq('no query string', vdForcedVariationId('https://x.test/p'), null);
+  // A malformed target must not cost us the verification path.
+  eq('a malformed url still yields the param via fallback',
+     vdForcedVariationId('ondeck.com/soc/b?optimizely_x=555'), '555');
+})();
+
+(function verificationReachesTheReport() {
+  // The precondition for every verdict downstream. A run that cannot say which
+  // page it photographed has nothing trustworthy to say about whether that page
+  // matches the spec — so the three states have to reach the reader as three
+  // different things, not collapse into one badge.
+  // Built from a probe, the way the worker returns it, so the derivation under
+  // test is the real one.
+  function probeFor(state) {
+    if (state === 'confirmed') {
+      // forced deliberately null: the redirect stripped it, which is the real
+      // shape. The configured url on the capture is what supplies it.
+      return { ok: true, detected: { optimizely: true }, catalogComplete: true,
+               forced: { optimizely_x: null, cro_mode: 'qa' },
+               experiments: [{ id: '6291814800424960', name: 'Form consolidation', active: true,
+                               bucketed: true, variationId: '4749145360039936', variationName: 'Two-step' }] };
+    }
+    if (state === 'contradicted') {
+      return { ok: true, detected: { optimizely: true }, catalogComplete: true,
+               forced: { optimizely_x: null },
+               experiments: [{ id: 'e1', name: 'E', active: true, bucketed: true, variationId: '554', variationName: 'Other' }] };
+    }
+    return { ok: true, detected: { optimizely: false, convert: false, convertScript: false },
+             catalogComplete: true, forced: {}, experiments: [] };
+  }
+  function probs(probe) {
+    var v1 = probe === undefined
+      ? capture('v1', { fullPage: null })                    // no expProbe key at all
+      : capture('v1', { fullPage: null, expProbe: probe });
+    // capture() sets a bare url; verification needs the forced id on it, the way
+    // a real target does.
+    v1.url = 'https://example.com/p?optimizely_x=4749145360039936';
+    return vdCollectProblems(abSections(
+      [capture('v0', { fullPage: null, expProbe: probeFor('confirmed') }), v1],
+      [{ label: 'v1', diffMode: 'normal', matchedFraction: 0.9, structuralStats: {} }]));
+  }
+  var bad = probs(probeFor('contradicted'));
+  var hit = bad.filter(function (x) { return /did not serve the variation/.test(x.detail); });
+  eq('CONTRADICTED is an error, once', hit.length, 1);
+  eq('  at error severity', hit.length ? hit[0].severity : null, 'error');
+  ok('  and says the diff is real but does not apply to the experiment',
+     hit.length > 0 && /not a comparison of Control against this variant/.test(hit[0].detail));
+
+  var unk = probs(probeFor('unknown'));
+  var uh = unk.filter(function (x) { return /Could not confirm which variation/.test(x.detail); });
+  eq('UNKNOWN is a warn, not an error', uh.length ? uh[0].severity : null, 'warn');
+  ok('  and does not claim the variant is wrong',
+     uh.length > 0 && !/did not serve/.test(uh[0].detail));
+
+  var good = probs(probeFor('confirmed'));
+  var gh = good.filter(function (x) { return /Variation confirmed by the platform/.test(x.detail); });
+  eq('CONFIRMED is recorded as info', gh.length ? gh[0].severity : null, 'info');
+  ok('  naming the variation and experiment',
+     gh.length > 0 && /Two-step/.test(gh[0].detail) && /Form consolidation/.test(gh[0].detail));
+
+  // THE measured failure: a current popup.js against a worker that predates the
+  // probe. `expProbe` is absent as a KEY, and that must read as "this build
+  // cannot check" rather than "the probe ran and found nothing" — run
+  // 1788191807035 reported the latter and it was the wrong thing to act on.
+  var old = probs(undefined);
+  var oh = old.filter(function (x) { return /older background build/.test(x.detail); });
+  eq('a capture from an older worker build says so, once', oh.length, 1);
+  ok('  and tells you to reload the extension',
+     oh.length > 0 && /[Rr]eload the extension/.test(oh[0].detail), oh.length ? oh[0].detail : null);
+  ok('  and does NOT claim the probe ran and failed',
+     oh.length > 0 && !/probe did not run/.test(oh[0].detail));
+  // A probe present but null (the platform genuinely absent) is a different
+  // message from an absent key.
+  var nullProbe = probs(null);
+  ok('a null probe is reported as unconfirmed, not as a stale build',
+     !nullProbe.some(function (x) { return /older background build/.test(x.detail); }),
+     nullProbe.map(function (x) { return x.detail.slice(0, 50); }));
+})();
+
+// ── did we actually get the variant? ───────────────────────────────────────
+section('variant verification');
+
+(function variantVerificationTriState() {
+  var HAVE = typeof vdVariantVerification === 'function';
+  ok('vdVariantVerification is exported', HAVE);
+  if (!HAVE) return;
+  // The shape expProbeFn returns.
+  function probe(o) {
+    o = o || {};
+    return {
+      ok: o.ok === undefined ? true : o.ok,
+      detected: o.detected || { optimizely: true, convert: false, convertScript: false },
+      catalogComplete: o.catalogComplete === undefined ? true : o.catalogComplete,
+      forced: o.forced || {},
+      experiments: o.experiments || [],
+    };
+  }
+  var exp = function (id, variationId, bucketed) {
+    return { id: id, name: 'Exp ' + id, known: true, active: true, bucketed: bucketed,
+             variationId: variationId, variationName: 'Var ' + variationId, variations: [] };
+  };
+
+  // The case that matters: ENOC-97's real forced ids.
+  var okRun = vdVariantVerification(probe({
+    forced: { optimizely_x: '4749145360039936' },
+    experiments: [exp('6291814800424960', '4749145360039936', true)],
+  }));
+  eq('bucketed into the forced variation is CONFIRMED', okRun.state, 'confirmed');
+  eq('  and names the variation', okRun.variationId, '4749145360039936');
+  eq('  and the experiment', okRun.experimentId, '6291814800424960');
+
+  var wrong = vdVariantVerification(probe({
+    forced: { optimizely_x: '4749145360039936' },
+    experiments: [exp('6291814800424960', '5542293380268032', true)],
+  }));
+  eq('bucketed into a DIFFERENT variation is CONTRADICTED', wrong.state, 'contradicted');
+  ok('  and says which', /4749145360039936/.test(wrong.reason) && /5542293380268032/.test(wrong.reason), wrong.reason);
+
+  eq('forced but nothing bucketed, catalogue complete, is CONTRADICTED',
+     vdVariantVerification(probe({
+       forced: { optimizely_x: '4749145360039936' },
+       experiments: [exp('6291814800424960', '4749145360039936', false)],
+     })).state, 'contradicted');
+
+  // "I could not check" must never be reported as "it is wrong" — that is the
+  // unfalsifiable-warning problem in the other direction.
+  eq('an incomplete catalogue is UNKNOWN, not contradicted',
+     vdVariantVerification(probe({
+       catalogComplete: false, forced: { optimizely_x: '4749145360039936' }, experiments: [],
+     })).state, 'unknown');
+  eq('no platform detected is UNKNOWN',
+     vdVariantVerification(probe({
+       detected: { optimizely: false, convert: false, convertScript: false },
+       forced: { optimizely_x: '474' },
+     })).state, 'unknown');
+  eq('nothing forced in the URL is UNKNOWN',
+     vdVariantVerification(probe({ forced: {}, experiments: [exp('1', '2', true)] })).state, 'unknown');
+  eq('a probe that failed is UNKNOWN', vdVariantVerification(probe({ ok: false })).state, 'unknown');
+  eq('no probe at all is UNKNOWN', vdVariantVerification(null).state, 'unknown');
+  ok('every unknown explains itself',
+     [vdVariantVerification(null), vdVariantVerification(probe({ forced: {} }))]
+       .every(function (x) { return typeof x.reason === 'string' && x.reason.length > 10; }));
+
+  // THE measured gap. Run 1788192904924: both captures configured with
+  // optimizely_x, both final urls stripped to ?cro_mode=qa by a redirect, and
+  // the platform had bucketed into exactly the requested variations anyway.
+  // Reading `forced` from the probe alone reported UNKNOWN on a run where the
+  // answer was in the data.
+  var stripped = probe({
+    forced: { optimizely_x: null, cro_mode: 'qa' },     // as the probe sees it post-redirect
+    experiments: [exp('5112630724001792', '4749145360039936', true)],
+  });
+  eq('a stripped param with no override is UNKNOWN',
+     vdVariantVerification(stripped).state, 'unknown');
+  var withOverride = vdVariantVerification(stripped, '4749145360039936');
+  eq('  but CONFIRMED once the configured URL supplies the forced id', withOverride.state, 'confirmed');
+  eq('  naming the variation the platform actually served', withOverride.variationId, '4749145360039936');
+  eq('an override that does NOT match what was served is still contradicted',
+     vdVariantVerification(stripped, '5542293380268032').state, 'contradicted');
+  eq('the override takes priority over the probe\'s own reading',
+     vdVariantVerification(probe({
+       forced: { optimizely_x: '111' },
+       experiments: [exp('e', '222', true)],
+     }), '222').state, 'confirmed');
+
+  // Convert, not just Optimizely.
+  eq('a Convert forced param is verified the same way',
+     vdVariantVerification(probe({
+       detected: { optimizely: false, convert: true, convertScript: true },
+       forced: { conv_eforce: '9001' }, experiments: [exp('c1', '9001', true)],
+     })).state, 'confirmed');
+})();
+
+// ── requirements, checked deterministically ────────────────────────────────
+section('spec requirements');
+
+// The point of these two functions: the most common CRO QA question is "did the
+// specified copy ship, verbatim?" and that is a string comparison, not a
+// judgment. The model produced FOUR different classification vectors across
+// twelve runs on identical input and has no temperature knob on claude-opus-5,
+// so every requirement answerable in code is one taken off it.
+//
+// Candidates here carry UNTRUNCATED textNorm, which is what production looks
+// like: background.js truncates `text` to 300 chars but computes textNorm from
+// the full string. The debug log's 160-char variantText is a log artifact and
+// must not be mistaken for the candidate shape.
+function reqCand(text) {
+  return { candidateId: 'rc' + (_id++), text: text, textNorm: vdNormText(text) };
+}
+
+(function requirementExtraction() {
+  var HAVE = typeof vdSpecRequirements === 'function';
+  ok('vdSpecRequirements is exported', HAVE);
+  if (!HAVE) return;
+  var LQ = '“', RQ = '”';
+  var spec = [
+    'Card 1 eyebrow: "Lump Sum Loan"',
+    'Card 1 amount: "$5K – $400K"',
+    'CTA button: ' + LQ + 'See My Funding Options' + RQ,
+    // Real specs mix quote styles, and ENOC-97's own FAQ opens curly and closes
+    // straight. Both delimiters are interchangeable on purpose.
+    'Q3: ' + LQ + 'Typically, we only require basic information."',
+    'Disclaimer: "(Lock icon) Your information is encrypted and secure."',
+    'Repeat: "Lump Sum Loan"',
+    'Too short: "ab"',
+    'Annotation only: "(x)"',
+  ].join('\n');
+  var req = vdSpecRequirements(spec);
+  var got = req.map(function (r) { return r.required; });
+  ok('straight quotes extracted', got.indexOf('Lump Sum Loan') !== -1, got);
+  ok('curly quotes extracted', got.indexOf('See My Funding Options') !== -1, got);
+  ok('mixed curly-open/straight-close extracted',
+     got.some(function (x) { return /^Typically, we only require/.test(x); }), got);
+  ok('a leading parenthetical annotation is stripped, the sentence kept',
+     got.indexOf('Your information is encrypted and secure.') !== -1, got);
+  eq('duplicates collapse', got.filter(function (x) { return x === 'Lump Sum Loan'; }).length, 1);
+  ok('a 2-char string is not a requirement', got.indexOf('ab') === -1, got);
+  ok('a parenthetical-only string is not a requirement',
+     !got.some(function (x) { return /^\(?x\)?$/.test(x); }), got);
+  ok('every requirement carries its normalised form',
+     req.every(function (r) { return r.norm && r.norm === vdNormText(r.required); }));
+})();
+
+(function requirementMatching() {
+  var HAVE = typeof vdMatchRequirements === 'function';
+  ok('vdMatchRequirements is exported', HAVE);
+  if (!HAVE) return;
+  var req = vdSpecRequirements([
+    'A: "See My Funding Options"',
+    'B: "Lump Sum Loan"',
+    'C: "Repayment terms up to 24 months"',
+    'D: "Build Business Credit"',
+    'E: "Apply in minutes with no hard credit pull."',
+  ].join('\n'));
+  var variant = [
+    reqCand('See My Funding Options'),
+    // THE measured defect: spec says "Lump Sum Loan", page ships this.
+    reqCand('Lump-Sum Funding'),
+    // A wrapper carrying the required copy plus its neighbour. Containment,
+    // not equality, is why this counts as present.
+    reqCand('Apply in minutes with no hard credit pull. Term loans up to $400K.'),
+  ];
+  var control = [reqCand('Build Business Credit')];
+  var r = vdMatchRequirements(req, variant, { controlList: control });
+  var by = {};
+  r.items.forEach(function (x) { by[x.required] = x; });
+
+  eq('exact element match is verbatim', by['See My Funding Options'].status, 'verbatim');
+  eq('copy inside a larger wrapper is still verbatim',
+     by['Apply in minutes with no hard credit pull.'].status, 'verbatim');
+
+  // The defect, and the reason the near threshold is 0.5 and not higher:
+  // {lump,sum,loan} vs {lump,sum,funding} is Jaccard exactly 0.5.
+  eq('altered copy is a near-match, not absent', by['Lump Sum Loan'].status, 'near');
+  eq('  and reports what the page actually says', by['Lump Sum Loan'].foundText, 'Lump-Sum Funding');
+  ok('  at a similarity of exactly 0.5', Math.abs(by['Lump Sum Loan'].score - 0.5) < 1e-9,
+     by['Lump Sum Loan'].score);
+  eq('  flagged as altered wording, not a fragment', by['Lump Sum Loan'].fragment, false);
+
+  eq('copy nowhere on the variant is absent', by['Repayment terms up to 24 months'].status, 'absent');
+  eq('copy still only in the control is absent', by['Build Business Credit'].status, 'absent');
+  eq('  and says so, which separates "not shipped" from "old copy still there"',
+     by['Build Business Credit'].inControl, true);
+  eq('  while an absence missing from both sides does not claim otherwise',
+     by['Repayment terms up to 24 months'].inControl, false);
+
+  eq('counts add up', r.verbatim + r.near + r.absent, r.total);
+  eq('  total matches the requirement count', r.total, req.length);
+  // Attention-first ordering, same principle the findings list uses.
+  var order = r.items.map(function (x) { return x.status; });
+  eq('absent sorts before near sorts before verbatim',
+     order.join(',').replace(/absent/g, 'a').replace(/near/g, 'n').replace(/verbatim/g, 'v'),
+     'a,a,n,v,v');
+})();
+
+(function fragmentIsNotAlteredCopy() {
+  // "The page has the first half of this sentence" and "the page says something
+  // different" are both near-matches and read completely differently to a
+  // reviewer. Three of five near-matches on the real ENOC-97 data were prefix
+  // relationships, so this distinction is not hypothetical.
+  if (typeof vdMatchRequirements !== 'function') return;
+  var req = vdSpecRequirements('X: "Once you apply with OnDeck, we will quickly review your application and respond."');
+  var r = vdMatchRequirements(req, [reqCand('Once you apply with OnDeck, we will quickly review your')], {});
+  eq('a leading fragment is a near-match', r.items[0].status, 'near');
+  eq('  marked as a fragment, not altered wording', r.items[0].fragment, true);
+})();
+
+(function shortStringsSkipNearMatching() {
+  // Jaccard over one token is noise. A one-token requirement that is not
+  // present goes straight to absent rather than reporting a spurious near.
+  if (typeof vdMatchRequirements !== 'function') return;
+  var req = vdSpecRequirements('CTA: "Submit"');
+  var r = vdMatchRequirements(req, [reqCand('Send'), reqCand('Submitting your application')], {});
+  ok('a one-token requirement is absent or verbatim, never a coin-flip near',
+     r.items[0].status !== 'near', r.items[0]);
+})();
+
+(function emptyInputsAreSafe() {
+  if (typeof vdMatchRequirements !== 'function') return;
+  eq('no spec text yields no requirements', vdSpecRequirements('').length, 0);
+  eq('null spec text yields no requirements', vdSpecRequirements(null).length, 0);
+  var r = vdMatchRequirements([], [], {});
+  eq('no requirements yields a zero total', r.total, 0);
+  var r2 = vdMatchRequirements(vdSpecRequirements('A: "Anything at all"'), [], {});
+  eq('no candidates makes every requirement absent', r2.absent, 1);
+  ok('and does not throw on a missing controlList', Array.isArray(r2.items));
+})();
+
+section('reflow clustering');
+
+// A single pure-reflow band: every pair content-identical (so it feeds the
+// clusterer) and shifted past VD_MOVE_MIN_PX (so an unsuppressed one surfaces).
+// Any "moved" finding out of this is FALSE by construction.
+function reflowBand(deltas, y0) {
+  return deltas.map(function (d, i) {
+    var y = (y0 || 3400) + i * 40;
+    return { a: cand({ text: 'Footer row ' + i, y: y, w: 300, h: 40 }),
+             b: cand({ text: 'Footer row ' + i, y: y + d, w: 300, h: 40 }), tier: 'path+text' };
+  });
+}
+function falseMoves(deltas, y0) {
+  var s = vdSuppressFindings(reflowBand(deltas, y0));
+  return s.findings.filter(function (f) {
+    return (f.signals || []).some(function (g) { return String(g).indexOf('moved') === 0; });
+  }).length;
+}
+
+(function clusterMustNotPartitionFromItsMinimum() {
+  // vdClusterShifts used to fix `ref` to each cluster's LOWEST member and never
+  // re-chain, so a cluster spanned at most VD_SHIFT_TOL_PX (2) measured from
+  // its minimum — while vdExplainsShift compares against the cluster MEDIAN.
+  // A band with 3px of spread therefore earned no trusted cluster at all and
+  // every member leaked. Measured against the shipping code before the fix:
+  //   [100,101,102]         -> 0 false      (one cluster, trusted)
+  //   [100,101,103]         -> 3 of 3 FALSE (chain broke, two untrusted pairs)
+  //   [100,101,103,104]     -> 4 of 4 FALSE (no jitter at all)
+  //   [100,101,102,103,104] -> 1 of 5 FALSE (partial re-absorption at 5+)
+  // This is the same bug shape the clusterer was written to fix: the original
+  // defect broke a run as soon as dy changed (sorted by y); clustering by
+  // amount moved the problem rather than removing it.
+  eq('contiguous band, spread 2', falseMoves([100, 101, 102]), 0);
+  eq('band with 3px spread', falseMoves([100, 101, 103]), 0);
+  eq('band with 4px spread and NO jitter', falseMoves([100, 101, 103, 104]), 0);
+  eq('five-member band, spread 4', falseMoves([100, 101, 102, 103, 104]), 0);
+  eq("ENOC-97's real band (23 at one exact delta)",
+     falseMoves(Array.apply(null, Array(23)).map(function () { return 2108; })), 0);
+})();
+
+(function chainingMustNotRunAway() {
+  // Re-chaining alone is single-linkage, which can swallow an arbitrarily wide
+  // staircase into one cluster whose median then explains almost none of its
+  // own members. A 2px-step staircase spanning 100px must NOT become one band.
+  var staircase = [];
+  for (var d = 100; d <= 160; d += 2) staircase.push(d);
+  var samples = staircase.map(function (d, i) { return { pos: 3400 + i * 40, delta: d }; });
+  var clusters = vdClusterShifts(samples, VD_SHIFT_TOL_PX, VD_SHIFT_MIN_RUN);
+  ok('a 60px staircase is split, not merged into one band', clusters.length > 1, clusters.length);
+  ok('every cluster stays narrow enough for its own median to explain it',
+     clusters.every(function (c) { return (c.spanPx || 0) <= 2 * VD_SHIFT_TOL_PX; }),
+     clusters.map(function (c) { return c.spanPx; }));
+  // Two genuinely distinct bands far apart must still be two clusters.
+  var twoBands = vdClusterShifts(
+    [{ pos: 100, delta: 0 }, { pos: 140, delta: 0 }, { pos: 180, delta: 0 },
+     { pos: 3400, delta: -259 }, { pos: 3440, delta: -259 }, { pos: 3480, delta: -259 }],
+    VD_SHIFT_TOL_PX, VD_SHIFT_MIN_RUN);
+  eq('two well-separated bands stay two clusters', twoBands.length, 2);
+  ok('  and both are trusted', twoBands.every(function (c) { return c.trusted; }));
+})();
+
+(function skewedClusterLeaksOneNotAll() {
+  // The residual the fix deliberately does NOT close, pinned so the comment in
+  // vdClusterShifts stays honest. Inside a legal span, a distribution weighted
+  // to one end pulls the median off centre and the far member falls outside
+  // vdExplainsShift's tolerance. Which end is heavy decides whether it leaks:
+  eq('bottom-heavy skew leaks exactly one member', falseMoves([100, 100, 100, 102, 104]), 1);
+  eq('top-heavy skew leaks none', falseMoves([100, 100, 102, 104, 104]), 0);
+  // What matters is that it is ONE, not all five — the pre-fix behaviour for a
+  // band this shape was every member leaking. And a 2px staircase spanning
+  // 60px now leaks only its unpaired tail.
+  var staircase = [];
+  for (var d = 100; d <= 160; d += 2) staircase.push(d);
+  eq('a 31-member staircase leaks only the trailing singleton', falseMoves(staircase), 1);
+})();
+
+(function spanIsReported() {
+  // The diagnostic that makes residual leakage visible: a cluster that chained
+  // has to say how wide it got, or a runaway merge is indistinguishable in the
+  // debug log from a tight band.
+  var c = vdClusterShifts([{ pos: 0, delta: 100 }, { pos: 40, delta: 101 }, { pos: 80, delta: 103 }],
+                          VD_SHIFT_TOL_PX, VD_SHIFT_MIN_RUN);
+  eq('one cluster', c.length, 1);
+  eq('  reports its span', c[0].spanPx, 3);
+  eq('  and still reports the median as its delta', c[0].delta, 101);
+  eq('  and its member count', c[0].count, 3);
+  var single = vdClusterShifts([{ pos: 0, delta: 7 }], VD_SHIFT_TOL_PX, VD_SHIFT_MIN_RUN);
+  eq('a lone sample has span 0', single[0].spanPx, 0);
+})();
+(function overlappingBands() {
+  // Three shift amounts whose y-ranges OVERLAP — the shape that collapsed the
+  // old position-first segmentation into 97 segments / 95 untrusted singletons.
+  var samples = [];
+  for (var y = 2000; y < 6000; y += 100) samples.push({ pos: y, delta: -35 });
+  for (var y2 = 3000; y2 < 7000; y2 += 100) samples.push({ pos: y2, delta: -68 });
+  for (var y3 = 3500; y3 < 6500; y3 += 100) samples.push({ pos: y3, delta: -58 });
+
+  var cl = vdClusterShifts(samples, VD_SHIFT_TOL_PX, VD_SHIFT_MIN_RUN);
+  eq('overlapping bands collapse to one cluster per amount', cl.length, 3);
+  ok('every cluster is trusted', cl.every(function (c) { return c.trusted; }),
+     cl.map(function (c) { return [c.delta, c.count, c.trusted]; }));
+
+  var leaked = samples.filter(function (s) {
+    return !vdExplainsShift(cl, s.pos, s.delta, VD_SHIFT_TOL_PX);
+  }).length;
+  eq('no pure-reflow element leaks', leaked, 0);
+
+  ok('a shift with no band is NOT explained',
+     !vdExplainsShift(cl, 4000, -400, VD_SHIFT_TOL_PX));
+  ok('a band far from this element does NOT explain it',
+     !vdExplainsShift(cl, 100, -68, VD_SHIFT_TOL_PX));
+})();
+
+(function horizontalCascade() {
+  // A wrapping link grid re-flows horizontally when one chip is removed. The
+  // original design assumed horizontal shifts don't cascade.
+  var xs = [];
+  for (var k = 0; k < 12; k++) xs.push({ pos: 100 + k * 200, delta: 126 });
+  for (var k2 = 0; k2 < 12; k2++) xs.push({ pos: 100 + k2 * 200, delta: -123 });
+  var xcl = vdClusterShifts(xs, VD_SHIFT_TOL_PX, VD_SHIFT_MIN_RUN);
+  eq('horizontal: two trusted bands', xcl.filter(function (c) { return c.trusted; }).length, 2);
+  eq('horizontal: nothing leaks',
+     xs.filter(function (s) { return !vdExplainsShift(xcl, s.pos, s.delta, VD_SHIFT_TOL_PX); }).length, 0);
+})();
+
+(function shiftSegmentsWrapperShape() {
+  var segs = vdDeriveShiftSegments(
+    [{ y: 100, dy: -20 }, { y: 200, dy: -20 }, { y: 300, dy: -20 }],
+    VD_SHIFT_TOL_PX, VD_SHIFT_MIN_RUN);
+  eq('vdDeriveShiftSegments keeps its {y0,y1,dy} shape', segs.length, 1);
+  eq('  dy carried', segs[0].dy, -20);
+  ok('  trusted at three members', segs[0].trusted);
+})();
+
+// ── 5. suppression decisions ────────────────────────────────────────────────
+section('suppression');
+(function punctuationAndNumeric() {
+  var a = [cand({ text: 'Save time — fast', y: 0, path: '/p[1]' }),
+           cand({ text: '6,000+ apps', y: 100, path: '/p[2]', inLiveRegion: true })];
+  var b = [cand({ text: 'Save time. fast', y: 0, path: '/p[1]' }),
+           cand({ text: '6,500+ apps', y: 100, path: '/p[2]', inLiveRegion: true })];
+  var m = vdMatchCandidates(a, b);
+  var s = vdSuppressFindings(m.pairs);
+  eq('punctuation-only suppressed', s.aggregate.punctuationOnly, 1);
+  eq('live-region counter suppressed', s.aggregate.numericOnly, 1);
+  eq('nothing reported', s.findings.length, 0);
+
+  var s2 = vdSuppressFindings(m.pairs, { suppressPunctuation: false, suppressNumeric: false });
+  ok('flipping the config makes both report', s2.findings.length === 2,
+     s2.findings.map(function (f) { return f.changeClass; }));
+})();
+
+(function styleDeltaNamesProperty() {
+  var a = [cand({ text: 'Claude', tag: 'button', y: 0, path: '/button[1]' })];
+  var b = [cand({ text: 'Claude', tag: 'button', y: 0, path: '/button[1]',
+                  styles: { color: 'rgb(255, 0, 0)', fontWeight: '700' } })];
+  var m = vdMatchCandidates(a, b);
+  var s = vdSuppressFindings(m.pairs);
+  eq('style change reported', s.findings.length, 1);
+  eq('  classified style-changed', s.findings[0].changeClass, 'style-changed');
+  ok('  names the changed properties',
+     s.findings[0].signals.indexOf('style:color') !== -1 &&
+     s.findings[0].signals.indexOf('style:fontWeight') !== -1, s.findings[0].signals);
+})();
+
+(function rogueMoveSurvives() {
+  // A trusted reflow band exists, and one element moves against it.
+  var a = [], b = [];
+  for (var i = 0; i < 10; i++) {
+    a.push(cand({ text: 'Row ' + i, y: 1000 + i * 100, path: '/p[' + i + ']' }));
+    b.push(cand({ text: 'Row ' + i, y: 1000 + i * 100 - 50, path: '/p[' + i + ']' }));
+  }
+  a.push(cand({ text: 'Rogue', y: 3000, path: '/p[rogue]' }));
+  b.push(cand({ text: 'Rogue', y: 3400, path: '/p[rogue]' }));
+  var m = vdMatchCandidates(a, b);
+  var s = vdSuppressFindings(m.pairs);
+  eq('the reflow band is suppressed', s.aggregate.reflow, 10);
+  var moved = s.findings.filter(function (f) { return f.changeClass === 'moved'; });
+  eq('the rogue move is reported', moved.length, 1);
+  eq('  and it is the right element', moved[0].a.text, 'Rogue');
+})();
+
+// ── 6. grouping / rollup / ranking ─────────────────────────────────────────
+section('grouping, rollup, ranking');
+(function grouping() {
+  function f(y, cls, region) {
+    return { changeClass: cls, a: cand({ y: y, region: region }), b: cand({ y: y, region: region }) };
+  }
+  var grouped = vdGroupFindings([f(100, 'text-changed', 'main'), f(120, 'text-changed', 'main'),
+                                 f(140, 'text-changed', 'main'), f(900, 'text-changed', 'main')]);
+  eq('near findings merge, distant one stays separate', grouped.length, 2);
+  var merged = grouped.filter(function (g) { return g.memberCount; })[0];
+  eq('  merged group has three members', merged.memberCount, 3);
+
+  var across = vdGroupFindings([f(100, 'text-changed', 'header'), f(110, 'text-changed', 'footer')]);
+  eq('never merges across regions', across.length, 2);
+
+  var kinds = vdGroupFindings([f(100, 'text-changed', 'main'), f(110, 'style-changed', 'main')]);
+  eq('never merges different change classes', kinds.length, 2);
+})();
+
+(function redesignMode() {
+  // Distinct paths as well as distinct text — a real wholesale redesign changes
+  // both. (Leaving the default shared path would make all 40 a single
+  // duplicate-key group with equal counts on each side, which the path tier
+  // then legitimately pairs in document order.)
+  var a = [], b = [];
+  for (var i = 0; i < 40; i++) a.push(cand({ text: 'control only ' + i, y: i * 50, region: 'main', path: '/old[' + i + ']' }));
+  for (var j = 0; j < 40; j++) b.push(cand({ text: 'variant only ' + j, y: j * 50, region: 'main', path: '/new[' + j + ']' }));
+  var m = vdMatchCandidates(a, b);
+  eq('wholesale replacement detected as redesign', m.mode, 'redesign');
+  var rolled = vdRollupByRegion(m, a, b);
+  ok('rolled up per region, not per element', rolled.length < 5, rolled.length);
+  ok('  rollup carries counts', rolled[0].controlCount > 0 && rolled[0].variantCount > 0);
+  ok('  samples capped at five', rolled.every(function (r) { return r.samples.length <= 5; }));
+})();
+
+// ── redesign mode reports rollups AND the itemised list ────────────────────
+// vdComposeReportable was lifted out of diffVisualDiffVariant precisely so this
+// could be asserted: that function is an async handler holding decoded bitmaps,
+// so the composition had NO coverage while it lived there, which is why nothing
+// in this suite failed when the behaviour changed.
+//
+// A rebuilt page used to report 7 region counts and nothing else. On the real
+// ENOC-97 run that silence covered 106 added and 51 removed elements — every
+// one a SINGLE-SIDED statement that involves no pairing and so carries none of
+// the pairing risk the redesign floor exists to avoid.
+// spacing defaults to 50px, which is deliberately ABOVE VD_GROUP_GAP_PX (48) so
+// the general fixtures produce one finding per element and the counts below are
+// easy to reason about. The merge test passes a tighter spacing on purpose.
+function redesignFixture(nControl, nVariant, region, spacing) {
+  var step = spacing || 50;
+  var a = [], b = [];
+  for (var i = 0; i < nControl; i++) {
+    a.push(cand({ text: 'control only ' + i, y: i * step, region: region || 'main', path: '/old[' + i + ']' }));
+  }
+  for (var j = 0; j < nVariant; j++) {
+    b.push(cand({ text: 'variant only ' + j, y: j * step, region: region || 'main', path: '/new[' + j + ']' }));
+  }
+  return { a: a, b: b };
+}
+// vdComposeReportable is NEW, so "does this fail against the old file" has no
+// meaningful answer for its behaviour — the function simply is not there. What
+// must not happen is a bare ReferenceError at IIFE-execution time, which aborts
+// this file and takes the ~200 assertions below it down too. One clean failure
+// naming the missing export, then skip the section.
+var HAVE_COMPOSE = typeof vdComposeReportable === 'function';
+ok('vdComposeReportable is exported from vd-diff.js', HAVE_COMPOSE);
+
+function composeFor(a, b, over) {
+  var m = vdMatchCandidates(a, b);
+  var s = vdSuppressFindings(m.pairs);
+  var all = s.findings
+    .concat(m.removed.map(function (c) { return { changeClass: 'removed', a: c, b: null }; }))
+    .concat(m.added.map(function (c) { return { changeClass: 'added', a: null, b: c }; }));
+  return {
+    match: m,
+    composed: vdComposeReportable(Object.assign({
+      mode: m.mode, match: m, controlList: a, variantList: b, all: all,
+    }, over || {})),
+  };
+}
+
+(function redesignEmitsBothTiers() {
+  if (!HAVE_COMPOSE) return;
+  var f = redesignFixture(40, 40);
+  var r = composeFor(f.a, f.b);
+  eq('the fixture really is redesign mode', r.match.mode, 'redesign');
+  ok('rollups are present', r.composed.rollupCount > 0, r.composed.rollupCount);
+  ok('and so is the itemised list — this is the whole change',
+     r.composed.itemizedCount > 0, r.composed.itemizedCount);
+  ok('total exceeds the rollup count', r.composed.findings.length > r.composed.rollupCount,
+     { total: r.composed.findings.length, rollups: r.composed.rollupCount });
+  // Rollups first, then the itemised half; each in page order.
+  var kinds = r.composed.findings.map(function (x) { return x.changeClass === 'region-rollup' ? 'R' : 'i'; }).join('');
+  ok('rollups lead, itemised follow, no interleaving', /^R+i+$/.test(kinds), kinds);
+  function ascending(list) {
+    var ys = list.map(function (x) {
+      var rect = (x.a && x.a.rect) || (x.b && x.b.rect) || x.controlRect || x.variantRect ||
+                 (x.members && ((x.members[0].a || x.members[0].b || {}).rect));
+      return rect ? rect.y : Infinity;
+    });
+    for (var i = 1; i < ys.length; i++) if (ys[i] < ys[i - 1]) return false;
+    return true;
+  }
+  var rolls = r.composed.findings.filter(function (x) { return x.changeClass === 'region-rollup'; });
+  var items = r.composed.findings.filter(function (x) { return x.changeClass !== 'region-rollup'; });
+  ok('rollups are in page order', ascending(rolls));
+  ok('itemised findings are in page order', ascending(items));
+})();
+
+(function normalModeUnchanged() {
+  if (!HAVE_COMPOSE) return;
+  // The other half of the fork must be untouched: no rollups in normal mode.
+  var a = [], b = [];
+  for (var i = 0; i < 20; i++) {
+    a.push(cand({ text: 'Row ' + i, y: i * 50, region: 'main', path: '/body[1]/p[' + i + ']' }));
+    b.push(cand({ text: i === 7 ? 'Row seven rewritten' : 'Row ' + i, y: i * 50, region: 'main', path: '/body[1]/p[' + i + ']' }));
+  }
+  var r = composeFor(a, b);
+  eq('fixture is normal mode', r.match.mode, 'normal');
+  eq('normal mode emits no rollups', r.composed.rollupCount, 0);
+  ok('and still emits findings', r.composed.itemizedCount > 0, r.composed.itemizedCount);
+  ok('nothing is labelled region-rollup',
+     r.composed.findings.every(function (x) { return x.changeClass !== 'region-rollup'; }));
+})();
+
+(function rollupsAreExemptFromTheCap() {
+  if (!HAVE_COMPOSE) return;
+  // Rollups must not compete with the itemised half for slots, and they would
+  // LOSE that competition: 'region-rollup' has no VD_STATUS_TIER entry, so it
+  // falls to the tier-1 default while added/removed are tier 3 — capping them
+  // together drops the orientation and keeps the detail, backwards.
+  var f = redesignFixture(60, 60);
+  var r = composeFor(f.a, f.b, { maxTotal: 5 });
+  ok('the itemised half is capped', r.composed.itemizedCount <= 5, r.composed.itemizedCount);
+  ok('every rollup survives the cap anyway', r.composed.rollupCount > 0, r.composed.rollupCount);
+  eq('total is rollups plus the capped itemised half',
+     r.composed.findings.length, r.composed.rollupCount + r.composed.itemizedCount);
+  ok('and the remainder is disclosed', r.composed.truncatedCount > 0, r.composed.truncatedCount);
+})();
+
+(function adjacentAddedElementsMerge() {
+  if (!HAVE_COMPOSE) return;
+  // vdGroupFindings does the itemising, unchanged — this is what produced the
+  // Zapier report's "a group of 12 template links" entries rather than 12 rows.
+  // 40px spacing, under VD_GROUP_GAP_PX (48), so the run chains — vdGroupFindings
+  // re-anchors on each member it absorbs, so a tight run merges up to
+  // VD_GROUP_MAX_MEMBERS and then starts a new group.
+  var f = redesignFixture(1, 24, 'main', 40);
+  var r = composeFor(f.a, f.b);
+  var items = r.composed.findings.filter(function (x) { return x.changeClass !== 'region-rollup'; });
+  ok('24 added elements do not become 24 findings', items.length < 24, items.length);
+  ok('at least one is a merged group carrying memberCount',
+     items.some(function (x) { return x.memberCount > 1; }),
+     items.map(function (x) { return x.memberCount || 1; }));
+  ok('no group exceeds VD_GROUP_MAX_MEMBERS',
+     items.every(function (x) { return (x.memberCount || 1) <= VD_GROUP_MAX_MEMBERS; }),
+     items.map(function (x) { return x.memberCount || 1; }));
+  // And the complement: spacing ABOVE the gap must NOT merge, so the assertion
+  // above is testing the merge and not just a loose upper bound.
+  var wide = composeFor.apply(null, (function () { var w = redesignFixture(1, 24, 'main', 50); return [w.a, w.b]; })());
+  var wideItems = wide.composed.findings.filter(function (x) { return x.changeClass !== 'region-rollup'; });
+  ok('at 50px spacing nothing merges', wideItems.every(function (x) { return !x.memberCount; }),
+     wideItems.map(function (x) { return x.memberCount || 1; }));
+})();
+
+(function composeDoesNotTouchMatching() {
+  if (!HAVE_COMPOSE) return;
+  // The load-bearing guarantee. This change must alter what is REPORTED and
+  // nothing about what was MATCHED — the redesign floor also gates the fuzzy
+  // pass, so a leak into matching would start brute-forcing pairs on exactly
+  // the pages the gate protects.
+  var f = redesignFixture(40, 40);
+  var m = vdMatchCandidates(f.a, f.b);
+  var before = JSON.stringify({
+    mode: m.mode, pairs: m.pairs.length, removed: m.removed.length,
+    added: m.added.length, matchedFraction: m.matchedFraction,
+    tiers: m.pairs.map(function (p) { return p.tier; }).sort(),
+  });
+  vdComposeReportable({ mode: m.mode, match: m, controlList: f.a, variantList: f.b, all: [] });
+  var after = JSON.stringify({
+    mode: m.mode, pairs: m.pairs.length, removed: m.removed.length,
+    added: m.added.length, matchedFraction: m.matchedFraction,
+    tiers: m.pairs.map(function (p) { return p.tier; }).sort(),
+  });
+  eq('composing the report does not mutate the match result', after, before);
+  ok('no fuzzy pairing exists in redesign mode to begin with',
+     m.pairs.every(function (p) { return p.tier !== 'fuzzy'; }));
+})();
+
+(function ranking() {
+  var watched = [{ x: 0, y: 5000, w: 200, h: 50 }];
+  var many = [];
+  for (var i = 0; i < 80; i++) {
+    many.push({ changeClass: 'style-changed', a: cand({ y: i * 10, text: 'x' }), b: cand({ y: i * 10, text: 'x' }) });
+  }
+  many.push({ changeClass: 'style-changed', a: cand({ y: 5000, x: 0, text: 'watched thing' }),
+              b: cand({ y: 5000, x: 0, text: 'watched thing' }) });
+  var r = rankAndCapDiffFindings(many, { watchedRects: watched });
+  eq('caps to the configured maximum', r.kept.length, VD_MAX_DIFF_FINDINGS);
+  ok('a watched-selector overlap ranks first',
+     r.kept[0].a && r.kept[0].a.text === 'watched thing', r.kept[0].a && r.kept[0].a.text);
+  ok('reports what it dropped', r.truncatedCount > 0);
+
+  var unchangedOnly = rankAndCapDiffFindings([{ changeClass: 'unchanged', a: cand({}), b: cand({}) }]);
+  eq('unchanged findings never surface', unchangedOnly.kept.length, 0);
+})();
+
+// ── 7. end-to-end, built from the real page's measured shape ────────────────
+section('end-to-end (Zapier shape)');
+(function endToEnd() {
+  var ctrl = [], vari = [], n = 0;
+  function pair(o, vOverride) {
+    var c = cand(Object.assign({ id: 'e' + (n++) }, o));
+    ctrl.push(c);
+    if (vOverride !== null) vari.push(cand(Object.assign({ id: c.candidateId }, o, vOverride || {})));
+  }
+  // the real copy change
+  pair({ y: 300, tag: 'h1', text: 'The automation layer for agentic AI', w: 700, h: 60, path: '/h1[1]' },
+       { text: 'Actions speak louder than prompts' });
+  pair({ y: 380, text: 'One MCP connection. 9,000+ apps.', w: 700, h: 80, path: '/p[hero]' },
+       { text: "Use Zapier's AI-powered automation to take real action." });
+  // unmoved content above
+  for (var i = 0; i < 25; i++) pair({ y: 100 + i * 4, text: 'Nav item ' + i, w: 100, h: 30, path: '/nav[' + i + ']' });
+  // an eyebrow label removed -> -35 cascade below it
+  pair({ y: 4000, text: 'Customer stories', w: 200, h: 35, path: '/p[eyebrow]' }, null);
+  for (var j = 0; j < 60; j++) {
+    pair({ y: 4100 + j * 60, text: 'Story body line ' + j, w: 600, h: 50, path: '/p[s' + j + ']' },
+         { y: 4100 + j * 60 - 35 });
+  }
+  // stat counters in the SAME y band shifting a DIFFERENT amount
+  for (var k = 0; k < 20; k++) {
+    pair({ y: 4500 + k * 80, text: 'stat ' + k, w: 120, h: 60, x: 400, path: '/div[c' + k + ']' },
+         { y: 4500 + k * 80 - 68 });
+  }
+  for (var q = 0; q < 8; q++) {
+    pair({ y: 5000 + q * 100, text: 'Attribution line ' + q, w: 400, h: 40, path: '/div[a' + q + ']' },
+         { y: 5000 + q * 100 - 58 });
+  }
+  // wrapping grid: one link removed, rows re-wrap horizontally
+  for (var g = 0; g < 12; g++) {
+    pair({ y: 7000, x: 100 + g * 200, tag: 'a', text: 'Template A' + g, href: '/t/a' + g, w: 180, h: 60, path: '/a[A' + g + ']' },
+         { x: 100 + g * 200 + 126 });
+  }
+  for (var h = 0; h < 12; h++) {
+    pair({ y: 7100, x: 100 + h * 200, tag: 'a', text: 'Template B' + h, href: '/t/b' + h, w: 180, h: 60, path: '/a[B' + h + ']' },
+         { x: 100 + h * 200 - 123 });
+  }
+  pair({ y: 7200, x: 500, tag: 'a', text: 'Generate posts', href: '/t/gen', w: 180, h: 60, path: '/a[gen]' }, null);
+  vari.push(cand({ id: 'eNEW', y: 7200, x: 900, tag: 'a', text: 'See more templates', href: '/templates', w: 180, h: 60, path: '/a[more]' }));
+  // one genuine rogue move
+  pair({ y: 6000, text: 'Moved on its own', w: 300, h: 40, path: '/p[rogue]' }, { y: 6400 });
+
+  var m = vdMatchCandidates(ctrl, vari);
+  var s = vdSuppressFindings(m.pairs);
+  var all = s.findings.concat(
+    m.removed.map(function (c) { return { changeClass: 'removed', a: c, b: null }; }),
+    m.added.map(function (c) { return { changeClass: 'added', a: null, b: c }; }));
+  var reportable = vdGroupFindings(all).filter(function (f) { return f.changeClass !== 'unchanged'; });
+
+  eq('normal mode, not redesign', m.mode, 'normal');
+  ok('vertical reflow suppressed in bulk', s.aggregate.reflow >= 100, s.aggregate.reflow);
+  ok('findings collapse to single digits', reportable.length < 10, reportable.length);
+
+  function has(pred) {
+    return reportable.some(function (f) {
+      return (f.members || [f]).some(pred);
+    });
+  }
+  ok('hero copy change is reported',
+     has(function (f) { return f.a && /automation layer/.test(f.a.text); }));
+  ok('the removed eyebrow is reported',
+     has(function (f) { return f.changeClass === 'removed' && f.a && /Customer stories/.test(f.a.text); }));
+  ok('the added link is reported',
+     has(function (f) { return f.changeClass === 'added' && f.b && /See more templates/.test(f.b.text); }));
+  ok('the rogue move survives suppression',
+     has(function (f) { return f.a && f.a.text === 'Moved on its own'; }));
+})();
+
+// ── 8. debug log diagnostics ───────────────────────────────────────────────
+section('debug log');
+function abSections(captures, perVariant) {
+  return { ts: 1756000000000, pageUrls: [], modes: [{
+    mode: 2, name: 'A/B Variant Comparison', status: 'ran',
+    data: { captures: captures, visualDiffFull: { baselineLabel: 'v0', perVariant: perVariant } },
+  }] };
+}
+function capture(label, o) {
+  return { label: label, url: 'https://example.com', skipped: false, loadError: null,
+           errors: o.errors || [], selectors: o.selectors || [],
+           // expProbe, NOT variantVerified: the raw worker record carries the
+           // probe and popup.js derives the verdict. A fixture that sets the
+           // derived field tests nothing — it is why the per-capture
+           // diagnostics shipped as dead code and still passed.
+           ...('expProbe' in o ? { expProbe: o.expProbe } : {}),
+           fullPage: o.fullPage === undefined
+             ? { pageW: 1470, pageH: 9000, capturedH: 8000, truncated: true, viewportH: 802, viewportW: 1470 }
+             : o.fullPage };
+}
+
+(function designReferenceDiagnostics() {
+  // Two real debugging rounds were spent on the WOW-1160 runs because the
+  // debug log said "no Summary of Changes" without saying WHY, and the three
+  // causes need three different fixes. Each is asserted to name its own cause.
+  function withDr(dr) {
+    var base = abSections([capture('v0', {}), capture('v1', {})],
+      [{ label: 'v1', diffMode: 'normal', matchedFraction: 0.84, structuralStats: {} }]);
+    base.designReference = dr;
+    return vdCollectProblems(base);
+  }
+  var empty = { present: false, length: 0, source: null };
+  var noFigma = { urlUsed: null, urlFromTicket: null, nodeId: null, tokenConfigured: false, comp: null, compCandidateCount: 0 };
+
+  // Cause 1 — no ticket at all.
+  ok('no context names the missing context', withDr({
+    ticketContext: null, summaryOfChanges: empty, figma: noFigma,
+  }).some(function (x) { return x.severity === 'error' && /No ticket context was active/.test(x.detail); }));
+
+  // Cause 2 — the one the real runs hit: context present and reviewed, but
+  // its variants carry no descriptions, so the auto-fill had nothing to write.
+  // Indistinguishable from cause 1 without this.
+  var p2 = withDr({
+    ticketContext: { ticketKey: 'WOW-1160', reviewed: true, variantCount: 2, variantsWithDescription: 0,
+      controlVariantId: null, variantIds: ['v0', 'v1'], previewLinkCount: 0, previewLinkIds: [] },
+    summaryOfChanges: empty, figma: noFigma,
+  });
+  ok('empty descriptions are named as the cause', p2.some(function (x) {
+    return x.severity === 'error' && /parsed 2 variant\(s\) but none carry a description/.test(x.detail);
+  }), p2);
+  ok('missing Control variant is its own warning', p2.some(function (x) {
+    return x.severity === 'warn' && /no variant flagged as Control/.test(x.detail);
+  }), p2);
+
+  // The case WOW-1160 actually hit: zero variants, but preview links present.
+  // Zero-variants and zero-descriptions are different failures with different
+  // fixes, and saying "none of its 0 variants carry a description" describes
+  // neither.
+  var pz = withDr({
+    ticketContext: { ticketKey: 'WOW-1160', reviewed: true, variantCount: 0, variantsWithDescription: 0,
+      controlVariantId: null, variantIds: [], previewLinkCount: 2, previewLinkIds: ['v0', 'v1'] },
+    summaryOfChanges: empty, figma: noFigma,
+  });
+  ok('zero variants is named as zero, not as "no descriptions"', pz.some(function (x) {
+    return x.severity === 'error' && /NO variants were parsed/.test(x.detail) && /2 preview link\(s\) were found/.test(x.detail);
+  }), pz);
+  ok('links-without-variants localises the fault to Test Specifications', pz.some(function (x) {
+    return x.where === 'ticket-context' && /points at that section specifically/.test(x.detail);
+  }), pz);
+  // One cause, one line: the Control warning would just restate it.
+  ok('no redundant Control warning when nothing parsed', !pz.some(function (x) {
+    return /no variant flagged as Control/.test(x.detail);
+  }), pz);
+  ok('missing preview links is its own warning', p2.some(function (x) {
+    return x.severity === 'warn' && /no preview links/.test(x.detail);
+  }), p2);
+
+  // A filled box records its SOURCE — the whole report is graded against it,
+  // and once the text is in the box there is no other way to tell whether a
+  // human wrote it or a model did.
+  var p3 = withDr({
+    ticketContext: { ticketKey: 'WOW-1160', reviewed: true, variantCount: 2, variantsWithDescription: 2,
+      controlVariantId: 'v0', variantIds: ['v0', 'v1'], previewLinkCount: 2, previewLinkIds: ['v0', 'v1'] },
+    summaryOfChanges: { present: true, length: 140, source: 'ticket' }, figma: noFigma,
+  });
+  ok('spec source is recorded', p3.some(function (x) { return /came from: ticket/.test(x.detail); }), p3);
+  ok('a healthy context raises no context warnings',
+    !p3.some(function (x) { return x.where === 'ticket-context'; }), p3);
+
+  // Figma present-but-unusable is worth saying; Figma absent is silent.
+  ok('figma link without a token warns', withDr({
+    ticketContext: null, summaryOfChanges: empty,
+    figma: { urlUsed: null, urlFromTicket: 'https://figma.com/design/A/B?node-id=1-2', nodeId: '1:2',
+      tokenConfigured: false, comp: null, compCandidateCount: 0 },
+  }).some(function (x) { return x.severity === 'warn' && /no Figma token is configured/.test(x.detail); }));
+
+  ok('bare file link warns', withDr({
+    ticketContext: null, summaryOfChanges: empty,
+    figma: { urlUsed: null, urlFromTicket: 'https://figma.com/design/A/B', nodeId: null,
+      tokenConfigured: true, comp: null, compCandidateCount: 0 },
+  }).some(function (x) { return /whole file rather than a specific board/.test(x.detail); }));
+
+  ok('no figma at all stays silent', !withDr({
+    ticketContext: null, summaryOfChanges: empty, figma: noFigma,
+  }).some(function (x) { return x.where === 'design-reference'; }));
+
+  // Absent block must not throw — Test-Agent-queued runs don't build one.
+  ok('missing designReference is tolerated', Array.isArray(vdCollectProblems(
+    abSections([capture('v0', {})], [{ label: 'v1', diffMode: 'normal', structuralStats: {} }]))));
+})();
+
+(function geometryValidator() {
+  // validateVisualDiffGeometry did not exist until 2026-08-27, despite a
+  // comment in background.js asserting it was the backstop. The check that DID
+  // exist compared pageW against pageW — the same wrong quantity on both sides,
+  // structurally unable to see a viewport mismatch.
+  function cap(label, fp) { return { label: label, fullPage: fp }; }
+  var ok_ = { pageW: 1470, pageH: 9000, viewportW: 1470, viewportH: 802 };
+
+  eq('matching geometry yields nothing',
+    validateVisualDiffGeometry([cap('v0', ok_), cap('v1', ok_)], 'v0').length, 0);
+
+  var w = validateVisualDiffGeometry(
+    [cap('v0', { pageW: 1693, viewportW: 1693, viewportH: 1281 }),
+     cap('v1', { pageW: 1470, viewportW: 1470, viewportH: 1281 })], 'v0');
+  eq('viewport width mismatch is one error', w.length, 1);
+  eq('...at error severity', w[0].severity, 'error');
+  eq('...naming the field', w[0].field, 'viewportW');
+
+  var h = validateVisualDiffGeometry(
+    [cap('v0', { pageW: 1470, viewportW: 1470, viewportH: 1281 }),
+     cap('v1', { pageW: 1470, viewportW: 1470, viewportH: 802 })], 'v0');
+  eq('viewport height mismatch is caught too', h.length, 1);
+  eq('...at error severity', h[0].severity, 'error');
+
+  // Same viewport, wider content. Probably a REAL difference rather than an
+  // invalid comparison — so warn, don't error. But say the pixel ratio is
+  // unusable, because computeCoarsePixelDiffRatio crops to the narrower image
+  // with no alignment.
+  var c = validateVisualDiffGeometry(
+    [cap('v0', { pageW: 1470, viewportW: 1470, viewportH: 802 }),
+     cap('v1', { pageW: 1600, viewportW: 1470, viewportH: 802 })], 'v0');
+  eq('content-width difference at same viewport is a WARN', c[0].severity, 'warn');
+  ok('...and says the pixel ratio is unusable', /unusable/.test(c[0].detail), c);
+
+  // Old captures have no viewportW. Say they could not be checked rather than
+  // passing them silently — a silent pass is what the pageW check did.
+  var legacy = validateVisualDiffGeometry(
+    [cap('v0', { pageW: 1470, viewportH: 802 }), cap('v1', { pageW: 1470, viewportH: 802 })], 'v0');
+  eq('captures without viewportW report info, not silence', legacy[0].severity, 'info');
+
+  // The baseline is whichever label is named, not index 0.
+  var reordered = validateVisualDiffGeometry(
+    [cap('v1', { pageW: 1470, viewportW: 1470, viewportH: 802 }),
+     cap('v0', { pageW: 1470, viewportW: 1693, viewportH: 802 })], 'v0');
+  eq('baseline resolved by label, not position', reordered[0].label, 'v1');
+  eq('...and compared against v0 geometry', reordered[0].baseline, 1693);
+
+  // Degenerate inputs must not throw — this runs inside vdCollectProblems.
+  eq('single capture yields nothing', validateVisualDiffGeometry([cap('v0', ok_)], 'v0').length, 0);
+  eq('empty yields nothing', validateVisualDiffGeometry([], 'v0').length, 0);
+  eq('null yields nothing', validateVisualDiffGeometry(null, 'v0').length, 0);
+  eq('errored captures are excluded',
+    validateVisualDiffGeometry([cap('v0', ok_), { label: 'v1', fullPage: { error: 'boom' } }], 'v0').length, 0);
+})();
+
+(function geometryMismatch() {
+  // The silent run-invalidating failure: Control and variants at different widths.
+  var p = vdCollectProblems(abSections([
+    capture('v0', { fullPage: { pageW: 1693, pageH: 14201, capturedH: 8000, truncated: true, viewportH: 1281, viewportW: 1693 } }),
+    capture('v1', { fullPage: { pageW: 1470, pageH: 15500, capturedH: 8000, truncated: true, viewportH: 802, viewportW: 1470 } }),
+  ], [{ label: 'v1', diffMode: 'redesign', matchedFraction: 0.124, structuralStats: {} }]));
+
+  ok('viewport width mismatch is an ERROR', p.some(function (x) {
+    return x.severity === 'error' && /1470px viewport width but the baseline/.test(x.detail);
+  }), p);
+  // Height matters as much as width and used to go entirely unchecked: vh
+  // sizing, sticky elements and viewport-triggered lazy loads all resolve
+  // differently at 1281 vs 802.
+  ok('viewport height mismatch is its own ERROR', p.some(function (x) {
+    return x.severity === 'error' && /Viewport height 802px vs the baseline's 1281px/.test(x.detail);
+  }), p);
+  ok('redesign verdict is blamed on the geometry', p.some(function (x) {
+    return /most likely the capture-width mismatch/.test(x.detail);
+  }), p);
+  // Truncation is a VISUAL limit only, now that the DOM walk covers the full
+  // page — the wording must not claim the bottom went uncompared.
+  ok('truncation names the fraction with no image', p.some(function (x) {
+    return /there is no image/.test(x.detail) && /%/.test(x.detail);
+  }), p.map(function (x) { return x.detail; }));
+  ok('truncation does NOT claim the page went uncompared', !p.some(function (x) {
+    return /never compared/.test(x.detail);
+  }));
+})();
+
+(function geometryClean() {
+  var p = vdCollectProblems(abSections([
+    capture('v0', {}), capture('v1', {}),
+  ], [{ label: 'v1', structuralStats: {} }]));
+  ok('matching widths produce no geometry error',
+     !p.some(function (x) { return /wide but the baseline/.test(x.detail); }));
+})();
+
+(function pinFailure() {
+  var p = vdCollectProblems(abSections([
+    capture('v0', {}),
+    capture('v1', { fullPage: { pageW: 1470, pageH: 9000, capturedH: 8000, truncated: true, viewportH: 802, geometryPinFailed: 'Emulation not allowed' } }),
+  ], []));
+  ok('a failed geometry pin is an ERROR', p.some(function (x) {
+    return x.severity === 'error' && /Could not pin/.test(x.detail);
+  }));
+})();
+
+(function hardErrorsVsPageIssues() {
+  var p = vdCollectProblems(abSections([
+    capture('v0', { errors: ['Script error.'], selectors: [{ selector: '.missing', exists: false }] }),
+  ], [{ label: 'v1', noSpecText: true, structuralStats: {} }]));
+  ok('a page JS error stays a warning, not an error',
+     p.some(function (x) { return x.severity === 'warn' && /Script error/.test(x.detail); }) &&
+     !p.some(function (x) { return x.severity === 'error'; }), p.map(function (x) { return x.severity; }));
+  ok('a never-matching watched selector is surfaced',
+     p.some(function (x) { return /Selector never matched: \.missing/.test(x.detail); }));
+  ok('a missing spec is surfaced as info',
+     p.some(function (x) { return x.severity === 'info' && /No Summary of Changes/.test(x.detail); }));
+
+  var hard = vdCollectProblems({ ts: 1, modes: [{ mode: 2, name: 'A/B', status: 'ran', data: {
+    captures: [{ label: 'v1', url: 'u', loadError: 'Page load timed out after 30s', errors: [], selectors: [] },
+               { label: 'v2', url: 'u', errors: [], selectors: [], fullPage: { error: 'Could not attach for capture' } }],
+    visualDiffFull: { baselineLabel: 'v0', perVariant: [{ label: 'v3', truncated: true, structuralStats: {} }] } } }] });
+  ok('a load failure IS an error', hard.some(function (x) { return x.severity === 'error' && /timed out/.test(x.detail); }));
+  ok('a capture failure IS an error', hard.some(function (x) { return x.severity === 'error' && /Could not attach/.test(x.detail); }));
+  ok('a cut-off model response IS an error', hard.some(function (x) { return x.severity === 'error' && /cut off/.test(x.detail); }));
+})();
+
+(function cascadeSignature() {
+  // 30 elements each "moved" by the same amount with no trusted band to explain
+  // it — the fingerprint of reflow suppression under-matching.
+  var moved = [];
+  for (var i = 0; i < 30; i++) {
+    moved.push({ changeClass: 'moved', dy: -35, dx: 0,
+                 a: cand({ y: 4000 + i * 50, text: 'row ' + i }),
+                 b: cand({ y: 3965 + i * 50, text: 'row ' + i }) });
+  }
+  var dbg = buildVisualDiffDebug({
+    match: { pairs: [{ tier: 'path+text' }], removed: [], added: [], mode: 'normal', matchedFraction: 0.98 },
+    matchTierCounts: { 'path+text': 270, path: 2 },
+    all: moved.concat([{ changeClass: 'text-changed', dy: 0, dx: 0, a: cand({ text: 'a' }), b: cand({ text: 'b' }) }]),
+    shiftClusters: { vertical: [{ delta: -68, p0: 5000, p1: 7000, count: 5, trusted: true }], horizontal: [] },
+    aggregate: { reflow: 180, reflowPxMax: 68, reflowHorizontal: 0, punctuationOnly: 0, numericOnly: 0 },
+    truncatedCount: 0,
+  });
+  eq('movesByDelta aggregates the cascade', dbg.movesByDelta['dy=-35,dx=0'], 30);
+  eq('classCounts computed', dbg.classCounts.moved, 30);
+  eq('matchTierCounts carried', dbg.matchTierCounts['path+text'], 270);
+  ok('shiftClusters preserved for cross-reference', dbg.shiftClusters.vertical.length === 1);
+  ok('unsuppressedMoves carry geometry',
+     dbg.unsuppressedMoves.length === 30 && dbg.unsuppressedMoves[0].control.rect);
+  ok('sample lists are capped', dbg.unsuppressedMoves.length <= 40);
+
+  var p = vdCollectProblems(abSections([capture('v0', {}), capture('v1', {})],
+    [{ label: 'v1', diffDebug: dbg, structuralStats: {} }]));
+  ok('the un-explained cascade is NAMED in plain language', p.some(function (x) {
+    return /30 elements were each reported as moved by the same amount/.test(x.detail);
+  }), p.map(function (x) { return x.detail; }));
+
+  // and the inverse: a properly-explained band must not be flagged
+  var good = buildVisualDiffDebug({
+    match: { pairs: [], removed: [], added: [], mode: 'normal', matchedFraction: 0.99 },
+    matchTierCounts: { 'path+text': 300 }, all: [],
+    shiftClusters: { vertical: [{ delta: -35, p0: 4000, p1: 7000, count: 40, trusted: true }], horizontal: [] },
+    aggregate: { reflow: 200, reflowPxMax: 35 }, truncatedCount: 0,
+  });
+  var pg = vdCollectProblems(abSections([capture('v0', {}), capture('v1', {})],
+    [{ label: 'v1', diffDebug: good, structuralStats: {} }]));
+  ok('a clean run raises no cascade warning',
+     !pg.some(function (x) { return /reported as moved by the same amount/.test(x.detail); }));
+})();
+
+(function capAndBelowCaptureSurfaced() {
+  var dbg = buildVisualDiffDebug({
+    match: { pairs: [], removed: [], added: [], mode: 'normal', matchedFraction: 0.9 },
+    matchTierCounts: {}, all: [], shiftClusters: { vertical: [], horizontal: [] },
+    aggregate: {}, truncatedCount: 0,
+  });
+  dbg.counts.controlElements = 3000;          // walk hit its ceiling
+  dbg.belowCapture = { control: 320, variant: 311, findings: 2 };
+  var p = vdCollectProblems(abSections([capture('v0', {}), capture('v1', {})],
+    [{ label: 'v1', diffDebug: dbg, structuralStats: {} }]));
+  ok('hitting the candidate ceiling is surfaced', p.some(function (x) {
+    return /candidate ceiling/.test(x.detail);
+  }), p.map(function (x) { return x.detail; }));
+  ok('below-capture coverage is reported as coverage first', p.some(function (x) {
+    return x.severity === 'info' && /320 of 3000 elements sit below/.test(x.detail);
+  }), p.map(function (x) { return x.detail; }));
+
+  // Below-capture elements with NO findings must not read as a problem.
+  var quiet = vdCollectProblems(abSections([capture('v0', {}), capture('v1', {})],
+    [{ label: 'v1', structuralStats: {}, diffDebug: Object.assign({}, dbg, {
+        counts: { controlElements: 521 }, belowCapture: { control: 320, variant: 311, findings: 0 } }) }]));
+  ok('zero below-capture findings says so explicitly', quiet.some(function (x) {
+    return /no findings came from there/.test(x.detail);
+  }), quiet.map(function (x) { return x.detail; }));
+})();
+
+(function belowCaptureCounterExcludesUnchanged() {
+  // The counter must count REPORTABLE findings only. Counting unchanged pairs
+  // made it read 281 on a variant whose real answer was 2, purely because a
+  // page-wide 4px shift left every pair sitting in the set as 'unchanged'
+  // instead of being suppressed as reflow.
+  var deep = function (t) { return Object.assign(cand({ text: t, y: 12000 }), { belowCapture: true }); };
+  var all = [];
+  for (var i = 0; i < 279; i++) all.push({ changeClass: 'unchanged', a: deep('same ' + i), b: deep('same ' + i) });
+  all.push({ changeClass: 'removed', a: deep('Repurpose content'), b: null });
+  all.push({ changeClass: 'text-changed', a: deep('old'), b: deep('new') });
+
+  var dbg = buildVisualDiffDebug({
+    match: { pairs: [], removed: [], added: [], mode: 'normal', matchedFraction: 0.99 },
+    matchTierCounts: {}, all: all, shiftClusters: { vertical: [], horizontal: [] },
+    aggregate: {}, truncatedCount: 0,
+  });
+  eq('counts reportable findings, not unchanged pairs', dbg.belowCapture.findings, 2);
+})();
+
+(function fuzzySurfaced() {
+  var dbg = buildVisualDiffDebug({
+    match: { pairs: [], removed: [], added: [], mode: 'normal', matchedFraction: 0.9 },
+    matchTierCounts: { fuzzy: 7 }, all: [], shiftClusters: { vertical: [], horizontal: [] },
+    aggregate: {}, truncatedCount: 0,
+  });
+  var p = vdCollectProblems(abSections([capture('v0', {}), capture('v1', {})],
+    [{ label: 'v1', diffDebug: dbg, structuralStats: {} }]));
+  ok('approximate pairings are surfaced as a caveat',
+     p.some(function (x) { return /paired by approximate similarity/.test(x.detail); }));
+})();
+
+// ── 8b. full-page coverage past the screenshot limit ───────────────────────
+(function staleGateItself() {
+  // vdSpecIsStale decides whether grading happens at all, so its four clauses
+  // are asserted directly rather than only through the problems line.
+  var HAVE = typeof vdSpecIsStale === 'function';
+  ok('vdSpecIsStale is defined', HAVE);
+  if (!HAVE) return;
+  var t = function (soc, src, key, active) {
+    return vdSpecIsStale({ summaryOfChanges: soc, summarySource: src, summaryTicketKey: key },
+                         active == null ? null : { ticketKey: active });
+  };
+  eq('the real failure: ticket spec from ZAP-441 used against ENOC-97',
+     t('v1: Two-Step Form Progression', 'ticket', 'ZAP-441', 'ENOC-97'), true);
+  eq('same ticket is not stale', t('x', 'ticket', 'ENOC-97', 'ENOC-97'), false);
+  eq('hand-typed is never stale', t('x', 'manual', 'ZAP-441', 'ENOC-97'), false);
+  eq('no recorded key (legacy state) is not stale', t('x', 'ticket', null, 'ENOC-97'), false);
+  eq('no active ticket is not stale', t('x', 'ticket', 'ZAP-441', null), false);
+  eq('an empty spec is not stale', t('   ', 'ticket', 'ZAP-441', 'ENOC-97'), false);
+  eq('a figma-sourced spec from another ticket IS stale',
+     t('x', 'figma-boards', 'ZAP-441', 'ENOC-97'), true);
+  eq('missing state does not throw', vdSpecIsStale(null, { ticketKey: 'ENOC-97' }), false);
+  eq('missing ctx does not throw',
+     vdSpecIsStale({ summaryOfChanges: 'x', summarySource: 'ticket', summaryTicketKey: 'ZAP-441' }, null), false);
+  // vdCollectProblems reaches the same rule from the serialised shape. Assert
+  // the shared primitive directly so the two callers cannot diverge silently.
+  ok('the shared primitive is what both callers use', typeof vdSpecTicketMismatch === 'function');
+  eq('primitive: mismatch with text', vdSpecTicketMismatch('ticket', 'ZAP-441', 'ENOC-97', true), true);
+  eq('primitive: mismatch without text', vdSpecTicketMismatch('ticket', 'ZAP-441', 'ENOC-97', false), false);
+  eq('primitive: manual', vdSpecTicketMismatch('manual', 'ZAP-441', 'ENOC-97', true), false);
+  eq('primitive: same key', vdSpecTicketMismatch('ticket', 'ENOC-97', 'ENOC-97', true), false);
+})();
+
+(function gradingFailureIsAnError() {
+  // The diff survived, the grading did not. That has to read as "produced but
+  // not judged", never as a clean run and never as a total failure.
+  var base = abSections([capture('v0', { fullPage: null }), capture('v1', { fullPage: null })],
+    [{ label: 'v1', diffMode: 'redesign', matchedFraction: 0.24, structuralStats: {},
+       gradingFailed: 'Failed to fetch',
+       requirements: { total: 70, verbatim: 65, near: 1, absent: 4, items: [] } }]);
+  var p = vdCollectProblems(base);
+  var hit = p.filter(function (x) { return /never graded/.test(x.detail); });
+  eq('a failed model call is reported once', hit.length, 1);
+  eq('  at error severity', hit.length ? hit[0].severity : null, 'error');
+  ok('  naming the underlying failure', hit.length > 0 && /Failed to fetch/.test(hit[0].detail));
+  ok('  and stating that the deterministic half survived',
+     hit.length > 0 && /requirement coverage/.test(hit[0].detail), hit.length ? hit[0].detail : null);
+  // A successful run must not emit it.
+  var okRun = vdCollectProblems(abSections([capture('v0', { fullPage: null })],
+    [{ label: 'v1', diffMode: 'redesign', matchedFraction: 0.24, structuralStats: {} }]));
+  eq('a graded run says nothing about grading failure',
+     okRun.filter(function (x) { return /never graded/.test(x.detail); }).length, 0);
+})();
+
+(function staleSpecIsAnError() {
+  // THE regression. A spec auto-filled from one ticket and used against
+  // another must be an error, not a warning: the report prompt's "absence
+  // means unclear, never unexpected" softening is gated on a figma-* source,
+  // so with source 'ticket' every element the wrong spec omits grades
+  // "unexpected". On run 1787945015802 that was 61 of 67 findings called
+  // defects, and the only clue was that the verdicts looked wrong.
+  function probs(soc, activeKey) {
+    var base = abSections([capture('v0', { fullPage: null }), capture('v1', { fullPage: null })],
+      [{ label: 'v1', diffMode: 'normal', matchedFraction: 0.9, structuralStats: {} }]);
+    base.designReference = {
+      summaryOfChanges: soc,
+      ticketContext: activeKey == null ? null : {
+        ticketKey: activeKey, reviewed: true, variantCount: 2, variantsWithDescription: 2,
+        controlVariantId: 'v0', variantIds: ['v0', 'v1'],
+        previewLinkCount: 2, previewLinkIds: ['v0', 'v1'],
+      },
+      figma: { urlUsed: null, urlFromTicket: null, nodeId: null, tokenConfigured: false,
+               comp: null, compCandidateCount: 0 },
+    };
+    return vdCollectProblems(base);
+  }
+  function staleHits(list) {
+    return list.filter(function (x) { return /was auto-filled from ticket/.test(x.detail); });
+  }
+  // The real failure: a 1808-char Zapier form spec used against ENOC-97.
+  var mism = probs({ present: true, length: 1808, source: 'ticket',
+                     text: 'v1: Two-Step Form Progression', ticketKey: 'ZAP-441' }, 'ENOC-97');
+  var hit = staleHits(mism);
+  eq('a cross-ticket spec is reported exactly once', hit.length, 1);
+  eq('  at error severity, not warn', hit.length ? hit[0].severity : null, 'error');
+  ok('  and names BOTH tickets',
+     hit.length > 0 && /ZAP-441/.test(hit[0].detail) && /ENOC-97/.test(hit[0].detail),
+     hit.length ? hit[0].detail : null);
+  ok('  and says grading was withheld',
+     hit.length > 0 && /WITHHELD/.test(hit[0].detail), hit.length ? hit[0].detail : null);
+
+  var okRun = probs({ present: true, length: 11716, source: 'ticket', text: 'x', ticketKey: 'ENOC-97' }, 'ENOC-97');
+  eq('a spec from the active ticket raises nothing', staleHits(okRun).length, 0);
+  ok('  and still reports where the spec came from',
+     okRun.some(function (x) { return /Spec text came from: ticket/.test(x.detail); }), okRun);
+
+  // Three deliberate silences. Each would be a nuisance if it fired.
+  eq('hand-typed text is never called stale, even against another ticket',
+     staleHits(probs({ present: true, length: 40, source: 'manual', text: 'x', ticketKey: 'ZAP-441' }, 'ENOC-97')).length, 0);
+  eq('legacy state with no recorded ticket is not called stale',
+     staleHits(probs({ present: true, length: 40, source: 'ticket', text: 'x', ticketKey: null }, 'ENOC-97')).length, 0);
+  eq('no active ticket is not called stale',
+     staleHits(probs({ present: true, length: 40, source: 'ticket', text: 'x', ticketKey: 'ZAP-441' }, null)).length, 0);
+  ok('every shape returns a list rather than throwing', Array.isArray(mism) && Array.isArray(okRun));
+})();
+
+(function modelNoteIsExported() {
+  // engineNote is what the model was GIVEN; `note` is what it concluded.
+  // Without it, 61 "unexpected" verdicts had to be diagnosed by inferring from
+  // the spec instead of reading the reasoning. Same gap engineNote had.
+  var log = buildDebugLog(abSections([capture('v0', { fullPage: null })], [{
+    label: 'v1', diffMode: 'redesign', matchedFraction: 0.24, structuralStats: {},
+    findings: [{
+      findingId: 'f0', changeClass: 'added', status: 'added', region: 'section',
+      classification: 'unexpected', severity: 'medium',
+      note: 'The hero subhead is not mentioned anywhere in the spec.',
+      variantBlock: { type: 'paragraph', label: 'Apply in minutes', text: 'Apply in minutes',
+                      rect: { x: 700, y: 385, w: 611, h: 60 } },
+    }],
+  }]));
+  var f = log.visualDiff.perVariant[0].findings[0];
+  eq("the model's own note survives the export", f.note,
+     'The hero subhead is not mentioned anywhere in the spec.');
+  eq('  alongside its grade', f.classification, 'unexpected');
+  var log2 = buildDebugLog(abSections([capture('v0', { fullPage: null })], [{
+    label: 'v1', diffMode: 'normal', matchedFraction: 0.99, structuralStats: {},
+    findings: [{ findingId: 'f0', changeClass: 'added', status: 'added' }],
+  }]));
+  eq('a finding with no note exports null, not undefined',
+     log2.visualDiff.perVariant[0].findings[0].note, null);
+})();
+
+(function scaleMismatchIsReported() {
+  // ENOC-97, two runs 64 seconds apart: the variant bitmap came back at device
+  // scale 2 and the control at 1, and `problems` was BYTE-IDENTICAL to the run
+  // where both were 1. A mismatch corrupts every pixel-space read, so it has to
+  // be an error in its own right rather than something a reader infers.
+  function probs(imageScale) {
+    return vdCollectProblems(abSections(
+      [capture('v0', { fullPage: null }), capture('v1', { fullPage: null })],
+      [{ label: 'v1', diffMode: 'normal', matchedFraction: 0.99, structuralStats: {},
+         diffDebug: { imageScale: imageScale, counts: {} } }]));
+  }
+  function scaleHits(list) {
+    return list.filter(function (x) { return /different pixel scales/.test(x.detail); });
+  }
+  var matched = probs({ control: 1, variant: 1, controlImage: { w: 2686, h: 4590 },
+                        variantImage: { w: 2686, h: 6698 }, pageW: { control: 2686, variant: 2686 } });
+  eq('matched scales report no scale problem', scaleHits(matched).length, 0);
+
+  // run3's real numbers.
+  var mixed = probs({ control: 1, variant: 2, controlImage: { w: 2686, h: 4590 },
+                      variantImage: { w: 5372, h: 13396 }, pageW: { control: 2686, variant: 2686 } });
+  var hit = scaleHits(mixed);
+  eq('a 1x/2x mismatch is reported exactly once', hit.length, 1);
+  eq('  at error severity, not warn', hit.length ? hit[0].severity : null, 'error');
+  ok('  and names both measured scales',
+     hit.length > 0 && /1\.00x/.test(hit[0].detail) && /2\.00x/.test(hit[0].detail),
+     hit.length ? hit[0].detail : null);
+
+  // vdImageScale clamps anything outside [0.5, 4] to 1, so two genuinely
+  // divergent bitmaps can BOTH report a tidy scale of 1. Comparing only the
+  // clamped scalars would wave this through; the raw ratios must be compared.
+  var laundered = probs({ control: 1, variant: 1, controlImage: { w: 2686, h: 4590 },
+                          variantImage: { w: 26860, h: 66980 }, pageW: { control: 2686, variant: 2686 } });
+  eq('a laundered mismatch (both clamp to 1) is still caught', scaleHits(laundered).length, 1);
+
+  // No imageScale at all (an older checkpoint, or a decode failure) must not throw.
+  ok('a missing imageScale is tolerated', Array.isArray(probs(null)));
+})();
+
+(function engineNoteIsExported() {
+  // A redesign-mode finding's engineNote IS its entire model input
+  // (buildVisualReportPrompt emits it as the finding's only content), and it was
+  // absent from the export — so no comparison of two logs could establish
+  // whether the grader was even asked the same question twice. Four ENOC-97
+  // runs graded the same seven findings four different ways with nothing in the
+  // logs to separate unseeded sampling from a changed prompt string.
+  var note = 'footer: 11 elements in Control, 11 in Variant, 11 matched.';
+  var log = buildDebugLog(abSections([capture('v0', { fullPage: null })], [{
+    label: 'v1', diffMode: 'redesign', matchedFraction: 0.24, structuralStats: {},
+    findings: [{
+      findingId: 'f5', changeClass: 'region-rollup', status: 'modified', region: 'footer',
+      classification: 'unclear', severity: 'low', synthetic: true, engineNote: note,
+      controlBlock: { type: 'region', label: 'footer', text: null, rect: { x: 695, y: 3912, w: 1296, h: 614 } },
+      variantBlock: { type: 'region', label: 'footer', text: null, rect: { x: 695, y: 6020, w: 1296, h: 614 } },
+    }],
+  }]));
+  var f = log.visualDiff.perVariant[0].findings[0];
+  eq('engineNote survives the export projection', f.engineNote, note);
+  eq('  alongside the fields already there', f.findingId, 'f5');
+  eq('  and the rect', f.controlRect && f.controlRect.y, 3912);
+
+  // A non-synthetic finding has no engineNote; it must export null rather than
+  // undefined so the JSON shape stays stable across finding kinds.
+  var log2 = buildDebugLog(abSections([capture('v0', { fullPage: null })], [{
+    label: 'v1', diffMode: 'normal', matchedFraction: 0.99, structuralStats: {},
+    findings: [{ findingId: 'f0', changeClass: 'text-changed', status: 'modified' }],
+  }]));
+  eq('a finding with no engineNote exports null, not undefined',
+     log2.visualDiff.perVariant[0].findings[0].engineNote, null);
+})();
+
+section('below-capture coverage');
+(function belowCaptureStillDiffs() {
+  // Control is scanned in its entirety; the screenshot stops at 8000px. A copy
+  // change and a removed element BELOW that line must still be found — that is
+  // 60% of a real 19845px page which previously could not be reported at all.
+  var a = [
+    cand({ text: 'Above the line', y: 500, path: '/p[1]' }),
+    cand({ text: 'Old headline down low', tag: 'h2', y: 12000, path: '/h2[deep]' }),
+    cand({ text: 'Footer button', tag: 'button', y: 15000, path: '/button[deep]' }),
+  ];
+  a[1].belowCapture = true; a[2].belowCapture = true;
+  var b = [
+    cand({ text: 'Above the line', y: 500, path: '/p[1]' }),
+    cand({ text: 'New headline down low', tag: 'h2', y: 12000, path: '/h2[deep]' }),
+  ];
+  b[1].belowCapture = true;
+
+  var m = vdMatchCandidates(a, b);
+  var s = vdSuppressFindings(m.pairs);
+  var all = s.findings.concat(m.removed.map(function (c) { return { changeClass: 'removed', a: c, b: null }; }));
+
+  ok('a copy change below the capture line is reported', all.some(function (f) {
+    return f.changeClass === 'text-changed' && f.a && /Old headline down low/.test(f.a.text);
+  }), all.map(function (f) { return f.changeClass; }));
+  ok('a removed element below the capture line is reported', all.some(function (f) {
+    return f.changeClass === 'removed' && f.a && /Footer button/.test(f.a.text);
+  }));
+  // This mirrors production exactly now. It did not before: diffVisualDiffVariant
+  // used to filter `!c.clipped` out of its `all` list while this test did not,
+  // so the two could disagree without anything failing. That filter is gone.
+  eq('every unmatched control element becomes a finding, unfiltered',
+     all.filter(function (f) { return f.changeClass === 'removed'; }).length, m.removed.length);
+})();
+
+(function belowCaptureStyleAndLayout() {
+  // Colors and layout come from getComputedStyle/getBoundingClientRect, not
+  // from pixels, so both work below the line too.
+  var a = [cand({ text: 'Deep box', y: 12000, path: '/div[1]' })];
+  var b = [cand({ text: 'Deep box', y: 12000, path: '/div[1]',
+                  styles: { backgroundColor: 'rgb(255, 0, 0)' } })];
+  a[0].belowCapture = true; b[0].belowCapture = true;
+  var s = vdSuppressFindings(vdMatchCandidates(a, b).pairs);
+  eq('a color change below the line is reported', s.findings.length, 1);
+  ok('  and names the property',
+     s.findings[0].signals.indexOf('style:backgroundColor') !== -1, s.findings[0].signals);
+})();
+
+(function pixelCheckOnlyOnStationaryPairs() {
+  // The 4px case. A shift below VD_MOVE_MIN_PX never counts as "moved", so the
+  // pair stays 'unchanged' and reaches the pixel check — where a rounded rect
+  // leaves sub-pixel residue and text re-renders almost every pixel. Observed
+  // live as 31 false style-changed findings on one variant while its siblings,
+  // whose shift cleared the move floor and was suppressed as reflow, reported
+  // none.
+  var reads = 0;
+  // The stub carries a `canvas` because the real makeReadContext always does —
+  // it sizes an OffscreenCanvas to the bitmap. vdPixelCheckMatchedPairs now
+  // bounds-checks against those dimensions instead of trusting getImageData to
+  // throw (Canvas2D returns transparent-black padding out of bounds and throws
+  // only on degenerate w/h), so a context without them models nothing real.
+  function mkCtx(w, h) {
+    return {
+      canvas: { width: w || 4000, height: h || 20000 },
+      reads: [],
+      getImageData: function (x, y, gw, gh) {
+        reads++; this.reads.push({ x: x, y: y, w: gw, h: gh });
+        return { data: new Uint8Array(Math.max(4, gw * gh * 4)) };
+      },
+    };
+  }
+  var ctx = mkCtx();
+  // The suite stubs pixelmatch to throw (line ~56) as a tripwire for tests that
+  // must never reach it. The cases below deliberately DO reach it, and what
+  // they assert is the getImageData coordinates, which are recorded before
+  // pixelmatch is called. Swallow only that sentinel.
+  function reachingPixelmatch(fn) {
+    try { fn(); } catch (e) {
+      if (!/pixelmatch should not be reached/.test(String(e))) throw e;
+    }
+  }
+
+  var shifted = { changeClass: 'unchanged', dx: 0, dy: 4,
+                  a: cand({ text: 'Same text', y: 4756, w: 480, h: 48 }),
+                  b: cand({ text: 'Same text', y: 4760, w: 480, h: 48 }) };
+  vdPixelCheckMatchedPairs(ctx, ctx, [shifted]);
+  eq('a 4px-shifted pair is never pixel-checked', reads, 0);
+  eq('  and stays unchanged', shifted.changeClass, 'unchanged');
+
+  var nudged = { changeClass: 'unchanged', dx: 1, dy: 0,
+                 a: cand({ text: 'Same', y: 100, w: 480, h: 48 }),
+                 b: cand({ text: 'Same', x: 1, y: 100, w: 480, h: 48 }) };
+  vdPixelCheckMatchedPairs(ctx, ctx, [nudged]);
+  eq('a 1px horizontal nudge is never pixel-checked', reads, 0);
+
+  // A genuinely stationary pair must still be checked — that is the whole
+  // point of the backstop (background-image swaps, dropped shadows).
+  var stationary = { changeClass: 'unchanged', dx: 0, dy: 0,
+                     a: cand({ text: 'Same', y: 100, w: 480, h: 48 }),
+                     b: cand({ text: 'Same', y: 100, w: 480, h: 48 }) };
+  var threw = false;
+  try { vdPixelCheckMatchedPairs(ctx, ctx, [stationary]); } catch (e) { threw = true; }
+  ok('a stationary pair IS still pixel-checked', reads > 0 || threw);
+
+  // Per-side scales. Measured on ENOC-97: the variant bitmap came back at
+  // device scale 2 while the control stayed at 1, same page, 64 seconds after
+  // a run where both were 1. This function took ONE scalar and applied it to
+  // both sides, so the variant was read at half its true coordinates —
+  // comparing unrelated content, scoring near 1.0, and promoting an
+  // 'unchanged' pair to style-changed. It can only promote, so a wrong read
+  // here fabricates a finding rather than losing one.
+  var cc = mkCtx(2686, 4590), vc = mkCtx(5372, 13396);
+  var pair = { changeClass: 'unchanged', dx: 0, dy: 0,
+               a: cand({ text: 'Same', x: 100, y: 200, w: 480, h: 48 }),
+               b: cand({ text: 'Same', x: 100, y: 200, w: 480, h: 48 }) };
+  reachingPixelmatch(function () { vdPixelCheckMatchedPairs(cc, vc, [pair], 1, 2); });
+  ok('control side read at its own scale (1x)',
+     cc.reads.length === 1 && cc.reads[0].x === 100 && cc.reads[0].y === 200, cc.reads);
+  ok('variant side read at ITS scale (2x), not the control\'s',
+     vc.reads.length === 1 && vc.reads[0].x === 200 && vc.reads[0].y === 400, vc.reads);
+
+  // Same call with one shared scale is what shipped before — kept as a guard
+  // that the two arguments are actually independent.
+  var cc2 = mkCtx(2686, 4590), vc2 = mkCtx(5372, 13396);
+  var pair2 = { changeClass: 'unchanged', dx: 0, dy: 0,
+                a: cand({ text: 'Same', x: 100, y: 200, w: 480, h: 48 }),
+                b: cand({ text: 'Same', x: 100, y: 200, w: 480, h: 48 }) };
+  reachingPixelmatch(function () { vdPixelCheckMatchedPairs(cc2, vc2, [pair2], 1, 1); });
+  ok('passing 1/1 reads the variant at 1x (arguments are independent)',
+     vc2.reads.length === 1 && vc2.reads[0].x === 100, vc2.reads);
+
+  // Bounds. A rect that straddles the frame edge is not covered by
+  // belowCapture/offCanvas (those are per-element flags), and getImageData
+  // would have returned transparent-black padding rather than throwing — a
+  // ratio near 1.0 and another fabricated promotion.
+  var edgeC = mkCtx(2686, 4590), edgeV = mkCtx(2686, 4590);
+  var straddler = { changeClass: 'unchanged', dx: 0, dy: 0,
+                    a: cand({ text: 'Edge', x: 2400, y: 4560, w: 480, h: 48 }),
+                    b: cand({ text: 'Edge', x: 2400, y: 4560, w: 480, h: 48 }) };
+  // Wrapped like the others even though a correct implementation never reaches
+  // pixelmatch here — that is the assertion. Unwrapped, this line THROWS
+  // against a build without the bounds check and takes the remaining ~90 cases
+  // down with it instead of reporting one clean failure.
+  reachingPixelmatch(function () { vdPixelCheckMatchedPairs(edgeC, edgeV, [straddler], 1, 1); });
+  eq('a rect past the bitmap edge is skipped, not compared to blank padding', edgeC.reads.length, 0);
+  eq('  and the pair is left unchanged rather than promoted', straddler.changeClass, 'unchanged');
+
+  // The in-bounds twin of the same geometry must still be checked, so the
+  // guard is a bounds check and not a blanket skip of large-y rects.
+  var okC = mkCtx(2686, 4590), okV = mkCtx(2686, 4590);
+  var inside = { changeClass: 'unchanged', dx: 0, dy: 0,
+                 a: cand({ text: 'Edge', x: 2200, y: 4500, w: 480, h: 48 }),
+                 b: cand({ text: 'Edge', x: 2200, y: 4500, w: 480, h: 48 }) };
+  reachingPixelmatch(function () { vdPixelCheckMatchedPairs(okC, okV, [inside], 1, 1); });
+  eq('an in-bounds rect at the same depth still IS checked', okC.reads.length, 1);
+})();
+
+(function pixelStagesSkipBelowCapture() {
+  // The regression this change could introduce: reading pixels for a rect the
+  // bitmap does not contain. Both pixel consumers must decline.
+  var f = { changeClass: 'unchanged',
+            a: Object.assign(cand({ text: 'x', y: 12000, w: 400, h: 300 }), { belowCapture: true }),
+            b: Object.assign(cand({ text: 'x', y: 12000, w: 400, h: 300 }), { belowCapture: true }) };
+  var ctx = { getImageData: function () { throw new Error('read past the captured bitmap'); } };
+  var threw = false;
+  try { vdPixelCheckMatchedPairs(ctx, ctx, [f]); } catch (e) { threw = true; }
+  ok('pixel backstop does not touch below-capture pairs', !threw);
+  eq('  and leaves them unchanged', f.changeClass, 'unchanged');
+
+  eq('crop declines a below-capture block',
+     cropVisualDiffBlock({ width: 1470, height: 8000 }, { rect: { x: 0, y: 12000, w: 100, h: 50 }, belowCapture: true }),
+     null);
+})();
+
+// ── 8b1. Region rollups must be croppable ──────────────────────────────────
+section('region rollup rects');
+(function rollupRects() {
+  // Redesign mode reports NOTHING but region rollups, and those used to carry
+  // no rect at all — so a "wholesale redesign" verdict produced seven lines of
+  // prose and zero images, in exactly the case where a reviewer most needs to
+  // look at the page. Observed on a real run: 24% element match, 7 findings,
+  // every controlRect and variantRect null.
+  function el(region, x, y, w, h, extra) {
+    var c = { region: region, rect: { x: x, y: y, w: w, h: h }, tag: 'div', text: '' };
+    return Object.assign(c, extra || {});
+  }
+  var control = [el('header', 0, 0, 1000, 80), el('main', 0, 100, 1000, 400), el('main', 0, 600, 800, 200)];
+  var variant = [el('header', 0, 0, 1000, 80), el('main', 0, 100, 1000, 900)];
+  var out = vdRollupByRegion({ pairs: [], removed: control, added: variant }, control, variant);
+  var main = out.filter(function (r) { return r.region === 'main'; })[0];
+
+  ok('a region gets a control-side box', !!main.controlRect, main);
+  eq('...unioned over every member: y', main.controlRect.y, 100);
+  eq('...and height spans to the last member', main.controlRect.h, 700);
+  eq('variant side is unioned independently', main.variantRect.h, 900);
+
+  // Elements outside the captured frame have no pixels. Unioning them would
+  // stretch the box into blank space and shrink the visible part to nothing
+  // once cropAndDownscale fits it to VIS_MAX_CROP_EDGE.
+  var withOff = [el('main', 0, 100, 1000, 400), el('main', 0, 9000, 1000, 200, { belowCapture: true }),
+                 el('main', 5000, 100, 100, 100, { offCanvas: true })];
+  var off = vdRollupByRegion({ pairs: [], removed: withOff, added: [] }, withOff, []);
+  var m2 = off.filter(function (r) { return r.region === 'main'; })[0];
+  eq('below-capture members do not stretch the box', m2.controlRect.h, 400);
+  eq('off-canvas members do not stretch it either', m2.controlRect.w, 1000);
+
+  // A side with no visible members must stay null rather than becoming a
+  // zero-size box that crops to a 1px sliver.
+  ok('an empty side yields no rect', m2.variantRect === null, m2);
+
+  eq('grow from null seeds the box', vdGrowRect(null, el('x', 5, 6, 7, 8)).x, 5);
+  ok('a member with no rect is skipped', vdGrowRect(null, { region: 'x' }) === null);
+})();
+
+// ── 8b2. CSS px vs device px ───────────────────────────────────────────────
+section('image scale');
+(function imageScale() {
+  // Every rect here is CSS px from getBoundingClientRect; Page.captureScreenshot
+  // returns a bitmap at the host's device pixel ratio. On a Retina Mac a page
+  // clipped to {width: 2581} comes back 5162 wide, so reading a CSS rect
+  // straight into it lands at half position and half size — which is why
+  // report crops have always come out blank: they were cropping whitespace
+  // from the wrong part of the page.
+  eq('1x host is a no-op', vdImageScale({ width: 2581 }, 2581), 1);
+  eq('2x Retina host is detected', vdImageScale({ width: 5162 }, 2581), 2);
+  eq('fractional DPR is preserved', vdImageScale({ width: 3225 }, 2580), 1.25);
+
+  // Derived, so a disagreement between the capture and the walk must not be
+  // laundered into a plausible-looking scale factor.
+  eq('absurd ratio falls back to 1', vdImageScale({ width: 100000 }, 2581), 1);
+  eq('missing pageW falls back to 1', vdImageScale({ width: 5162 }, null), 1);
+  eq('zero pageW falls back to 1', vdImageScale({ width: 5162 }, 0), 1);
+  eq('missing image falls back to 1', vdImageScale(null, 2581), 1);
+
+  eq('scaling is identity at 1x', vdScaleRect({ x: 10, y: 20, w: 30, h: 40 }, 1).x, 10);
+  var r = vdScaleRect({ x: 10, y: 20, w: 30, h: 40 }, 2);
+  eq('2x scales x', r.x, 20);
+  eq('2x scales y', r.y, 40);
+  eq('2x scales w', r.w, 60);
+  eq('2x scales h', r.h, 80);
+  ok('null rect stays null', vdScaleRect(null, 2) === null);
+  // Fractional DPRs must land on whole pixels — getImageData rejects
+  // non-integers and a silent throw would drop the finding.
+  var f = vdScaleRect({ x: 10, y: 10, w: 33, h: 33 }, 1.5);
+  eq('fractional scale rounds x', f.x, 15);
+  eq('fractional scale rounds w', f.w, 50);
+
+  // End to end through the crop: at 2x the box must be taken from the doubled
+  // coordinates, and the pad — a CSS-px allowance — has to double with it or
+  // the crop gets half the visual margin it asked for.
+  var seen = null;
+  var realClamp = clampBox;
+  clampBox = function (box, w, h) { seen = box; return realClamp(box, w, h); };
+  cropVisualDiffBlock({ width: 5162, height: 10000 }, { rect: { x: 100, y: 200, w: 50, h: 60 } }, 2);
+  clampBox = realClamp;
+  eq('crop x is scaled and padded in image space', seen.x, 200 - 24);
+  eq('crop y is scaled and padded in image space', seen.y, 400 - 24);
+  eq('crop w includes the doubled pad', seen.w, 100 + 48);
+})();
+
+// ── 8c. Control-vs-Control must stop the analysis ──────────────────────────
+section('control-vs-control');
+(function detectors() {
+  var base = { label: 'v0', url: 'https://zapier.com/?optimizely_x=AAA', finalUrl: 'https://zapier.com/?optimizely_x=AAA' };
+
+  eq('a differently-configured variant is fine',
+     vdControlDuplicateReason(base, { label: 'v1', url: 'https://zapier.com/?optimizely_x=BBB', finalUrl: 'https://zapier.com/?optimizely_x=BBB' }),
+     null);
+
+  var sameConfigured = vdControlDuplicateReason(base,
+    { label: 'v1', url: 'https://zapier.com/?optimizely_x=AAA', finalUrl: 'https://zapier.com/?optimizely_x=AAA' });
+  ok('same configured URL is caught', /same URL as Control/.test(sameConfigured.reason));
+  // HARD: the two targets are literally the same address and nothing has been
+  // captured yet, so no comparison could discover anything.
+  eq('...and is a HARD stop', sameConfigured.hard, true);
+
+  ok('trailing-slash / case differences do not hide a duplicate',
+     !!vdControlDuplicateReason(base,
+       { label: 'v1', url: 'https://Zapier.com/?optimizely_x=AAA/', finalUrl: 'x' }));
+
+  // SOFT, and this distinction came from a real false stop. ENOC-97's preview
+  // links are Optimizely preview-TOKEN urls: the token sets a session, an
+  // http -> https/www redirect strips the query string, and both targets
+  // legitimately settle on the same final URL while the variant persists via
+  // the session. Its two captures came back 4590px and 6698px tall — a 46%
+  // difference at an identical viewport — and the run was refused anyway.
+  var sameFinal = vdControlDuplicateReason(base,
+    { label: 'v1', url: 'https://zapier.com/?optimizely_x=BBB', finalUrl: 'https://zapier.com/?optimizely_x=AAA' });
+  ok('a variant that redirects ONTO control is caught', /same final URL as Control/.test(sameFinal.reason));
+  eq('...but is SOFT — the diff decides, not the URL', sameFinal.hard, false);
+  ok('...and the reason says the comparison was run anyway',
+     /judged on what actually rendered/.test(sameFinal.reason), sameFinal);
+
+  // Both signals present: the configured-URL check must win, because it is
+  // the one that can be evaluated before spending a capture.
+  eq('configured match outranks final match',
+     vdControlDuplicateReason(base,
+       { label: 'v1', url: 'https://zapier.com/?optimizely_x=AAA', finalUrl: 'https://zapier.com/?optimizely_x=AAA' }).hard, true);
+
+  // A missing finalUrl must not be read as a match against a present one.
+  ok('absent finalUrl is not a duplicate',
+     vdControlDuplicateReason(base, { label: 'v1', url: 'https://zapier.com/?x=B', finalUrl: '' }) === null);
+
+  // The dangerous one: configured correctly, but the variant never applied.
+  var identical = { mode: 'normal', findings: [],
+                    structuralStats: { addedCount: 0, removedCount: 0, modifiedCount: 0, styleChangedCount: 0, unchangedCount: 500 } };
+  ok('a variant rendering identically to Control is caught',
+     /rendered identically to Control/.test(vdRenderedAsControlReason(identical) || ''));
+
+  ok('a variant with real differences is NOT caught',
+     vdRenderedAsControlReason({ mode: 'normal', findings: [{}],
+       structuralStats: { addedCount: 1, removedCount: 0, modifiedCount: 0, styleChangedCount: 0 } }) === null);
+  ok('differences that exist but ranked out are NOT called control-vs-control',
+     vdRenderedAsControlReason({ mode: 'normal', findings: [],
+       structuralStats: { addedCount: 0, removedCount: 2, modifiedCount: 0, styleChangedCount: 0 } }) === null);
+  ok('redesign mode is never judged by this rule',
+     vdRenderedAsControlReason({ mode: 'redesign', findings: [], structuralStats: {} }) === null);
+})();
+
+(function surfacedAsError() {
+  var p = vdCollectProblems(abSections([capture('v0', {}), capture('v1', {})], [
+    { label: 'v1', controlDuplicate: true, error: 'Analysis stopped — it rendered identically to Control.', structuralStats: {} },
+  ]));
+  var hit = p.filter(function (x) { return x.where === 'visual-diff/v1'; });
+  eq('it is the ONLY note for that variant', hit.length, 1);
+  eq('  and it is an error', hit[0].severity, 'error');
+  ok('  and it says the absence of findings is not a pass',
+     /do not read the absence of findings as a pass/.test(hit[0].detail), hit[0].detail);
+})();
+
+// ── 8d. changes common to every variant are reported once ──────────────────
+section('shared findings across variants');
+function wf(cls, ctrl, vari) {
+  return { changeClass: cls,
+           controlBlock: ctrl == null ? null : { text: ctrl },
+           variantBlock: vari == null ? null : { text: vari } };
+}
+(function liftsSharedOut() {
+  // The measured shape: five changes identical in all three variants, plus a
+  // copy change whose variant text differs per variant (the actual A/B test).
+  var mk = function (hero) {
+    return { label: 'v', findings: [
+      wf('removed', 'AI automation, governed', null),
+      wf('removed', 'Every team has AI. Now they need a system.', null),
+      wf('removed', 'Learn more about governance', null),
+      wf('moved', 'Explore Zapier for Enterprise', 'Explore Zapier for Enterprise'),
+      wf('added', null, 'Contact sales'),
+      wf('text-changed', 'Your tools. Your rules. Any AI.', hero),
+    ] };
+  };
+  var pv = [mk('Actions speak louder than prompts'), mk('Smarter workflows. Smaller bills.'), mk('The front door to every system you run')];
+  pv[0].label = 'v1'; pv[1].label = 'v2'; pv[2].label = 'v3';
+
+  var shared = vdExtractSharedFindings(pv);
+  eq('five changes recognised as common to all', shared.length, 5);
+  ok('the per-variant copy change is NOT lifted out',
+     !shared.some(function (f) { return f.changeClass === 'text-changed'; }),
+     shared.map(function (f) { return f.changeClass; }));
+  eq('each variant keeps only what is unique to it', pv[0].findings.length, 1);
+  eq('  and it is the copy change', pv[0].findings[0].variantBlock.text, 'Actions speak louder than prompts');
+  ok('shared entries record which variants they span',
+     (shared[0].sharedAcross || []).join(',') === 'v1,v2,v3', shared[0].sharedAcross);
+  eq('rows the reader sees: 5 shared + 3 unique', shared.length + pv[0].findings.length + pv[1].findings.length + pv[2].findings.length, 8);
+})();
+
+(function onlySharedWhenTrulyInAll() {
+  var pv = [
+    { label: 'v1', findings: [wf('removed', 'Gone everywhere', null), wf('removed', 'Only in v1', null)] },
+    { label: 'v2', findings: [wf('removed', 'Gone everywhere', null)] },
+    { label: 'v3', findings: [wf('removed', 'Gone everywhere', null)] },
+  ];
+  var shared = vdExtractSharedFindings(pv);
+  eq('a change missing from one variant stays per-variant', shared.length, 1);
+  eq('  the shared one is the universal change', shared[0].controlBlock.text, 'Gone everywhere');
+  eq('  and v1 keeps its own', pv[0].findings.length, 1);
+  eq('  while v2 is emptied', pv[1].findings.length, 0);
+})();
+
+(function duplicatesWithinOneVariantCannotFake() {
+  // The same change twice inside ONE variant must not count as two variants.
+  var pv = [
+    { label: 'v1', findings: [wf('removed', 'Twice here', null), wf('removed', 'Twice here', null)] },
+    { label: 'v2', findings: [wf('added', null, 'Something else')] },
+  ];
+  eq('a repeat within one variant is not "shared"', vdExtractSharedFindings(pv).length, 0);
+  eq('  v1 keeps both', pv[0].findings.length, 2);
+})();
+
+(function positionIndependent() {
+  // The same change lands at a different y when a taller hero pushes it down —
+  // including rect in the identity would defeat grouping exactly when it counts.
+  var a = { changeClass: 'added', controlBlock: null, variantBlock: { text: 'Contact sales', rect: { x: 1497, y: 984 } } };
+  var b = { changeClass: 'added', controlBlock: null, variantBlock: { text: 'Contact sales', rect: { x: 1497, y: 1034 } } };
+  eq('identity ignores position', vdFindingIdentity(a), vdFindingIdentity(b));
+  var m = { changeClass: 'moved', controlBlock: { text: 'CTA' }, variantBlock: { text: 'CTA' }, dy: -1553 };
+  var m2 = { changeClass: 'moved', controlBlock: { text: 'CTA' }, variantBlock: { text: 'CTA' }, dy: -1503 };
+  eq('a move differing by a few px is one change', vdFindingIdentity(m), vdFindingIdentity(m2));
+})();
+
+(function distinctChangesNeverCollapse() {
+  var diff = vdFindingIdentity(wf('removed', 'Alpha', null)) !== vdFindingIdentity(wf('removed', 'Beta', null));
+  ok('different control text stays distinct', diff);
+  ok('same text under a different changeClass stays distinct',
+     vdFindingIdentity(wf('removed', 'X', null)) !== vdFindingIdentity(wf('added', 'X', null)));
+  ok('same control text with different variant text stays distinct',
+     vdFindingIdentity(wf('text-changed', 'Old', 'New A')) !== vdFindingIdentity(wf('text-changed', 'Old', 'New B')));
+})();
+
+(function needsTwoComparisons() {
+  var one = [{ label: 'v1', findings: [wf('removed', 'X', null)] }];
+  eq('a single variant has nothing to share against', vdExtractSharedFindings(one).length, 0);
+  eq('  and keeps its finding', one[0].findings.length, 1);
+  var withErr = [{ label: 'v1', findings: [wf('removed', 'X', null)] },
+                 { label: 'v2', error: 'boom' }, { label: 'v3', skipped: true }];
+  eq('errored and skipped variants are not counted as agreeing', vdExtractSharedFindings(withErr).length, 0);
+})();
+
+(function textlessElementsMustNotCollide() {
+  // Two DIFFERENT images both have empty text. Keying on text alone reported
+  // them as a single removal — real data loss, observed live.
+  var imgA = { changeClass: 'removed', controlBlock: { text: '', rect: { x: 2826, y: 710, w: 136, h: 24 } }, variantBlock: null };
+  var imgB = { changeClass: 'removed', controlBlock: { text: '', rect: { x: 2679, y: 711, w: 67, h: 22 } }, variantBlock: null };
+  ok('two text-less removals stay distinct', vdFindingIdentity(imgA) !== vdFindingIdentity(imgB));
+
+  var pv = [
+    { label: 'v1', findings: [imgA, imgB] },
+    { label: 'v2', findings: [JSON.parse(JSON.stringify(imgA)), JSON.parse(JSON.stringify(imgB))] },
+  ];
+  eq('both are lifted, not merged into one', vdExtractSharedFindings(pv).length, 2);
+})();
+
+(function controlRectStableVariantPositionNot() {
+  // Control is one capture reused by every variant, so its rect is identical
+  // across them; the variant side moves when a taller hero pushes it down.
+  var v1 = { changeClass: 'added', controlBlock: null, variantBlock: { text: 'Contact sales', rect: { x: 1497, y: 984, w: 169, h: 48 } } };
+  var v3 = { changeClass: 'added', controlBlock: null, variantBlock: { text: 'Contact sales', rect: { x: 1497, y: 1034, w: 169, h: 48 } } };
+  eq('same addition at a different y is still one change', vdFindingIdentity(v1), vdFindingIdentity(v3));
+
+  var m1 = { changeClass: 'moved', controlBlock: { text: 'CTA', rect: { x: 1438, y: 2537, w: 299, h: 48 } }, variantBlock: { text: 'CTA', rect: { x: 1181, y: 984, w: 299, h: 48 } } };
+  var m3 = { changeClass: 'moved', controlBlock: { text: 'CTA', rect: { x: 1438, y: 2537, w: 299, h: 48 } }, variantBlock: { text: 'CTA', rect: { x: 1181, y: 1034, w: 299, h: 48 } } };
+  eq('a move landing at a different y is still one change', vdFindingIdentity(m1), vdFindingIdentity(m3));
+
+  // ...but genuinely different control elements must never merge
+  var a = { changeClass: 'removed', controlBlock: { text: 'X', rect: { x: 0, y: 100, w: 50, h: 20 } }, variantBlock: null };
+  var b = { changeClass: 'removed', controlBlock: { text: 'X', rect: { x: 0, y: 900, w: 50, h: 20 } }, variantBlock: null };
+  ok('same text at different control positions stays distinct', vdFindingIdentity(a) !== vdFindingIdentity(b));
+})();
+
+// ── 8e. horizontally off-canvas elements are kept, not dropped ─────────────
+section('off-canvas (marquee) handling');
+(function scrolledChipSuppressesAsReflow() {
+  // THE case. An auto-scrolling marquee rests at a different offset in each
+  // capture: "Repurpose content" sits at x=2650 on a 2847px page in Control and
+  // scrolls to x=2863 (past the edge) in the Variant. The walk used to discard
+  // it there, leaving nothing to match and reporting a phantom removal — in two
+  // variants but not the third, purely by where the marquee stopped.
+  var ctrl = [], vari = [];
+  for (var i = 0; i < 12; i++) {                      // the marquee row
+    ctrl.push(cand({ text: 'Chip ' + i, tag: 'a', x: 500 + i * 180, y: 9574, w: 164, h: 42, path: '/a[c' + i + ']' }));
+    var v = cand({ text: 'Chip ' + i, tag: 'a', x: 500 + i * 180 + 213, y: 9574, w: 164, h: 42, path: '/a[c' + i + ']' });
+    v.offCanvas = (500 + i * 180 + 213 + 164) > 2847;
+    vari.push(v);
+  }
+  for (var j = 0; j < 8; j++) {                        // static page content
+    ctrl.push(cand({ text: 'Body ' + j, y: 1000 + j * 100, path: '/p[' + j + ']' }));
+    vari.push(cand({ text: 'Body ' + j, y: 1000 + j * 100, path: '/p[' + j + ']' }));
+  }
+  ok('the scrolled chips are still present on the variant side',
+     vari.filter(function (c) { return c.offCanvas; }).length > 0);
+
+  var m = vdMatchCandidates(ctrl, vari);
+  eq('every chip finds its counterpart', m.removed.length, 0);
+  eq('  and nothing is spuriously added', m.added.length, 0);
+
+  var s = vdSuppressFindings(m.pairs);
+  var reported = s.findings.filter(function (f) { return f.changeClass !== 'unchanged'; });
+  eq('the whole marquee shift is suppressed as reflow', reported.length, 0);
+  ok('  and counted', s.aggregate.reflow >= 12, s.aggregate.reflow);
+})();
+
+(function realCarouselChangeStillReports() {
+  // Nothing carousel-specific is hidden: an element that is off-canvas in both
+  // captures but genuinely different content still reports.
+  var a = [Object.assign(cand({ text: 'Old promo', tag: 'a', x: 3000, y: 500, path: '/a[1]' }), { offCanvas: true })];
+  var b = [Object.assign(cand({ text: 'New promo', tag: 'a', x: 3000, y: 500, path: '/a[1]' }), { offCanvas: true })];
+  var m = vdMatchCandidates(a, b);
+  var s = vdSuppressFindings(m.pairs);
+  eq('a genuine copy change off-canvas is reported', s.findings.length, 1);
+  eq('  as a text change', s.findings[0].changeClass, 'text-changed');
+
+  var gone = [Object.assign(cand({ text: 'Only in control', tag: 'a', x: 3000, y: 500 }), { offCanvas: true })];
+  var m2 = vdMatchCandidates(gone, []);
+  eq('a genuinely absent off-canvas element is still a removal', m2.removed.length, 1);
+})();
+
+(function pixelStagesSkipOffCanvas() {
+  // The screenshot is clipped to the page width, so there are no pixels out
+  // there — reading them would throw or silently compare the wrong column.
+  var reads = 0;
+  var ctx = { getImageData: function () { reads++; throw new Error('read outside the captured frame'); } };
+  var f = { changeClass: 'unchanged', dx: 0, dy: 0,
+            a: Object.assign(cand({ text: 'Chip', x: 3000, y: 500, w: 400, h: 300 }), { offCanvas: true }),
+            b: Object.assign(cand({ text: 'Chip', x: 3000, y: 500, w: 400, h: 300 }), { offCanvas: true }) };
+  var threw = false;
+  try { vdPixelCheckMatchedPairs(ctx, ctx, [f]); } catch (e) { threw = true; }
+  ok('pixel backstop does not touch off-canvas pairs', !threw && reads === 0);
+  eq('  and leaves them unchanged', f.changeClass, 'unchanged');
+
+  eq('crop declines an off-canvas block',
+     cropVisualDiffBlock({ width: 2847, height: 8000 }, { rect: { x: 3000, y: 500, w: 164, h: 42 }, offCanvas: true }),
+     null);
+})();
+
+// ── 9. perf guard ──────────────────────────────────────────────────────────
+section('perf');
+(function bigPages() {
+  var a = [], b = [];
+  for (var i = 0; i < 3000; i++) {
+    a.push(cand({ text: 'unique control ' + i, y: i * 20, path: '/p[' + i + ']' }));
+    b.push(cand({ text: 'unique variant ' + i, y: i * 20, path: '/q[' + i + ']' }));
+  }
+  var m = vdMatchCandidates(a, b);
+  eq('a fully-disjoint 3000x3000 page falls to redesign, skipping the O(n*m) pass', m.mode, 'redesign');
+  eq('  and pairs nothing', m.pairs.length, 0);
+})();
+
+// ── report ─────────────────────────────────────────────────────────────────
+print('');
+if (failures.length) {
+  print('FAILURES:');
+  failures.forEach(function (f) { print('  - ' + f); });
+}
+print('=== ' + pass + ' passed, ' + fail + ' failed ===');
+if (fail) throw new Error(fail + ' assertion(s) failed');

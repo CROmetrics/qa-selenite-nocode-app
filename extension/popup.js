@@ -187,9 +187,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('Selenite: Metric Tracker tab failed to load —', e);
   }
 
-  // Test Agent tab
-  const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
-  if (anthropicApiKey) document.getElementById('ta-api-key').value = anthropicApiKey;
+  // Credentials — both live in the settings overlay, not in any tab.
+  // Guarded element lookups on purpose: this sits in the same unguarded await
+  // chain as everything below, so a missing node would take out every
+  // listener bound after this point rather than failing locally.
+  const { anthropicApiKey, figmaPat } = await chrome.storage.sync.get(['anthropicApiKey', 'figmaPat']);
+  const anthropicInput = document.getElementById('set-anthropic-key');
+  if (anthropicInput && anthropicApiKey) anthropicInput.value = anthropicApiKey;
+  const figmaPatInput = document.getElementById('set-figma-pat');
+  if (figmaPatInput && figmaPat) figmaPatInput.value = figmaPat;
   const { funnelState: savedFunnel } = await sessionNS.get('funnelState');
   if (savedFunnel) funnelState = { start: '', middles: [], end: '', supplementalPrompt: '', ...savedFunnel };
 
@@ -205,9 +211,61 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('Selenite: fill targets failed to initialize —', e);
   }
 
-  document.getElementById('btn-ta-save-key').addEventListener('click', () => {
-    chrome.storage.sync.set({ anthropicApiKey: document.getElementById('ta-api-key').value.trim() });
+  // ── Settings overlay ─────────────────────────────────────────────────────
+  // Credentials are not a workflow step, so they are not a tab — a tab would
+  // give them the same visual rank as the modes and bury them behind whichever
+  // one happened to own them. The gear is in the header, so this is reachable
+  // from anywhere.
+  const settingsOverlay = document.getElementById('settings-overlay');
+  const openSettings = () => { if (settingsOverlay) settingsOverlay.hidden = false; };
+  const closeSettings = () => { if (settingsOverlay) settingsOverlay.hidden = true; };
+  document.getElementById('btn-settings')?.addEventListener('click', openSettings);
+  document.getElementById('btn-settings-close')?.addEventListener('click', closeSettings);
+  document.getElementById('settings-backdrop')?.addEventListener('click', closeSettings);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && settingsOverlay && !settingsOverlay.hidden) closeSettings();
   });
+
+  // Shared by both credential rows: same empty-clears-it contract, same
+  // status line, so neither can drift into behaving differently from the
+  // other.
+  function bindCredential({ btnId, inputId, statusId, storageKey, verify }) {
+    const status = document.getElementById(statusId);
+    const setStatus = (msg, color) => { if (status) { status.textContent = msg; status.style.color = color; } };
+    document.getElementById(btnId)?.addEventListener('click', async () => {
+      const value = (document.getElementById(inputId)?.value || '').trim();
+      if (!value) {
+        await chrome.storage.sync.remove(storageKey);
+        setStatus('Cleared.', 'var(--fg3)');
+        return;
+      }
+      await chrome.storage.sync.set({ [storageKey]: value });
+      if (!verify) { setStatus('Saved.', 'var(--ok)'); return; }
+      setStatus('Saved — verifying…', 'var(--fg3)');
+      const res = await verify().catch(e => ({ ok: false, error: e.message }));
+      if (res?.ok) setStatus('Verified — ' + (res.handle || 'ok'), 'var(--ok)');
+      else setStatus('Saved, but not verified: ' + (res?.error || 'unknown error'), 'var(--err)');
+    });
+  }
+
+  // No verify for Anthropic: every endpoint that would prove the key works
+  // also bills for it, and a save that silently costs money is worse than a
+  // save that just says "Saved."
+  bindCredential({
+    btnId: 'btn-set-anthropic-save', inputId: 'set-anthropic-key',
+    statusId: 'set-anthropic-status', storageKey: 'anthropicApiKey',
+  });
+
+  // Figma does have a free identity endpoint, so the round trip is worth it —
+  // and because the call is made by the worker, a green line here also proves
+  // the worker's Figma path is wired end to end. It does NOT prove any given
+  // file is readable; that is what the A/B tab's Check button is for.
+  bindCredential({
+    btnId: 'btn-set-figma-save', inputId: 'set-figma-pat',
+    statusId: 'set-figma-status', storageKey: 'figmaPat',
+    verify: () => chrome.runtime.sendMessage({ action: 'figmaVerifyToken' }),
+  });
+
   document.getElementById('ta-primary-select').addEventListener('change', taShowPrimary);
   document.getElementById('ta-multi-list').addEventListener('change', e => {
     const chk = e.target.closest('.ta-extra-chk');
@@ -300,7 +358,7 @@ function showTab(name) {
   // fire-and-forget since showTab itself is synchronous. Same reasoning for
   // the Summary of Changes auto-fill: a ticket committed in Initialize after
   // the A/B tab was already visited should still populate it on return.
-  if (name === 'abtest') { checkForResumableVisualDiff(); autofillAbSummaryFromTicket(); }
+  if (name === 'abtest') { checkForResumableVisualDiff(); autofillAbSummary(); syncAbDesignReference(); }
 }
 
 // ── Test Agent ───────────────────────────────────────────────────────────────
@@ -2471,6 +2529,7 @@ const VD_CHECKPOINT_KEY = 'visualDiffCheckpoints';
 function computeVisualDiffRunSignature(ctx, targets) {
   return `${ctx?.ticketKey || ''}::${targets.map(t => t.url).slice().sort().join('|')}`;
 }
+
 async function getVisualDiffCheckpoint(winId) {
   const { [VD_CHECKPOINT_KEY]: all = {} } = await chrome.storage.local.get(VD_CHECKPOINT_KEY);
   return all[winId] || null;
@@ -2505,7 +2564,22 @@ let _abHeatmapRecordingTabId = null;
 function abDefaultState() {
   return {
     baseUrl: '', qaMode: false, settleSec: '3', keepTabs: false, recordHeatmap: false,
-    visualDiff: false, visualDiffCrops: true, agenticTesting: false, summaryOfChanges: '',
+    // Visual Diff and Agentic Testing are always on and no longer have
+    // checkboxes; recordHeatmap stays in the state (and the code behind it
+    // still works) but has no UI and is never switched on.
+    visualDiff: true, visualDiffCrops: true, agenticTesting: true, summaryOfChanges: '',
+    // Which TICKET the spec above was auto-filled from. `summarySource` says
+    // 'ticket' but not WHICH ticket, and the box persists across ticket
+    // switches, so without this a spec from another experiment is
+    // indistinguishable from the right one. Measured: run 1787945015802
+    // graded 61 of 67 findings "unexpected" on ENOC-97 against a Zapier
+    // contact-sales form spec. null for hand-typed text, which has no ticket.
+    summaryTicketKey: null,
+    figmaUrl: '',
+    // Off by default, deliberately. This writes the text every finding is
+    // graded against, and it writes it by reading an image — so it is opt-in
+    // rather than something that happens to a run you did not ask for.
+    figmaAutofill: false,
     targets: [
       { label: 'v0', url: '', override: '' },
       { label: 'v1', url: '', override: '' },
@@ -2518,6 +2592,13 @@ async function initAbCompare() {
   if (!document.getElementById('ab-target-list')) return;
   const { abCompareState } = await sessionNS.get('abCompareState');
   abState = { ...abDefaultState(), ...(abCompareState || {}) };
+  // These three are no longer user-controllable, so the persisted value must
+  // not win: a session saved before the checkboxes were removed carries
+  // visualDiff:false / agenticTesting:false, and with no control left to flip
+  // them the feature would appear permanently broken for that user.
+  abState.visualDiff = true;
+  abState.agenticTesting = true;
+  abState.recordHeatmap = false;
   if (!Array.isArray(abState.targets) || !abState.targets.length) abState.targets = abDefaultState().targets;
   if (!Array.isArray(abState.selectors)) abState.selectors = [];
 
@@ -2528,36 +2609,36 @@ async function initAbCompare() {
   document.getElementById('ab-settle').addEventListener('input',     e => { abState.settleSec = e.target.value;  persistAbState(); });
   document.getElementById('ab-keep-tabs').addEventListener('change', e => {
     abState.keepTabs = e.target.checked;
-    const hmChk = document.getElementById('ab-record-heatmap');
-    hmChk.disabled = !abState.keepTabs;
-    if (!abState.keepTabs && hmChk.checked) { hmChk.checked = false; abState.recordHeatmap = false; }
-    persistAbState();
-  });
-  document.getElementById('ab-record-heatmap').addEventListener('change', e => {
-    abState.recordHeatmap = e.target.checked;
-    persistAbState();
-  });
-  document.getElementById('ab-visual-diff').addEventListener('change', e => {
-    abState.visualDiff = e.target.checked;
-    // Unlike keepTabs/recordHeatmap, turning Visual Diff off doesn't reset
-    // the crops preference — it's just irrelevant (nothing to crop) until
-    // Visual Diff is back on, not a structural impossibility, so the user's
-    // choice survives being toggled off and on again.
-    document.getElementById('ab-visual-diff-crops').disabled = !abState.visualDiff;
     persistAbState();
   });
   document.getElementById('ab-visual-diff-crops').addEventListener('change', e => {
     abState.visualDiffCrops = e.target.checked;
     persistAbState();
   });
-  document.getElementById('ab-agentic-testing').addEventListener('change', e => {
-    abState.agenticTesting = e.target.checked;
-    persistAbState();
-  });
   document.getElementById('ab-summary-of-changes').addEventListener('input', e => {
     abState.summaryOfChanges = e.target.value;
+    // Which source wrote the spec is invisible once the text is in the box,
+    // and the whole report is graded against it — so record it.
+    abState.summarySource = e.target.value.trim() ? 'manual' : null;
+    // Typed text belongs to no ticket, so it can never be judged stale.
+    abState.summaryTicketKey = null;
     persistAbState();
   });
+  document.getElementById('ab-figma-url')?.addEventListener('input', e => {
+    abState.figmaUrl = e.target.value;
+    persistAbState();
+  });
+  document.getElementById('ab-figma-autofill')?.addEventListener('change', e => {
+    abState.figmaAutofill = e.target.checked;
+    persistAbState();
+    if (e.target.checked) autofillAbSummary();
+  });
+
+  // Board-access check. Whether view/comment access reaches the node tree is
+  // the question that decides what the design reference can be built from,
+  // and it is per-FILE — the token check in Settings only proves the token
+  // itself is live, so it cannot answer this.
+  document.getElementById('btn-ab-figma-check')?.addEventListener('click', abFigmaCheck);
 
   document.getElementById('btn-ab-add-target').addEventListener('click', () => {
     // Default labels continue the v0/v1/v2/… sequence used by the ticket
@@ -2588,12 +2669,19 @@ async function initAbCompare() {
   document.getElementById('btn-run-abcompare').addEventListener('click', () => runAbComparison());
   document.getElementById('btn-stop-abcompare').addEventListener('click', () => {
     _abVisualDiffStopRequested = true;
+    // Stage 1's band calls for one page run in parallel (Promise.all) — Stop
+    // can only land before/after that whole set of calls finishes, not
+    // mid-band. Says so up front rather than leaving whatever mid-stage
+    // status text ("Scraping…"/"Analyzing…") was last shown, unexplained,
+    // until the run actually unwinds.
+    setAbStatus('Stopping — this takes effect after the current page finishes its scrape/report calls…');
     chrome.runtime.sendMessage({ action: 'stop' });
   });
 
   initVisualDiffResumeBanner();
   checkForResumableVisualDiff();
-  autofillAbSummaryFromTicket();
+  autofillAbSummary();
+  syncAbDesignReference();
 
   renderAbTargets();
   renderAbSelectors();
@@ -2605,13 +2693,12 @@ function applyAbStateToInputs() {
   document.getElementById('ab-qa-mode').checked   = !!abState.qaMode;
   document.getElementById('ab-settle').value      = abState.settleSec || '3';
   document.getElementById('ab-keep-tabs').checked = !!abState.keepTabs;
-  document.getElementById('ab-record-heatmap').checked  = !!abState.recordHeatmap;
-  document.getElementById('ab-record-heatmap').disabled = !abState.keepTabs;
-  document.getElementById('ab-visual-diff').checked     = !!abState.visualDiff;
-  document.getElementById('ab-visual-diff-crops').checked  = abState.visualDiffCrops !== false;
-  document.getElementById('ab-visual-diff-crops').disabled = !abState.visualDiff;
-  document.getElementById('ab-agentic-testing').checked = !!abState.agenticTesting;
+  document.getElementById('ab-visual-diff-crops').checked = abState.visualDiffCrops !== false;
   document.getElementById('ab-summary-of-changes').value = abState.summaryOfChanges || '';
+  const abFigmaEl = document.getElementById('ab-figma-url');
+  if (abFigmaEl) abFigmaEl.value = abState.figmaUrl || '';
+  const abFigmaChk = document.getElementById('ab-figma-autofill');
+  if (abFigmaChk) abFigmaChk.checked = !!abState.figmaAutofill;
 }
 
 function persistAbState() {
@@ -2812,13 +2899,252 @@ function buildSummaryFromTicketVariants(ctx) {
 // two call sites: showTab('abtest') and initAbCompare's panel-load), so a
 // ticket committed in Initialize after the A/B tab was already visited
 // still fills the box the next time the user switches back to this tab.
+// Reads the Variation labels off the board, when a link and a token are both
+// available. Returns [] rather than throwing on any failure — a summary that
+// falls back to the image alone is a degraded result, not a broken run.
+async function figmaFetchVariationLabels(url) {
+  if (!url || !figmaParseUrl(url)) return [];
+  const res = await chrome.runtime.sendMessage({ action: 'figmaFetchNodes', url, depth: 4 })
+    .catch(() => null);
+  if (!res?.ok) return [];
+  return figmaClassifyChildren(res.node?.children || []).labels || [];
+}
+
+// Same shape buildSummaryFromTicketVariants produces, so the report prompt
+// sees one format regardless of which source filled the box.
+function buildSummaryFromFigmaVariants(variants) {
+  return (variants || [])
+    .filter(v => (v.changes || '').trim())
+    .map(v => {
+      const isControl = String(v.id || '').toLowerCase() === 'v0';
+      const name = (v.name || '').trim();
+      return `${v.id}${isControl ? ' (Control)' : ''}: ${name ? name + ' — ' : ''}${v.changes.trim()}`;
+    })
+    .join('\n\n');
+}
+
+// Fills Summary of Changes from the design comp, but ONLY when the box is
+// still empty after the ticket has had its turn. Ticket text keeps precedence
+// deliberately: it quotes the ticket verbatim, whereas this puts a model's
+// reading of an image into the box that decides expected vs unexpected for
+// every finding in the report. That is a real trade, so it runs second, it
+// never overwrites, and it records itself as the source in the debug log.
+//
+// Two sources, and the cheaper one is not the fallback:
+//   * Variation labels from the node tree are EXACT strings, so when they are
+//     available they anchor the read rather than leaving the model to work
+//     the variant ids out of the pixels.
+//   * The comp image carries the detail. Labels alone give a name per variant
+//     and no description of what changed, which is thin but still better than
+//     an empty box — an empty box makes every finding "unclear" by
+//     construction.
+async function autofillAbSummaryFromFigma() {
+  if (!abState || !abState.figmaAutofill) return;
+  if ((abState.summaryOfChanges || '').trim()) return;
+
+  const ctx = await getActiveContext().catch(() => null);
+  const url = (abState.figmaUrl || '').trim() || (ctx?.reviewed ? ctx.figmaUrl : null);
+  const compDataUrl = ctx?.reviewed ? await getCompImage(ctx) : null;
+  if (!url && !compDataUrl) return;
+
+  // Board renders are the preferred input, not an optimisation. The four-up
+  // attachment cannot carry legible fine print — see figmaRenderBoards in
+  // background.js for the arithmetic — and the comp is only the fallback for
+  // when there is no token.
+  let labels = [], boards = [];
+  if (url) {
+    const res = await chrome.runtime.sendMessage({ action: 'figmaFetchNodes', url, depth: 4 }).catch(() => null);
+    if (res?.ok) {
+      const c = figmaClassifyChildren(res.node?.children || []);
+      labels = c.labels || [];
+      const ids = [...new Set([...c.boards.map(b => b.variantId), ...labels.map(l => l.variantId)].filter(Boolean))].sort();
+      const picks = ids
+        .map(id => ({ id, sel: figmaSelectDesktopBoard(c.boards, id), label: labels.find(l => l.variantId === id) }))
+        .filter(p => p.sel.board);
+      if (picks.length) {
+        const rendered = await chrome.runtime.sendMessage({
+          action: 'figmaRenderBoards', url, nodeIds: picks.map(p => p.sel.board.nodeId),
+        }).catch(e => ({ ok: false, error: e.message }));
+        if (rendered?.ok) {
+          boards = picks
+            .map(p => ({ variantId: p.id, name: p.label?.changeName || p.sel.board.name, dataUrl: rendered.images[p.sel.board.nodeId] }))
+            .filter(b => b.dataUrl);
+          (rendered.failures || []).forEach(f => console.warn('[Selenite] Board render failed:', f));
+        } else {
+          console.warn('[Selenite] Board render failed —', rendered?.error);
+        }
+      }
+    }
+  }
+
+  if (!boards.length && !compDataUrl && !labels.length) return;
+
+  let summary = '', source = null;
+
+  if (boards.length || compDataUrl) {
+    const res = await chrome.runtime.sendMessage({
+      action: 'figmaSummarizeComp',
+      payload: { boards, compDataUrl, labels, ticketKey: ctx?.ticketKey || null },
+    }).catch(e => ({ ok: false, error: e.message }));
+
+    if (res?.ok) {
+      summary = buildSummaryFromFigmaVariants(res.variants);
+      // The source string records HOW the spec was read, not just that it was
+      // — the report prompt keys "absence means unclear" off the figma- prefix,
+      // and the whole-sheet path is materially less trustworthy than per-board.
+      source = res.perBoard ? 'figma-boards' : (res.usedFileLabels ? 'figma-comp+labels' : 'figma-comp');
+      (res.flags || []).forEach(f => console.warn('[Selenite] Design read flag:', f));
+    } else {
+      console.warn('[Selenite] Design summary failed —', res?.error || 'no response');
+    }
+  }
+
+  // Labels-only path: no images, or the vision call failed. No model at all
+  // here — these are the designer's own strings.
+  if (!summary && labels.length) {
+    summary = labels
+      .filter(l => l.variantId)
+      .map(l => `${l.variantId}${l.variantId === 'v0' ? ' (Control)' : ''}: ${l.changeName || '(unnamed board)'}`)
+      .join('\n\n');
+    source = summary ? 'figma-labels' : null;
+  }
+
+  if (!summary) return;
+  // Re-check: the render + vision round trip takes seconds, and the user may
+  // have typed into the box meanwhile. Never clobber that.
+  if ((abState.summaryOfChanges || '').trim()) return;
+
+  abState.summaryOfChanges = summary;
+  abState.summarySource = source;
+  abState.summaryTicketKey = (ctx && ctx.ticketKey) || null;
+  persistAbState();
+  const el = document.getElementById('ab-summary-of-changes');
+  if (el) el.value = summary;
+  const note = document.getElementById('ab-figma-out');
+  if (note) {
+    const weak = source !== 'figma-boards' && source !== 'figma-labels';
+    note.innerHTML = `<div style="color:var(--warn)">Summary of Changes was written from the design (${esc(source)}) — read it before running, it decides how every finding is graded.`
+      + (weak ? ' It was read from the multi-board comp image, where small text may be illegible, so it is likely incomplete.' : '')
+      + '</div>';
+  }
+}
+
+// Ticket first, comp second — both only fill an empty box, so the order IS
+// the precedence. Awaited in sequence rather than fired in parallel: run
+// concurrently they would both see an empty box and race to write it.
+async function autofillAbSummary() {
+  await autofillAbSummaryFromTicket();
+  await autofillAbSummaryFromFigma();
+}
+
+// ── Design reference (A/B tab) ──────────────────────────────────────────────
+// The Figma board URL and the comp attachment both come off the ticket during
+// Initialize and both describe the ticket as a whole, not a single variant —
+// one comp covers every board on it.
+//
+// The URL is editable and persisted here rather than in the Initialize review
+// step, because this is where it gets used and where a wrong board is noticed.
+// Same only-when-empty contract as the Summary of Changes autofill: an
+// extracted value fills an empty box and never overwrites a manual edit.
+//
+// The comp is deliberately READ-ONLY here. Re-fetching a different attachment
+// needs the Jira session cookie, and by the time a comparison runs the context
+// is incognito with no session — so a picker in this tab could offer choices
+// it cannot actually retrieve. Ambiguity is surfaced instead, and resolved by
+// re-extracting in Initialize.
+async function syncAbDesignReference() {
+  const urlEl = document.getElementById('ab-figma-url');
+  const compEl = document.getElementById('ab-figma-comp');
+  if (!urlEl && !compEl) return;
+
+  const ctx = await getActiveContext().catch(() => null);
+
+  if (urlEl && !(abState.figmaUrl || '').trim() && ctx?.reviewed && ctx.figmaUrl) {
+    abState.figmaUrl = ctx.figmaUrl;
+    urlEl.value = ctx.figmaUrl;
+    persistAbState();
+  }
+
+  if (!compEl) return;
+  const line = (t, color) => `<div style="color:${color || 'var(--fg3)'}">${esc(t)}</div>`;
+
+  if (!ctx?.reviewed) { compEl.innerHTML = line('No active ticket context — extract one in Initialize to pick up the comp automatically.'); return; }
+
+  if (ctx.compAttachment) {
+    const c = ctx.compAttachment;
+    const img = await getCompImage(ctx);
+    compEl.innerHTML = line(`Comp: ${c.filename} — ${c.w}×${c.h}${c.srcW ? ` (from ${c.srcW}×${c.srcH})` : ''}`, 'var(--ok)')
+      + (img ? `<img src="${esc(img)}" alt="Comp preview" style="max-width:100%;max-height:120px;border:1px solid var(--stroke);border-radius:4px;margin-top:4px">` : line('Stored image could not be read back.', 'var(--warn)'));
+    return;
+  }
+
+  const n = (ctx.compCandidates || []).length;
+  compEl.innerHTML = n
+    ? line(`No attachment matched ${ctx.ticketKey}_comp. ${n} other image(s) are attached — rename the comp on the ticket and re-extract to pick it up.`, 'var(--warn)')
+    : line('No image attachments on this ticket — the Figma link is the only design reference.');
+}
+
+// Reads the board and reports what it found, inline. Runs against whatever is
+// currently in the box, not the saved context, so a pasted board can be
+// checked before it is committed to anything.
+async function abFigmaCheck() {
+  const out = document.getElementById('ab-figma-out');
+  const url = (document.getElementById('ab-figma-url')?.value || '').trim();
+  if (!out) return;
+  const line = (t, color) => `<div style="color:${color || 'var(--fg3)'}">${esc(t)}</div>`;
+
+  if (!url) { out.innerHTML = line('Paste a Figma board link first.', 'var(--warn)'); return; }
+  if (!figmaParseUrl(url)) { out.innerHTML = line('That is not a Figma design link — expected figma.com/design/… or /file/….', 'var(--err)'); return; }
+
+  out.innerHTML = line('Checking…');
+  const res = await chrome.runtime.sendMessage({ action: 'figmaFetchNodes', url, depth: 4 })
+    .catch(e => ({ ok: false, error: e.message }));
+  if (!res?.ok) { out.innerHTML = line(res?.error || 'No response from the background worker.', 'var(--err)'); return; }
+
+  const node = res.node || {};
+  const c = figmaClassifyChildren(node.children || []);
+  const rows = [line(`Read "${res.fileName || '(unnamed file)'}" — access role: ${res.role || 'unknown'}`, 'var(--ok)')];
+  rows.push(line(`Node "${node.name || node.id}" (${node.type}) — ${(node.children || []).length} children`));
+
+  if (!c.boards.length) {
+    // The actionable case. A comp whose boards don't follow the v{n}
+    // convention looks identical to a comp with no boards unless the rejects
+    // are shown, and that distinction is the whole fix.
+    rows.push(line('No boards matched the v{n} naming convention.', 'var(--warn)'));
+    (c.rejected || []).slice(0, 8).forEach(r => rows.push(line(`  · ${r.name} (${r.type}) — ${r.reason}`)));
+  } else {
+    c.boards.forEach(b => rows.push(line(
+      `  · ${b.name} → ${b.variantId}/${b.breakpoint || 'no breakpoint'}, measured ${b.measuredWidth}px`
+        + (b.widthDisagrees ? `  ⚠ name says ${b.nominalWidth}px` : ''),
+      b.widthDisagrees ? 'var(--warn)' : 'var(--fg2)')));
+  }
+
+  if (c.labels.length) c.labels.forEach(l => rows.push(line(`  · label "${l.text}" → ${l.variantId || 'unmapped'}`, 'var(--fg2)')));
+  else rows.push(line('No Variation label blocks found — board→variant mapping falls back to board names.', 'var(--warn)'));
+
+  out.innerHTML = rows.join('');
+}
+
 async function autofillAbSummaryFromTicket() {
-  if (!abState || (abState.summaryOfChanges || '').trim()) return;
+  if (!abState) return;
+  // ctx is resolved BEFORE the bail now, because whether an existing value is
+  // stale depends on which ticket it came from.
   const ctx = await getActiveContext().catch(() => null);
   if (!ctx?.reviewed) return;
+  const existing = (abState.summaryOfChanges || '').trim();
+  // Hand-typed text is never clobbered. That guard is absolute and predates
+  // this — it is the reason the box survives a ticket switch at all.
+  if (existing && abState.summarySource === 'manual') return;
+  // An auto-filled spec that already belongs to THIS ticket is current.
+  if (existing && abState.summaryTicketKey && abState.summaryTicketKey === ctx.ticketKey) return;
+  // Anything else auto-filled is stale — either from a different ticket, or
+  // from before summaryTicketKey existed (legacy persisted state, no key
+  // recorded). Re-filling from the ACTIVE ticket is correct in both cases.
   const summary = buildSummaryFromTicketVariants(ctx);
   if (!summary) return;
   abState.summaryOfChanges = summary;
+  abState.summarySource = 'ticket';
+  abState.summaryTicketKey = ctx.ticketKey || null;
   persistAbState();
   const el = document.getElementById('ab-summary-of-changes');
   if (el) el.value = summary;
@@ -2966,12 +3292,22 @@ async function runAbComparison(opts = {}) {
         : {
             skipped: false, baselineLabel: visualDiffResult.baselineLabel,
             baselineWarning: visualDiffResult.baselineWarning,
+            sharedFindingCount: (visualDiffResult.sharedFindings || []).length,
             perVariant: (visualDiffResult.perVariant || []).map(v => ({
               label: v.label, skipped: v.skipped, reason: v.reason, error: v.error,
+              controlDuplicate: v.controlDuplicate,
               overallSummary: v.overallSummary, structuralStats: v.structuralStats,
               truncatedFindingCount: v.truncatedFindingCount, noVerdictCount: v.noVerdictCount,
               duplicateIndexCount: v.duplicateIndexCount, truncated: v.truncated, pixelDiff: v.pixelDiff,
               fullPageTruncated: v.fullPageTruncated, resumed: v.resumed, noSpecText: v.noSpecText,
+              // Diff diagnostics ride along on this mirror too. It exists to
+              // keep crops out of the text-summarization prompt, and these are
+              // small text-only counters — without them a Test-Agent-queued
+              // run (which only ever sees this mirror, never visualDiffFull)
+              // would export a debug log with no diff diagnostics at all,
+              // which is the run most likely to need them.
+              aggregate: v.aggregate, diffMode: v.diffMode, matchedFraction: v.matchedFraction,
+              matchTierCounts: v.matchTierCounts, diffDebug: v.diffDebug,
               findingCount: v.findings ? v.findings.length : 0,
               // noSpecText variants carry no expected/unexpected verdicts at all — every
               // finding for them lands in unclearCount instead, so a no-spec run's real
@@ -2989,12 +3325,14 @@ async function runAbComparison(opts = {}) {
       // the LIVE runVisualDiffPipeline result, crops included, and is only
       // ever read by rptAbVisualDiffSection on this standalone path.
       setAbStatus('Building report…');
+      const { figmaPat: _figmaPat } = await chrome.storage.sync.get('figmaPat');
       await openReportTab({
         ts: Date.now(), pageUrls: [],
         modes: [{
           mode: 2, name: 'A/B Variant Comparison', status: 'ran',
           data: { captures, metricsList, selectors, agenticNote: res.agenticNote || null, visualDiffFull: visualDiffResult },
         }],
+        designReference: buildDesignReferenceDebug(ctx, abState, _figmaPat),
         extraHtml: '',
       });
       setAbStatus('Done — report opened in a new tab.');
@@ -3098,206 +3436,178 @@ function diffAbCaptures(captures, metricsList, selectors) {
 // CHANGELOG.md for why. No pixel work happens in this file at all; it only
 // orchestrates messages and does the Stage-2 diff math.
 
-// ── Stage 2: local diff (pure JS, no network call) ──────────────────────────
-// Compares two pages' Stage-1 scrapes (ordered semantic content blocks) to
-// find what changed. Same spirit as the old row-hash alignRowHashes DP — a
-// global sequence alignment — but score-weighted and at block granularity
-// (dozens of blocks per page, not hundreds of pixel-row bands), so the DP
-// table here is trivially small.
-const VIS_MAX_DIFF_FINDINGS = 60;   // cap before sending findings to Opus — far higher than the
-                                     // old per-image region cap since there's no per-image cost
-                                     // driving it down; still a backstop for a pathological page
+// ── The local diff now lives in vd-diff.js ─────────────────────────────────
+// Everything that used to be here — blockSimilarity, needlemanWunschAlign,
+// diffPageScrapes, vdChangeSignals, rankAndCapDiffFindings, and the
+// vdBoxesOverlap/vdNormalizeTokens/vdTokenSimilarity helpers — moved into
+// extension/vd-diff.js and runs in background.js now. Two reasons, both
+// load-bearing: the diff's inputs (two full DOM-candidate lists) already live
+// in the worker and shipping them here would newly cross ~1MB over
+// sendMessage, and vd-diff.js as a plain globalThis IIFE can be load()ed
+// directly by jsc, so the matching logic is unit-testable with no browser and
+// no extraction step. This panel still reads those functions as bare globals
+// (vd-diff.js is loaded before popup.js in both popup.html and
+// sidepanel.html) — nothing here needs to import anything.
 
-function vdBoxesOverlap(a, b) {
-  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+// ── Visual Diff diagnostics (console-only, never wired into the UI) ────────
+// window.__vdDebug — call from the panel's OWN DevTools console (right-click
+// the side panel → Inspect). Deliberately no chrome.storage flag, no
+// checkbox, no settings surface: a normal user never opens DevTools on this
+// panel, so this is the cheapest possible zero-footprint hidden affordance,
+// consistent with keeping the real A/B workflow exactly as seamless as
+// before. Navigate to the target page yourself before calling this.
+//
+// scrapeStabilityCheck() is gone with the Sonnet scrape stage it measured:
+// it existed to quantify how much the model's semantic grouping varied
+// between two runs of the SAME page, and there is no model in the parse path
+// any more for that number to be nonzero.
+async function vdShowCandidateOverlay() {
+  const res = await chrome.runtime.sendMessage({ action: 'vdShowCandidateOverlay' });
+  if (!res?.ok) console.error('[vdDebug] Failed:', res?.error);
+  else console.log(`[vdDebug] Drew ${res.count} candidate rects on the active tab — click anywhere or press Esc to clear.`);
+  return res;
 }
 
-function vdNormalizeTokens(s) {
-  const set = new Set();
-  String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).forEach(t => { if (t) set.add(t); });
-  return set;
+// ── Figma reference diagnostics ────────────────────────────────────────────
+// Same console-only contract as showCandidateOverlay above — no storage flag,
+// no checkbox, no settings surface. Both take the Figma URL as an argument
+// rather than reading it from the active context, so a board can be probed
+// before Phase 0 extraction exists to supply one, and so a board that ISN'T
+// on the current ticket can be checked when a convention is in doubt.
+//
+// figmaFile is the go/no-go on PAT file access. figmaVerifyToken (the Save
+// button in Test Agent → Figma Access) deliberately cannot answer this: it
+// calls /v1/me, which proves the token is live and says nothing about whether
+// any particular file is readable at view/comment access.
+async function vdFigmaFile(url, depth) {
+  const res = await chrome.runtime.sendMessage({ action: 'figmaFetchNodes', url, depth });
+  if (!res?.ok) { console.error('[vdDebug] Figma fetch failed —', res?.error || 'no response from worker'); return res; }
+  const n = res.node || {};
+  const b = n.absoluteBoundingBox;
+  const kids = n.children || [];
+  console.log(`[vdDebug] file "${res.fileName || '(unnamed)'}" — modified ${res.lastModified || '?'} — role ${res.role || 'unknown'} — editor ${res.editorType || 'unknown'}`);
+  console.log(`[vdDebug] node ${n.id} "${n.name}" (${n.type})${b ? ` ${Math.round(b.width)}\u00d7${Math.round(b.height)}` : ''} — ${kids.length} direct children at depth=${res.depth}`);
+  console.table(kids.map(c => ({
+    id: c.id, name: c.name, type: c.type,
+    w: c.absoluteBoundingBox ? Math.round(c.absoluteBoundingBox.width) : null,
+    h: c.absoluteBoundingBox ? Math.round(c.absoluteBoundingBox.height) : null,
+    visible: c.visible !== false,
+    kids: (c.children || []).length,
+  })));
+  return res;
 }
 
-function vdTokenSimilarity(a, b) {
-  const setA = vdNormalizeTokens(a), setB = vdNormalizeTokens(b);
-  if (!setA.size && !setB.size) return 1;
-  if (!setA.size || !setB.size) return 0;
-  let inter = 0;
-  for (const t of setA) if (setB.has(t)) inter++;
-  const union = setA.size + setB.size - inter;
-  return union ? inter / union : 1;
-}
+// Board classification over those children. Prints the rejects too, with the
+// reason on each: a comp whose boards don't match the v{n} convention looks
+// identical to a comp with no boards unless the filter says what it dropped.
+async function vdFigmaBoards(url) {
+  const res = await chrome.runtime.sendMessage({ action: 'figmaFetchNodes', url, depth: 4 });
+  if (!res?.ok) { console.error('[vdDebug] Figma fetch failed —', res?.error || 'no response from worker'); return res; }
 
-// 0.5 text + 0.3 type + 0.2 position — text dominates since it's the
-// strongest signal a block genuinely corresponds to the same content;
-// position only contributes when both sides have a real DOM rect.
-function blockSimilarity(a, b, pageHA, pageHB) {
-  const textSim = vdTokenSimilarity(`${a.label || ''} ${a.text || ''}`, `${b.label || ''} ${b.text || ''}`);
-  const typeMatch = a.type === b.type ? 1 : 0;
-  let positionProximity = 0;
-  if (a.rect && b.rect && pageHA && pageHB) {
-    positionProximity = 1 - Math.abs(a.rect.y / pageHA - b.rect.y / pageHB);
+  const node = res.node || {};
+  const c = figmaClassifyChildren(node.children || []);
+  console.log(`[vdDebug] "${node.name}" — ${c.boards.length} board(s), ${c.labels.length} Variation label(s), ${c.rejected.length} other child node(s)`);
+
+  console.table(c.boards.map(b => ({
+    nodeId: b.nodeId, name: b.name, variant: b.variantId, breakpoint: b.breakpoint || '(none)',
+    measuredW: b.measuredWidth, nominalW: b.nominalWidth,
+    // Flagged rather than reconciled. A board named 1440px that measures 1280
+    // means every scale factor derived from the name is off by 12%, and the
+    // measured number is the only one anything is allowed to use.
+    widthDisagrees: b.widthDisagrees,
+  })));
+
+  if (c.labels.length) {
+    console.table(c.labels.map(l => ({ nodeId: l.nodeId, text: l.text, variant: l.variantId, changeName: l.changeName })));
+  } else {
+    console.warn('[vdDebug] No Variation label blocks found — board→variant mapping and the link-sourced summary both read from these.');
   }
-  return 0.5 * textSim + 0.3 * typeMatch + 0.2 * positionProximity;
+
+  const unmapped = c.labels.filter(l => !l.variantId);
+  if (unmapped.length) console.warn(`[vdDebug] ${unmapped.length} label(s) don't match the "V0 CONTROL" format — mapping falls back to board names for those.`);
+
+  if (c.rejected.length) console.table(c.rejected.map(r => ({ name: r.name, type: r.type, reason: r.reason })));
+
+  // What board selection would actually pick, per variant id seen on any
+  // board or label — the question the caller is really asking.
+  const ids = [...new Set([...c.boards.map(b => b.variantId), ...c.labels.map(l => l.variantId)].filter(Boolean))].sort();
+  const picks = ids.map(id => {
+    const sel = figmaSelectDesktopBoard(c.boards, id);
+    const label = c.labels.find(l => l.variantId === id);
+    return {
+      variant: id,
+      board: sel.board ? sel.board.name : '(none — desktop board missing)',
+      via: sel.via || '-',
+      changeName: label ? (label.changeName || '(label has no name)') : '(no label)',
+    };
+  });
+  if (picks.length) console.table(picks);
+
+  return { node, boards: c.boards, labels: c.labels, rejected: c.rejected, picks };
 }
 
-// Standard Needleman-Wunsch global alignment — same idea as the old
-// alignRowHashes, but the "match" cell holds a real similarity score
-// instead of binary hash-equality, and a small gap penalty replaces the old
-// code's plain max(up,left).
-function needlemanWunschAlign(a, b, simFn, gapPenalty) {
-  const n = a.length, m = b.length;
-  const dp = [];
-  for (let i = 0; i <= n; i++) dp.push(new Float64Array(m + 1));
-  for (let i = 1; i <= n; i++) dp[i][0] = -i * gapPenalty;
-  for (let j = 1; j <= m; j++) dp[0][j] = -j * gapPenalty;
-  for (let i = 1; i <= n; i++) {
-    for (let j = 1; j <= m; j++) {
-      const diag = dp[i - 1][j - 1] + simFn(a[i - 1], b[j - 1]);
-      const up = dp[i - 1][j] - gapPenalty;
-      const left = dp[i][j - 1] - gapPenalty;
-      dp[i][j] = Math.max(diag, up, left);
-    }
-  }
-  const pairs = [];
-  let i = n, j = m;
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && dp[i][j] === dp[i - 1][j - 1] + simFn(a[i - 1], b[j - 1])) {
-      pairs.push({ aIdx: i - 1, bIdx: j - 1 }); i--; j--;
-    } else if (i > 0 && dp[i][j] === dp[i - 1][j] - gapPenalty) {
-      pairs.push({ aIdx: i - 1, bIdx: null }); i--;
-    } else {
-      pairs.push({ aIdx: null, bIdx: j - 1 }); j--;
-    }
-  }
-  pairs.reverse();
-  return pairs;
-}
+// Dry-run of the Summary of Changes autofill: performs the read and returns
+// everything it produced WITHOUT writing to the box. The point is to be able
+// to inspect what the model said about the comp before that text becomes the
+// thing every finding is graded against — once it is in the box, the report
+// treats it as fact.
+async function vdFigmaSummary() {
+  const ctx = await getActiveContext().catch(() => null);
+  const url = (abState?.figmaUrl || '').trim() || (ctx?.reviewed ? ctx.figmaUrl : null);
+  const compDataUrl = ctx?.reviewed ? await getCompImage(ctx) : null;
 
-function vdChangeSignals(a, b) {
-  if (a && !b) return ['removed'];
-  if (!a && b) return ['added'];
-  const signals = [];
-  if ((a.text || '') !== (b.text || '')) signals.push('text-changed');
-  if (a.type !== b.type) signals.push('type-changed');
-  if (a.rect && b.rect) {
-    const dy = b.rect.y - a.rect.y;
-    if (Math.abs(dy) > 20) signals.push(`moved-vertically:${dy > 0 ? '+' : ''}${dy}px`);
-    if (Math.abs(b.rect.w - a.rect.w) > 20 || Math.abs(b.rect.h - a.rect.h) > 20) signals.push('resized');
-  }
-  return signals;
-}
+  console.log(`[vdDebug] ticket ${ctx?.ticketKey || '(none)'} — link ${url ? 'yes' : 'no'}, comp image ${compDataUrl ? 'yes' : 'no'}, autofill ${abState?.figmaAutofill ? 'ON' : 'OFF'}`);
+  if (!url && !compDataUrl) { console.warn('[vdDebug] Nothing to read.'); return null; }
 
-// Two-pass alignment: (1) order-preserving global alignment handles the
-// common case — growth/shrink pushing later content down, the same way the
-// old row-hash LCS did; (2) a stricter, position-agnostic greedy pass
-// recovers blocks a pure reorder would otherwise report as a spurious
-// remove+add pair. Known risk, accepted rather than solved: a grid of
-// near-identical items (e.g. product cards) can still mismatch siblings
-// against each other in pass 2 — the stricter threshold + same-type gate
-// reduces but doesn't eliminate this.
-function diffPageScrapes(controlBlocks, variantBlocks) {
-  // A same-type, same-slot pair whose text is UNRECOGNIZABLY different (a
-  // real content rewrite, not a light edit) scores at most 0.3 (type) + 0.2
-  // (position) = 0.5 on textSim=0 alone — a genuine in-place edit like "Buy
-  // Now" -> "Add to Cart". A 0.55 threshold rejected that pairing outright,
-  // reporting it as a false remove+add instead of one 'modified' finding —
-  // exactly the class of bug the old pipeline's collapseAdjacentModifiedPairs
-  // existed to prevent. 0.45 lets same-type-same-slot pairs through (caught
-  // by the unit tests) while still rejecting a coincidental same-type match
-  // at a genuinely different position (typeMatch alone, no position/text
-  // support, tops out well below this).
-  const MATCH_THRESHOLD = 0.45;
-  const REORDER_THRESHOLD = 0.7;
-  const GAP_PENALTY = 0.3;
-  const pageHA = Math.max(1, ...controlBlocks.map(b => (b.rect ? b.rect.y + b.rect.h : 0)));
-  const pageHB = Math.max(1, ...variantBlocks.map(b => (b.rect ? b.rect.y + b.rect.h : 0)));
-  const sim = (a, b) => blockSimilarity(a, b, pageHA, pageHB);
-
-  const pairs = needlemanWunschAlign(controlBlocks, variantBlocks, sim, GAP_PENALTY);
-
-  const findings = [];
-  const unmatchedControl = [], unmatchedVariant = [];
-  let fid = 0;
-
-  for (const p of pairs) {
-    if (p.aIdx != null && p.bIdx != null) {
-      const a = controlBlocks[p.aIdx], b = variantBlocks[p.bIdx];
-      const score = sim(a, b);
-      if (score >= MATCH_THRESHOLD) {
-        const unchanged = a.type === b.type && (a.text || '') === (b.text || '');
-        findings.push({
-          findingId: 'f' + (fid++), status: unchanged ? 'unchanged' : 'modified',
-          controlBlock: a, variantBlock: b, similarityScore: score,
-          changeSignals: unchanged ? [] : vdChangeSignals(a, b), matchedViaReorder: false,
-        });
-        continue;
+  let labels = [], boards = [];
+  if (url) {
+    const res = await chrome.runtime.sendMessage({ action: 'figmaFetchNodes', url, depth: 4 }).catch(() => null);
+    if (res?.ok) {
+      const c = figmaClassifyChildren(res.node?.children || []);
+      labels = c.labels || [];
+      const ids = [...new Set([...c.boards.map(b => b.variantId), ...labels.map(l => l.variantId)].filter(Boolean))].sort();
+      const picks = ids
+        .map(id => ({ id, sel: figmaSelectDesktopBoard(c.boards, id), label: labels.find(l => l.variantId === id) }))
+        .filter(p => p.sel.board);
+      console.log(`[vdDebug] ${labels.length} label(s), ${picks.length} desktop board(s) to render:`, picks.map(p => p.id + '=' + p.sel.board.nodeId));
+      if (picks.length) {
+        const rendered = await chrome.runtime.sendMessage({
+          action: 'figmaRenderBoards', url, nodeIds: picks.map(p => p.sel.board.nodeId),
+        }).catch(e => ({ ok: false, error: e.message }));
+        if (rendered?.ok) {
+          boards = picks
+            .map(p => ({ variantId: p.id, name: p.label?.changeName || p.sel.board.name, dataUrl: rendered.images[p.sel.board.nodeId] }))
+            .filter(b => b.dataUrl);
+          console.log('[vdDebug] rendered board sizes (base64 chars):', boards.map(b => b.variantId + '=' + b.dataUrl.length));
+          (rendered.failures || []).forEach(f => console.warn('[vdDebug] render failure:', f));
+        } else console.error('[vdDebug] Board render failed —', rendered?.error);
       }
     }
-    if (p.aIdx != null) unmatchedControl.push(controlBlocks[p.aIdx]);
-    if (p.bIdx != null) unmatchedVariant.push(variantBlocks[p.bIdx]);
   }
 
-  const usedVariant = new Set();
-  const stillUnmatchedControl = [];
-  for (const a of unmatchedControl) {
-    let best = null, bestScore = REORDER_THRESHOLD;
-    for (const b of unmatchedVariant) {
-      if (usedVariant.has(b) || a.type !== b.type) continue;
-      const score = sim(a, b);
-      if (score > bestScore) { bestScore = score; best = b; }
-    }
-    if (best) {
-      usedVariant.add(best);
-      findings.push({
-        findingId: 'f' + (fid++), status: 'modified', controlBlock: a, variantBlock: best,
-        similarityScore: bestScore, changeSignals: vdChangeSignals(a, best), matchedViaReorder: true,
-      });
-    } else {
-      stillUnmatchedControl.push(a);
-    }
-  }
-  const stillUnmatchedVariant = unmatchedVariant.filter(b => !usedVariant.has(b));
+  if (!boards.length && !compDataUrl) { console.warn('[vdDebug] No images — the autofill would use labels only.'); return { labels }; }
+  if (!boards.length) console.warn('[vdDebug] Falling back to the four-up comp image; small text will not be legible.');
 
-  stillUnmatchedControl.forEach(a => findings.push({
-    findingId: 'f' + (fid++), status: 'removed', controlBlock: a, variantBlock: null,
-    similarityScore: null, changeSignals: ['removed'], matchedViaReorder: false,
-  }));
-  stillUnmatchedVariant.forEach(b => findings.push({
-    findingId: 'f' + (fid++), status: 'added', controlBlock: null, variantBlock: b,
-    similarityScore: null, changeSignals: ['added'], matchedViaReorder: false,
-  }));
+  const res = await chrome.runtime.sendMessage({
+    action: 'figmaSummarizeComp',
+    payload: { boards, compDataUrl, labels, ticketKey: ctx?.ticketKey || null },
+  }).catch(e => ({ ok: false, error: e.message }));
 
-  findings.sort((x, y) => {
-    const yx = x.controlBlock?.rect?.y ?? x.variantBlock?.rect?.y ?? Infinity;
-    const yy = y.controlBlock?.rect?.y ?? y.variantBlock?.rect?.y ?? Infinity;
-    return yx - yy;
-  });
-  return findings;
+  if (!res?.ok) { console.error('[vdDebug] Summary failed —', res?.error, res?.raw || ''); return res; }
+  console.log(`[vdDebug] perBoard=${res.perBoard} (${res.boardCount} board image(s)), anchored on file labels=${res.usedFileLabels}`);
+  if (res.truncated) console.warn('[vdDebug] Response hit max_tokens — incomplete.');
+  (res.flags || []).forEach(f => console.warn('[vdDebug] flag:', f));
+  console.table(res.variants || []);
+  console.log('[vdDebug] Would write (NOT written):\n' + buildSummaryFromFigmaVariants(res.variants));
+  return res;
 }
 
-// Caps the non-unchanged findings sent to Opus. Tiers: overlaps a watched
-// selector rect > modified > added/removed > larger text delta (tiebreak).
-// unchanged findings never go to Opus, but the caller keeps the full list
-// for the structural stat counts shown in the report.
-function rankAndCapDiffFindings(findings, { watchedRects = [], maxTotal = VIS_MAX_DIFF_FINDINGS } = {}) {
-  const actionable = findings.filter(f => f.status !== 'unchanged');
-  if (actionable.length <= maxTotal) return { kept: actionable, truncatedCount: 0 };
-  const scored = actionable.map(f => {
-    const rect = f.controlBlock?.rect || f.variantBlock?.rect;
-    const overlapsWatched = rect ? watchedRects.some(r => vdBoxesOverlap(rect, r)) : false;
-    const statusTier = f.status === 'modified' ? 1 : 0;
-    const textLen = ((f.controlBlock?.text || '') + (f.variantBlock?.text || '')).length;
-    return { f, overlapsWatched, statusTier, textLen };
-  });
-  scored.sort((a, c) => {
-    if (a.overlapsWatched !== c.overlapsWatched) return a.overlapsWatched ? -1 : 1;
-    if (a.statusTier !== c.statusTier) return c.statusTier - a.statusTier;
-    return c.textLen - a.textLen;
-  });
-  const kept = scored.slice(0, maxTotal).map(s => s.f);
-  return { kept, truncatedCount: actionable.length - kept.length };
-}
+window.__vdDebug = {
+  showCandidateOverlay: vdShowCandidateOverlay,
+  figmaFile: vdFigmaFile,
+  figmaBoards: vdFigmaBoards,
+  figmaSummary: vdFigmaSummary,
+};
 
 // ── Pipeline orchestrator ────────────────────────────────────────────────────
 // Drives Stage 1 (scrape, once for Control then once per variant) → Stage 2
@@ -3310,6 +3620,208 @@ function rankAndCapDiffFindings(findings, { watchedRects = [], maxTotal = VIS_MA
 // finishes, matching Test Agent's own run → report-tab pattern. `onStatus`,
 // if given, receives a short human-readable line for the caller's single
 // status element (mirroring Test Agent's own `status.textContent = ...`).
+// ── Control-vs-Control is never a valid comparison ──────────────────────────
+// Diffing Control against itself yields zero findings, and zero findings is
+// indistinguishable from a clean pass — which makes it the most dangerous
+// possible outcome: a misconfigured run that reports success. Two ways it
+// happens, and both must stop the analysis rather than produce a report.
+function vdNormalizeTargetUrl(u) {
+  return String(u || '').trim().replace(/\/+$/, '').toLowerCase();
+}
+
+// (1) Configuration: this target IS Control — same URL, or it redirected onto
+// Control's final URL (a forced-variant parameter silently dropped en route).
+// Returns { hard, reason } or null. `hard` decides whether this is a reason to
+// refuse the comparison outright or merely a reason to be suspicious of it.
+//
+// The distinction is not cosmetic — treating both as hard produced a false
+// stop on a real ticket. ENOC-97's preview links are Optimizely PREVIEW-TOKEN
+// URLs: the token establishes a session, then an http -> https/www redirect
+// strips the whole query string, so both targets legitimately settle on the
+// same final URL while the forced variant persists via the session. The two
+// captures came back 4590px and 6698px tall — a 46% difference at an identical
+// viewport, so the variant plainly applied — and the run was refused anyway.
+//
+// A matching CONFIGURED url is still hard: the two targets are literally the
+// same address, nothing has been captured yet, and there is nothing a
+// comparison could discover.
+//
+// A matching FINAL url is soft. By the time it can be evaluated both captures
+// already exist, and vdRenderedAsControlReason answers the same question from
+// far better evidence — the diff itself — while still running BEFORE the model
+// call, so deferring to it costs local compute and no spend.
+function vdControlDuplicateReason(base, c) {
+  const bu = vdNormalizeTargetUrl(base.url), cu = vdNormalizeTargetUrl(c.url);
+  if (bu && cu && bu === cu) {
+    return { hard: true, reason: `it is configured with the same URL as Control ("${base.label}"), so this would compare Control against itself` };
+  }
+  const bf = vdNormalizeTargetUrl(base.finalUrl), cf = vdNormalizeTargetUrl(c.finalUrl);
+  if (bf && cf && bf === cf) {
+    // Superseded when the platform itself confirms the bucketing. This warning
+    // fired on 19 of 19 recorded ONDECK runs and was UNFALSIFIABLE every time —
+    // the diff proved the pages differed, so it was noise. Where
+    // vdVariantVerification can answer the question the warning only gestures
+    // at, the answer wins and the guess is dropped.
+    const ver = vdCaptureVerification(c);
+    if (ver.state === 'confirmed') return null;
+    return { hard: false, reason: `it loaded the same final URL as Control ("${base.label}") — ${c.finalUrl} — so the forced-variant parameter may have been dropped on redirect. Forced-variant state can also survive as a session (Optimizely preview tokens do this), so the comparison was run anyway and judged on what actually rendered`
+      + (ver && ver.reason ? `. The platform could not confirm it either: ${ver.reason}` : '') };
+  }
+  return null;
+}
+
+// (2) Result: the pages are configured differently but rendered identically.
+// The experiment did not apply. Reporting "no differences" here would read as
+// a pass on a test that never ran, so it is an error, not a result.
+function vdRenderedAsControlReason(diffRes) {
+  if (!diffRes || diffRes.mode !== 'normal') return null;
+  if ((diffRes.findings || []).length) return null;
+  const s = diffRes.structuralStats || {};
+  if (s.addedCount || s.removedCount || s.modifiedCount || s.styleChangedCount) return null;
+  return 'it rendered identically to Control — no added, removed, changed or restyled element anywhere on the page. '
+    + 'The forced-variant parameter most likely did not apply, so there is nothing to QA';
+}
+
+// ── Changes common to every variant, reported once ──────────────────────────
+// A four-variant run where the variants share a restructured page reports the
+// same handful of changes once per variant: measured on a real run, 15 of 27
+// finding rows were five shared changes repeated three times, and only 12 rows
+// were the copy differences that actually distinguished the variants. Lifting
+// the shared ones into their own section removes the repetition without
+// removing the information.
+//
+// Deliberately NOT suppressed. A change every variant makes is still a change
+// from Control, and "all three variants dropped the same CTA" is a regression
+// worth seeing — hiding it would repeat the mistake that let a run with zero
+// findings read as a pass.
+//
+// The key is (changeClass, control text, variant text) with NO rect: the same
+// change lands at different y in different variants (a taller hero pushes it
+// down), and including position would defeat the grouping in exactly the cases
+// it matters most. `moved` findings likewise vary by a few px between variants
+// and are still one change.
+function vdFindingIdentity(f) {
+  const t = (s) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  const c = f.controlBlock, v = f.variantBlock;
+  // Control is captured ONCE and reused for every variant, so any control-side
+  // attribute is perfectly stable across them — which makes its rect the ideal
+  // tiebreaker. Text alone is not enough: two different images both have empty
+  // text, so ('removed','','') collided and two distinct removals were reported
+  // as one. Position is only safe on the control side; the variant side moves
+  // (a taller hero pushes "Contact sales" 50px down in one variant), so only
+  // its SIZE participates.
+  const cKey = c ? t(c.text) + '@' + (c.rect ? [c.rect.x, c.rect.y, c.rect.w, c.rect.h].join(',') : '-') : '-';
+  const vKey = v ? t(v.text) + '@' + (v.rect ? v.rect.w + 'x' + v.rect.h : '-') : '-';
+  return [f.changeClass, cKey, vKey].join('\u0000');
+}
+
+function vdExtractSharedFindings(perVariant) {
+  const analysed = perVariant.filter(v => !v.skipped && !v.error && Array.isArray(v.findings));
+  // Needs at least two comparisons for "common to all" to mean anything.
+  if (analysed.length < 2) return [];
+
+  const counts = new Map();
+  for (const v of analysed) {
+    // Count each identity once per variant, so a change appearing twice within
+    // one variant can't masquerade as appearing across two.
+    for (const id of new Set(v.findings.map(vdFindingIdentity))) {
+      counts.set(id, (counts.get(id) || 0) + 1);
+    }
+  }
+
+  const sharedIds = new Set();
+  for (const [id, n] of counts) if (n === analysed.length) sharedIds.add(id);
+  if (!sharedIds.size) return [];
+
+  // The first variant's instance represents the group; every variant's copy is
+  // identical by construction apart from geometry and the model's own wording.
+  const shared = [];
+  const taken = new Set();
+  for (const f of analysed[0].findings) {
+    const id = vdFindingIdentity(f);
+    if (!sharedIds.has(id) || taken.has(id)) continue;
+    taken.add(id);
+    shared.push({ ...f, sharedAcross: analysed.map(v => v.label) });
+  }
+  for (const v of analysed) {
+    v.findings = v.findings.filter(f => !sharedIds.has(vdFindingIdentity(f)));
+  }
+  return shared;
+}
+
+// Whether the stored spec was auto-filled from a DIFFERENT ticket than the one
+// this run is against. Pure, and top-level rather than inline in the pipeline,
+// so it can be sliced into the test suite -- the two other decision points
+// buried in async handlers this session (the reporting fork, the pixel check's
+// scale) both turned out to have no coverage at all where they sat.
+//
+// Silent in three cases, each of which would be a nuisance if it fired:
+//   'manual'        the user typed it, possibly for a page with no ticket
+//   no specKey      state persisted before provenance existed
+//   no activeKey    no ticket is active, so there is nothing to disagree with
+// The one place the rule lives. Two callers need it from different shapes --
+// the pipeline from live abState + ctx, vdCollectProblems from the already
+// serialised designReference -- and two copies of a four-clause predicate drift.
+// One place. This verdict is read by the problems list, by the same-URL check
+// and by the debug projection, and computing it three times from three shapes is
+// exactly how the problems list ended up reading a field that only ever existed
+// in the log — dead code that passed its own test because the test fixture set
+// the field the projection adds rather than the field the worker returns.
+//
+// The `unsupported` state exists because of a measured failure. popup.js
+// reloads every time the panel opens; the background service worker only
+// reloads when the extension does, so the two halves routinely run DIFFERENT
+// builds. Run 1788191807035 had a current popup.js against a worker predating
+// the probe, and the result was "the experiment-platform probe did not run" —
+// indistinguishable from a real probe failure, and the wrong thing to act on.
+// Key presence is what separates them: the current worker always emits
+// `expProbe` (null or otherwise); an older one has no such field at all.
+function vdCaptureVerification(cap) {
+  if (!cap) return { state: 'unknown', reason: 'there is no capture record to check' };
+  if (!('expProbe' in cap)) {
+    return {
+      state: 'unsupported',
+      reason: 'this capture came from an older background build that does not probe the experiment platform'
+        + ' — reload the extension so the service worker picks up the current build, then re-run',
+    };
+  }
+  if (typeof vdVariantVerification !== 'function') {
+    return { state: 'unknown', reason: 'vd-diff.js is not loaded in this context' };
+  }
+  return vdVariantVerification(cap.expProbe, vdForcedVariationId(cap.url));
+}
+
+// The variation the CONFIGURED url asked for. Must come from cap.url and never
+// cap.finalUrl: a site that redirects strips the parameter, and the probe only
+// ever sees the final url. On run 1788192904924 both captures had it stripped
+// and the platform had still bucketed into exactly the requested variation, so
+// reading it from the probe alone threw away the answer.
+function vdForcedVariationId(configuredUrl) {
+  if (!configuredUrl) return null;
+  try {
+    const q = new URL(configuredUrl, location.href).searchParams;
+    return q.get('optimizely_x') || q.get('_conv_eforce') || null;
+  } catch (_) {
+    // A malformed target url must not cost us the verification path.
+    const m = /[?&](?:optimizely_x|_conv_eforce)=([^&#]+)/.exec(String(configuredUrl));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+}
+
+function vdSpecTicketMismatch(source, specKey, activeKey, hasText) {
+  if (!hasText) return false;
+  if (source === 'manual') return false;
+  return !!(specKey && activeKey && specKey !== activeKey);
+}
+
+function vdSpecIsStale(state, ctx) {
+  return vdSpecTicketMismatch(
+    state && state.summarySource,
+    (state && state.summaryTicketKey) || null,
+    (ctx && ctx.ticketKey) || null,
+    !!((state && state.summaryOfChanges) || '').trim());
+}
+
 async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus } = {}) {
   if (!abState.visualDiff) return null;
   const bail = (reason) => ({ skipped: true, reason });
@@ -3321,6 +3833,28 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
   // it in from the ticket's variants (see its own comment) before this ever
   // runs, so there's nothing ticket-specific left to resolve here.
   const ticketText = (abState.summaryOfChanges || '').trim();
+
+  // A spec auto-filled from a DIFFERENT ticket is worse than no spec. The
+  // report prompt's "absence means unclear, never unexpected" softening is
+  // gated on a figma-* source, so with source 'ticket' every element the wrong
+  // spec omits grades "unexpected" rather than "unclear". Measured on run
+  // 1787945015802: 61 of 67 findings called defects on ENOC-97 against a
+  // Zapier contact-sales form spec, including elements the REAL spec names
+  // verbatim. The three region rollups flipped expected -> unexpected with
+  // byte-identical engineNote, which is what proves the fault is the spec and
+  // not the grader.
+  //
+  // No new coercion logic: blanking the grader's input trips the existing
+  // noSpec path in background.js, which forces every finding to 'unclear' with
+  // null severity, and noSpecText already drives the renderer's "described but
+  // not judged" line. `ctx` here is the SAME object buildDesignReferenceDebug
+  // records, so the log and this decision cannot disagree — re-fetching it
+  // could straddle a ticket switch mid-run.
+  const specStale = vdSpecIsStale(abState, ctx);
+  // The debug export deliberately keeps recording the real, wrong text and its
+  // provenance (buildDesignReferenceDebug) — only the grader is denied it.
+  // Blanking it there too would re-hide the next occurrence.
+  const gradedSpec = specStale ? '' : ticketText;
 
   // Resolve which capture is Control — ticket-resolved when ctx is present,
   // falling back to the first capture otherwise (see resolveAbBaseline's own
@@ -3349,29 +3883,26 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
   // writes the root before the loop starts, so even an all-skipped run is
   // distinguishable from "no run happened."
   const runId = resumeCheckpoint?.runId || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  // Recorded on the run and every checkpoint, not just for display — item
+  // 3's per-block pixel check and item 6b's cross-run cache both need
+  // Control and a variant to be captured at the same scale, and this is
+  // what a resume/cross-run comparison checks against. Within a single run
+  // this is never a real risk (every variant shares one capture window by
+  // construction) — it's cross-run/resume where widths can actually drift.
+  const captureWidth = base.fullPage.pageW;
   if (!resumeCheckpoint) {
     await setVisualDiffCheckpointRoot(WIN_ID, {
       runId, signature: computeVisualDiffRunSignature(ctx, captures), ticketKey: ctx?.ticketKey || null,
       baselineLabel: base.label, startedAt: Date.now(), updatedAt: Date.now(), status: 'running',
-      controlScrape: null, perVariant: {},
+      captureWidth, perVariant: {},
     });
   }
 
-  // Control is scraped ONCE per run and reused for every variant — resumed
-  // from the checkpoint if a prior run already finished it (background.js's
-  // own in-memory cache only survives as long as the service worker does;
-  // the checkpoint is what makes this resilient across a worker restart).
-  let controlScrape = resumeCheckpoint?.controlScrape?.status === 'done' ? resumeCheckpoint.controlScrape : null;
-  if (!controlScrape) {
-    if (_abVisualDiffStopRequested) return bail('Stopped before Control was scraped.');
-    onStatus?.(`Scraping ${base.label}…`);
-    const res = await chrome.runtime.sendMessage({
-      action: 'scrapeVisualDiffPage',
-      payload: { winId: WIN_ID, runId, label: base.label, role: 'control' },
-    });
-    if (!res?.ok) return bail(`Could not scrape Control (${res?.error || 'unknown error'}).`);
-    controlScrape = { blocks: res.blocks, unmatchedNotes: res.unmatchedNotes };
-  }
+  // No Control pre-pass any more. Parsing a page used to be a Sonnet call, so
+  // Control was scraped once per run, cached in the checkpoint, and cached
+  // again across runs — all of it machinery to avoid re-paying for that call.
+  // The diff now reads Control's DOM candidates straight out of vdState on
+  // every variant, which is free, so all three caching layers are gone.
 
   const perVariant = [];
   let stopped = false;
@@ -3398,6 +3929,19 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
       continue;
     }
 
+    // Stop before spending anything on a comparison that cannot be valid —
+    // but only when it CANNOT be. A shared final URL is suspicious, not
+    // disqualifying; it is carried forward and reported, and the diff decides.
+    const dup = vdControlDuplicateReason(base, c);
+    if (dup?.hard) {
+      perVariant.push({
+        label: c.label, controlDuplicate: true,
+        error: `Analysis stopped — ${dup.reason}.`,
+      });
+      continue;
+    }
+    const sameUrlNote = dup ? dup.reason : null;
+
     const prior = resumeCheckpoint?.perVariant?.[c.label];
     if (prior?.status === 'done') {
       // Fully done already — hydrate from the checkpoint, no re-calls at
@@ -3412,52 +3956,114 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
       continue;
     }
 
-    // Per-stage resume: a variant already scraped (worker restarted before
-    // the Opus call landed) skips straight to diff+report instead of
-    // re-scraping it.
-    let variantScrape = prior?.status === 'scraped' ? prior.scrape : null;
-    if (!variantScrape) {
-      onStatus?.(`Scraping ${c.label}…`);
-      const scrapeRes = await chrome.runtime.sendMessage({
-        action: 'scrapeVisualDiffPage',
-        payload: { winId: WIN_ID, runId, label: c.label, role: 'variant' },
+    // The entire deterministic diff, in one round trip and with no model
+    // call: match, classify, suppress reflow/punctuation/counter noise,
+    // group, pixel backstop, rank and cap. There's no per-stage resume left
+    // to do here — the expensive stage this used to resume past (Control's
+    // Sonnet scrape) no longer exists, and re-running the diff itself is free.
+    onStatus?.(`Comparing ${c.label}…`);
+    const diffRes = await chrome.runtime.sendMessage({
+      action: 'diffVisualDiffVariant',
+      payload: {
+        winId: WIN_ID, runId, baselineLabel: base.label, variantLabel: c.label,
+        watchedRects: (base.selectors || []).map(s => s.rect).filter(Boolean),
+        // The capture clip spans [0, pageW] in CSS px, so the worker divides
+        // the decoded bitmap's width by this to recover the device pixel ratio
+        // and read rects at the right coordinates. See vdImageScale.
+        basePageW: base.fullPage?.pageW ?? null, variantPageW: c.fullPage?.pageW ?? null,
+        // gradedSpec, not ticketText: a spec belonging to another ticket must
+        // not produce a requirement checklist either. Same withholding the
+        // report call gets.
+        specText: gradedSpec || null,
+      },
+    });
+    if (!diffRes?.ok) {
+      perVariant.push({ label: c.label, error: diffRes?.error || 'Diff failed' });
+      continue;
+    }
+    const { structuralStats, truncatedCount, pixelDiff, aggregate, mode, matchedFraction, matchTierCounts, requirements } = diffRes;
+    // Same split-build hazard as the probe, same detection: the current worker
+    // always returns the `requirements` key (null when there is no spec), an
+    // older one returns no such key. Without this the coverage line simply does
+    // not appear and reads as "this spec has no quoted copy".
+    const requirementsUnsupported = !!(gradedSpec && !('requirements' in diffRes));
+    const diffDebug = diffRes.debug || null;
+    const kept = diffRes.findings;
+
+    // A variant that renders identically to Control is a broken run, not a
+    // clean one. This used to report "No differences detected against
+    // control." as an ordinary result, which is the single most misleading
+    // thing this tool could say: it is exactly what a forced-variant
+    // parameter that never applied looks like, and it reads as a pass.
+    // Stop the analysis and say so instead.
+    const sameAsControl = vdRenderedAsControlReason(diffRes);
+    if (sameAsControl) {
+      perVariant.push({
+        label: c.label, controlDuplicate: true, sameUrlNote,
+        // When both signals agree the URL one is the explanation, so lead with
+        // the render evidence and append the cause.
+        error: `Analysis stopped — ${sameAsControl}${sameUrlNote ? `. Note: ${sameUrlNote}` : ''}.`,
+        structuralStats, pixelDiff, aggregate, diffMode: mode, matchedFraction,
+        matchTierCounts, diffDebug, fullPageTruncated: !!c.fullPage.truncated,
       });
-      if (!scrapeRes?.ok) {
-        if (scrapeRes?.stoppedAbort) { stopped = true; perVariant.push({ label: c.label, skipped: true, reason: 'Stopped' }); break; }
-        perVariant.push({ label: c.label, error: scrapeRes?.error || 'Scrape failed' });
-        continue;
-      }
-      variantScrape = { blocks: scrapeRes.blocks, unmatchedNotes: scrapeRes.unmatchedNotes };
+      continue;
     }
 
-    const allFindings = diffPageScrapes(controlScrape.blocks, variantScrape.blocks);
-    const structuralStats = {
-      addedCount: allFindings.filter(f => f.status === 'added').length,
-      removedCount: allFindings.filter(f => f.status === 'removed').length,
-      modifiedCount: allFindings.filter(f => f.status === 'modified').length,
-      unchangedCount: allFindings.filter(f => f.status === 'unchanged').length,
-    };
-    const { kept, truncatedCount } = rankAndCapDiffFindings(allFindings, {
-      watchedRects: (base.selectors || []).map(s => s.rect).filter(Boolean),
-    });
+    // Findings exist but none survived ranking — skip the one remaining model
+    // call rather than sending it an empty list. Distinct from the branch
+    // above: the page genuinely differs, there is just nothing left to
+    // classify. The coarse pixel backstop already ran inside the diff, so it
+    // is never a casualty of this optimization.
+    if (kept.length === 0) {
+      perVariant.push({
+        label: c.label, sameUrlNote, findings: [], overallSummary: 'Differences were detected but none ranked high enough to report.',
+        noSpecText: !gradedSpec, requirements, requirementsUnsupported, structuralStats, truncatedFindingCount: truncatedCount,
+        noVerdictCount: 0, duplicateIndexCount: 0, truncated: false, pixelDiff,
+        aggregate, diffMode: mode, matchedFraction, matchTierCounts, diffDebug,
+        fullPageTruncated: !!c.fullPage.truncated,
+      });
+      continue;
+    }
 
     onStatus?.(`Analyzing ${c.label}…`);
     const reportRes = await chrome.runtime.sendMessage({
       action: 'reportVisualDiffFindings',
       payload: {
         winId: WIN_ID, runId, baselineLabel: base.label, variantLabel: c.label,
-        findings: kept, stats: structuralStats, ticketVariantText: ticketText || null,
+        findings: kept, stats: structuralStats, ticketVariantText: gradedSpec || null,
+        // null when withheld: nothing downstream should reason about the
+        // source of a spec whose text was not supplied.
+        specSource: specStale ? null : (abState.summarySource || null), pixelDiff,
       },
     });
     if (!reportRes?.ok) {
       if (reportRes?.stoppedAbort) { stopped = true; perVariant.push({ label: c.label, skipped: true, reason: 'Stopped' }); break; }
-      perVariant.push({ label: c.label, error: reportRes?.error || 'Analysis failed' });
+      // The deterministic half of this variant is DONE, and needed no network
+      // to do it: matching, suppression, grouping, the pixel backstop, and —
+      // since 208390a — the requirement coverage, which is now the single most
+      // reliable output in the report. Discarding all of that because ONE model
+      // call failed is backwards.
+      //
+      // Measured: run 1788193353815 lost a complete diff and 70 checked
+      // requirements to a "Failed to fetch" reaching api.anthropic.com, and
+      // reported nothing at all. Degrade to UNGRADED instead — findings with no
+      // classification land in the renderer's "unjudged, not cleared" bucket
+      // (5ed70e5), which is exactly what they are.
+      perVariant.push({
+        label: c.label, sameUrlNote, findings: kept, overallSummary: null,
+        gradingFailed: reportRes?.error || 'Analysis failed',
+        noSpecText: !gradedSpec, requirements, requirementsUnsupported,
+        structuralStats, truncatedFindingCount: truncatedCount,
+        noVerdictCount: 0, duplicateIndexCount: 0, truncated: false, pixelDiff,
+        aggregate, diffMode: mode, matchedFraction, matchTierCounts, diffDebug,
+        fullPageTruncated: !!c.fullPage.truncated,
+      });
       continue;
     }
 
-    // Join Opus's classification back onto the full Stage-2 finding records
-    // — Opus never saw controlBlock/variantBlock/rect directly, only a text
-    // summary of them, so those fields still need to come from `kept`.
+    // Join the model's classification back onto the full diff records — it
+    // never saw controlBlock/variantBlock/rect directly, only a text summary
+    // of them, so those fields still need to come from `kept`.
     const byId = new Map(reportRes.findings.map(f => [f.findingId, f]));
     let findings = kept.map(f => ({ ...f, ...(byId.get(f.findingId) || {}) }));
 
@@ -3465,16 +4071,20 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
       onStatus?.(`Cropping ${c.label}…`);
       const cropRes = await chrome.runtime.sendMessage({
         action: 'cropVisualDiffFindings',
-        payload: { winId: WIN_ID, baselineLabel: base.label, variantLabel: c.label, findings },
+        payload: {
+          winId: WIN_ID, baselineLabel: base.label, variantLabel: c.label, findings,
+          basePageW: base.fullPage?.pageW ?? null, variantPageW: c.fullPage?.pageW ?? null,
+        },
       });
       if (cropRes?.ok) findings = findings.map(f => ({ ...f, ...(cropRes.crops[f.findingId] || {}) }));
     }
 
     perVariant.push({
-      label: c.label, findings, overallSummary: reportRes.overallSummary,
-      noSpecText: !ticketText, structuralStats, truncatedFindingCount: truncatedCount,
+      label: c.label, sameUrlNote, findings, overallSummary: reportRes.overallSummary,
+      noSpecText: !gradedSpec, requirements, requirementsUnsupported, structuralStats, truncatedFindingCount: truncatedCount,
       noVerdictCount: reportRes.noVerdictCount, duplicateIndexCount: reportRes.duplicateIndexCount,
       truncated: reportRes.truncated, pixelDiff: reportRes.pixelDiff,
+      aggregate, diffMode: mode, matchedFraction, matchTierCounts, diffDebug,
       fullPageTruncated: !!c.fullPage.truncated,
     });
   }
@@ -3483,6 +4093,24 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
   // during the LAST variant's calls aborts inside background.js and the
   // loop then ends naturally, which would otherwise finalize as 'completed'
   // and hide the resume banner for a run the user did interrupt.
+  // Every variant turned out to be Control. Nothing was compared, so the run
+  // has no result at all — say that once at the top rather than leaving the
+  // reader to infer it from a list of per-variant errors.
+  const analysed = perVariant.filter(v => !v.skipped);
+  if (analysed.length && analysed.every(v => v.controlDuplicate)) {
+    await finalizeVisualDiffCheckpoint(WIN_ID, runId, 'completed');
+    chrome.runtime.sendMessage({ action: 'clearVisualDiffCaptures', payload: { winId: WIN_ID } }).catch(() => {});
+    return {
+      skipped: true, baselineLabel: base.label, baselineWarning, perVariant,
+      reason: `Every target resolved to the same page as Control ("${base.label}"), so nothing was compared. `
+        + 'Check that each variant carries its own forced-variant parameter and that none of them redirect onto Control.',
+    };
+  }
+
+  // Runs after every variant is analysed, so it can see the whole set. Mutates
+  // each variant's findings in place to strip what it lifts out.
+  const sharedFindings = vdExtractSharedFindings(perVariant);
+
   const wasStopped = stopped || _abVisualDiffStopRequested;
   await finalizeVisualDiffCheckpoint(WIN_ID, runId, wasStopped ? 'stopped' : 'completed');
   // Best-effort — frees the stored full-page PNGs (and DOM candidates) in
@@ -3490,7 +4118,7 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
   // teardown to do it.
   chrome.runtime.sendMessage({ action: 'clearVisualDiffCaptures', payload: { winId: WIN_ID } }).catch(() => {});
 
-  return { skipped: false, baselineLabel: base.label, baselineWarning, perVariant };
+  return { skipped: false, baselineLabel: base.label, baselineWarning, perVariant, sharedFindings };
 }
 
 // ── Optional per-variant interaction heatmap (opt-in extra on Keep tabs open) ─
@@ -3674,10 +4302,17 @@ let _idb = null;
 function idb() {
   if (_idb) return Promise.resolve(_idb);
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, 1);
+    // v2 added the `figma` store for downscaled comp images. Both creates are
+    // guarded by contains(), so an install at v1 gains only `figma` and an
+    // install from scratch gets both — onupgradeneeded runs for every version
+    // it steps through, and `sessions` must survive untouched either way.
+    const req = indexedDB.open(IDB_NAME, 2);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('sessions')) db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
+      // Out-of-line keys: the caller supplies the ticket key, so a re-extract
+      // of the same ticket replaces its comp rather than accumulating copies.
+      if (!db.objectStoreNames.contains('figma')) db.createObjectStore('figma');
     };
     req.onsuccess = () => { _idb = req.result; resolve(_idb); };
     req.onerror = () => reject(req.error);
@@ -4599,8 +5234,23 @@ function rptAbSection(entry) {
 // result shape ({findings, overallSummary, structuralStats, pixelDiff, ...}
 // — see runVisualDiffPipeline). Rendered as inert markup instead of live,
 // collapsible DOM — a report has no toggle state to preserve, so every
-// section renders open except the usually-uninteresting "expected" bucket,
-// kept collapsed via <details> to match the old inline version's own choice.
+// section renders open.
+//
+// Nothing is gated on `classification`. The "expected" bucket used to be
+// collapsed into a <details>, inherited from the old inline version, and two
+// runs of ENOC-97 taken 106 seconds apart showed why that cannot stand: the
+// deterministic diff was byte-identical down to a matchedFraction of
+// 0.24285714285714285 and a pixelDiff of 0.6694682506079291, and the report
+// call still graded the same seven findings 7-expected on one run and
+// 5-expected/2-unclear on the next. The run that graded 7/7 collapsed every
+// finding, so a real question — a footer that matched 11/11 against a ticket
+// asking for new disclaimer copy — was in the report only as a closed
+// triangle, while the other run surfaced it. Sampling variance cannot be
+// removed here: `temperature` is not a parameter on claude-opus-5 (it is
+// removed on the whole current family and returns a 400), so the fix is to
+// stop letting an unstable label decide VISIBILITY. It still decides order
+// and it still gets a chip; it no longer decides whether a reader sees the
+// finding at all.
 function rptAbVisualDiffSection(vd) {
   if (!vd) return '';
   if (vd.skipped) {
@@ -4614,11 +5264,42 @@ function rptAbVisualDiffSection(vd) {
   // added/removed/modified/unchanged. Derived here from status +
   // changeSignals so the vocabulary a reader sees stays familiar.
   const findingType = (f) => {
+    // A rollup used to fall through to 'other', which is why a redesign-mode
+    // report read "Other main —" for a whole-region summary. It now labels
+    // itself, which is what makes a two-tier report (regions for orientation,
+    // elements for detail) legible without any structural renderer change.
+    if (f.changeClass === 'region-rollup') return 'region';
     if (f.status === 'added' || f.status === 'removed') return f.status;
+    if (f.status === 'style-changed') return 'style';
     const signals = f.changeSignals || [];
     if (signals.includes('text-changed')) return 'copy';
     if (signals.some(s => s.startsWith('moved-vertically') || s === 'resized')) return 'layout';
     return 'other';
+  };
+
+  // Inline-styled rather than a class: the grade now appears on every row
+  // instead of being implied by which bucket a row was filed under, and
+  // qa-report.html is a separate document from the two popup shells, so a
+  // chip that carries its own colour needs no third stylesheet edit.
+  const GRADE_STYLE = {
+    unexpected: 'background:#fdecea;color:#a3261a;border-color:#f2c2bb',
+    unclear: 'background:#fff6e5;color:#8a5a00;border-color:#f0dcb0',
+    expected: 'background:#f1f3f5;color:#666;border-color:#dcdfe3',
+  };
+  // Severity rides in the same chip rather than getting its own. The model
+  // emits it for every non-`expected` finding and it was rendered NOWHERE —
+  // computed, exported to the debug log, and dropped on the floor, so the one
+  // per-finding urgency signal the pipeline produces never reached a reader.
+  // Shown, not sorted on: measured across runs 5 and 6 of ENOC-97, the same
+  // finding came back `low` then `medium` from a BYTE-IDENTICAL prompt
+  // (engineNote, spec text and structuralStats all unchanged), so it is a
+  // label like the grade beside it and must not order or gate anything.
+  const SEV_OK = { low: 1, medium: 1, high: 1 };
+  const gradeChip = (f) => {
+    const g = f.classification;
+    if (!g || !GRADE_STYLE[g]) return '';
+    const sev = SEV_OK[f.severity] ? ` · ${q(f.severity)}` : '';
+    return `<span style="display:inline-block;border:1px solid;border-radius:3px;padding:0 4px;margin-right:5px;font-size:9px;text-transform:uppercase;letter-spacing:.03em;${GRADE_STYLE[g]}">${q(g)}${sev}</span>`;
   };
 
   const findingRow = (f, resumedVariant) => {
@@ -4637,7 +5318,7 @@ function rptAbVisualDiffSection(vd) {
     const label = f.controlBlock?.label || f.variantBlock?.label || '';
     return `<div class="ab-line">
       ${media}
-      <div class="ab-cline"><span class="ab-delta">${q(findingType(f))}</span> ${q(label)}${label ? ' — ' : ''}${q(f.note || '')}</div>
+      <div class="ab-cline">${gradeChip(f)}<span class="ab-delta">${q(findingType(f))}</span> ${q(label)}${label ? ' — ' : ''}${q(f.note || '')}</div>
     </div>`;
   };
 
@@ -4645,16 +5326,50 @@ function rptAbVisualDiffSection(vd) {
   // ONLY 'unclear' verdicts by construction, so treating 'unexpected' as the
   // only signal would report 0 issues for a variant that actually surfaced
   // real findings.
+  // Requirements that are demonstrably unmet: absent copy, plus copy that
+  // shipped with different wording. A `fragment` near-match is not a defect —
+  // the wording is unchanged, only how much of it one element carries — so it
+  // must not badge. This half is byte-reproducible across runs.
+  const unmetRequirements = (v) => {
+    const r = v.requirements;
+    if (!r || !r.items) return 0;
+    return r.absent + r.items.filter(x => x.status === 'near' && !x.fragment).length;
+  };
   const variantIssueCount = (v) => {
     if (v.skipped || v.error) return 0;
     const findings = v.findings || [];
     const unexpected = findings.filter(f => f.classification === 'unexpected').length;
     const unclear = findings.filter(f => f.classification === 'unclear').length;
-    return v.noSpecText ? unexpected + unclear : unexpected;
+    // The model half, unchanged in behaviour — it still catches semantic
+    // problems no string comparison can (on run 1787947608728 the removed TCPA
+    // consent disclaimer was one of these, graded 'unclear').
+    const model = v.noSpecText ? unexpected + unclear : unexpected;
+    // The deterministic half. Measured across twelve runs the model produced
+    // four different classification vectors on identical input, so a badge
+    // resting on it alone moves for no reason. A missing quoted requirement
+    // now badges regardless of what the model said about it.
+    return unmetRequirements(v) + model;
   };
-  const totalIssues = (vd.perVariant || []).reduce((n, v) => n + variantIssueCount(v), 0);
-  const badge = totalIssues ? rptBadge('issues', 'ISSUES FOUND') : rptBadge('pass', 'PASS');
-  const summary = `Visual Diff vs ${vd.baselineLabel} (AI-compared)${vd.baselineWarning ? ' — ' + vd.baselineWarning : ''}`;
+  const shared = vd.sharedFindings || [];
+  // Shared changes were lifted out of every variant, so they must be counted
+  // here or a run whose only findings are common to all variants would tally
+  // zero issues and badge PASS.
+  const sharedIssueCount = shared.filter(f =>
+    f.classification === 'unexpected' || (f.classification === 'unclear')).length;
+  const totalIssues = (vd.perVariant || []).reduce((n, v) => n + variantIssueCount(v), 0) + sharedIssueCount;
+  // A Control-vs-Control variant contributes no findings, and variantIssueCount
+  // returns 0 for anything errored — so without this a run where the experiment
+  // never applied would badge a green PASS. That is the one verdict this
+  // section must never show for a comparison that did not happen.
+  const dupVariants = (vd.perVariant || []).filter(v => v.controlDuplicate);
+  const badge = dupVariants.length ? rptBadge('fail', 'NOT COMPARED')
+    : totalIssues ? rptBadge('issues', 'ISSUES FOUND')
+    : rptBadge('pass', 'PASS');
+  let summary = `Visual Diff vs ${vd.baselineLabel}${vd.baselineWarning ? ' — ' + vd.baselineWarning : ''}`;
+  if (dupVariants.length) {
+    summary += ` — ${dupVariants.length} variant(s) resolved to the same page as Control and were not compared. `
+      + 'Their lack of findings is not a pass.';
+  }
 
   const variantSections = (vd.perVariant || []).map(v => {
     if (v.skipped) return `<h3>${q(v.label)}</h3><p class="rpt-muted">Skipped — ${q(v.reason || 'not captured')}</p>`;
@@ -4664,12 +5379,73 @@ function rptAbVisualDiffSection(vd) {
     const unexpected = findings.filter(f => f.classification === 'unexpected');
     const unclear    = findings.filter(f => f.classification === 'unclear');
     const expected    = findings.filter(f => f.classification === 'expected');
+    // Anything the model returned without a usable verdict. Filtering into
+    // three named buckets and rendering only those three DROPPED these
+    // outright — v.noVerdictCount below has always told the reader such
+    // findings exist, and the report then showed none of them. That is the
+    // collapse bug in its worst form: not hidden behind a triangle, absent.
+    // Ordered above `expected` deliberately: "the model did not judge this"
+    // needs a human more than "the model judged this intended" does.
+    const GRADED = { unexpected: 1, unclear: 1, expected: 1 };
+    const ungraded = findings.filter(f => !GRADED[f.classification]);
     const s = v.structuralStats || {};
 
-    const summaryHtml = v.overallSummary ? `<p>${q(v.overallSummary)}</p>` : '';
+    // Requirement coverage leads the variant, above the model's prose, because
+    // it is the one part of this report that answers "does it match the spec?"
+    // reproducibly. Run 1787947608728 put 3 actionable findings behind 64 rows
+    // graded 'expected'; this is the line that answers the question without
+    // reading any of them.
+    const req = v.requirements;
+    const unmet = req && req.items
+      ? req.items.filter(x => x.status === 'absent' || (x.status === 'near' && !x.fragment))
+      : [];
+    const fragments = req && req.items ? req.items.filter(x => x.status === 'near' && x.fragment).length : 0;
+    const gradeFailHtml = v.gradingFailed ? `
+      <div class="ab-cline ab-warn"><b>Not graded.</b> The model call failed (${q(v.gradingFailed)}), so nothing below is judged
+      expected vs unexpected. The diff itself, the reflow suppression and the specified-copy check all completed without it.</div>` : '';
+    const reqHtml = !req || !req.total ? '' : `
+      <div class="ab-cline${unmet.length ? ' ab-warn' : ''}"><b>Specified copy:</b> ${req.verbatim} of ${req.total} found verbatim${
+        unmet.length ? ` · <b>${unmet.length} unmet</b>` : ''}${
+        fragments ? ` · ${fragments} partially present` : ''}. Checked by exact string comparison against every element, not by the model.</div>
+      ${unmet.map(x => `<div class="ab-cline">${
+        x.status === 'near'
+          ? `Spec says ${q(JSON.stringify(x.required))} — page has ${q(JSON.stringify(x.foundText))}.`
+          : `Not found on the page: ${q(JSON.stringify(x.required))}.${x.inControl ? ' Still present in Control, so the old copy did not change.' : ''}`
+      }</div>`).join('')}`;
+
+    const summaryHtml = gradeFailHtml + reqHtml + (v.overallSummary ? `<p>${q(v.overallSummary)}</p>` : '');
+
+    // MANDATORY, not cosmetic. Every entry here is a filter that removed a
+    // real difference from the findings above, and an invisible filter is
+    // worse than the noise it removes — a reader who can't see that 38
+    // elements were dropped as page reflow has no way to tell a clean diff
+    // from an over-aggressive one. If suppression ever hides a genuine
+    // regression, this line is what makes that discoverable.
+    const agg = v.aggregate || {};
+    const reflowDetail = [
+      agg.reflowPxMax ? `up to ${Math.round(agg.reflowPxMax)}px vertically` : '',
+      agg.reflowHorizontal ? `${agg.reflowHorizontal} of them a horizontal grid re-wrap` : '',
+    ].filter(Boolean).join(', ');
+    const suppressed = [
+      agg.reflow ? `${agg.reflow} suppressed as page reflow${reflowDetail ? ` (${reflowDetail})` : ''}` : '',
+      agg.punctuationOnly ? `${agg.punctuationOnly} punctuation- or whitespace-only` : '',
+      agg.numericOnly ? `${agg.numericOnly} live counter${agg.numericOnly === 1 ? '' : 's'}` : '',
+    ].filter(Boolean);
+
     const notes = [
       v.noSpecText ? '<div class="ab-cline">No Summary of Changes provided — differences are described but not judged expected vs unexpected.</div>' : '',
-      (s.addedCount || s.removedCount || s.modifiedCount) ? `<div class="ab-cline rpt-muted">${s.addedCount || 0} added, ${s.removedCount || 0} removed, ${s.modifiedCount || 0} modified, ${s.unchangedCount || 0} unchanged content block${s.unchangedCount === 1 ? '' : 's'} detected.</div>` : '',
+      suppressed.length ? `<div class="ab-cline rpt-muted">Filtered before analysis: ${q(suppressed.join(', '))}.</div>` : '',
+      // Which identity key actually matched each element. Instrumentation for
+      // the load-bearing assumption behind the whole matching scheme — that a
+      // structural path survives what experiment JS does to a page. If the
+      // 'path' tier is starved on real forced-variant URLs, elements are
+      // being carried by the text tiers alone and a copy rewrite inside a
+      // restructured subtree would fall through to add/remove.
+      v.matchTierCounts && Object.keys(v.matchTierCounts).length
+        ? `<div class="ab-cline rpt-muted">Matched by: ${q(Object.entries(v.matchTierCounts).sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t} ${n}`).join(', '))}.</div>`
+        : '',
+      v.diffMode === 'redesign' ? `<div class="ab-cline ab-warn">Only ${Math.round((v.matchedFraction || 0) * 100)}% of elements have a counterpart in ${q(vd.baselineLabel)} — this looks like a wholesale redesign rather than a targeted experiment, so differences are summarized per page region instead of element by element.</div>` : '',
+      (s.addedCount || s.removedCount || s.modifiedCount || s.styleChangedCount) ? `<div class="ab-cline rpt-muted">${s.addedCount || 0} added, ${s.removedCount || 0} removed, ${s.modifiedCount || 0} modified, ${s.styleChangedCount || 0} style-changed, ${s.unchangedCount || 0} unchanged content block${s.unchangedCount === 1 ? '' : 's'} detected.</div>` : '',
       v.pixelDiff?.flagged ? `<div class="ab-cline ab-warn">${Math.round(v.pixelDiff.ratio * 100)}% of pixels differ across the page (including any changes already described above) — review directly if this seems high relative to the findings above.</div>` : '',
       v.fullPageTruncated ? '<div class="ab-cline ab-warn">Page exceeds the 8000px capture limit — content below the cutoff was not evaluated.</div>' : '',
       abState.qaMode ? '<div class="ab-cline">QA Mode is on — its on-page badge usually shows the variant’s own name, so it may appear as a difference here even though it isn’t one.</div>' : '',
@@ -4683,13 +5459,23 @@ function rptAbVisualDiffSection(vd) {
     const body = summaryHtml + notes + (findings.length ? `
       ${unexpected.map(f => findingRow(f, v.resumed)).join('')}
       ${unclear.map(f => findingRow(f, v.resumed)).join('')}
-      ${expected.length ? `<details><summary style="cursor:pointer;font-size:11px;color:#777">${expected.length} expected difference${expected.length !== 1 ? 's' : ''}</summary>${expected.map(f => findingRow(f, v.resumed)).join('')}</details>` : ''}
-    ` : (v.overallSummary ? '' : '<p class="rpt-muted">No differences detected.</p>'));
+      ${ungraded.length ? `<div class="ab-cline ab-warn" style="margin-top:8px">${ungraded.length} finding${ungraded.length !== 1 ? 's' : ''} came back without a usable verdict — unjudged, not cleared. Review directly.</div>${ungraded.map(f => findingRow(f, v.resumed)).join('')}` : ''}
+      ${expected.length ? `<div class="ab-cline rpt-muted" style="margin-top:8px">${expected.length} difference${expected.length !== 1 ? 's' : ''} graded expected against the spec, shown in full. This grade and its severity are model judgments, both measured to move between runs on a byte-identical prompt — read the findings rather than trusting the label.</div>${expected.map(f => findingRow(f, v.resumed)).join('')}` : ''}
+    ` : `<p class="rpt-muted">${shared.length
+        ? 'Nothing unique to this variant — every difference it has from ' + q(vd.baselineLabel) + ' is listed under “Common to all variants” above.'
+        : 'No differences detected.'}</p>`);
 
     return `<h3>${q(v.label)}${v.resumed ? ' <span class="rpt-muted" style="font-size:9px">(resumed)</span>' : ''}</h3>${body}`;
   });
 
-  return rptSection('Visual Diff (AI)', badge, summary, variantSections.join(''));
+  // Reported once, before the per-variant sections, because it is the same
+  // change in every variant — not a per-variant finding repeated N times.
+  const sharedHtml = shared.length ? `
+    <h3>Common to all variants <span class="rpt-muted" style="font-size:9px">(${shared.length} change${shared.length !== 1 ? 's' : ''} vs ${q(vd.baselineLabel)}, identical in ${q((shared[0].sharedAcross || []).join(', '))})</span></h3>
+    <p class="rpt-muted">These differ from ${q(vd.baselineLabel)} in exactly the same way in every variant, so they are listed once here rather than repeated under each. They are still real differences from Control — review them.</p>
+    ${shared.map(f => findingRow(f, false)).join('')}` : '';
+
+  return rptSection('Visual Diff (AI)', badge, summary, sharedHtml + variantSections.join(''));
 }
 
 function rptWcagSection(entry) {
@@ -4780,6 +5566,29 @@ function rptFunnelSection(entry) {
 
 // ── Report assembly (pure body builder) + open in a bundled tab ─────────────
 // Formats data already produced by each mode's own run — no DOM reads.
+// Everything that degraded this run, in one place, at the end of the report.
+// The per-section prose already mentions most of these individually, but
+// scattered across sections and interleaved with findings — which is how a
+// run with a truncated page, an unmatched watched selector, and 12 capped
+// findings can still read as clean. Collected here they read as what they
+// are: the limits on how much this report is worth trusting.
+function rptDiagnosticsSection(problems) {
+  const errors = problems.filter(p => p.severity === 'error');
+  const warns = problems.filter(p => p.severity === 'warn');
+  const infos = problems.filter(p => p.severity === 'info');
+  if (!problems.length) {
+    return rptSection('Run Diagnostics', rptBadge('pass', 'CLEAN'),
+      'Nothing degraded this run — every page loaded, captured, and compared in full.', '');
+  }
+  const row = (p) => `<tr><td>${esc(p.severity.toUpperCase())}</td><td>${esc(p.where)}</td><td>${esc(p.detail)}</td></tr>`;
+  const body = `<table class="rpt-table"><thead><tr><th>Level</th><th>Where</th><th>Detail</th></tr></thead>
+      <tbody>${errors.concat(warns, infos).map(row).join('')}</tbody></table>
+    <p class="rpt-muted">Download the debug log from the button at the top of this page for the underlying numbers — match tiers, reflow bands, per-finding geometry, and the unmatched residue.</p>`;
+  const badge = errors.length ? rptBadge('fail', 'DEGRADED') : rptBadge('issues', 'CAVEATS');
+  return rptSection('Run Diagnostics', badge,
+    `${errors.length} error(s), ${warns.length} warning(s), ${infos.length} note(s) affecting how much of this run completed`, body);
+}
+
 function buildReportBody(sections) {
   const { ts, pageUrls, modes, extraHtml } = sections;
   const builders = {
@@ -4787,7 +5596,9 @@ function buildReportBody(sections) {
     4: rptWcagSection, 5: rptCvaSection, 6: rptPerfSection,
     funnel: rptFunnelSection,
   };
-  const body = (extraHtml || '') + modes.map(entry => (builders[entry.mode] || (() => ''))(entry)).join('');
+  let diagnosticsHtml = '';
+  try { diagnosticsHtml = rptDiagnosticsSection(vdCollectProblems(sections)); } catch (_) {}
+  const body = (extraHtml || '') + modes.map(entry => (builders[entry.mode] || (() => ''))(entry)).join('') + diagnosticsHtml;
   const urlsHtml = pageUrls.length
     ? pageUrls.map(u => `<li>${esc(u)}</li>`).join('')
     : '<li>No page URLs recorded.</li>';
@@ -4807,6 +5618,459 @@ function buildReportBody(sections) {
     ${body}`;
 }
 
+// ── Debug log ───────────────────────────────────────────────────────────────
+// Exported alongside the report, as JSON, from a button on the report page.
+// The rendered report answers "what changed"; this answers "why should I
+// believe it", and it exists because the first real Visual Diff run couldn't
+// answer the second question from the report alone — the numbers said
+// something was wrong without saying what, and the cause had to be found by
+// reconstructing the page's geometry by hand offline.
+//
+// `problems` comes first and is the point of the file: every way this run was
+// degraded, incomplete, or working from a guess, collected in one list
+// instead of scattered across per-section prose. A clean run yields an empty
+// array, which is itself the useful signal.
+// ── Design reference diagnostics ───────────────────────────────────────────
+// Everything about WHY the spec text and the Control resolution came out the
+// way they did. Both are ticket-derived, both fail silently, and both failures
+// look identical from the outside — "no Summary of Changes" reads the same
+// whether no ticket was active, the ticket had no variant descriptions, or the
+// user simply didn't type one. Two debugging rounds were spent on exactly that
+// ambiguity before this existed.
+function buildDesignReferenceDebug(ctx, state, hasFigmaPat) {
+  const variants = ctx?.variants || [];
+  const previewLinks = ctx?.previewLinks || [];
+  const summary = (state?.summaryOfChanges || '').trim();
+  return {
+    ticketContext: !ctx ? null : {
+      ticketKey: ctx.ticketKey || null,
+      reviewed: !!ctx.reviewed,
+      variantCount: variants.length,
+      // The two fields the autofill and the baseline resolver actually read.
+      // A context can be present and reviewed and still be useless to both.
+      variantsWithDescription: variants.filter(v => (v.rawDescription || '').trim()).length,
+      controlVariantId: (variants.find(v => v.isControl) || {}).id || null,
+      variantIds: variants.map(v => v.id),
+      previewLinkCount: previewLinks.length,
+      previewLinkIds: previewLinks.map(l => l.id),
+    },
+    summaryOfChanges: {
+      present: !!summary,
+      length: summary.length,
+      source: summary ? (state?.summarySource || 'unknown') : null,
+      // WHICH ticket auto-filled it. `source: 'ticket'` was true and useless —
+      // it never said which one, and the box persists across ticket switches.
+      // null for hand-typed text and for state persisted before this existed.
+      ticketKey: summary ? (state?.summaryTicketKey || null) : null,
+      // The text itself, not just its length. Every expected/unexpected
+      // verdict in the report is relative to this string, and both model
+      // calls quote it back as justification — the agentic note and the
+      // report's own per-finding notes. Recording only `length: 11716` meant
+      // a claim like "the ticket specifies updated disclaimer footnotes"
+      // could not be checked against anything, which came up on ENOC-97 when
+      // two runs made opposite claims about the footer and the log had no way
+      // to say which one had read the ticket correctly. Uncapped on purpose:
+      // a truncated spec is exactly as unverifiable as an absent one.
+      text: summary || null,
+    },
+    figma: {
+      urlUsed: (state?.figmaUrl || '').trim() || null,
+      urlFromTicket: ctx?.figmaUrl || null,
+      nodeId: ctx?.figmaNodeId || null,
+      tokenConfigured: !!hasFigmaPat,
+      comp: ctx?.compAttachment
+        ? { filename: ctx.compAttachment.filename, w: ctx.compAttachment.w, h: ctx.compAttachment.h }
+        : null,
+      compCandidateCount: (ctx?.compCandidates || []).length,
+    },
+  };
+}
+
+function vdCollectProblems(sections) {
+  const problems = [];
+  const add = (severity, where, detail) => problems.push({ severity, where, detail });
+
+  // Spec text and Control resolution first — both are ticket-derived, both
+  // degrade the entire report rather than one finding, and both are invisible
+  // in the findings themselves.
+  const dr = sections.designReference;
+  if (dr) {
+    const tc = dr.ticketContext;
+    if (!dr.summaryOfChanges.present) {
+      add('error', 'summary-of-changes',
+        'Empty, so every finding is "unclear" — nothing was judged expected vs unexpected. '
+        + (!tc ? 'No ticket context was active, and nothing was typed manually.'
+              : tc.variantCount === 0
+                // Zero variants and zero-with-descriptions are different
+                // failures with different fixes, and the count of preview
+                // links separates them: links come from the AI extraction,
+                // variants from the deterministic Test Specifications parse,
+                // so links-without-variants localises the fault precisely.
+                ? `Ticket ${tc.ticketKey} is active but NO variants were parsed from it`
+                  + (tc.previewLinkCount ? ` (though ${tc.previewLinkCount} preview link(s) were found)` : '')
+                  + ". Its Test Specifications section is missing or in a shape the parser doesn't recognise — check the ticket, or type a summary by hand."
+                : tc.variantsWithDescription === 0
+                  ? `Ticket ${tc.ticketKey} parsed ${tc.variantCount} variant(s) but none carry a description, so the auto-fill had nothing to write. Check the ticket's Test Specifications section, or type a summary by hand.`
+                  : 'The ticket has variant descriptions, so the auto-fill should have run — it only fills an EMPTY box, so a stale empty value may have been persisted.'));
+    } else {
+      // A spec auto-filled from one ticket and used against another. This has
+      // to be an error, not a warning: run 1787945015802 graded 61 of 67
+      // findings "unexpected" on ENOC-97 against a Zapier contact-sales form
+      // spec, and without this line the only clue was that the verdicts looked
+      // wrong. Deliberately silent in three cases — 'manual' (typed on
+      // purpose, possibly for a page with no ticket at all), no recorded
+      // specKey (state persisted before provenance existed; would fire once
+      // for every existing session), and no active ticket.
+      const specKey = dr.summaryOfChanges.ticketKey;
+      const activeKey = tc && tc.ticketKey;
+      // Same predicate the pipeline gated on, so the error and the withholding
+      // can never disagree. hasText is true: this is the spec-present branch.
+      const stale = vdSpecTicketMismatch(dr.summaryOfChanges.source, specKey, activeKey, true);
+      if (stale) {
+        add('error', 'summary-of-changes',
+          `The spec text was auto-filled from ticket ${specKey}, but this run is against ${activeKey}. `
+          + 'Every expected/unexpected verdict would have been relative to a different experiment, so grading was WITHHELD — '
+          + 'every finding below is "unclear" and no severity was assigned. The wrong spec text is still recorded in this log '
+          + `(${dr.summaryOfChanges.length} chars) so it can be identified. Re-run with ${activeKey} active; the auto-fill now refreshes a spec left over from another ticket.`);
+      } else {
+        add('info', 'summary-of-changes', `Spec text came from: ${dr.summaryOfChanges.source} (${dr.summaryOfChanges.length} chars)${specKey ? `, ticket ${specKey}` : ''}. Every expected/unexpected verdict below is relative to it.`);
+      }
+    }
+
+    if (tc && tc.variantCount && !tc.controlVariantId) {
+      add('warn', 'ticket-context',
+        `Ticket ${tc.ticketKey} has no variant flagged as Control (ids: ${tc.variantIds.join(', ') || 'none'}), so Control could not be resolved from it and the first target was used instead.`);
+    }
+    if (tc && tc.variantCount && !tc.previewLinkCount) {
+      add('warn', 'ticket-context', `Ticket ${tc.ticketKey} parsed ${tc.variantCount} variant(s) but no preview links, so tested URLs cannot be mapped back to ticket variants.`);
+    }
+    if (tc && !tc.variantCount && tc.previewLinkCount) {
+      add('warn', 'ticket-context', `Ticket ${tc.ticketKey} parsed ${tc.previewLinkCount} preview link(s) but no variants. Those come from different parsers — the links are AI-extracted, the variants are read deterministically from Test Specifications — so this points at that section specifically, not at the ticket as a whole.`);
+    }
+
+    // Figma reference state — absent is normal and silent; present-but-unusable is not.
+    if (dr.figma.urlFromTicket && !dr.figma.tokenConfigured) {
+      add('warn', 'design-reference', 'The ticket has a Figma link but no Figma token is configured — add one in Settings to read the board.');
+    }
+    if (dr.figma.urlFromTicket && !dr.figma.nodeId) {
+      add('warn', 'design-reference', 'The ticket\'s Figma link points at the whole file rather than a specific board (no node-id).');
+    }
+    if (!dr.figma.comp && dr.figma.compCandidateCount) {
+      add('info', 'design-reference', `No attachment matched the {TICKET}_comp convention; ${dr.figma.compCandidateCount} other image(s) are attached.`);
+    }
+  }
+
+  for (const entry of sections.modes || []) {
+    if (entry.status === 'skipped') add('info', entry.name || `mode ${entry.mode}`, `Skipped — ${entry.reason || 'no reason recorded'}`);
+    if (entry.error) add('error', entry.name || `mode ${entry.mode}`, entry.error);
+    if (entry.mode !== 2 || !entry.data) continue;
+
+    // Geometry mismatch invalidates the whole comparison, so it is checked
+    // before anything else and reported as an error, not a note. Comparing a
+    // responsive page captured at two different widths compares two layouts,
+    // not two variants — and the failure is silent by nature: the diff still
+    // completes and still reports a finding count, it is just measuring the
+    // wrong thing. A real run did exactly this (Control 1693px, variants
+    // 1470px) and read as a clean 2-finding result.
+    const baseCap = (entry.data.captures || []).find(c => c.fullPage && !c.fullPage.error);
+    for (const c of entry.data.captures || []) {
+      if (c.skipped) add('warn', `capture/${c.label}`, `Not captured — ${c.reason || 'run stopped'}`);
+      // Which variation the platform actually served. Reported per capture
+      // because it is the precondition for every verdict downstream: a QA run
+      // that cannot say which page it photographed has nothing trustworthy to
+      // say about whether that page matches the spec. Replaces guessing from
+      // the final URL, which fired on 19 of 19 recorded ONDECK runs and could
+      // never be confirmed or dismissed.
+      const ver = vdCaptureVerification(c);
+      if (ver.state === 'unsupported') {
+        add('warn', `capture/${c.label}`, `Variation could not be checked — ${ver.reason}.`);
+      } else if (ver && ver.state === 'contradicted') {
+        add('error', `capture/${c.label}`,
+          `The page did not serve the variation this run asked for — ${ver.reason}.`
+          + ' The diff below is a real comparison of two real pages, but it is not a comparison of Control against this variant,'
+          + ' so no verdict from it applies to the experiment. Re-run once the forced-variant link is working.');
+      } else if (ver && ver.state === 'unknown' && !c.skipped) {
+        add('warn', `capture/${c.label}`,
+          `Could not confirm which variation this page served — ${ver.reason}.`
+          + ' Findings below still describe real differences, but nothing here attributes them to the intended variant.');
+      } else if (ver && ver.state === 'confirmed') {
+        add('info', `capture/${c.label}`,
+          `Variation confirmed by the platform: ${ver.variationName || ver.variationId}`
+          + `${ver.experimentName ? ` in "${ver.experimentName}"` : ''} — this page is the one the URL asked for.`);
+      }
+      if (c.loadError) add('error', `capture/${c.label}`, `Page load failed — ${c.loadError}`);
+      if (c.fullPage?.error) add('error', `capture/${c.label}`, `Full-page capture failed — ${c.fullPage.error}`);
+      if (c.fullPage?.geometryPinFailed) {
+        add('error', `capture/${c.label}`, `Could not pin this capture to the baseline's viewport (${c.fullPage.geometryPinFailed}) — widths may differ, which would invalidate the comparison.`);
+      }
+      // Real blind spot, not cosmetic: nothing below the cutoff is compared
+      // at all, so a regression down there cannot be reported as anything.
+      if (c.fullPage?.truncated) {
+        // The DOM walk now covers the full page, so this is no longer a
+        // comparison blind spot — only a *visual* one. Say which, precisely:
+        // reporting "never compared" when text, colors, layout and element
+        // presence were in fact all compared would understate the tool, and
+        // reporting nothing would overstate it.
+        const missedPct = Math.round((1 - c.fullPage.capturedH / c.fullPage.pageH) * 100);
+        add('info', `capture/${c.label}`,
+          `Page is ${c.fullPage.pageH}px tall; the screenshot stops at ${c.fullPage.capturedH}px. `
+          + `Text, colors, layout and element presence were still compared over the whole page — but for the bottom ${missedPct}% `
+          + 'there is no image, so the pixel backstop is skipped and findings there have no crop.');
+      }
+      for (const e of (c.errors || [])) add('warn', `page-js/${c.label}`, e);
+      for (const s of (c.selectors || [])) {
+        if (!s.exists) add('warn', `watched-selector/${c.label}`, `Selector never matched: ${s.selector}`);
+        else if (!s.visible) add('info', `watched-selector/${c.label}`, `Selector matched but was not visible: ${s.selector}`);
+      }
+    }
+
+    // Real geometry validation. Replaces a per-capture pageW-vs-pageW test
+    // that could not detect a viewport mismatch — the same wrong quantity on
+    // both sides — and stood in for a validateVisualDiffGeometry that did not
+    // exist. Compares viewport dimensions, which are what determine layout.
+    try {
+      for (const g of validateVisualDiffGeometry(entry.data.captures || [], entry.data.visualDiffFull?.baselineLabel)) {
+        add(g.severity, `capture/${g.label}`, g.detail);
+      }
+    } catch (e) {
+      add('warn', 'visual-diff', `Capture geometry could not be validated — ${e.message}`);
+    }
+
+    // visualDiffFull only exists on the standalone A/B path; a
+    // Test-Agent-queued run carries the metadata mirror instead.
+    const vd = entry.data.visualDiffFull || entry.data.visualDiff;
+    if (vd?.skipped) add('warn', 'visual-diff', `Skipped — ${vd.reason}`);
+    if (vd?.baselineWarning) add('warn', 'visual-diff', vd.baselineWarning);
+    for (const v of (vd?.perVariant || [])) {
+      const at = `visual-diff/${v.label}`;
+      if (v.skipped) { add('warn', at, `Skipped — ${v.reason || 'not captured'}`); continue; }
+      // A shared final URL no longer stops the run, so it has to be said out
+      // loud — it is the leading explanation if this variant turns out to be
+      // Control in disguise.
+      if (v.sameUrlNote) add('warn', at, v.sameUrlNote + '.');
+      // Control-vs-Control outranks every other note about this variant: the
+      // comparison did not happen, so nothing else recorded for it means
+      // anything. Never let this degrade into a quiet aside.
+      if (v.controlDuplicate) {
+        add('error', at, `${v.error} No QA result exists for this variant — do not read the absence of findings as a pass.`);
+        continue;
+      }
+      if (v.error) { add('error', at, v.error); continue; }
+      if (v.noSpecText) add('info', at, 'No Summary of Changes was provided, so nothing was judged expected vs unexpected — every finding is "unclear" by construction.');
+      if (v.resumed) add('info', at, 'Restored from a checkpoint rather than freshly analyzed — crops unavailable.');
+      if (v.truncated) add('error', at, 'The model\'s response was cut off — some findings are incomplete.');
+      if (v.truncatedFindingCount) add('warn', at, `${v.truncatedFindingCount} finding(s) exceeded the cap and were never analyzed.`);
+      if (v.noVerdictCount) add('warn', at, `${v.noVerdictCount} finding(s) came back without a verdict.`);
+      // Neither of these is about the debug blob, so neither may be gated on it
+      // — they were, and both went silent whenever diffDebug was absent.
+      if (v.gradingFailed) {
+        add('error', at, `The findings below were produced but never graded — the model call failed: ${v.gradingFailed}.`
+          + ' Everything deterministic survived: the element-by-element diff, the reflow suppression and the requirement coverage'
+          + ' all ran without a network call. What is missing is only the expected-vs-unexpected judgment, so every finding'
+          + ' below is marked unjudged rather than cleared.');
+      }
+      if (v.requirementsUnsupported) {
+        add('warn', at, 'Requirement coverage was not checked — this variant was diffed by an older background build.'
+          + ' Reload the extension so the service worker picks up the current build, then re-run.');
+      }
+      if (v.duplicateIndexCount) add('warn', at, `The model returned inconsistent finding references for ${v.duplicateIndexCount} item(s).`);
+      if (v.diffMode === 'redesign') {
+        // A geometry mismatch produces a low match rate all by itself, so
+        // don't let the redesign verdict stand as if it were a finding about
+        // the experiment when there's a known reason to distrust it.
+        // Viewport, not content width — same reason as the validator above.
+        // A redesign verdict caused by comparing two different LAYOUTS is the
+        // exact case this disclaimer exists for, and pageW cannot see it.
+        const geomBad = (entry.data.captures || []).some(c =>
+          baseCap && c.fullPage && !c.fullPage.error && c !== baseCap
+          && c.fullPage.viewportW != null && baseCap.fullPage.viewportW != null
+          && (c.fullPage.viewportW !== baseCap.fullPage.viewportW
+              || c.fullPage.viewportH !== baseCap.fullPage.viewportH));
+        add('warn', at, `Only ${Math.round((v.matchedFraction || 0) * 100)}% of elements matched — treated as a wholesale redesign and rolled up per region, not compared element by element.`
+          + (geomBad ? ' This is most likely the capture-width mismatch above rather than a real redesign — fix that and re-run before reading anything into it.' : ''));
+      }
+
+      const d = v.diffDebug;
+      if (d) {
+        // A capture-scale mismatch between the two sides corrupts every
+        // pixel-space read and was completely invisible until now: on ENOC-97
+        // the variant came back at device scale 2 and the control at 1, and
+        // `problems` was byte-identical to the run 64 seconds earlier where
+        // both were 1. Compare the RAW ratios, not the two scalars —
+        // vdImageScale clamps anything outside [0.5, 4] to 1, so two genuinely
+        // divergent bitmaps can both report a tidy 1.
+        const sc = d.imageScale;
+        if (sc) {
+          const rawC = sc.controlImage?.w && sc.pageW?.control ? sc.controlImage.w / sc.pageW.control : null;
+          const rawV = sc.variantImage?.w && sc.pageW?.variant ? sc.variantImage.w / sc.pageW.variant : null;
+          const mismatch = (sc.control !== sc.variant)
+            || (rawC != null && rawV != null && Math.abs(rawC - rawV) > 0.01);
+          if (mismatch) {
+            add('error', at, `The two screenshots came back at different pixel scales — Control ${sc.controlImage?.w}px wide for a ${sc.pageW?.control}px page (${rawC != null ? rawC.toFixed(2) : '?'}x), Variant ${sc.variantImage?.w}px for ${sc.pageW?.variant}px (${rawV != null ? rawV.toFixed(2) : '?'}x). Nothing that reads pixels can be trusted across that gap: the whole-page pixel percentage is withheld for this variant, and any crop or per-block pixel check is comparing regions at different magnifications. Re-run before reading anything into the pixel figures.`);
+          }
+        }
+        // Unmet requirements are a deterministic result, so unlike the model's
+        // verdicts this line means the same thing on every run of the same page.
+        const rq = v.requirements;
+        if (rq && rq.total) {
+          const bad = (rq.items || []).filter(x => x.status === 'absent' || (x.status === 'near' && !x.fragment));
+          if (bad.length) {
+            add('warn', at, `${bad.length} of ${rq.total} specified copy strings are not on the page as written`
+              + ` (${rq.absent} absent, ${bad.length - rq.absent} shipped with different wording).`
+              + ' This is an exact string comparison, not a model judgment — it will read the same on every run.');
+          }
+        }
+        const fuzzy = d.matchTierCounts?.fuzzy || 0;
+        if (fuzzy) add('warn', at, `${fuzzy} element(s) were paired by approximate similarity rather than an exact key — those pairings may be wrong.`);
+        // The signature of broken reflow suppression: an amount that keeps
+        // showing up among reported moves but never earned a trusted cluster.
+        const trusted = new Set([...(d.shiftClusters?.vertical || []), ...(d.shiftClusters?.horizontal || [])]
+          .filter(c => c.trusted).map(c => Math.round(c.delta)));
+        const repeated = Object.entries(d.movesByDelta || {}).filter(([, n]) => n >= 3);
+        for (const [key, n] of repeated) {
+          const dy = Math.round(Number((key.match(/dy=(-?\d+)/) || [])[1] || 0));
+          const dx = Math.round(Number((key.match(/dx=(-?\d+)/) || [])[1] || 0));
+          if (!trusted.has(dy) && !trusted.has(dx)) {
+            add('warn', at, `${n} elements were each reported as moved by the same amount (${key}) with no trusted reflow band to explain it — if these are one cascade, reflow suppression is under-matching.`);
+          }
+        }
+        // The candidate walk truncates from the bottom of the page at
+        // VD_MAX_CANDIDATES. That was unreachable while the walk stopped at
+        // the screenshot's 8000px; now that it covers the whole document, a
+        // very long page can genuinely hit it — and a silent bottom-truncation
+        // is exactly the invisible blind spot this run's work removed.
+        const cap = typeof VD_MAX_CANDIDATES === 'number' ? VD_MAX_CANDIDATES : 3000;
+        if (d.counts?.controlElements >= cap || d.counts?.variantElements >= cap) {
+          add('warn', at, `The element walk hit its ${cap}-candidate ceiling, which truncates from the bottom of the page — the lowest part of this page may not have been compared at all.`);
+        }
+        if (d.belowCapture?.control) {
+          // Lead with the coverage, not the caveat: these elements used to be
+          // outside the comparison entirely, so the headline is how much of
+          // the page is now being checked that previously was not.
+          const total = d.counts?.controlElements || 0;
+          add('info', at, `${d.belowCapture.control} of ${total} elements sit below the screenshot's reach and were compared from the DOM alone`
+            + (d.belowCapture.findings
+                ? ` — ${d.belowCapture.findings} finding(s) came from there, and have no crop and were not pixel-checked.`
+                : ' — no findings came from there.'));
+        }
+        if (d.offCanvas?.control || d.offCanvas?.variant) {
+          add('info', at, `${d.offCanvas.control} control / ${d.offCanvas.variant} variant element(s) sit outside the page's horizontal bounds — `
+            + 'usually an auto-scrolling marquee resting at a different offset in each capture. They are compared from the DOM like any other element'
+            + (d.offCanvas.findings
+                ? `, and ${d.offCanvas.findings} finding(s) came from there, with no crop and no pixel check.`
+                : ', and produced no findings.'));
+        }
+        if (d.counts?.unmatchedControl > 20 || d.counts?.unmatchedVariant > 20) {
+          add('warn', at, `${d.counts.unmatchedControl} control and ${d.counts.unmatchedVariant} variant elements could not be paired at all — see unmatchedControlSample/unmatchedVariantSample.`);
+        }
+      } else {
+        add('info', at, 'No diff diagnostics recorded for this variant.');
+      }
+    }
+  }
+  return problems;
+}
+
+function buildDebugLog(sections) {
+  const abEntry = (sections.modes || []).find(m => m.mode === 2);
+  const vd = abEntry?.data?.visualDiffFull || abEntry?.data?.visualDiff;
+
+  return {
+    readme: 'Selenite QA debug log. `problems` lists everything that degraded this run — start there. '
+      + 'For Visual Diff, cross-reference each variant\'s `movesByDelta` against its `shiftClusters`: a shift amount '
+      + 'that appears repeatedly among reported moves but has no trusted cluster means reflow suppression is '
+      + 'under-matching and those findings are cascade, not real changes. A starved `path` entry in `matchTierCounts` '
+      + 'means structural identity is not surviving this page\'s experiment JS.',
+    generatedAt: new Date(sections.ts).toISOString(),
+    extensionVersion: chrome.runtime.getManifest().version,
+    userAgent: navigator.userAgent,
+    problems: vdCollectProblems(sections),
+    designReference: sections.designReference || null,
+    run: {
+      pageUrls: sections.pageUrls || [],
+      modes: (sections.modes || []).map(m => ({ mode: m.mode, name: m.name, status: m.status, reason: m.reason || null })),
+      settings: {
+        qaMode: abState?.qaMode, settleSec: abState?.settleSec, keepTabs: abState?.keepTabs,
+        visualDiff: abState?.visualDiff, visualDiffCrops: abState?.visualDiffCrops,
+        agenticTesting: abState?.agenticTesting, hasSummaryOfChanges: !!(abState?.summaryOfChanges || '').trim(),
+      },
+    },
+    captures: (abEntry?.data?.captures || []).map(c => ({
+      label: c.label, url: c.url, finalUrl: c.finalUrl, title: c.title,
+      skipped: !!c.skipped, loadError: c.loadError || null,
+      fullPage: c.fullPage || null,
+      // Recorded verbatim alongside the derived verdict, so a disagreement
+      // between them is diagnosable rather than a mystery.
+      expProbe: c.expProbe ? {
+        platform: c.expProbe.platform || null,
+        detected: c.expProbe.detected || null,
+        catalogComplete: !!c.expProbe.catalogComplete,
+        forced: c.expProbe.forced || null,
+        experiments: (c.expProbe.experiments || []).map(e => ({
+          id: e.id, name: e.name, active: e.active, bucketed: e.bucketed,
+          variationId: e.variationId, variationName: e.variationName, forced: e.forced, reason: e.reason || null,
+        })),
+        errors: c.expProbe.errors || [],
+      } : null,
+      variantVerified: vdCaptureVerification(c),
+      jsErrors: c.errors || [],
+      consoleLineCount: (c.console || []).length,
+      selectors: c.selectors || [],
+    })),
+    visualDiff: !vd || vd.skipped ? { skipped: true, reason: vd?.reason || 'not run' } : {
+      baselineLabel: vd.baselineLabel, baselineWarning: vd.baselineWarning || null,
+      // Lifted out of the per-variant lists — without these the debug log would
+      // show fewer findings per variant than the diff actually produced.
+      sharedFindings: (vd.sharedFindings || []).map(f => ({
+        changeClass: f.changeClass, region: f.region || null,
+        sharedAcross: f.sharedAcross || [],
+        controlText: (f.controlBlock?.text || '').slice(0, 160) || null,
+        variantText: (f.variantBlock?.text || '').slice(0, 160) || null,
+        classification: f.classification || null, severity: f.severity || null,
+      })),
+      perVariant: (vd.perVariant || []).map(v => ({
+        label: v.label, skipped: !!v.skipped, reason: v.reason || null, error: v.error || null,
+        controlDuplicate: !!v.controlDuplicate,
+        structuralStats: v.structuralStats || null, pixelDiff: v.pixelDiff || null,
+        diffMode: v.diffMode || null, matchedFraction: v.matchedFraction ?? null,
+        suppressionAggregate: v.aggregate || null,
+        reportedFindingCount: (v.findings || []).length,
+        truncatedFindingCount: v.truncatedFindingCount || 0,
+        // Deterministic and byte-reproducible, so two logs of the same page can
+        // be compared on it directly — unlike the model's classifications.
+        requirements: v.requirements || null,
+        // The rendered report shows each finding's prose; this shows the
+        // geometry and the identity tier behind it, which is what makes a
+        // wrong finding traceable to the pass that produced it.
+        findings: (v.findings || []).map(f => ({
+          findingId: f.findingId, changeClass: f.changeClass, status: f.status,
+          region: f.region || null, matchTier: f.matchTier || null,
+          dx: f.dx ?? null, dy: f.dy ?? null, memberCount: f.memberCount || null,
+          signals: f.changeSignals || [], pixelRatio: f.pixelRatio ?? null,
+          classification: f.classification || null, severity: f.severity || null,
+          controlText: (f.controlBlock?.text || '').slice(0, 160) || null,
+          variantText: (f.variantBlock?.text || '').slice(0, 160) || null,
+          controlRect: f.controlBlock?.rect || null, variantRect: f.variantBlock?.rect || null,
+          // For a synthetic finding — every finding in redesign mode — this
+          // string IS the entire model input (buildVisualReportPrompt emits it
+          // as the finding's only content). Without it here, two logs cannot
+          // establish whether the grader was even asked the same question
+          // twice, which is exactly what four ENOC-97 runs grading the same
+          // seven findings four different ways needed to distinguish
+          // "unseeded sampling" from "the prompt string actually changed".
+          engineNote: f.engineNote || null,
+          // The model's OWN sentence for this finding. engineNote is what it
+          // was GIVEN; this is what it concluded. Without it, 61 "unexpected"
+          // verdicts had to be diagnosed by inferring from the spec instead of
+          // reading the reasoning. Same gap engineNote had.
+          note: f.note || null,
+        })),
+        diagnostics: v.diffDebug || null,
+      })),
+    },
+  };
+}
+
 // Stash the rendered report body under a fresh id in session storage (a
 // non-namespaced key so the bundled qa-report.html page, which has no window
 // id, can read it — mirrors mxOpenReport), prune to the newest few, then open
@@ -4814,7 +6078,10 @@ function buildReportBody(sections) {
 async function openReportTab(sections) {
   const id = 'r_' + Date.now();
   const { taReports = {} } = await chrome.storage.session.get('taReports');
-  taReports[id] = { title: 'Selenite QA Report', bodyHtml: buildReportBody(sections) };
+  let debugLog = null;
+  // Never let a debug-log failure cost the user the actual report.
+  try { debugLog = buildDebugLog(sections); } catch (e) { debugLog = { error: 'Could not assemble debug log: ' + e.message }; }
+  taReports[id] = { title: 'Selenite QA Report', bodyHtml: buildReportBody(sections), debugLog };
   const ids = Object.keys(taReports).sort();
   while (ids.length > 5) delete taReports[ids.shift()];
   await chrome.storage.session.set({ taReports });
@@ -4907,6 +6174,40 @@ async function renderIncognitoGuard() {
 }
 
 // ── Jira field resolution (dynamic — resolved per fetch from `names`) ───────
+// Resolves a rich-text (ADF) custom field by its DISPLAY NAME and returns the
+// document itself.
+//
+// This exists because ticket bodies on these projects do not live in the
+// description at all. WOW-1160 and ENOC-97 both return `description: null`
+// while carrying a populated "Test Specifications" custom field
+// (customfield_10041 on this site) — so parsing only the description found
+// zero variants on every real ticket, which left Summary of Changes empty and
+// made every Visual Diff finding "unclear" by construction. Preview links kept
+// working the whole time because those come from the AI pass, which reads the
+// RENDERED page where custom fields are visible. That asymmetry was the
+// symptom; this is the cause.
+//
+// By name rather than id, the same way Platform Experiment ID and QA Test Plan
+// already resolve, because custom field ids differ per Jira site.
+//
+// Prefers a field with content: this site has TWO fields named "Goals"
+// (customfield_10040 populated, customfield_10821 empty). Taking the first
+// name match by object iteration order would silently pick whichever came
+// first, and an empty pick is indistinguishable from a ticket that genuinely
+// has nothing to say.
+function resolveJiraAdfField(names, fields, label) {
+  const want = label.trim().toLowerCase();
+  let empty = null;
+  for (const [key, name] of Object.entries(names || {})) {
+    if ((name || '').trim().toLowerCase() !== want) continue;
+    const v = (fields || {})[key];
+    if (!v || typeof v !== 'object' || v.type !== 'doc') continue;
+    if ((v.content || []).length) return v;
+    if (!empty) empty = v;
+  }
+  return empty;
+}
+
 function resolveJiraFieldKey(names, label) {
   const want = label.trim().toLowerCase();
   for (const [key, name] of Object.entries(names || {})) {
@@ -4982,6 +6283,93 @@ async function initPageExtractorFn(overrideKey) {
   }
 }
 
+// Runs INSIDE the open Jira tab, same as initPageExtractorFn above — and for
+// the same reason: the attachment endpoint needs the tab's session cookie.
+//
+// The downscale happens HERE rather than in the worker on purpose. A four-up
+// comp at full resolution is several MB, and doing it page-side means that
+// payload crosses a process boundary once, already small, instead of twice at
+// full size. The run-time context is incognito with no Jira session, so this
+// is also the only moment the bytes are reachable at all.
+//
+// JPEG rather than PNG: at 2000px the text stays legible for a vision read,
+// and a PNG of a four-up contact sheet is large enough to be worth avoiding.
+async function initFetchAttachmentFn(contentUrl, maxEdge) {
+  try {
+    const res = await fetch(contentUrl, { credentials: 'same-origin' });
+    if (!res.ok) return { ok: false, error: 'HTTP ' + res.status + ' fetching the attachment' };
+    const blob = await res.blob();
+    if (!/^image\//i.test(blob.type || '')) return { ok: false, error: 'Attachment is not an image (' + (blob.type || 'unknown type') + ')' };
+
+    const bmp = await createImageBitmap(blob);
+    const scale = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * scale));
+    const h = Math.max(1, Math.round(bmp.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    // Comps are exported on white; without this a transparent PNG flattens to
+    // black and every text read off it fails.
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(bmp, 0, 0, w, h);
+    bmp.close?.();
+    return { ok: true, dataUrl: canvas.toDataURL('image/jpeg', 0.85), w, h, srcW: bmp.width, srcH: bmp.height };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) };
+  }
+}
+
+// Longest edge for the stored comp. 2000 keeps body copy legible on a
+// four-up sheet while staying well inside what a vision call will accept.
+const COMP_MAX_EDGE = 2000;
+
+// Pulls the matched comp into IndexedDB and rewrites _initDraft.compAttachment
+// to point at it. Best-effort by design: a missing comp degrades the design
+// reference, it does not invalidate the ticket context, so every failure path
+// records a warning and returns rather than throwing.
+async function fetchCompAttachment(tabId) {
+  if (!_initDraft) return;
+  const pending = _initDraft.compPending;
+  _initDraft.compPending = null;
+  if (!pending?.content) return;
+
+  let injected;
+  try {
+    [injected] = await chrome.scripting.executeScript({
+      target: { tabId }, func: initFetchAttachmentFn, args: [pending.content, COMP_MAX_EDGE],
+    });
+  } catch (e) {
+    _initWarnings.push(`Comp: could not run the attachment fetch on the ticket tab — ${e?.message || e}`);
+    return;
+  }
+
+  const r = injected?.result;
+  if (!r?.ok) {
+    _initWarnings.push(`Comp: "${pending.filename}" could not be downloaded — ${r?.error || 'no result'}. The design reference will fall back to the Figma link.`);
+    return;
+  }
+
+  const idbKey = 'comp:' + _initDraft.ticketKey;
+  try {
+    await idbPut('figma', { dataUrl: r.dataUrl, filename: pending.filename, storedAt: Date.now() }, idbKey);
+  } catch (e) {
+    _initWarnings.push(`Comp: "${pending.filename}" downloaded but could not be stored — ${e?.message || e}`);
+    return;
+  }
+
+  _initDraft.compAttachment = {
+    filename: pending.filename, mimeType: 'image/jpeg', idbKey,
+    w: r.w, h: r.h, srcW: r.srcW, srcH: r.srcH,
+  };
+}
+
+async function getCompImage(ctx) {
+  const key = ctx?.compAttachment?.idbKey;
+  if (!key) return null;
+  try { return (await idbGet('figma', key))?.dataUrl || null; } catch (_) { return null; }
+}
+
 // ── Extraction pipeline (deterministic fetch/parse, then AI field merge) ────
 async function extractFromActiveTab() {
   const statusEl = document.getElementById('init-fetch-status');
@@ -5012,7 +6400,11 @@ async function extractFromActiveTab() {
       if (r.error === 'SESSION_EXPIRED') throw new Error('Your Jira session looks expired — open/refresh the ticket tab, log in, and try again.');
       throw new Error(r.detail || `Fetch failed (${r.status || 'error'})`);
     }
-    extractTestContext(r.issue, r.origin, r.ticketKey);
+    extractTestContext(r.issue, r.origin, r.ticketKey, r.links);
+    if (_initDraft?.compPending) {
+      setStatus(`Extracting… downloading ${_initDraft.compPending.filename}…`);
+      await fetchCompAttachment(tab.id);
+    }
     setStatus('Extracting… asking AI to fill in Platform, Preview Links, ITW Link, and Goals…');
     const aiRes = await runAiFieldExtraction(r, _initDraft).catch(e => ({ ok: false, error: e?.message || String(e) }));
     mergeAiFieldsIntoDraft(aiRes);
@@ -5060,7 +6452,7 @@ function extractConvertMetricId(text) {
   return { id: candidates.size === 1 ? [...candidates][0] : null, candidates: [...candidates] };
 }
 
-function extractTestContext(issue, origin, ticketKeyFromPage) {
+function extractTestContext(issue, origin, ticketKeyFromPage, links) {
   const f = issue.fields || {};
   const names = issue.names || {};
   const warnings = [];
@@ -5084,18 +6476,30 @@ function extractTestContext(issue, origin, ticketKeyFromPage) {
   if (experimentIdKey && !experimentId) warnings.push('"Platform Experiment ID" field is empty on this ticket.');
 
   const adf = (f.description && typeof f.description === 'object') ? f.description : null;
-  if (!adf) warnings.push('Ticket has no description — no sections to extract from.');
 
-  // Step 3 — variants from "Test Specifications"
-  const specNodes = adf ? adfSectionNodes(adf, 'Test Specifications') : null;
-  if (adf && specNodes === null) warnings.push('"Test Specifications" heading not found in the ticket description.');
+  // Step 3 — variants from "Test Specifications".
+  //
+  // Two shapes, and the custom field wins because it is what real tickets
+  // actually use. When the section is its own field the WHOLE field is the
+  // section — there is no heading to locate inside it, so its content is used
+  // directly rather than being handed to adfSectionNodes.
+  const specField = resolveJiraAdfField(names, f, 'Test Specifications');
+  const specNodes = specField ? (specField.content || [])
+    : adf ? adfSectionNodes(adf, 'Test Specifications')
+    : null;
+
+  // Only complain about a missing description when it was the last resort.
+  // A ticket with a populated Test Specifications FIELD and no description is
+  // normal here, and warning about it trained the reader to ignore the line.
+  if (!adf && !specField) warnings.push('Ticket has no description and no "Test Specifications" field — no sections to extract from.');
+  if (!specField && adf && specNodes === null) warnings.push('"Test Specifications" heading not found in the ticket description, and no field of that name exists on this ticket.');
   const variants = splitVariantBlocks(adfSectionLines(specNodes || [])).map(b => ({
     id: b.id,
     // v0 is control by convention, always — never inferred from content.
     isControl: b.id === 'v0',
     rawDescription: b.texts.join('\n').trim(),   // verbatim; no summarization
   }));
-  if (specNodes && !variants.length) warnings.push('"Test Specifications" section found, but no v0/v1/… markers inside it.');
+  if (specNodes && !variants.length) warnings.push(`"Test Specifications" ${specField ? 'field' : 'section'} found, but no v0/v1/… markers inside it.`);
 
   // Step 3b/3c — Softcoded Tests / Concurrent Tests. Deterministic like
   // variants above — never AI, never fetched. `{prefix:true}` because the
@@ -5124,10 +6528,52 @@ function extractTestContext(issue, origin, ticketKeyFromPage) {
   // by mergeAiFieldsIntoDraft — the cross-check between the final
   // previewLinks and these (always deterministic) variants also runs there,
   // once, on final state.
+  // ── Figma design reference ────────────────────────────────────────────────
+  // Deterministic on purpose — NOT part of INIT_FIELD_EXTRACTION_SCHEMA. A
+  // host match needs no judgment, and routing it through the AI call would
+  // make the design reference disappear whenever no Anthropic key is set,
+  // which is exactly when a user is least likely to notice.
+  //
+  // The link inventory is the primary source and costs nothing new: Jira
+  // renders pasted Figma smart-links as real <a href>, so initPageExtractorFn
+  // already captured them. The ADF description is the fallback for a link
+  // that never rendered as an anchor.
+  const figmaUrlPool = (links || []).map(l => l && l.url).filter(Boolean);
+  adfCollectUrls(f.description, figmaUrlPool);
+  const { pick: figmaPick, candidates: figmaCandidates } = figmaPickDesignUrl(figmaUrlPool);
+  const figmaUrl = figmaPick ? figmaPick.url : null;
+  const figmaNodeId = figmaPick ? figmaPick.nodeId : null;
+
+  if (figmaCandidates.length > 1) {
+    warnings.push(`Figma: ${figmaCandidates.length} different design links found on this ticket — using ${figmaUrl}. Change it in the A/B tab if that's the wrong board.`);
+  }
+  if (figmaPick && !figmaNodeId) {
+    // A bare file link resolves to the whole file. For a shared master file
+    // that is every ticket's boards at once, which is never what was meant.
+    warnings.push('Figma: the link points at the whole file rather than a specific board (no node-id). Open the comp frame in Figma, copy the link from there, and paste it in the A/B tab.');
+  }
+
+  // Attachment metadata is already in hand — the extractor fetches the issue
+  // with no `fields=` filter, so this costs no request. Only the binary needs
+  // fetching, and that happens later, in the Jira tab, where the session
+  // cookie lives.
+  const comp = figmaMatchCompAttachment(f.attachment, ticketKey);
+  if (!comp.match && comp.matches.length > 1) {
+    warnings.push(`Comp: ${comp.matches.length} attachments match ${ticketKey}_comp — none was selected. Pick one in the A/B tab.`);
+  } else if (!comp.match && comp.candidates.length) {
+    warnings.push(`Comp: no attachment named ${ticketKey}_comp — ${comp.candidates.length} other image(s) are attached. Pick one in the A/B tab if the comp is among them.`);
+  }
+
   _initDraft = {
     ticketKey, ticketUrl, summary, platform: null, experimentId,
     variants, previewLinks: [], itwLink: null, goals: [], qaTestPlanUrl,
     softcodedTests, concurrentTests,
+    figmaUrl, figmaNodeId,
+    // Set by fetchCompAttachment() after this returns — it needs the Jira tab
+    // and an await, and this function is deliberately synchronous.
+    compAttachment: null,
+    compCandidates: comp.candidates,
+    compPending: comp.match || null,
     extractedAt: new Date().toISOString(),
     reviewed: false,
   };
@@ -5184,6 +6630,32 @@ function adfSectionNodes(doc, headingText, { prefix = false } = {}) {
 // Flatten one block node into logical lines. Each line keeps the URLs of any
 // links inside it (link marks, inline/block cards) — preview links are often
 // authored as clickable links whose href is the real URL, not the shown text.
+// Every URL anywhere in an ADF document, appended to `out`. Both places a URL
+// can hide: a `link` mark on a text node, and the card nodes Jira turns pasted
+// links into. Used as the FALLBACK source for the Figma reference — the
+// rendered-page link inventory is preferred because it also catches links that
+// only exist in Jira app panels, but the inventory's clone drops
+// comments/activity, so a link that lives only in the description still needs
+// this path.
+function adfCollectUrls(node, out) {
+  const acc = out || [];
+  (function walk(n) {
+    if (!n) return;
+    if (Array.isArray(n)) { n.forEach(walk); return; }
+    if (n.type === 'text') {
+      const href = (n.marks || []).find(m => m.type === 'link')?.attrs?.href;
+      if (href) acc.push(href);
+      return;
+    }
+    if (n.type === 'inlineCard' || n.type === 'blockCard' || n.type === 'embedCard') {
+      if (n.attrs?.url) acc.push(n.attrs.url);
+      return;
+    }
+    walk(n.content);
+  })(node);
+  return acc;
+}
+
 function adfBlockLines(node) {
   const lines = [];
   let cur = { text: '', urls: [] };

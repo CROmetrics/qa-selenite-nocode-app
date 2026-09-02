@@ -5365,34 +5365,51 @@ function rptAbVisualDiffSection(vd) {
     return bits;
   };
 
-  // ONE row per finding, and Image Ref is TWO contained cells in that row —
-  // Control and Variant as their own <td>s, side by side, each bordered by the
-  // table itself and titled by the spanning header above.
+  // ONE row per finding, and Image Ref is ONE column holding two contained
+  // cells STACKED — Control above Variant, each in its own bordered box with
+  // its own label.
   //
-  // The trade is explicit and measured: two cells sharing the Image Ref span
-  // get ~160px each at print width, where the previous full-width pair row gave
-  // ~250px. Crops are ~10:1 strips (median 526×52 natural, p75 860×92), so at
-  // 160px a text crop is around 16px tall. That is a reference image, not
-  // something you read fine print in — the Detailed Description and the rect
-  // coordinates carry the specifics. Chosen deliberately for one row per
-  // finding and a real column each for before and after.
+  // Stacking is what buys the legibility back. Two boxes stacked in a 34%
+  // column each get the FULL 34% — ~248px at print width — where two cells
+  // side by side in that same span got half of it, ~124px. Measured on run
+  // 1788362945211: crops are ~10:1 strips (median 526×52 natural, p75 860×92),
+  // so 248px is 47% scale against 24%, and the old full-width pair row's 275px
+  // is barely better than stacking here.
+  //
+  // Stacking also matches how a before/after of a wide strip is actually read:
+  // Control directly above Variant, left edges aligned, so a shifted or
+  // reworded element lines up vertically instead of being compared across a gap.
   const findingRows = (f, resumedVariant) => {
     const rect = f.controlBlock?.rect || f.variantBlock?.rect;
-    const noCropNote = resumedVariant ? 'restored from a checkpoint' : 'no crop';
+    const hasCrop = !!(f.baselineCrop || f.variantCrop);
+    const noCropNote = resumedVariant ? 'Crop unavailable (restored from a checkpoint)' : 'No crop';
     const detail = detailBits(f);
-    // max-height is still needed: the section rollup's 1296×3105 crop rendered
-    // 659px tall when uncapped, and page-break-inside then stranded most of a
-    // page — three pages of run 1788362945211 were 30-65% blank for that.
-    const shot = (src, side) => src
-      ? `<img src="${qa(src)}" style="max-width:100%;max-height:220px;display:block" alt="${side} crop">`
-      : `<span class="rpt-muted" style="font-size:10px">${noCropNote}</span>`;
+    // The cap is per box, and stacking is why it is 160px rather than the 220px
+    // the side-by-side version could afford: two stacked boxes make the row
+    // twice as tall, and uncapped the section rollup's 1296×3105 crop rendered
+    // ~594px in a 248px box — a stacked pair of those is most of a page, and
+    // page-break-inside then strands whatever is left. Three pages of run
+    // 1788362945211 were 30-65% blank from exactly that.
+    //
+    // 160px costs almost nothing: at a 248px box width the measured crops
+    // render ~25px (median 526×52), ~27px (p75 860×92) and ~69px (p90
+    // 1296×360), so the cap only clamps above roughly the 93rd percentile,
+    // and it bounds a stacked pair to ~350px.
+    const cell = (src, side) => `<div style="border:1px solid #d8dbe0;border-radius:3px;padding:3px;margin-bottom:4px">
+          <div class="rpt-muted" style="font-size:9px;margin-bottom:2px">${side}</div>
+          <img src="${qa(src)}" style="max-width:100%;max-height:160px;display:block" alt="${side} crop">
+        </div>`;
     return `<tbody style="page-break-inside:avoid">
       <tr>
-        <td style="vertical-align:top"><span class="ab-delta">${q(findingType(f))}</span><br>${q(shortOf(f))}${
-          rect ? `<div class="rpt-muted" style="font-size:10px;margin-top:3px">near (${rect.x}, ${rect.y}), ${rect.w}×${rect.h}px</div>` : ''
-        }</td>
-        <td style="vertical-align:top">${shot(f.baselineCrop, 'Control')}</td>
-        <td style="vertical-align:top">${shot(f.variantCrop, 'Variant')}</td>
+        <td style="vertical-align:top"><span class="ab-delta">${q(findingType(f))}</span><br>${q(shortOf(f))}</td>
+        <td style="vertical-align:top">${
+          hasCrop
+            ? (f.baselineCrop ? cell(f.baselineCrop, 'Control') : '')
+              + (f.variantCrop ? cell(f.variantCrop, 'Variant') : '')
+            : `<div class="rpt-muted" style="font-size:10px">${noCropNote}</div>`
+        }<span class="rpt-muted" style="font-size:10px">${
+          rect ? `near (${rect.x}, ${rect.y}), ${rect.w}×${rect.h}px` : 'no page element to anchor to'
+        }</span></td>
         <td style="vertical-align:top">${gradeChip(f) || '<span class="rpt-muted">unjudged</span>'}</td>
         <td style="vertical-align:top">${f.note ? `<div>${q(f.note)}</div>` : ''}${
           detail.length ? `<div class="rpt-muted" style="margin-top:${f.note ? '4px' : '0'};font-size:11px">${detail.join('<br>')}</div>` : ''
@@ -5404,7 +5421,7 @@ function rptAbVisualDiffSection(vd) {
   // A group heading gets its own <tbody> for the same page-break reason, and
   // stays inside the one table so the column widths line up across groups.
   const groupRow = (text, warn) =>
-    `<tbody><tr><td colspan="5" class="${warn ? 'ab-warn' : 'rpt-muted'}" style="font-size:11px">${text}</td></tr></tbody>`;
+    `<tbody><tr><td colspan="4" class="${warn ? 'ab-warn' : 'rpt-muted'}" style="font-size:11px">${text}</td></tr></tbody>`;
 
   // Both places that emit findings need this identical shell. It used to be
   // inline in the per-variant section only, so the "Common to all variants"
@@ -5412,22 +5429,16 @@ function rptAbVisualDiffSection(vd) {
   // tags and the four columns collapse into a run of unlabelled text. Shared
   // findings are the ones a reviewer most needs the Verdict column for, since
   // they are the changes present in EVERY variant.
-  // Two header rows so "Image Ref" still reads as ONE named column while
-  // spanning the two contained cells beneath it.
+  // Image Ref is one column again, so one header row. Control/Variant label
+  // the stacked cells inside it rather than needing header columns of their own.
   const findingTable = (rows) => `
       <table class="rpt-table">
-        <thead>
-          <tr>
-            <th rowspan="2" style="width:22%">Short Description</th>
-            <th colspan="2" style="width:34%">Image Ref</th>
-            <th rowspan="2" style="width:8%">Verdict</th>
-            <th rowspan="2">Detailed Description</th>
-          </tr>
-          <tr>
-            <th style="width:17%;font-weight:400">Control</th>
-            <th style="width:17%;font-weight:400">Variant</th>
-          </tr>
-        </thead>
+        <thead><tr>
+          <th style="width:20%">Short Description</th>
+          <th style="width:34%">Image Ref</th>
+          <th style="width:8%">Verdict</th>
+          <th>Detailed Description</th>
+        </tr></thead>
         ${rows}
       </table>`;
 

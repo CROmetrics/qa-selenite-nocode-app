@@ -86,8 +86,8 @@ function render(findings, over) {
     }, (over || {}).variant || {})],
   }, (over || {}).vd || {}));
 }
-// Findings are <tr> in a four-COLUMN table, but FIVE cells per row: Image Ref
-// spans two contained cells (Control | Variant) under a two-row <thead>.
+// Findings are <tr> in a four-column table, four cells per row. Image Ref is
+// ONE cell holding two contained cells STACKED (Control above Variant).
 // Counted by the type chip because every finding row carries one and the
 // group-heading rows (which are also <tr>, colspan=4) do not — counting bare
 // <tr> would include the header and the group headings.
@@ -244,26 +244,18 @@ function shortText(cell) {
   f.shortDescription = 'Hero headline replaced and a business-owner photo added';
   f.note = 'The hero was rebuilt per the ticket. Confirm the photo is the approved asset.';
   var h = render([f]);
-  // Four NAMED columns, in the requested order. Image Ref spans two contained
-  // cells, so it appears once in the top header row and Control/Variant label
-  // its two cells in the second.
   eq('exactly four columns, in the requested order',
-     headers(h).filter(function (x) { return x !== 'Control' && x !== 'Variant'; }).join(' | '),
+     headers(h).join(' | '),
      'Short Description | Image Ref | Verdict | Detailed Description');
-  ok('Image Ref spans its two cells', /<th colspan="2"[^>]*>Image Ref<\/th>/.test(h), h.slice(0, 400));
-  ok('  which are labelled Control and Variant, in that order',
-     /Control<\/th>\s*<th[^>]*>Variant<\/th>/.test(h.replace(/\n\s*/g, ' ')), h.slice(0, 700));
   var c = cellsOf(h);
-  eq('FIVE cells per finding — Image Ref is two of them', c.length, 5);
+  eq('four cells per finding', c.length, 4);
   ok('col 1 carries the short description',
      /Hero headline replaced/.test(c[0]), c[0]);
   ok('col 1 also carries the change type', /class="ab-delta"/.test(c[0]));
-  ok('  and the locator, which moved here off the crop cells',
-     /695, 187/.test(c[0]), c[0]);
-  ok('verdict follows the two crop cells', /unexpected/.test(c[3]), c[3]);
-  ok('detailed description is last',
-     /Confirm the photo is the approved asset/.test(c[4]), c[4]);
-  ok('  and the deterministic facts under it', /Region:/.test(c[4]), c[4]);
+  ok('col 3 carries the verdict chip', /unexpected/.test(c[2]), c[2]);
+  ok('col 4 carries the detailed description',
+     /Confirm the photo is the approved asset/.test(c[3]), c[3]);
+  ok('  and the deterministic facts under it', /Region:/.test(c[3]), c[3]);
   ok('the short description does NOT repeat the long one',
      !/Confirm the photo/.test(c[0]));
 })();
@@ -295,62 +287,72 @@ function shortText(cell) {
      /See My Funding Options/.test(c[0]), c[0]);
   ok('  and names the change type', /added/.test(c[0]), c[0]);
   ok('the verdict cell says unjudged rather than nothing',
-     /unjudged/.test(c[3]), c[3]);
+     /unjudged/.test(c[2]), c[2]);
 })();
 
-(function imageRefIsTwoContainedCellsInTheRow() {
-  // Image Ref spans two <td>s in the finding's own row — Control and Variant —
-  // rather than a nested block or a separate full-width row. Each is bordered
-  // by the table and titled by the spanning header.
+(function imageRefHoldsTwoContainedCellsStackedVertically() {
+  // Stacking is what buys the legibility back: two boxes stacked in a 34%
+  // column each get the FULL 34% (~248px at print width), where two cells side
+  // by side in the same span got half of it (~124px). Crops are ~10:1 strips,
+  // median 526x52 natural, so that is 47% scale against 24%.
   var f = rollup('section', 'expected');
   f.baselineCrop = 'data:image/png;base64,AAA';
   f.variantCrop = 'data:image/png;base64,BBB';
   var h = render([f]);
   var c = cellsOf(h);
-  eq('five cells: the two crop cells sit between short and verdict', c.length, 5);
-  ok('cell 2 is the Control crop', /base64,AAA/.test(c[1]) && /Control crop/.test(c[1]), c[1]);
-  ok('cell 3 is the Variant crop', /base64,BBB/.test(c[2]) && /Variant crop/.test(c[2]), c[2]);
-  ok('  Control before Variant, matching the header order',
-     h.indexOf('base64,AAA') < h.indexOf('base64,BBB'));
+  eq('four cells — Image Ref is one of them', c.length, 4);
+  ok('both crops are in the Image Ref cell',
+     /base64,AAA/.test(c[1]) && /base64,BBB/.test(c[1]), c[1]);
+  ok('  each in its own contained cell', (c[1].match(/border:1px solid/g) || []).length === 2, c[1]);
+  ok('  labelled Control and Variant', /Control/.test(c[1]) && /Variant/.test(c[1]));
+  ok('Control stacks above Variant',
+     c[1].indexOf('base64,AAA') < c[1].indexOf('base64,BBB'), c[1]);
+  ok('  as blocks, not side by side — no flex row',
+     !/display:flex/.test(c[1]), c[1]);
+  ok('the cell also carries the locator', /695, 187/.test(c[1]), c[1]);
   eq('each crop appears exactly once in the report',
      (h.match(/base64,AAA/g) || []).length, 1);
   eq('  on both sides', (h.match(/base64,BBB/g) || []).length, 1);
-  ok('no crop leaks into another cell',
-     !/base64/.test(c[0]) && !/base64/.test(c[3]) && !/base64/.test(c[4]));
-  // Height IS capped. Uncapped, the section rollup's 1296x3105 crop rendered
-  // 659px tall and page-break-inside on the tbody stranded the rest of the page
-  // — three pages of run 1788362945211 were 30-65% blank for exactly that.
-  ok('crop height is capped so one tall crop cannot eat a page',
-     /max-height:220px/.test(c[1]), c[1]);
+  ok('no crop leaks into another column',
+     !/base64/.test(c[0]) && !/base64/.test(c[2]) && !/base64/.test(c[3]));
+  // Per box, and 160px rather than 220px BECAUSE they stack: two boxes make the
+  // row twice as tall, and uncapped the section rollup's 1296x3105 crop renders
+  // ~594px in a 248px box. A stacked pair of those is most of a page, and
+  // page-break-inside then strands the rest — three pages of run 1788362945211
+  // were 30-65% blank from that. At 248px wide the measured crops render ~25px
+  // (median), ~27px (p75) and ~69px (p90), so the cap clamps almost nothing.
+  ok('each crop box caps its own height',
+     (c[1].match(/max-height:160px/g) || []).length === 2, c[1]);
+  ok('  low enough that a stacked pair cannot eat a page',
+     !/max-height:(?:[2-9]\d\d|\d{4,})px/.test(c[1]), c[1]);
 
-  // ONE row per finding now — no full-width pair row at all.
+  // ONE row per finding — no separate full-width crop row.
   ok('there is no separate full-width crop row',
-     !/<td colspan="5"[^>]*style="padding-top:0"/.test(h)
-     && !/<td colspan="5"[^>]*style="padding-top:0"/.test(h));
+     !/<td colspan="[45]"[^>]*style="padding-top:0"/.test(h));
   var tb = h.split('<tbody').filter(function (x) { return x.indexOf('class="ab-delta"') !== -1; });
   eq('one tbody per finding', tb.length, 1);
   eq('  holding exactly one row', (tb[0].match(/<tr>/g) || []).length, 1);
 })();
 
-(function aMissingCropSideStillLeavesItsCell() {
-  // A removed element has no variant side, and vice versa. The cell must stay
-  // so the columns do not shift out from under the header.
+(function aMissingCropSideJustOmitsItsBox() {
+  // A removed element has no variant side, and vice versa. One box, not an
+  // empty one — the column header no longer promises two.
   var f = element('removed', 'section', 'Move forward with fast business funding.');
   f.baselineCrop = 'data:image/png;base64,AAA';
   f.variantCrop = null;
   var c = cellsOf(render([f]));
-  eq('still five cells', c.length, 5);
-  ok('the Control cell has the crop', /base64,AAA/.test(c[1]), c[1]);
-  ok('the Variant cell says there is none', /no crop/.test(c[2]), c[2]);
-  ok('  and carries no image', !/base64/.test(c[2]), c[2]);
+  eq('still four cells', c.length, 4);
+  ok('the Control box is there', /base64,AAA/.test(c[1]) && /Control/.test(c[1]), c[1]);
+  ok('  and only one box', (c[1].match(/border:1px solid/g) || []).length === 1, c[1]);
+  ok('  with no empty Variant box', !/Variant/.test(c[1]), c[1]);
 
-  // A resumed variant lost its crops to the checkpoint, which is a different
-  // thing from an element that only exists on one side.
+  // No crops at all, and a checkpoint-restored finding says why.
   var g = rollup('footer', 'expected', { controlRect: { x: 695, y: 3912, w: 1296, h: 614 } });
-  var gc = cellsOf(render([g], { variant: { resumed: true } }));
-  ok('a checkpoint-restored finding says why', /checkpoint/.test(gc[1]), gc[1]);
-  ok('the locator now lives with the short description',
-     /695, 3912/.test(gc[0]), gc[0]);
+  var gc = cellsOf(render([g]))[1];
+  ok('with no crop the cell says so', /No crop/.test(gc), gc);
+  ok('  and still anchors the finding by coordinates', /695, 3912/.test(gc), gc);
+  var rc = cellsOf(render([g], { variant: { resumed: true } }))[1];
+  ok('a checkpoint-restored finding says why', /checkpoint/.test(rc), rc);
 })();
 
 (function theModelsShortDescriptionIsActuallyUsed() {
@@ -427,7 +429,7 @@ function shortText(cell) {
   ]);
   eq('one table', (h.match(/<table/g) || []).length, 1);
   ok('the expected-group heading is a full-width row',
-     /<td colspan="5"/.test(h), h.slice(0, 400));
+     /<td colspan="4"/.test(h), h.slice(0, 400));
   ok('  and still carries the instability caveat', /move between runs/.test(h));
 })();
 

@@ -5365,62 +5365,46 @@ function rptAbVisualDiffSection(vd) {
     return bits;
   };
 
-  // Two rows per finding, wrapped in their own <tbody>.
+  // ONE row per finding, and Image Ref is TWO contained cells in that row —
+  // Control and Variant as their own <td>s, side by side, each bordered by the
+  // table itself and titled by the spanning header above.
   //
-  // The second row exists because of a direct comparison with the pre-table
-  // format: its crops were ~250px side by side and LEGIBLE — the lead-gen form
-  // before/after visibly showed Email Address moving down the field order,
-  // which was the most useful thing in that whole report. A quarter-width
-  // column capped at 120px cannot carry that, so the pair gets the full width
-  // and the Image Ref cell keeps one small thumbnail as the scanning locator.
-  //
-  // <tbody> rather than two loose <tr>s so a finding cannot be separated from
-  // its own crops by a page break: the stylesheet's page-break-inside rule is
-  // on `tr`, which would happily split the pair across pages.
+  // The trade is explicit and measured: two cells sharing the Image Ref span
+  // get ~160px each at print width, where the previous full-width pair row gave
+  // ~250px. Crops are ~10:1 strips (median 526×52 natural, p75 860×92), so at
+  // 160px a text crop is around 16px tall. That is a reference image, not
+  // something you read fine print in — the Detailed Description and the rect
+  // coordinates carry the specifics. Chosen deliberately for one row per
+  // finding and a real column each for before and after.
   const findingRows = (f, resumedVariant) => {
     const rect = f.controlBlock?.rect || f.variantBlock?.rect;
-    const hasCrop = !!(f.baselineCrop || f.variantCrop);
-    // No thumbnail here. It was the same image as the pair two inches below —
-    // measured across run 1788362945211: 90% of crops render under 120px tall
-    // (median 27px), so the 64px thumbnail was a shrunken, often illegible
-    // duplicate of a picture the reader was about to see at full size. Image Ref
-    // carries the locator; the pair below carries the comparison.
-    const locator = rect
-      ? `<span class="rpt-muted" style="font-size:10px">near (${rect.x}, ${rect.y}), ${rect.w}×${rect.h}px</span>`
-      : `<span class="rpt-muted" style="font-size:10px">no page element to anchor to</span>`;
-    const noCropNote = resumedVariant ? 'Crop unavailable (restored from a checkpoint)' : 'No crop';
+    const noCropNote = resumedVariant ? 'restored from a checkpoint' : 'no crop';
     const detail = detailBits(f);
-    // max-height matters as much as max-width. Without it the section rollup's
-    // 1296×3105 crop rendered 659px tall at a 275px column width, and
-    // page-break-inside on the tbody then stranded the rest of that page —
-    // three pages of run 1788362945211 were 30-65% blank for this reason. A
-    // capped tall crop letterboxes to a narrow strip, which is the right
-    // trade: nobody reads a whole-page-region crop in a report at any size,
-    // and its counts and coordinates carry the finding.
-    const shot = (src, side) => `<figure style="margin:0;flex:1 1 0;min-width:0">
-      <img src="${qa(src)}" style="max-width:100%;max-height:320px;border:1px solid #d8dbe0;border-radius:3px;display:block" alt="${side} crop">
-      <figcaption class="rpt-muted" style="font-size:9px;margin-top:2px">${side}</figcaption></figure>`;
+    // max-height is still needed: the section rollup's 1296×3105 crop rendered
+    // 659px tall when uncapped, and page-break-inside then stranded most of a
+    // page — three pages of run 1788362945211 were 30-65% blank for that.
+    const shot = (src, side) => src
+      ? `<img src="${qa(src)}" style="max-width:100%;max-height:220px;display:block" alt="${side} crop">`
+      : `<span class="rpt-muted" style="font-size:10px">${noCropNote}</span>`;
     return `<tbody style="page-break-inside:avoid">
       <tr>
-        <td style="vertical-align:top"><span class="ab-delta">${q(findingType(f))}</span><br>${q(shortOf(f))}</td>
-        <td style="vertical-align:top">${hasCrop ? '' : `<span class="rpt-muted" style="font-size:10px">${noCropNote}</span><br>`}${locator}</td>
+        <td style="vertical-align:top"><span class="ab-delta">${q(findingType(f))}</span><br>${q(shortOf(f))}${
+          rect ? `<div class="rpt-muted" style="font-size:10px;margin-top:3px">near (${rect.x}, ${rect.y}), ${rect.w}×${rect.h}px</div>` : ''
+        }</td>
+        <td style="vertical-align:top">${shot(f.baselineCrop, 'Control')}</td>
+        <td style="vertical-align:top">${shot(f.variantCrop, 'Variant')}</td>
         <td style="vertical-align:top">${gradeChip(f) || '<span class="rpt-muted">unjudged</span>'}</td>
         <td style="vertical-align:top">${f.note ? `<div>${q(f.note)}</div>` : ''}${
           detail.length ? `<div class="rpt-muted" style="margin-top:${f.note ? '4px' : '0'};font-size:11px">${detail.join('<br>')}</div>` : ''
         }</td>
       </tr>
-      ${hasCrop ? `<tr><td colspan="4" style="padding-top:0">
-        <div style="display:flex;gap:10px;align-items:flex-start;max-width:560px">
-          ${f.baselineCrop ? shot(f.baselineCrop, 'Control') : ''}
-          ${f.variantCrop ? shot(f.variantCrop, 'Variant') : ''}
-        </div></td></tr>` : ''}
     </tbody>`;
   };
 
   // A group heading gets its own <tbody> for the same page-break reason, and
   // stays inside the one table so the column widths line up across groups.
   const groupRow = (text, warn) =>
-    `<tbody><tr><td colspan="4" class="${warn ? 'ab-warn' : 'rpt-muted'}" style="font-size:11px">${text}</td></tr></tbody>`;
+    `<tbody><tr><td colspan="5" class="${warn ? 'ab-warn' : 'rpt-muted'}" style="font-size:11px">${text}</td></tr></tbody>`;
 
   // Both places that emit findings need this identical shell. It used to be
   // inline in the per-variant section only, so the "Common to all variants"
@@ -5428,14 +5412,22 @@ function rptAbVisualDiffSection(vd) {
   // tags and the four columns collapse into a run of unlabelled text. Shared
   // findings are the ones a reviewer most needs the Verdict column for, since
   // they are the changes present in EVERY variant.
+  // Two header rows so "Image Ref" still reads as ONE named column while
+  // spanning the two contained cells beneath it.
   const findingTable = (rows) => `
       <table class="rpt-table">
-        <thead><tr>
-          <th style="width:22%">Short Description</th>
-          <th style="width:12%">Image Ref</th>
-          <th style="width:9%">Verdict</th>
-          <th>Detailed Description</th>
-        </tr></thead>
+        <thead>
+          <tr>
+            <th rowspan="2" style="width:22%">Short Description</th>
+            <th colspan="2" style="width:34%">Image Ref</th>
+            <th rowspan="2" style="width:8%">Verdict</th>
+            <th rowspan="2">Detailed Description</th>
+          </tr>
+          <tr>
+            <th style="width:17%;font-weight:400">Control</th>
+            <th style="width:17%;font-weight:400">Variant</th>
+          </tr>
+        </thead>
         ${rows}
       </table>`;
 

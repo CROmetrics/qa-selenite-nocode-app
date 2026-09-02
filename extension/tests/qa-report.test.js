@@ -86,7 +86,8 @@ function render(findings, over) {
     }, (over || {}).variant || {})],
   }, (over || {}).vd || {}));
 }
-// Findings are <tr> in a four-column table now, not <div class="ab-line">.
+// Findings are <tr> in a four-COLUMN table, but FIVE cells per row: Image Ref
+// spans two contained cells (Control | Variant) under a two-row <thead>.
 // Counted by the type chip because every finding row carries one and the
 // group-heading rows (which are also <tr>, colspan=4) do not — counting bare
 // <tr> would include the header and the group headings.
@@ -230,10 +231,12 @@ function cellsOf(h) {
   while ((m = re.exec(rows[0]))) out.push(m[1]);
   return out;
 }
-// Just the short description, without the type chip that shares the cell.
+// Just the short description: cell 0 also holds the type chip before it and,
+// since the crops became their own cells, the rect locator in a <div> after it.
 function shortText(cell) {
   var after = String(cell).split('<br>');
-  return (after.length > 1 ? after.slice(1).join('<br>') : after[0]).replace(/<[^>]*>/g, '').trim();
+  var body = after.length > 1 ? after.slice(1).join('<br>') : after[0];
+  return body.split('<div')[0].replace(/<[^>]*>/g, '').trim();
 }
 
 (function theFourColumns() {
@@ -241,18 +244,26 @@ function shortText(cell) {
   f.shortDescription = 'Hero headline replaced and a business-owner photo added';
   f.note = 'The hero was rebuilt per the ticket. Confirm the photo is the approved asset.';
   var h = render([f]);
+  // Four NAMED columns, in the requested order. Image Ref spans two contained
+  // cells, so it appears once in the top header row and Control/Variant label
+  // its two cells in the second.
   eq('exactly four columns, in the requested order',
-     headers(h).join(' | '),
+     headers(h).filter(function (x) { return x !== 'Control' && x !== 'Variant'; }).join(' | '),
      'Short Description | Image Ref | Verdict | Detailed Description');
+  ok('Image Ref spans its two cells', /<th colspan="2"[^>]*>Image Ref<\/th>/.test(h), h.slice(0, 400));
+  ok('  which are labelled Control and Variant, in that order',
+     /Control<\/th>\s*<th[^>]*>Variant<\/th>/.test(h.replace(/\n\s*/g, ' ')), h.slice(0, 700));
   var c = cellsOf(h);
-  eq('four cells per finding', c.length, 4);
+  eq('FIVE cells per finding — Image Ref is two of them', c.length, 5);
   ok('col 1 carries the short description',
      /Hero headline replaced/.test(c[0]), c[0]);
   ok('col 1 also carries the change type', /class="ab-delta"/.test(c[0]));
-  ok('col 3 carries the verdict chip', /unexpected/.test(c[2]), c[2]);
-  ok('col 4 carries the detailed description',
-     /Confirm the photo is the approved asset/.test(c[3]), c[3]);
-  ok('  and the deterministic facts under it', /Region:/.test(c[3]), c[3]);
+  ok('  and the locator, which moved here off the crop cells',
+     /695, 187/.test(c[0]), c[0]);
+  ok('verdict follows the two crop cells', /unexpected/.test(c[3]), c[3]);
+  ok('detailed description is last',
+     /Confirm the photo is the approved asset/.test(c[4]), c[4]);
+  ok('  and the deterministic facts under it', /Region:/.test(c[4]), c[4]);
   ok('the short description does NOT repeat the long one',
      !/Confirm the photo/.test(c[0]));
 })();
@@ -284,53 +295,62 @@ function shortText(cell) {
      /See My Funding Options/.test(c[0]), c[0]);
   ok('  and names the change type', /added/.test(c[0]), c[0]);
   ok('the verdict cell says unjudged rather than nothing',
-     /unjudged/.test(c[2]), c[2]);
+     /unjudged/.test(c[3]), c[3]);
 })();
 
-(function imageRefColumnAndTheFullWidthPair() {
-  // The pre-table format's crops were ~250px side by side and LEGIBLE — its
-  // form before/after visibly showed Email Address moving down the field order.
-  // A quarter-width column capped at 120px cannot carry that, so the pair gets
-  // its own full-width row.
+(function imageRefIsTwoContainedCellsInTheRow() {
+  // Image Ref spans two <td>s in the finding's own row — Control and Variant —
+  // rather than a nested block or a separate full-width row. Each is bordered
+  // by the table and titled by the spanning header.
   var f = rollup('section', 'expected');
   f.baselineCrop = 'data:image/png;base64,AAA';
   f.variantCrop = 'data:image/png;base64,BBB';
   var h = render([f]);
   var c = cellsOf(h);
-  // NO thumbnail. It was the same picture as the pair below it, shrunk to 64px
-  // — measured across run 1788362945211, 90% of crops render under 120px tall
-  // (median 27px), so the thumbnail was a smaller, often illegible duplicate.
-  ok('Image Ref carries NO thumbnail', !/base64/.test(c[1]), c[1]);
-  ok('  only the coordinates, as a locator', /695, 187/.test(c[1]), c[1]);
-  eq('  so each crop appears exactly once in the report',
+  eq('five cells: the two crop cells sit between short and verdict', c.length, 5);
+  ok('cell 2 is the Control crop', /base64,AAA/.test(c[1]) && /Control crop/.test(c[1]), c[1]);
+  ok('cell 3 is the Variant crop', /base64,BBB/.test(c[2]) && /Variant crop/.test(c[2]), c[2]);
+  ok('  Control before Variant, matching the header order',
+     h.indexOf('base64,AAA') < h.indexOf('base64,BBB'));
+  eq('each crop appears exactly once in the report',
      (h.match(/base64,AAA/g) || []).length, 1);
   eq('  on both sides', (h.match(/base64,BBB/g) || []).length, 1);
+  ok('no crop leaks into another cell',
+     !/base64/.test(c[0]) && !/base64/.test(c[3]) && !/base64/.test(c[4]));
+  // Height IS capped. Uncapped, the section rollup's 1296x3105 crop rendered
+  // 659px tall and page-break-inside on the tbody stranded the rest of the page
+  // — three pages of run 1788362945211 were 30-65% blank for exactly that.
+  ok('crop height is capped so one tall crop cannot eat a page',
+     /max-height:220px/.test(c[1]), c[1]);
 
-  // Row two: the pair, full width, side by side.
-  // Anchored on padding-top, not just colspan — the GROUP HEADING row is also
-  // a colspan=4 and matches first, which is how this assertion first failed.
-  var pair = /<tr><td colspan="4" style="padding-top:0">[\s\S]*?<\/tr>/.exec(h);
-  ok('a full-width second row carries both crops',
-     !!pair && /base64,AAA/.test(pair[0]) && /base64,BBB/.test(pair[0]), pair && pair[0].slice(0, 120));
-  ok('  labelled Control and Variant', !!pair && /Control/.test(pair[0]) && /Variant/.test(pair[0]));
-  ok('  side by side', !!pair && /display:flex/.test(pair[0]));
-  // Height IS capped, generously. Uncapped, the section rollup's 1296x3105
-  // crop rendered 659px tall at a 275px column and page-break-inside on the
-  // tbody stranded the rest of the page — three pages of run 1788362945211
-  // were 30-65% blank for exactly this.
-  ok('  height-capped so one tall crop cannot eat a page',
-     !!pair && /max-height:320px/.test(pair[0]), pair && pair[0].slice(0, 300));
-  ok('  but far above the 120px the column had, so it stays legible',
-     !!pair && !/max-height:(?:[0-9]|[1-9][0-9]|1[01][0-9]|12[0-9])px/.test(pair[0]));
-  ok('  and min-width:0, or a wide crop would refuse to shrink to its half',
-     !!pair && /min-width:0/.test(pair[0]));
+  // ONE row per finding now — no full-width pair row at all.
+  ok('there is no separate full-width crop row',
+     !/<td colspan="5"[^>]*style="padding-top:0"/.test(h)
+     && !/<td colspan="5"[^>]*style="padding-top:0"/.test(h));
+  var tb = h.split('<tbody').filter(function (x) { return x.indexOf('class="ab-delta"') !== -1; });
+  eq('one tbody per finding', tb.length, 1);
+  eq('  holding exactly one row', (tb[0].match(/<tr>/g) || []).length, 1);
+})();
 
-  // No crops: one row only, and the cell still anchors the finding.
+(function aMissingCropSideStillLeavesItsCell() {
+  // A removed element has no variant side, and vice versa. The cell must stay
+  // so the columns do not shift out from under the header.
+  var f = element('removed', 'section', 'Move forward with fast business funding.');
+  f.baselineCrop = 'data:image/png;base64,AAA';
+  f.variantCrop = null;
+  var c = cellsOf(render([f]));
+  eq('still five cells', c.length, 5);
+  ok('the Control cell has the crop', /base64,AAA/.test(c[1]), c[1]);
+  ok('the Variant cell says there is none', /no crop/.test(c[2]), c[2]);
+  ok('  and carries no image', !/base64/.test(c[2]), c[2]);
+
+  // A resumed variant lost its crops to the checkpoint, which is a different
+  // thing from an element that only exists on one side.
   var g = rollup('footer', 'expected', { controlRect: { x: 695, y: 3912, w: 1296, h: 614 } });
-  var gh = render([g]);
-  ok('with no crop it falls back to coordinates', /695, 3912/.test(cellsOf(gh)[1]), cellsOf(gh)[1]);
-  ok('  and says so', /No crop/.test(cellsOf(gh)[1]));
-  ok('  and emits no second row', !/<tr><td colspan="4"[^>]*style="padding-top:0"/.test(gh));
+  var gc = cellsOf(render([g], { variant: { resumed: true } }));
+  ok('a checkpoint-restored finding says why', /checkpoint/.test(gc[1]), gc[1]);
+  ok('the locator now lives with the short description',
+     /695, 3912/.test(gc[0]), gc[0]);
 })();
 
 (function theModelsShortDescriptionIsActuallyUsed() {
@@ -376,7 +396,7 @@ function shortText(cell) {
      /<tbody style="page-break-inside:avoid">/.test(h), h.slice(0, 300));
   var tb = h.split('<tbody').filter(function (x) { return x.indexOf('class="ab-delta"') !== -1; });
   eq('one tbody per finding', tb.length, 1);
-  ok('  containing both of its rows', (tb[0].match(/<tr>/g) || []).length === 2, tb[0].slice(0, 80));
+  ok('  containing its single row', (tb[0].match(/<tr>/g) || []).length === 1, tb[0].slice(0, 80));
 })();
 
 (function derivedShortDescriptionStopsRepeatingItself() {
@@ -407,7 +427,7 @@ function shortText(cell) {
   ]);
   eq('one table', (h.match(/<table/g) || []).length, 1);
   ok('the expected-group heading is a full-width row',
-     /<td colspan="4"/.test(h), h.slice(0, 400));
+     /<td colspan="5"/.test(h), h.slice(0, 400));
   ok('  and still carries the instability caveat', /move between runs/.test(h));
 })();
 

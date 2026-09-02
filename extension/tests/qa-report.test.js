@@ -93,7 +93,7 @@ function render(findings, over) {
 }
 // Findings are <tr> in a THREE-column table. Image Ref holds two contained
 // cells stacked (Control above Variant); Short Description holds the
-// description and then the Verdict in its own contained cell beneath it.
+// description and then the grade chip beneath it — no caption, no wrapper box.
 // Counted by the type chip because every finding row carries one and the
 // group-heading rows (which are also <tr>, colspan=4) do not — counting bare
 // <tr> would include the header and the group headings.
@@ -258,13 +258,16 @@ function shortText(cell) {
   ok('col 1 carries the short description',
      /Hero headline replaced/.test(c[0]), c[0]);
   ok('col 1 also carries the change type', /class="ab-delta"/.test(c[0]));
-  // The verdict moved into col 1 as its own stacked cell — it had a column of
-  // its own at 8% width that was 20% full, and Detailed needed that width.
-  ok('col 1 carries the verdict too', /unexpected/.test(c[0]), c[0]);
-  ok('  in its own contained cell, labelled',
-     /border:1px solid[\s\S]*?>Verdict</.test(c[0]), c[0]);
+  // The grade moved into col 1 — it had a column of its own at 8% width that was
+  // 20% full, and Detailed needed that width.
+  ok('col 1 carries the grade too', /unexpected/.test(c[0]), c[0]);
   ok('  below the description, not above it',
-     c[0].indexOf('Hero headline replaced') < c[0].indexOf('>Verdict<'), c[0]);
+     c[0].indexOf('Hero headline replaced') < c[0].search(/text-transform:uppercase/), c[0]);
+  // No caption and no wrapper: gradeChip already renders a self-contained chip
+  // with its own border, so a bordered box round it was a box around a box and
+  // the caption named something that names itself ("UNEXPECTED · HIGH").
+  ok('  as a bare chip, with no box around it',
+     (c[0].match(/border:1px solid #d8dbe0/g) || []).length === 0, c[0]);
   ok('no verdict column remains', headers(h).indexOf('Verdict') === -1, headers(h).join('|'));
   ok('col 3 carries the detailed description',
      /Confirm the photo is the approved asset/.test(c[2]), c[2]);
@@ -317,7 +320,8 @@ function shortText(cell) {
   ok('both crops are in the Image Ref cell',
      /base64,AAA/.test(c[1]) && /base64,BBB/.test(c[1]), c[1]);
   ok('  each in its own contained cell', (c[1].match(/border:1px solid/g) || []).length === 2, c[1]);
-  ok('  and the verdict box does not land in this column', !/>Verdict</.test(c[1]), c[1]);
+  ok('  and the grade chip does not land in this column',
+     !/text-transform:uppercase/.test(c[1]), c[1]);
   ok('  labelled Control and Variant', /Control/.test(c[1]) && /Variant/.test(c[1]));
   ok('Control stacks above Variant',
      c[1].indexOf('base64,AAA') < c[1].indexOf('base64,BBB'), c[1]);
@@ -380,6 +384,30 @@ function shortText(cell) {
   var c = cellsOf(render([f]));
   ok('the model summary fills column 1', /TCPA\/autodialer consent disclaimer removed/.test(c[0]), c[0]);
   ok('  not the raw element text', !/ODK Capital/.test(c[0]), c[0]);
+})();
+
+(function theWordVerdictAppearsNowhere() {
+  // Asked for directly: it was redundant everywhere it appeared in this table.
+  // Scoped to this section's output, so the Performance section's OK/OVER column
+  // header — a genuine column name, in a section that does not even render here
+  // — is unaffected.
+  var f = rollup('section', 'unexpected');
+  f.shortDescription = 'Hero headline replaced';
+  f.note = 'Rebuilt per the ticket.';
+  var graded = render([f]);
+  ok('not in a graded finding', !/[Vv]erdict/.test(graded), (/.{0,60}[Vv]erdict.{0,60}/.exec(graded) || [''])[0]);
+
+  // The ungraded path carried it twice: the box caption and the group heading.
+  var u = rollup('form', null);
+  u.classification = null; u.severity = null;
+  var ungraded = render([u], { variant: { noVerdictCount: 1 } });
+  ok('not in an ungraded finding or its group heading',
+     !/[Vv]erdict/.test(ungraded), (/.{0,80}[Vv]erdict.{0,80}/.exec(ungraded) || [''])[0]);
+  // …and what replaced it still tells the reader the same thing.
+  ok('  the finding still reads unjudged', /unjudged/.test(cellsOf(ungraded)[0]), cellsOf(ungraded)[0]);
+  ok('  the group heading still says unjudged, not cleared',
+     /unjudged, not cleared/.test(ungraded));
+  ok('  and the count line still reports it', /returned without a grade/.test(ungraded), ungraded.slice(0, 200));
 })();
 
 (function sharedFindingsGetTheFourColumnsToo() {

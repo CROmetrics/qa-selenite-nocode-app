@@ -5566,17 +5566,25 @@ function rptAbVisualDiffSection(vd) {
           <div class="rpt-muted" style="font-size:9px;margin-bottom:2px">${side}</div>
           <img src="${qa(src)}" style="max-width:100%;max-height:160px;display:block" alt="${side} crop">
         </div>`;
-    // The verdict is a stacked contained cell UNDER the description, in the same
-    // column — same shape as the crop boxes in Image Ref. It had a column of its
-    // own at 8% width that was 20% full, which is width the Detailed Description
-    // column needed: that one was the tallest cell in 67 of 67 rows.
-    const verdictBox = `<div style="border:1px solid #d8dbe0;border-radius:3px;padding:3px;margin-top:4px">
-          <div class="rpt-muted" style="font-size:9px;margin-bottom:2px">Verdict</div>
-          ${gradeChip(f) || '<span class="rpt-muted" style="font-size:10px">unjudged</span>'}
-        </div>`;
+    // The grade sits under the description in the same column — it had a column
+    // of its own at 8% width that was 20% full, which is width the Detailed
+    // Description column needed (that one was the tallest cell in 67 of 67 rows).
+    //
+    // No "Verdict" caption and no box around it: gradeChip already renders a
+    // self-contained chip with its own border, background, radius and uppercase
+    // type, so a bordered wrapper was a box around a box and the caption named
+    // something that names itself ("UNCLEAR · MEDIUM").
+    //
+    // `unjudged` must still render when there is no grade. That is load-bearing:
+    // 5ed70e5 exists because ungraded findings were dropped from the report
+    // entirely while a note claimed they existed, and "unjudged, not cleared" is
+    // the distinction it restored.
+    const gradeLine = `<div style="margin-top:4px">${
+      gradeChip(f) || '<span class="rpt-muted" style="font-size:10px">unjudged</span>'
+    }</div>`;
     return `<tbody style="page-break-inside:avoid">
       <tr>
-        <td style="vertical-align:top"><span class="ab-delta">${q(findingType(f))}</span><br>${q(shortOf(f))}${verdictBox}</td>
+        <td style="vertical-align:top"><span class="ab-delta">${q(findingType(f))}</span><br>${q(shortOf(f))}${gradeLine}</td>
         <td style="vertical-align:top">${
           hasCrop
             ? (f.baselineCrop ? cell(f.baselineCrop, 'Control') : '')
@@ -5600,13 +5608,15 @@ function rptAbVisualDiffSection(vd) {
   // Both places that emit findings need this identical shell. It used to be
   // inline in the per-variant section only, so the "Common to all variants"
   // block emitted bare rows with no table around them — the parser drops the
-  // tags and the four columns collapse into a run of unlabelled text. Shared
-  // findings are the ones a reviewer most needs the Verdict column for, since
-  // they are the changes present in EVERY variant.
-  // Three columns. Verdict is a stacked cell inside Short Description now, and
-  // Image Ref stays at 34% deliberately — that is what keeps a stacked crop at
-  // ~248px, and lowering it undoes 0516d9f. The freed width goes to Detailed
-  // Description, which set the row height in 67 of 67 rows at 38%.
+  // tags and the columns collapse into a run of unlabelled text. Shared
+  // findings are the ones a reviewer most needs the grade for, since they are
+  // the changes present in EVERY variant.
+  //
+  // Three columns. The grade lives under the description in column 1 — it had a
+  // column of its own at 8% width that was only 20% full. Image Ref stays at
+  // 34% deliberately: that is what keeps a stacked crop at ~248px, and lowering
+  // it undoes 0516d9f. The freed width went to Detailed Description, which set
+  // the row height in 67 of 67 rows at 38%.
   const findingTable = (rows) => `
       <table class="rpt-table">
         <thead><tr>
@@ -5639,7 +5649,7 @@ function rptAbVisualDiffSection(vd) {
     const unexpected = findings.filter(f => f.classification === 'unexpected');
     const unclear    = findings.filter(f => f.classification === 'unclear');
     const expected    = findings.filter(f => f.classification === 'expected');
-    // Anything the model returned without a usable verdict. Filtering into
+    // Anything the model returned without a usable grade. Filtering into
     // three named buckets and rendering only those three DROPPED these
     // outright — v.noVerdictCount below has always told the reader such
     // findings exist, and the report then showed none of them. That is the
@@ -5710,7 +5720,7 @@ function rptAbVisualDiffSection(vd) {
       v.fullPageTruncated ? '<div class="ab-cline ab-warn">Page exceeds the 8000px capture limit — content below the cutoff was not evaluated.</div>' : '',
       abState.qaMode ? '<div class="ab-cline">QA Mode is on — its on-page badge usually shows the variant’s own name, so it may appear as a difference here even though it isn’t one.</div>' : '',
       v.truncatedFindingCount ? `<div class="ab-cline">${v.truncatedFindingCount} finding${v.truncatedFindingCount !== 1 ? 's' : ''} not analyzed — this page has an unusually large number of changes.</div>` : '',
-      v.noVerdictCount ? `<div class="ab-cline rpt-muted">${v.noVerdictCount} finding${v.noVerdictCount !== 1 ? 's' : ''} returned without a verdict.</div>` : '',
+      v.noVerdictCount ? `<div class="ab-cline rpt-muted">${v.noVerdictCount} finding${v.noVerdictCount !== 1 ? 's' : ''} returned without a grade.</div>` : '',
       v.duplicateIndexCount ? `<div class="ab-cline ab-warn">The model returned inconsistent finding references for ${v.duplicateIndexCount} item${v.duplicateIndexCount !== 1 ? 's' : ''}.</div>` : '',
       v.truncated ? '<div class="ab-cline ab-warn">Response was cut off — some findings may be incomplete.</div>' : '',
       v.resumed ? '<div class="ab-cline rpt-muted">Restored from a previous run that didn’t finish — crops unavailable.</div>' : '',
@@ -5719,7 +5729,7 @@ function rptAbVisualDiffSection(vd) {
     const body = summaryHtml + notes + (findings.length ? findingTable(`
           ${unexpected.map(f => findingRows(f, v.resumed)).join('')}
           ${unclear.map(f => findingRows(f, v.resumed)).join('')}
-          ${ungraded.length ? groupRow(`${ungraded.length} finding${ungraded.length !== 1 ? 's' : ''} came back without a usable verdict — unjudged, not cleared. Review directly.`, true) + ungraded.map(f => findingRows(f, v.resumed)).join('') : ''}
+          ${ungraded.length ? groupRow(`${ungraded.length} finding${ungraded.length !== 1 ? 's' : ''} came back without a usable grade — unjudged, not cleared. Review directly.`, true) + ungraded.map(f => findingRows(f, v.resumed)).join('') : ''}
           ${expected.length ? groupRow(`${expected.length} difference${expected.length !== 1 ? 's' : ''} graded expected against the spec, shown in full. This grade and its severity are model judgments, both measured to move between runs on a byte-identical prompt — read the findings rather than trusting the label.`, false) + expected.map(f => findingRows(f, v.resumed)).join('') : ''}
     `) : `<p class="rpt-muted">${shared.length
         ? 'Nothing unique to this variant — every difference it has from ' + q(vd.baselineLabel) + ' is listed under “Common to all variants” above.'
@@ -6120,7 +6130,7 @@ function vdCollectProblems(sections) {
       if (v.resumed) add('info', at, 'Restored from a checkpoint rather than freshly analyzed — crops unavailable.');
       if (v.truncated) add('error', at, 'The model\'s response was cut off — some findings are incomplete.');
       if (v.truncatedFindingCount) add('warn', at, `${v.truncatedFindingCount} finding(s) exceeded the cap and were never analyzed.`);
-      if (v.noVerdictCount) add('warn', at, `${v.noVerdictCount} finding(s) came back without a verdict.`);
+      if (v.noVerdictCount) add('warn', at, `${v.noVerdictCount} finding(s) came back without a grade.`);
       // Neither of these is about the debug blob, so neither may be gated on it
       // — they were, and both went silent whenever diffDebug was absent.
       if (v.gradingFailed) {

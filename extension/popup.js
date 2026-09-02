@@ -5196,6 +5196,69 @@ function rptAgenticNoteHtml(note, label) {
   return `<p class="rpt-muted"><strong>${esc(label || 'Agentic Testing Note (Sonnet)')}:</strong> ${esc(note)}</p>`;
 }
 
+// ── the run's ONE visual-diff verdict ──────────────────────────────────────
+//
+// Lifted out of rptAbVisualDiffSection so that section and rptAbSection cannot
+// disagree. They did: the A/B section's totalDeltas counts page basics, watched
+// selectors, metrics and console and NEVER looked at the visual diff, even
+// though the Visual Diff section is rendered as its child from the same
+// captures. On the OnDeck run that put a green PASS on page 2 — same title,
+// same URL, no selectors, no metrics fired, no console deltas — directly above
+// a page 3 reading ISSUES FOUND with 67 findings, 4 unmet requirements and 2
+// unexpected. Both were internally right and the report contradicted itself.
+//
+// Requirements that are demonstrably unmet: absent copy, plus copy that shipped
+// with different wording. A `fragment` near-match is NOT a defect — the wording
+// is unchanged, only how much of it one element carries — so it must not badge.
+// This half is byte-reproducible across runs.
+function vdUnmetRequirements(v) {
+  const r = v.requirements;
+  if (!r || !r.items) return 0;
+  return r.absent + r.items.filter(x => x.status === 'near' && !x.fragment).length;
+}
+
+// A no-spec variant returns ONLY 'unclear' verdicts by construction, so
+// treating 'unexpected' as the only signal would report 0 issues for a variant
+// that actually surfaced real findings.
+function vdVariantIssueCount(v) {
+  if (v.skipped || v.error) return 0;
+  const findings = v.findings || [];
+  const unexpected = findings.filter(f => f.classification === 'unexpected').length;
+  const unclear = findings.filter(f => f.classification === 'unclear').length;
+  // The model half, unchanged in behaviour — it still catches semantic problems
+  // no string comparison can (on run 1787947608728 the removed TCPA consent
+  // disclaimer was one of these, graded 'unclear').
+  const model = v.noSpecText ? unexpected + unclear : unexpected;
+  // The deterministic half. Measured across twelve runs the model produced four
+  // different classification vectors on identical input, so a badge resting on
+  // it alone moves for no reason. A missing quoted requirement badges
+  // regardless of what the model said about it.
+  return vdUnmetRequirements(v) + model;
+}
+
+function vdVerdict(vd) {
+  const none = { ran: false, issues: 0, findings: 0, notCompared: 0 };
+  if (!vd || vd.skipped) return none;
+  const perVariant = vd.perVariant || [];
+  if (!perVariant.length) return none;
+  const shared = vd.sharedFindings || [];
+  // Shared changes were lifted out of every variant, so they must be counted
+  // here or a run whose only findings are common to all variants would tally
+  // zero issues and badge PASS.
+  const sharedIssues = shared.filter(f =>
+    f.classification === 'unexpected' || f.classification === 'unclear').length;
+  return {
+    ran: true,
+    issues: perVariant.reduce((n, v) => n + vdVariantIssueCount(v), 0) + sharedIssues,
+    findings: perVariant.reduce((n, v) => n + (v.findings || []).length, 0) + shared.length,
+    // A Control-vs-Control variant contributes no findings, and
+    // vdVariantIssueCount returns 0 for anything errored — so without this a run
+    // where the experiment never applied badges a green PASS. That is the one
+    // verdict neither section may show for a comparison that did not happen.
+    notCompared: perVariant.filter(v => v.controlDuplicate).length,
+  };
+}
+
 // Which configured metrics earn a row in the report: the ones that fired
 // somewhere. The metric list is persisted GLOBAL config, not per-test, so a run
 // inherits whatever was last configured — one OnDeck report carried ten rows of
@@ -5224,8 +5287,25 @@ function rptAbSection(entry) {
     d.selectorRows.filter(s => !s.allSame).length +
     d.metricRows.filter(m => !m.allSame).length +
     d.consoleRows.filter(v => v.added.length || v.missing.length).length;
-  const badge = errCount ? rptBadge('fail', 'FAIL') : totalDeltas ? rptBadge('issues', 'ISSUES FOUND') : rptBadge('pass', 'PASS');
-  const summary = `Baseline: ${captures[0].label} · ${errCount ? errCount + ' error(s) · ' : ''}${totalDeltas} difference(s) vs baseline`;
+  // The Visual Diff is this section's own child, built from these same
+  // captures, so its result belongs in this badge. Without it this section
+  // reported PASS on a run whose next page said ISSUES FOUND.
+  const vv = vdVerdict(entry.data.visualDiffFull);
+  const badge = errCount ? rptBadge('fail', 'FAIL')
+    : vv.notCompared ? rptBadge('fail', 'NOT COMPARED')
+    : (totalDeltas || vv.issues) ? rptBadge('issues', 'ISSUES FOUND')
+    : rptBadge('pass', 'PASS');
+  // "0 difference(s) vs baseline" was the other half of the contradiction: it
+  // meant zero differences IN WHAT THIS SECTION CHECKS, and read as zero
+  // differences full stop. Name the scope, and name the visual half.
+  const summary = `Baseline: ${captures[0].label} · ${errCount ? errCount + ' error(s) · ' : ''}`
+    + `${totalDeltas} difference(s) in page basics, watched selectors, metrics and console`
+    + (vv.ran
+        ? ` · ${vv.findings} visual difference(s)${vv.issues ? `, ${vv.issues} flagged` : ''} — see Visual Diff below`
+        : '')
+    + (vv.notCompared
+        ? ` · ${vv.notCompared} variant(s) resolved to the same page as Control and were not compared`
+        : '');
 
   const basicsRows = d.basics.map((b, i) => `<tr><td>${esc(b.label)}${i === 0 ? ' (baseline)' : ''}</td><td>${b.loadError ? 'Load failed: ' + esc(b.loadError) : esc(b.title)}</td><td>${b.loadError ? '—' : esc(b.finalUrl)}</td></tr>`).join('');
   let body = `<h3>Page Basics</h3><table class="rpt-table"><thead><tr><th>Variant</th><th>Title</th><th>URL</th></tr></thead><tbody>${basicsRows}</tbody></table>`;
@@ -5460,48 +5540,13 @@ function rptAbVisualDiffSection(vd) {
         ${rows}
       </table>`;
 
-  // Same noSpecText-aware counting as before: a no-spec variant returns
-  // ONLY 'unclear' verdicts by construction, so treating 'unexpected' as the
-  // only signal would report 0 issues for a variant that actually surfaced
-  // real findings.
-  // Requirements that are demonstrably unmet: absent copy, plus copy that
-  // shipped with different wording. A `fragment` near-match is not a defect —
-  // the wording is unchanged, only how much of it one element carries — so it
-  // must not badge. This half is byte-reproducible across runs.
-  const unmetRequirements = (v) => {
-    const r = v.requirements;
-    if (!r || !r.items) return 0;
-    return r.absent + r.items.filter(x => x.status === 'near' && !x.fragment).length;
-  };
-  const variantIssueCount = (v) => {
-    if (v.skipped || v.error) return 0;
-    const findings = v.findings || [];
-    const unexpected = findings.filter(f => f.classification === 'unexpected').length;
-    const unclear = findings.filter(f => f.classification === 'unclear').length;
-    // The model half, unchanged in behaviour — it still catches semantic
-    // problems no string comparison can (on run 1787947608728 the removed TCPA
-    // consent disclaimer was one of these, graded 'unclear').
-    const model = v.noSpecText ? unexpected + unclear : unexpected;
-    // The deterministic half. Measured across twelve runs the model produced
-    // four different classification vectors on identical input, so a badge
-    // resting on it alone moves for no reason. A missing quoted requirement
-    // now badges regardless of what the model said about it.
-    return unmetRequirements(v) + model;
-  };
+  // vdUnmetRequirements / vdVariantIssueCount / vdVerdict are top-level now,
+  // shared with rptAbSection so the two badges cannot disagree.
   const shared = vd.sharedFindings || [];
-  // Shared changes were lifted out of every variant, so they must be counted
-  // here or a run whose only findings are common to all variants would tally
-  // zero issues and badge PASS.
-  const sharedIssueCount = shared.filter(f =>
-    f.classification === 'unexpected' || (f.classification === 'unclear')).length;
-  const totalIssues = (vd.perVariant || []).reduce((n, v) => n + variantIssueCount(v), 0) + sharedIssueCount;
-  // A Control-vs-Control variant contributes no findings, and variantIssueCount
-  // returns 0 for anything errored — so without this a run where the experiment
-  // never applied would badge a green PASS. That is the one verdict this
-  // section must never show for a comparison that did not happen.
+  const vv = vdVerdict(vd);
   const dupVariants = (vd.perVariant || []).filter(v => v.controlDuplicate);
-  const badge = dupVariants.length ? rptBadge('fail', 'NOT COMPARED')
-    : totalIssues ? rptBadge('issues', 'ISSUES FOUND')
+  const badge = vv.notCompared ? rptBadge('fail', 'NOT COMPARED')
+    : vv.issues ? rptBadge('issues', 'ISSUES FOUND')
     : rptBadge('pass', 'PASS');
   let summary = `Visual Diff vs ${vd.baselineLabel}${vd.baselineWarning ? ' — ' + vd.baselineWarning : ''}`;
   if (dupVariants.length) {

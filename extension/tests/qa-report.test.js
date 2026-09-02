@@ -43,6 +43,9 @@ function slicePopup(from, to) {
 // than leaving it to test a stale duplicate.
 eval(slicePopup('function esc(s) {', '\nfunction '));
 eval(slicePopup('function rptBadge(kind, label) {', 'function rptAgenticNoteHtml('));
+// The run's ONE visual-diff verdict, shared by rptAbSection and
+// rptAbVisualDiffSection so their badges cannot disagree.
+eval(slicePopup('function vdUnmetRequirements(v) {', '\n// Which configured metrics'));
 eval(slicePopup('function rptAbVisualDiffSection(vd) {', '\nfunction rptWcagSection('));
 eval(slicePopup('function abFiredMetricRows(metricRows) {', '\nfunction rptAbSection('));
 var abState = { qaMode: false };
@@ -645,6 +648,112 @@ eval(slicePopup('function buildDesignReferenceDebug(ctx, state, hasFigmaPat) {',
   eq('an empty spec records null rather than an empty string', d.summaryOfChanges.text, null);
   eq('and is not marked present', d.summaryOfChanges.present, false);
   eq('and reports zero length', d.summaryOfChanges.length, 0);
+})();
+
+// ── the two badges must agree ──────────────────────────────────────────────
+section('one verdict shared by both sections');
+
+// The OnDeck shape exactly: nothing wrong in page basics / selectors / metrics
+// / console, and a visual diff full of findings with real issues in it.
+function vdOf(over) {
+  return Object.assign({
+    baselineLabel: 'v0', sharedFindings: [],
+    perVariant: [Object.assign({
+      label: 'v1', structuralStats: {}, noSpecText: false,
+      findings: [], requirements: null,
+    }, (over || {}).variant || {})],
+  }, (over || {}).vd || {});
+}
+
+(function theVisualDiffVerdictIsComputedOnce() {
+  var quiet = vdOf({ variant: { findings: [{ classification: 'expected' }] } });
+  eq('a run with only expected findings has no issues', vdVerdict(quiet).issues, 0);
+  eq('  but still reports its findings', vdVerdict(quiet).findings, 1);
+  eq('  and ran', vdVerdict(quiet).ran, true);
+
+  // 2 unexpected + 4 unmet requirements = the 6 that badged page 3 while page 2
+  // said PASS.
+  var loud = vdOf({ variant: {
+    findings: [{ classification: 'unexpected' }, { classification: 'unexpected' },
+               { classification: 'unclear' }].concat(
+              Array.apply(null, Array(64)).map(function () { return { classification: 'expected' }; })),
+    requirements: { absent: 3, items: [
+      { status: 'near', fragment: false },
+      { status: 'near', fragment: true },      // wording unchanged — NOT a defect
+      { status: 'found' }] },
+  } });
+  var v = vdVerdict(loud);
+  eq('67 findings', v.findings, 67);
+  eq('2 unexpected + 3 absent + 1 non-fragment near = 6 issues', v.issues, 6);
+
+  // Not run / skipped / empty must be distinguishable from "ran and was clean".
+  eq('no visual diff at all did not run', vdVerdict(undefined).ran, false);
+  eq('a skipped one did not run', vdVerdict({ skipped: true, perVariant: [] }).ran, false);
+  eq('  and reports no issues', vdVerdict({ skipped: true }).issues, 0);
+  eq('an empty perVariant did not run', vdVerdict({ perVariant: [] }).ran, false);
+})();
+
+(function bothSectionsActuallyReadThatOneVerdict() {
+  // This is the bug, and it lives in rptAbSection, which is not sliceable here
+  // without dragging in diffAbCaptures and mtMatch. Pin it in the source.
+  var ab = _pu.slice(_pu.indexOf('function rptAbSection(entry) {'),
+                     _pu.indexOf('function rptAbVisualDiffSection(vd) {'));
+  ok('the A/B section computes the visual verdict', /vdVerdict\(/.test(ab), ab.slice(0, 200));
+  var badge = /const badge = [\s\S]*?;\n/.exec(ab);
+  ok('  and its badge reads it', !!badge && /vv\.(issues|notCompared)/.test(badge[0]),
+     badge && badge[0]);
+  ok('  so PASS requires the visual half to be clean too',
+     !!badge && /totalDeltas \|\| vv\.issues/.test(badge[0]), badge && badge[0]);
+  var summary = /const summary = [\s\S]*?;\n/.exec(ab);
+  ok('  and the summary names its own scope rather than saying "vs baseline"',
+     !!summary && /page basics/.test(summary[0]) && !/difference\(s\) vs baseline/.test(summary[0]),
+     summary && summary[0]);
+  ok('  and reports the visual count', !!summary && /vv\.findings/.test(summary[0]));
+
+  // Neither section may compute its own tally any more.
+  var vdsec = _pu.slice(_pu.indexOf('function rptAbVisualDiffSection(vd) {'),
+                        _pu.indexOf('function rptWcagSection('));
+  ok('the Visual Diff section reads the same verdict', /vdVerdict\(vd\)/.test(vdsec));
+  ok('  and defines no local issue tally of its own',
+     !/const\s+(totalIssues|variantIssueCount|unmetRequirements)\s*=/.test(vdsec), 'stale local tally');
+})();
+
+(function aFragmentNearMatchMustNotBadge() {
+  // The wording is unchanged, only how much of it one element carries.
+  eq('a fragment near-match is not a defect',
+     vdUnmetRequirements({ requirements: { absent: 0, items: [{ status: 'near', fragment: true }] } }), 0);
+  eq('a real near-match is', 
+     vdUnmetRequirements({ requirements: { absent: 0, items: [{ status: 'near', fragment: false }] } }), 1);
+  eq('no requirements at all is not a defect', vdUnmetRequirements({}), 0);
+})();
+
+(function sharedAndDuplicateVariantsCountToo() {
+  // Shared findings were lifted out of every variant, so a run whose only
+  // findings are common to all variants must not tally zero and badge PASS.
+  var sh = vdOf({ vd: { sharedFindings: [{ classification: 'unexpected' }, { classification: 'expected' }] } });
+  eq('a shared unexpected finding is an issue', vdVerdict(sh).issues, 1);
+  eq('  and shared findings are counted in the total', vdVerdict(sh).findings, 2);
+
+  // A Control-vs-Control variant produces no findings, so without this a run
+  // where the experiment never applied badges a green PASS.
+  var dup = vdOf({ variant: { controlDuplicate: true } });
+  eq('a variant that resolved to Control is flagged as not compared',
+     vdVerdict(dup).notCompared, 1);
+  eq('  and contributes no issues, which is exactly the trap', vdVerdict(dup).issues, 0);
+})();
+
+(function anErroredVariantContributesNothing() {
+  eq('skipped', vdVariantIssueCount({ skipped: true, findings: [{ classification: 'unexpected' }] }), 0);
+  eq('errored', vdVariantIssueCount({ error: 'x', findings: [{ classification: 'unexpected' }] }), 0);
+})();
+
+(function withNoSpecEveryUnclearCounts() {
+  // A no-spec variant returns ONLY 'unclear' by construction, so counting only
+  // 'unexpected' would report 0 issues for a variant full of real findings.
+  var v = { noSpecText: true, findings: [{ classification: 'unclear' }, { classification: 'unclear' }] };
+  eq('unclear counts when there was no spec to judge against', vdVariantIssueCount(v), 2);
+  v.noSpecText = false;
+  eq('  but not when there was one', vdVariantIssueCount(v), 0);
 })();
 
 // ── the Metrics section ────────────────────────────────────────────────────

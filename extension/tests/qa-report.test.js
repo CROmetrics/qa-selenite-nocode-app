@@ -44,6 +44,7 @@ function slicePopup(from, to) {
 eval(slicePopup('function esc(s) {', '\nfunction '));
 eval(slicePopup('function rptBadge(kind, label) {', 'function rptAgenticNoteHtml('));
 eval(slicePopup('function rptAbVisualDiffSection(vd) {', '\nfunction rptWcagSection('));
+eval(slicePopup('function abFiredMetricRows(metricRows) {', '\nfunction rptAbSection('));
 var abState = { qaMode: false };
 
 // ── harness ────────────────────────────────────────────────────────────────
@@ -644,6 +645,41 @@ eval(slicePopup('function buildDesignReferenceDebug(ctx, state, hasFigmaPat) {',
   eq('an empty spec records null rather than an empty string', d.summaryOfChanges.text, null);
   eq('and is not marked present', d.summaryOfChanges.present, false);
   eq('and reports zero length', d.summaryOfChanges.length, 0);
+})();
+
+// ── the Metrics section ────────────────────────────────────────────────────
+section('Metrics section only earns a place when a metric fired');
+
+(function metricsTableSuppressedWhenNothingFired() {
+  // No typeof guard here: slicePopup already throws by design, naming the
+  // missing marker, so this function is defined or the suite never starts.
+  // The exact shape from an OnDeck run: ten metrics inherited from persisted
+  // GLOBAL config, unrelated to the page under test, not one of them fired.
+  var stale = ['OAM | WOW! Offer Card Clicks', 'OAM | Get YouTube TV CTA clicks',
+               'Meta LP | Scroll Depth | 25%', 'Meta LP | Scroll Depth | 50%']
+    .map(function (n) { return { metric: n, counts: [0, 0], allSame: true }; });
+  eq('ten zeros earn no rows', abFiredMetricRows(stale).length, 0);
+
+  // One that fired anywhere keeps its row — whether a conversion event fires on
+  // both variants is exactly what the report should say.
+  var mixed = stale.concat([{ metric: 'Lead form submit', counts: [3, 0], allSame: false }]);
+  var kept = abFiredMetricRows(mixed);
+  eq('a metric that fired keeps its row', kept.length, 1);
+  eq('  and it is the right one', kept[0].metric, 'Lead form submit');
+
+  // Fired in the BASELINE only is the interesting case, not a reason to hide it.
+  eq('fired only in v0 still counts',
+     abFiredMetricRows([{ metric: 'x', counts: [2, 0] }]).length, 1);
+  eq('fired only in the variant still counts',
+     abFiredMetricRows([{ metric: 'x', counts: [0, 2] }]).length, 1);
+  eq('fired equally in both still counts',
+     abFiredMetricRows([{ metric: 'x', counts: [4, 4] }]).length, 1);
+
+  // Defensive: the caller passes d.metricRows, which is [] when no metrics are
+  // configured at all, and a malformed row must not throw the whole report.
+  eq('no metrics configured', abFiredMetricRows([]).length, 0);
+  eq('undefined', abFiredMetricRows(undefined).length, 0);
+  eq('a row with no counts', abFiredMetricRows([{ metric: 'x' }]).length, 0);
 })();
 
 // ── report ─────────────────────────────────────────────────────────────────

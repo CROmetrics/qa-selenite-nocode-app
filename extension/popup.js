@@ -5196,6 +5196,21 @@ function rptAgenticNoteHtml(note, label) {
   return `<p class="rpt-muted"><strong>${esc(label || 'Agentic Testing Note (Sonnet)')}:</strong> ${esc(note)}</p>`;
 }
 
+// Which configured metrics earn a row in the report: the ones that fired
+// somewhere. The metric list is persisted GLOBAL config, not per-test, so a run
+// inherits whatever was last configured — one OnDeck report carried ten rows of
+// "OAM | WOW! Offer Card Clicks  v0 ×0 · v1 ×0" and "Meta LP | Scroll Depth |
+// 25%", none related to the page under test and not one of them fired. Ten
+// zeros is not a QA result.
+//
+// A metric that DID fire earns its row: whether a conversion event fires on
+// both variants is exactly what this report should say. So this suppresses the
+// noise case, not the feature. The PASS/ISSUES badge is unaffected either way —
+// all-zero rows are `allSame` and already contributed nothing to totalDeltas.
+function abFiredMetricRows(metricRows) {
+  return (metricRows || []).filter(m => (m.counts || []).some(c => c > 0));
+}
+
 function rptAbSection(entry) {
   if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
   const { captures: allCaptures, metricsList, selectors } = entry.data;
@@ -5219,9 +5234,12 @@ function rptAbSection(entry) {
     const selRows = d.selectorRows.map(s => `<tr><td>${esc(s.selector)}</td><td>${s.allSame ? 'Identical in all variants' : 'Differs — see extension for detail'}</td></tr>`).join('');
     body += `<h3>Watched Selectors</h3><table class="rpt-table"><thead><tr><th>Selector</th><th>Result</th></tr></thead><tbody>${selRows}</tbody></table>`;
   }
-  if (metricsList.length) {
-    const metRows = d.metricRows.map(m => `<tr><td>${esc(m.metric)}</td><td>${m.counts.map((c, i) => esc(captures[i].label) + ' ×' + c).join(' · ')}</td></tr>`).join('');
-    body += `<h3>Metrics</h3><table class="rpt-table"><thead><tr><th>Metric</th><th>Fire counts</th></tr></thead><tbody>${metRows}</tbody></table>`;
+  const firedRows = abFiredMetricRows(d.metricRows);
+  if (firedRows.length) {
+    const metRows = firedRows.map(m => `<tr><td>${esc(m.metric)}</td><td>${m.counts.map((c, i) => esc(captures[i].label) + ' ×' + c).join(' · ')}</td></tr>`).join('');
+    const quiet = d.metricRows.length - firedRows.length;
+    body += `<h3>Metrics</h3><table class="rpt-table"><thead><tr><th>Metric</th><th>Fire counts</th></tr></thead><tbody>${metRows}</tbody></table>`
+      + (quiet ? `<p class="rpt-muted">${quiet} other configured metric${quiet !== 1 ? 's' : ''} did not fire in any variant.</p>` : '');
   }
   if (d.errors.length) {
     const errRows = d.errors.map(e => `<tr><td>${esc(e.label)}</td><td>${[e.loadError, ...e.jsErrors].filter(Boolean).map(esc).join('<br>')}</td></tr>`).join('');

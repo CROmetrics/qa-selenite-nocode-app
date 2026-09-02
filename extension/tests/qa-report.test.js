@@ -86,7 +86,11 @@ function render(findings, over) {
     }, (over || {}).variant || {})],
   }, (over || {}).vd || {}));
 }
-function rowCount(h) { return h.split('class="ab-line"').length - 1; }
+// Findings are <tr> in a four-column table now, not <div class="ab-line">.
+// Counted by the type chip because every finding row carries one and the
+// group-heading rows (which are also <tr>, colspan=4) do not — counting bare
+// <tr> would include the header and the group headings.
+function rowCount(h) { return (h.match(/class="ab-delta"/g) || []).length; }
 function chipCount(h) { return (h.match(/text-transform:uppercase/g) || []).length; }
 
 // ── 1. the grade must not gate visibility ──────────────────────────────────
@@ -208,6 +212,108 @@ section('suppression disclosure');
   ok('and names the largest shift', h.indexOf('2108px') !== -1);
 })();
 
+// ── the four-column findings table ─────────────────────────────────────────
+section('four-column findings table');
+
+function headers(h) {
+  var out = [], re = /<th[^>]*>([^<]*)<\/th>/g, m;
+  while ((m = re.exec(h))) out.push(m[1]);
+  return out;
+}
+// The cells of the first FINDING row. Group headings are also <tr> with a
+// single colspan=4 cell, and every group has one, so picking the first <tr>
+// blindly returns a heading — which is what the first draft of these tests did.
+function cellsOf(h) {
+  var rows = h.split('<tr>').filter(function (r) { return r.indexOf('class="ab-delta"') !== -1; });
+  if (!rows.length) return [];
+  var out = [], re = /<td[^>]*>([\s\S]*?)<\/td>/g, m;
+  while ((m = re.exec(rows[0]))) out.push(m[1]);
+  return out;
+}
+// Just the short description, without the type chip that shares the cell.
+function shortText(cell) {
+  var after = String(cell).split('<br>');
+  return (after.length > 1 ? after.slice(1).join('<br>') : after[0]).replace(/<[^>]*>/g, '').trim();
+}
+
+(function theFourColumns() {
+  var f = rollup('section', 'unexpected');
+  f.shortDescription = 'Hero headline replaced and a business-owner photo added';
+  f.note = 'The hero was rebuilt per the ticket. Confirm the photo is the approved asset.';
+  var h = render([f]);
+  eq('exactly four columns, in the requested order',
+     headers(h).join(' | '),
+     'Short Description | Image Ref | Verdict | Detailed Description');
+  var c = cellsOf(h);
+  eq('four cells per finding', c.length, 4);
+  ok('col 1 carries the short description',
+     /Hero headline replaced/.test(c[0]), c[0]);
+  ok('col 1 also carries the change type', /class="ab-delta"/.test(c[0]));
+  ok('col 3 carries the verdict chip', /unexpected/.test(c[2]), c[2]);
+  ok('col 4 carries the detailed description',
+     /Confirm the photo is the approved asset/.test(c[3]), c[3]);
+  ok('  and the deterministic facts under it', /Region:/.test(c[3]), c[3]);
+  ok('the short description does NOT repeat the long one',
+     !/Confirm the photo/.test(c[0]));
+})();
+
+(function shortDescriptionIsCappedAt120() {
+  var f = rollup('section', 'unclear');
+  // 200 characters of real prose.
+  f.shortDescription = 'The hero section was replaced wholesale with a new headline, a new subhead, '
+    + 'a right-aligned business-owner photograph, a checklist of three benefits, and a primary '
+    + 'call to action that differs from control.';
+  var text = shortText(cellsOf(render([f]))[0]);
+  ok('over-long input is truncated to 120 or fewer', text.length <= 120, text.length);
+  ok('  with an ellipsis', /…$/.test(text), text.slice(-24));
+  ok('  and cut at a word boundary, not mid-word',
+     /[^\s]…$/.test(text) && f.shortDescription.indexOf(text.slice(0, -1)) === 0, text.slice(-30));
+  // Exactly 120 must survive intact.
+  var g = rollup('form', 'unclear');
+  g.shortDescription = 'x'.repeat(120);
+  eq('exactly 120 characters is left alone', shortText(cellsOf(render([g]))[0]).length, 120);
+})();
+
+(function shortDescriptionFallsBackToTheDiff() {
+  // A run whose report call failed keeps its findings and loses every model
+  // field (7e38210). The column must still say something true.
+  var f = element('added', 'section', 'See My Funding Options');
+  f.shortDescription = null; f.note = null; f.classification = null; f.severity = null;
+  var c = cellsOf(render([f], { variant: { gradingFailed: 'Failed to fetch' } }));
+  ok('the column is derived from the diff, not left blank',
+     /See My Funding Options/.test(c[0]), c[0]);
+  ok('  and names the change type', /added/.test(c[0]), c[0]);
+  ok('the verdict cell says unjudged rather than nothing',
+     /unjudged/.test(c[2]), c[2]);
+})();
+
+(function imageRefColumn() {
+  var f = rollup('section', 'expected');
+  f.baselineCrop = 'data:image/png;base64,AAA';
+  f.variantCrop = 'data:image/png;base64,BBB';
+  var c = cellsOf(render([f]));
+  ok('both crops land in the Image Ref column', /base64,AAA/.test(c[1]) && /base64,BBB/.test(c[1]), c[1]);
+  ok('  each labelled by side', /Control/.test(c[1]) && /Variant/.test(c[1]));
+  ok('  and no crop leaks into another column',
+     !/base64/.test(c[0]) && !/base64/.test(c[2]) && !/base64/.test(c[3]));
+  // Without crops, the column still anchors the finding.
+  var g = rollup('footer', 'expected', { controlRect: { x: 695, y: 3912, w: 1296, h: 614 } });
+  var gc = cellsOf(render([g]));
+  ok('with no crop it falls back to coordinates', /695, 3912/.test(gc[1]), gc[1]);
+})();
+
+(function groupHeadingsStayInsideTheTable() {
+  // Four separate tables would stop the columns lining up across the groups.
+  var h = render([
+    rollup('section', 'unexpected'),
+    rollup('form', 'expected'),
+  ]);
+  eq('one table', (h.match(/<table/g) || []).length, 1);
+  ok('the expected-group heading is a full-width row',
+     /<td colspan="4"/.test(h), h.slice(0, 400));
+  ok('  and still carries the instability caveat', /move between runs/.test(h));
+})();
+
 // ── a failed model call must not discard the diff ──────────────────────────
 section('grading failure degrades, it does not erase');
 
@@ -231,7 +337,7 @@ section('grading failure degrades, it does not erase');
   // The valuable half is still there.
   ok('requirement coverage still renders', /65 of 70 found verbatim/.test(h), h.slice(0, 700));
   ok('the unmet item still renders', /Lump-Sum Funding/.test(h));
-  eq('both findings still render', h.split('class="ab-line"').length - 1, 2);
+  eq('both findings still render', rowCount(h), 2);
   // Ungraded, not cleared — the 5ed70e5 bucket.
   ok('findings are labelled unjudged rather than passed', /unjudged, not cleared/.test(h));
   ok('  and carry no grade chip', !/letter-spacing:\.03em/.test(h), h.slice(0, 700));
@@ -365,7 +471,7 @@ function element(status, region, label, opts) {
              element('removed', 'main', '185K+ Businesses funded', { grade: 'expected' }),
              element('added', 'section', 'Feature grid', { grade: 'expected', memberCount: 6 })]);
   var h = render(findings);
-  eq('all five render', h.split('class="ab-line"').length - 1, 5);
+  eq('all five render', rowCount(h), 5);
   var kinds = [];
   var re = /class="ab-delta">([^<]*)</g, m;
   while ((m = re.exec(h))) kinds.push(m[1]);

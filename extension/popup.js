@@ -5302,25 +5302,83 @@ function rptAbVisualDiffSection(vd) {
     return `<span style="display:inline-block;border:1px solid;border-radius:3px;padding:0 4px;margin-right:5px;font-size:9px;text-transform:uppercase;letter-spacing:.03em;${GRADE_STYLE[g]}">${q(g)}${sev}</span>`;
   };
 
+  const SHORT_MAX = 120;
+  const clip = (str, n) => {
+    const t = String(str || '').trim();
+    return t.length > n ? t.slice(0, n - 1).replace(/\s+\S*$/, '') + '\u2026' : t;
+  };
+
+  // The model writes shortDescription, but it is not always there to write:
+  // a run whose report call failed (7e38210) keeps its findings and loses every
+  // model field, and an older checkpoint predates the field entirely. Derive
+  // something honest from the diff in that case rather than leaving the column
+  // blank — the diff always knows what kind of change this was and to what.
+  const shortOf = (f) => {
+    if (f.shortDescription) return clip(f.shortDescription, SHORT_MAX);
+    const label = f.controlBlock?.label || f.variantBlock?.label || '';
+    const text = (f.variantBlock?.text || f.controlBlock?.text || '').trim();
+    const subject = text || label || f.region || '';
+    const kind = findingType(f);
+    return clip(subject ? `${kind}: ${subject}` : kind, SHORT_MAX);
+  };
+
+  // Deterministic facts about the finding, appended under the model's prose.
+  // These need no network and cannot churn between runs, which is exactly why
+  // they belong in the column a reviewer reads when the prose is not enough.
+  const detailBits = (f) => {
+    const bits = [];
+    if (f.region) bits.push(`Region: ${q(f.region)}`);
+    if (f.memberCount > 1) {
+      bits.push(`${f.memberCount} adjacent elements changed the same way`
+        + (f.groupMembers?.length ? `: ${q(f.groupMembers.slice(0, 6).join('; '))}` : ''));
+    }
+    const ct = (f.controlBlock?.text || '').trim(), vt = (f.variantBlock?.text || '').trim();
+    if (ct && vt && ct !== vt) bits.push(`Control: “${q(clip(ct, 200))}”<br>Variant: “${q(clip(vt, 200))}”`);
+    else if (ct && !vt) bits.push(`Control text: “${q(clip(ct, 200))}”`);
+    else if (vt && !ct) bits.push(`Variant text: “${q(clip(vt, 200))}”`);
+    if (f.dx || f.dy) bits.push(`Moved ${f.dx ? `${f.dx}px horizontally` : ''}${f.dx && f.dy ? ', ' : ''}${f.dy ? `${f.dy}px vertically` : ''}`);
+    if (f.pixelRatio != null) bits.push(`${Math.round(f.pixelRatio * 100)}% of its pixels differ`);
+    if (f.changeSignals?.length) bits.push(`Signals: ${q(f.changeSignals.join(', '))}`);
+    if (f.matchTier) {
+      bits.push(`Paired by ${q(f.matchTier)}`
+        + (f.matchTier === 'fuzzy' ? ' — approximate, so the pairing itself may be wrong' : ''));
+    }
+    if (f.engineNote) bits.push(q(f.engineNote));
+    return bits;
+  };
+
+  // One <tr> per finding: Short Description | Image Ref | Verdict | Detailed.
   const findingRow = (f, resumedVariant) => {
     const rect = f.controlBlock?.rect || f.variantBlock?.rect;
+    const shot = (src, side) => `<figure style="margin:0 0 4px">
+      <img src="${qa(src)}" style="max-width:100%;max-height:120px;border:1px solid #d8dbe0;border-radius:3px;display:block" alt="${side} crop">
+      <figcaption class="rpt-muted" style="font-size:9px">${side}</figcaption></figure>`;
     let media;
     if (f.baselineCrop || f.variantCrop) {
-      media = `<div class="row" style="display:flex;gap:8px;align-items:flex-start">
-        ${f.baselineCrop ? `<img src="${qa(f.baselineCrop)}" style="max-width:260px;max-height:200px;border:1px solid #d8dbe0;border-radius:3px" alt="Control crop">` : ''}
-        ${f.variantCrop ? `<img src="${qa(f.variantCrop)}" style="max-width:260px;max-height:200px;border:1px solid #d8dbe0;border-radius:3px" alt="Variant crop">` : ''}
-      </div>`;
+      // Stacked, not side by side: this column is a quarter of the page and two
+      // crops beside each other in it are too small to read.
+      media = (f.baselineCrop ? shot(f.baselineCrop, 'Control') : '')
+            + (f.variantCrop ? shot(f.variantCrop, 'Variant') : '');
     } else if (rect) {
-      media = `<p class="rpt-muted">${resumedVariant ? 'Crop unavailable (restored from a saved checkpoint)' : 'No crop for this finding'} — near (${rect.x}, ${rect.y}), ${rect.w}×${rect.h}px.</p>`;
+      media = `<span class="rpt-muted">${resumedVariant ? 'Crop unavailable (restored from a checkpoint)' : 'No crop'} — near (${rect.x}, ${rect.y}), ${rect.w}×${rect.h}px</span>`;
     } else {
-      media = `<p class="rpt-muted">No crop available — this content has no direct page element to anchor to.</p>`;
+      media = `<span class="rpt-muted">No crop — no page element to anchor to</span>`;
     }
-    const label = f.controlBlock?.label || f.variantBlock?.label || '';
-    return `<div class="ab-line">
-      ${media}
-      <div class="ab-cline">${gradeChip(f)}<span class="ab-delta">${q(findingType(f))}</span> ${q(label)}${label ? ' — ' : ''}${q(f.note || '')}</div>
-    </div>`;
+    const detail = detailBits(f);
+    return `<tr>
+      <td style="vertical-align:top"><span class="ab-delta">${q(findingType(f))}</span><br>${q(shortOf(f))}</td>
+      <td style="vertical-align:top">${media}</td>
+      <td style="vertical-align:top">${gradeChip(f) || '<span class="rpt-muted">unjudged</span>'}</td>
+      <td style="vertical-align:top">${f.note ? `<div>${q(f.note)}</div>` : ''}${
+        detail.length ? `<div class="rpt-muted" style="margin-top:${f.note ? '4px' : '0'};font-size:11px">${detail.join('<br>')}</div>` : ''
+      }</td>
+    </tr>`;
   };
+
+  // A group heading has to be a row, or the four groups become four tables and
+  // the column widths stop lining up across them.
+  const groupRow = (text, warn) =>
+    `<tr><td colspan="4" class="${warn ? 'ab-warn' : 'rpt-muted'}" style="font-size:11px">${text}</td></tr>`;
 
   // Same noSpecText-aware counting as before: a no-spec variant returns
   // ONLY 'unclear' verdicts by construction, so treating 'unexpected' as the
@@ -5457,10 +5515,20 @@ function rptAbVisualDiffSection(vd) {
     ].filter(Boolean).join('');
 
     const body = summaryHtml + notes + (findings.length ? `
-      ${unexpected.map(f => findingRow(f, v.resumed)).join('')}
-      ${unclear.map(f => findingRow(f, v.resumed)).join('')}
-      ${ungraded.length ? `<div class="ab-cline ab-warn" style="margin-top:8px">${ungraded.length} finding${ungraded.length !== 1 ? 's' : ''} came back without a usable verdict — unjudged, not cleared. Review directly.</div>${ungraded.map(f => findingRow(f, v.resumed)).join('')}` : ''}
-      ${expected.length ? `<div class="ab-cline rpt-muted" style="margin-top:8px">${expected.length} difference${expected.length !== 1 ? 's' : ''} graded expected against the spec, shown in full. This grade and its severity are model judgments, both measured to move between runs on a byte-identical prompt — read the findings rather than trusting the label.</div>${expected.map(f => findingRow(f, v.resumed)).join('')}` : ''}
+      <table class="rpt-table">
+        <thead><tr>
+          <th style="width:24%">Short Description</th>
+          <th style="width:24%">Image Ref</th>
+          <th style="width:9%">Verdict</th>
+          <th>Detailed Description</th>
+        </tr></thead>
+        <tbody>
+          ${unexpected.map(f => findingRow(f, v.resumed)).join('')}
+          ${unclear.map(f => findingRow(f, v.resumed)).join('')}
+          ${ungraded.length ? groupRow(`${ungraded.length} finding${ungraded.length !== 1 ? 's' : ''} came back without a usable verdict — unjudged, not cleared. Review directly.`, true) + ungraded.map(f => findingRow(f, v.resumed)).join('') : ''}
+          ${expected.length ? groupRow(`${expected.length} difference${expected.length !== 1 ? 's' : ''} graded expected against the spec, shown in full. This grade and its severity are model judgments, both measured to move between runs on a byte-identical prompt — read the findings rather than trusting the label.`, false) + expected.map(f => findingRow(f, v.resumed)).join('') : ''}
+        </tbody>
+      </table>
     ` : `<p class="rpt-muted">${shared.length
         ? 'Nothing unique to this variant — every difference it has from ' + q(vd.baselineLabel) + ' is listed under “Common to all variants” above.'
         : 'No differences detected.'}</p>`);
@@ -6059,6 +6127,7 @@ function buildDebugLog(sections) {
           // seven findings four different ways needed to distinguish
           // "unseeded sampling" from "the prompt string actually changed".
           engineNote: f.engineNote || null,
+          shortDescription: f.shortDescription || null,
           // The model's OWN sentence for this finding. engineNote is what it
           // was GIVEN; this is what it concluded. Without it, 61 "unexpected"
           // verdicts had to be diagnosed by inferring from the spec instead of

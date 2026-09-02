@@ -37,6 +37,11 @@ load('../vd-config.js');
 load('../vd-diff.js');
 
 var _pu = readFile('../popup.js');
+// vdCollectProblems calls vdScaleMismatch, which is shared with the report's
+// inline note so the two cannot disagree about a scale mismatch.
+eval(_pu.slice(_pu.indexOf('function vdScaleMismatch(sc)'),
+                _pu.indexOf('\n// Is this a grade the model actually returned?')));
+
 eval(_pu.slice(_pu.indexOf('function vdCollectProblems(sections)'),
                 _pu.indexOf('function buildDebugLog(sections)')));
 // buildDebugLog carries the findings projection that becomes the exported JSON.
@@ -1592,10 +1597,43 @@ function capture(label, o) {
                       variantImage: { w: 5372, h: 13396 }, pageW: { control: 2686, variant: 2686 } });
   var hit = scaleHits(mixed);
   eq('a 1x/2x mismatch is reported exactly once', hit.length, 1);
-  eq('  at error severity, not warn', hit.length ? hit[0].severity : null, 'error');
+  // WARN, not error — deliberately downgraded. Severity drives the section badge
+  // (errors.length ? DEGRADED : CAVEATS) and nothing degrades here: one optional
+  // metric is unavailable and the pipeline withholds it exactly as designed.
+  // Measured on run 1788375660723 — matchedFraction identical to 17 digits
+  // against the three previous runs, requirements identical at 65/4/1 — and the
+  // report still badged DEGRADED.
+  eq('  at warn severity, so the section does not badge DEGRADED',
+     hit.length ? hit[0].severity : null, 'warn');
   ok('  and names both measured scales',
      hit.length > 0 && /1\.00x/.test(hit[0].detail) && /2\.00x/.test(hit[0].detail),
      hit.length ? hit[0].detail : null);
+  // The old text claimed "any crop or per-block pixel check is comparing regions
+  // at different magnifications". False, and it made a reader distrust images
+  // that are fine: cropVisualDiffBlock crops each side from its own bitmap at
+  // its own scale, and vdPixelCheckMatchedPairs is handed BOTH scales.
+  ok('  does not claim the crops are compromised',
+     hit.length > 0 && !/crop/i.test(hit[0].detail.split('withheld')[0] || ''),
+     hit.length ? hit[0].detail : null);
+  ok('  names the ONE affected figure',
+     hit.length > 0 && /whole-page pixel percentage/.test(hit[0].detail));
+  ok('  and says the rest still stands',
+     hit.length > 0 && /Everything else stands/.test(hit[0].detail));
+
+  // The predicate is shared with the report's inline note so the two cannot
+  // disagree about whether a mismatch happened.
+  ok('vdScaleMismatch agrees: 1 vs 2 mismatches',
+     vdScaleMismatch({ control: 1, variant: 2, controlImage: { w: 2686 }, variantImage: { w: 5372 },
+                       pageW: { control: 2686, variant: 2686 } }));
+  ok('  1 vs 1 at equal raw ratios does not',
+     !vdScaleMismatch({ control: 1, variant: 1, controlImage: { w: 2686 }, variantImage: { w: 2686 },
+                        pageW: { control: 2686, variant: 2686 } }));
+  ok('  a laundered pair (both clamp to 1) does',
+     vdScaleMismatch({ control: 1, variant: 1, controlImage: { w: 2686 }, variantImage: { w: 26860 },
+                       pageW: { control: 2686, variant: 2686 } }));
+  ok('  a null imageScale does not, and does not throw', !vdScaleMismatch(null));
+  ok('  a partial one does not throw',
+     vdScaleMismatch({ control: 1, variant: 1 }) === false);
 
   // vdImageScale clamps anything outside [0.5, 4] to 1, so two genuinely
   // divergent bitmaps can BOTH report a tidy scale of 1. Comparing only the

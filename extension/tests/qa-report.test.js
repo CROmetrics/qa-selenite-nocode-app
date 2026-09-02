@@ -1017,6 +1017,149 @@ function vdOf(over) {
   eq('  the deterministic half alone', vdUnmetRequirements(v), 2);
 })();
 
+// ── three routes to a green PASS on a run nobody validly compared ─────────
+section('a run that was not validly compared must never badge PASS');
+
+(function aFailedModelCallCannotBadgePass() {
+  // The degraded push hands over `cropped` — the PRE-grade list — so every
+  // finding carries no classification. That variant is neither `skipped` nor
+  // `error`, so vdVariantNeedsReview returned 0, and with no unmet copy strings
+  // both badges read PASS directly above the loud "Not graded." banner and N
+  // `unjudged` rows. 7e38210 restored the findings and the banner; the verdict
+  // was never taught the state exists.
+  var dead = vdOf({ variant: {
+    gradingFailed: 'Failed to fetch',
+    requirements: null,                       // no spec, so unmetCopy is 0 too
+    findings: Array.apply(null, Array(67)).map(function () {
+      return { classification: null, severity: null };
+    }),
+  } });
+  var v = vdVerdict(dead);
+  eq('all 67 findings count as ungraded', v.ungraded, 67);
+  eq('  none of them count as needing review — they were never judged', v.needsReview, 0);
+  eq('  and there is no copy evidence either', v.unmetCopy, 0);
+  ok('  so the badge cannot fall through to PASS', v.ungraded > 0);
+
+  // A failed call that produced NO findings is still ungraded — the variant was
+  // never judged, and that must not read as "nothing to report".
+  eq('a failed call with zero findings still counts as ungraded',
+     vdVerdict(vdOf({ variant: { gradingFailed: 'Stopped', findings: [] } })).ungraded, 1);
+
+  // Individually omitted findings count too — the model returned, but skipped
+  // some entries, so those keep no classification while neighbours have one.
+  var partial = vdOf({ variant: { findings: [
+    { classification: 'expected' }, { classification: null }, { classification: 'unclear' }] } });
+  eq('a finding the model omitted counts as ungraded', vdVerdict(partial).ungraded, 1);
+  eq('  without disturbing the graded ones', vdVerdict(partial).needsReview, 1);
+
+  // A fully graded run reports none, or every clean run would badge NOT GRADED.
+  eq('a fully graded run has nothing ungraded',
+     vdVerdict(vdOf({ variant: { findings: [{ classification: 'expected' }] } })).ungraded, 0);
+})();
+
+(function anAllControlRunCannotBadgePass() {
+  // The pipeline's all-duplicate exit returns skipped:true WITH a fully
+  // populated perVariant of controlDuplicate entries, so bailing on `skipped`
+  // returned before notCompared could be computed. And totalDeltas is 0 by
+  // construction on that path — every target resolved to the same page, so same
+  // title, same URL, no selector/metric/console delta — which landed the ladder
+  // on a green PASS. The existing test used a NON-skipped vd, which is why this
+  // shape was never caught.
+  var allControl = { skipped: true, baselineLabel: 'v0', sharedFindings: [], perVariant: [
+    { label: 'v1', controlDuplicate: true, findings: [], structuralStats: {} },
+    { label: 'v2', controlDuplicate: true, findings: [], structuralStats: {} },
+  ], reason: 'Every target resolved to the same page as Control' };
+  var v = vdVerdict(allControl);
+  eq('both duplicates are reported as not compared', v.notCompared, 2);
+  eq('  and the verdict is NOT treated as "did not run"', v.ran, true);
+
+  // A genuinely skipped run with nothing to account for still returns none.
+  eq('a skipped run with an empty perVariant did not run',
+     vdVerdict({ skipped: true, perVariant: [] }).ran, false);
+  eq('a skipped run with no duplicates did not run',
+     vdVerdict({ skipped: true, perVariant: [{ label: 'v1', skipped: true }] }).ran, false);
+})();
+
+(function bothBadgeLaddersRefusePassInThoseStates() {
+  // rptAbSection is not sliceable here without diffAbCaptures and mtMatch, so
+  // pin the ladder in source — and pin BOTH, since they must agree.
+  var ab = _pu.slice(_pu.indexOf('function rptAbSection(entry) {'),
+                     _pu.indexOf('function rptAbVisualDiffSection(vd) {'));
+  var abBadge = (/const badge = [\s\S]*?;\n/.exec(ab) || [''])[0];
+  ok('the A/B ladder checks notCompared before ISSUES/PASS',
+     abBadge.indexOf('notCompared') !== -1
+     && abBadge.indexOf('notCompared') < abBadge.indexOf("'PASS'"), abBadge);
+  ok('  and checks ungraded before ISSUES/PASS',
+     abBadge.indexOf('ungraded') !== -1
+     && abBadge.indexOf('ungraded') < abBadge.indexOf("'PASS'"), abBadge);
+
+  var vdsec = _pu.slice(_pu.indexOf('function rptAbVisualDiffSection(vd) {'),
+                        _pu.indexOf('function rptWcagSection('));
+  var vdBadge = (/const badge = [\s\S]*?;\n/.exec(vdsec) || [''])[0];
+  ok('the Visual Diff ladder checks ungraded before ISSUES/PASS',
+     vdBadge.indexOf('ungraded') !== -1
+     && vdBadge.indexOf('ungraded') < vdBadge.indexOf("'PASS'"), vdBadge);
+  ok('  and notCompared before that', vdBadge.indexOf('notCompared') < vdBadge.indexOf('ungraded'), vdBadge);
+})();
+
+(function theQueuedPathStillGetsItsVisualDiff() {
+  // visualDiffFull exists only on the standalone path; the Test-Agent path gets
+  // the metadata mirror on _abLastRun. Reading only the former dropped the whole
+  // visual result on the queued path — where abState.visualDiff is FORCED on, so
+  // the pipeline runs, one Opus call per variant — and printed PASS over it.
+  var ab = _pu.slice(_pu.indexOf('function rptAbSection(entry) {'),
+                     _pu.indexOf('function rptAbVisualDiffSection(vd) {'));
+  ok('the section falls back to the mirror', /visualDiffFull \|\| entry\.data\.visualDiff/.test(ab), ab.slice(0, 300));
+  eq('  and resolves it ONCE, so the verdict and the section cannot diverge',
+     (ab.match(/visualDiffFull \|\| entry\.data\.visualDiff/g) || []).length, 1);
+  ok('  the verdict reads that resolved value', /vdVerdict\(vdData\)/.test(ab), ab);
+  ok('  and so does the section', /rptAbVisualDiffSection\(vdData\)/.test(ab), ab);
+  // Same fallback vdCollectProblems has always used — they must not differ.
+  ok('vdCollectProblems uses the same fallback',
+     /visualDiffFull \|\| entry\.data\.visualDiff/.test(_pu.slice(_pu.indexOf('function vdCollectProblems'))));
+})();
+
+(function theTruncationLineDoesNotUnderstateCoverage() {
+  // It used to read "content below the cutoff was not evaluated". False: the DOM
+  // walk treats the capture height as a FLAG bound, not a rejection bound, so
+  // text, colour, layout and element presence ARE compared down there. Only the
+  // pixel comparison and the crops stop. The debug log always said this
+  // correctly; the client-facing line did not, and would send a reviewer to
+  // re-check content the tool already checked.
+  var h = render([rollup('section', 'expected')], { variant: { fullPageTruncated: true } });
+  ok('the line renders', /8000px/.test(h), 'no truncation line');
+  ok('  and does NOT claim the content went uncompared', !/was not evaluated/.test(h),
+     (/.{0,120}was not evaluated.{0,40}/.exec(h) || [''])[0]);
+  ok('  it says what WAS still compared', /Text, layout and element presence were still compared/.test(h), h.slice(0, 200));
+  ok('  and names what actually stops', /pixel comparison and the crop images/.test(h));
+})();
+
+(function theWithheldPixelFigureSaysSo() {
+  var scale = { control: 1, variant: 2, controlImage: { w: 2936 }, variantImage: { w: 5872 },
+                pageW: { control: 2936, variant: 2936 } };
+  var withheld = render([rollup('section', 'expected')],
+    { variant: { pixelDiff: null, diffDebug: { imageScale: scale } } });
+  ok('the withheld figure is announced where the figure would have been',
+     /Whole-page pixel comparison withheld/.test(withheld), 'silent');
+  ok('  naming both scales', /Control 1×, Variant 2×/.test(withheld), withheld.slice(0, 300));
+  ok('  and saying the rest is unaffected',
+     /findings, the matching and the copy checks/.test(withheld));
+
+  // Matched scales: the real figure renders and the withheld note does not.
+  var ok2 = render([rollup('section', 'expected')], { variant: {
+    pixelDiff: { flagged: true, ratio: 0.67 },
+    diffDebug: { imageScale: { control: 1, variant: 1, controlImage: { w: 2936 },
+                               variantImage: { w: 2936 }, pageW: { control: 2936, variant: 2936 } } } } });
+  ok('a real figure still renders', /67% of pixels differ/.test(ok2));
+  ok('  and the withheld note does not — the branches are exclusive',
+     !/withheld/.test(ok2), ok2.slice(0, 200));
+
+  // Neither appears when there is nothing to say.
+  var quiet = render([rollup('section', 'expected')], { variant: { pixelDiff: null } });
+  ok('no diffDebug at all: no note, and no throw',
+     !/withheld/.test(quiet) && !/of pixels differ/.test(quiet));
+})();
+
 // ── the Metrics section ────────────────────────────────────────────────────
 section('Metrics section only earns a place when a metric fired');
 

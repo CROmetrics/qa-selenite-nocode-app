@@ -5218,6 +5218,36 @@ function vdUnmetRequirements(v) {
   return r.absent + r.items.filter(x => x.status === 'near' && !x.fragment).length;
 }
 
+// Did the two screenshots come back at different pixel scales? One predicate,
+// read by the inline note in the report AND by the Run Diagnostics entry, so
+// they cannot disagree — c197e87 exists because two places computed the same
+// thing independently and contradicted each other.
+//
+// Compares the RAW ratios, not just the two scalars: vdImageScale clamps
+// anything outside [0.5, 4] to 1, so two genuinely divergent bitmaps can both
+// report a tidy 1. That subtlety is why a mismatched run 64 seconds after a
+// clean one produced a byte-identical `problems` list and went unnoticed.
+function vdScaleMismatch(sc) {
+  if (!sc) return false;
+  const rawC = sc.controlImage?.w && sc.pageW?.control ? sc.controlImage.w / sc.pageW.control : null;
+  const rawV = sc.variantImage?.w && sc.pageW?.variant ? sc.variantImage.w / sc.pageW.variant : null;
+  return (sc.control !== sc.variant)
+    || (rawC != null && rawV != null && Math.abs(rawC - rawV) > 0.01);
+}
+
+// Is this a grade the model actually returned? ONE definition, because the
+// verdict and the renderer must agree on what counts as judged: vdVariantUngraded
+// asks "was this finding judged at all?" and gradeChip asks "can I draw a chip
+// for it?", and those are the same question. GRADE_STYLE carries only colours.
+//
+// A function rather than a const map on purpose — the jsc suites slice these out
+// and eval them, and a `const` declared inside eval() does not reach the calling
+// scope while a function declaration does. VIS_REPORT_RETRIES already cost a
+// test this way.
+function vdIsGrade(g) {
+  return g === 'unexpected' || g === 'unclear' || g === 'expected';
+}
+
 // The model half: findings a human still has to look at. `unclear` counts the
 // same as `unexpected`, and it counts WHETHER OR NOT there was a spec.
 //
@@ -5239,6 +5269,29 @@ function vdVariantNeedsReview(v) {
   const findings = v.findings || [];
   return findings.filter(f =>
     f.classification === 'unexpected' || f.classification === 'unclear').length;
+}
+
+// Findings nobody judged. Two ways to get here, and NEITHER is `skipped` or
+// `error`, which is why both slipped past vdVariantNeedsReview:
+//
+//   1. the whole model call died — `gradingFailed` is set and every finding on
+//      that path carries no classification at all, because the degraded push
+//      hands over `cropped`, the pre-grade list;
+//   2. the model returned but omitted individual findings from its response, so
+//      those keep no classification while their neighbours have one.
+//
+// Both must reach the badge. Before this, a run of 67 findings whose grading
+// died reported needsReview 0 and — with no unmet copy strings — badged a green
+// PASS directly above its own loud "Not graded." banner and 67 `unjudged` rows.
+// 7e38210 restored the findings and the banner; the verdict was never taught
+// that the state exists.
+function vdVariantUngraded(v) {
+  if (v.skipped || v.error) return 0;
+  const findings = v.findings || [];
+  const unjudged = findings.filter(f => !vdIsGrade(f.classification)).length;
+  // A failed call with zero findings still counts as ungraded — the variant was
+  // never judged, and that must not read as "nothing to report".
+  return v.gradingFailed ? Math.max(1, unjudged) : unjudged;
 }
 
 // Kept as the per-variant unit: the deterministic half plus the model half.
@@ -5264,10 +5317,22 @@ function vdVariantIssueCount(v) {
 // `Lump Sum Loan` alongside the "Lump-Sum Funding" eyebrow — so 4 + 6 = 10 would
 // count two defects twice. Both summary lines name the two numbers instead.
 function vdVerdict(vd) {
-  const none = { ran: false, issues: 0, findings: 0, notCompared: 0, unmetCopy: 0, needsReview: 0 };
-  if (!vd || vd.skipped) return none;
+  const none = { ran: false, issues: 0, findings: 0, notCompared: 0, unmetCopy: 0, needsReview: 0, ungraded: 0 };
+  if (!vd) return none;
   const perVariant = vd.perVariant || [];
+  // ── B ──────────────────────────────────────────────────────────────────
+  // `skipped` alone is NOT enough to bail. The pipeline's all-Control exit
+  // returns skipped:true WITH a fully populated perVariant of controlDuplicate
+  // entries, so bailing here returned before notCompared could be computed —
+  // and totalDeltas is 0 by construction on that path (every target resolved to
+  // the same page, so same title, same URL, no selector/metric/console delta),
+  // which landed rptAbSection's ladder on a green PASS. That is the one verdict
+  // this comment block has always said neither section may show for a
+  // comparison that did not happen.
+  //
+  // So: bail only when there is genuinely nothing to account for.
   if (!perVariant.length) return none;
+  if (vd.skipped && !perVariant.some(v => v.controlDuplicate)) return none;
   const shared = vd.sharedFindings || [];
   // Shared changes were lifted out of every variant, so they must be counted
   // here or a run whose only findings are common to all variants would tally
@@ -5276,10 +5341,13 @@ function vdVerdict(vd) {
     f.classification === 'unexpected' || f.classification === 'unclear').length;
   const unmetCopy = perVariant.reduce((n, v) => n + (v.skipped || v.error ? 0 : vdUnmetRequirements(v)), 0);
   const needsReview = perVariant.reduce((n, v) => n + vdVariantNeedsReview(v), 0) + sharedReview;
+  const ungraded = perVariant.reduce((n, v) => n + vdVariantUngraded(v), 0)
+    + shared.filter(f => !vdIsGrade(f.classification)).length;
   return {
     ran: true,
     unmetCopy,
     needsReview,
+    ungraded,
     // BADGE PREDICATE ONLY — never render this as a total. It is exactly the
     // double-counted sum described above; it exists so a caller can ask "is
     // either half non-zero?" in one place.
@@ -5303,6 +5371,11 @@ function vdVerdictSummary(vv) {
   }
   if (vv.needsReview) {
     parts.push(`${vv.needsReview} finding${vv.needsReview !== 1 ? 's' : ''} needing review`);
+  }
+  // Counted separately from needsReview: these were never judged at all, which
+  // is a different statement from "judged and unclear".
+  if (vv.ungraded) {
+    parts.push(`${vv.ungraded} ungraded`);
   }
   return parts.join(' · ');
 }
@@ -5372,9 +5445,23 @@ function rptAbSection(entry) {
   // The Visual Diff is this section's own child, built from these same
   // captures, so its result belongs in this badge. Without it this section
   // reported PASS on a run whose next page said ISSUES FOUND.
-  const vv = vdVerdict(entry.data.visualDiffFull);
+  // visualDiffFull only exists on the standalone A/B path; the Test-Agent path
+  // gets the metadata mirror on _abLastRun instead. Reading only the former
+  // meant the queued path — where abState.visualDiff is FORCED on, so the
+  // pipeline runs, one Opus call per variant, coverage and crops included —
+  // dropped the whole visual result: vdVerdict got undefined and returned
+  // `none`, so the badge ignored it and printed PASS over 67 findings and 4
+  // unmet copy strings, and the section itself rendered ''. Same fallback
+  // vdCollectProblems has always used.
+  const vdData = entry.data.visualDiffFull || entry.data.visualDiff;
+  const vv = vdVerdict(vdData);
+  // Order matters and is asserted: a comparison that did not happen, or one
+  // nobody graded, must never fall through to PASS just because the counters
+  // that feed ISSUES FOUND came back zero — which is exactly how they come back
+  // in both of those states.
   const badge = errCount ? rptBadge('fail', 'FAIL')
     : vv.notCompared ? rptBadge('fail', 'NOT COMPARED')
+    : vv.ungraded ? rptBadge('issues', 'NOT GRADED')
     : (totalDeltas || vv.issues) ? rptBadge('issues', 'ISSUES FOUND')
     : rptBadge('pass', 'PASS');
   // "0 difference(s) vs baseline" was the other half of the contradiction: it
@@ -5414,7 +5501,7 @@ function rptAbSection(entry) {
   // from _abLastRun/getData(). The Test-Agent-queued path never sets this
   // field, so this stays a no-op there — no crop images flow into that
   // combined report or the AI summarize-results prompt it feeds.
-  return rptSection(entry.name, badge, summary, body) + rptAbVisualDiffSection(entry.data.visualDiffFull);
+  return rptSection(entry.name, badge, summary, body) + rptAbVisualDiffSection(vdData);
 }
 
 // Static-report counterpart driven by the 3-stage pipeline's per-variant
@@ -5468,6 +5555,8 @@ function rptAbVisualDiffSection(vd) {
   // instead of being implied by which bucket a row was filed under, and
   // qa-report.html is a separate document from the two popup shells, so a
   // chip that carries its own colour needs no third stylesheet edit.
+  // Colours only — vdIsGrade is what decides whether a grade is usable, so the
+  // chip and vdVariantUngraded cannot drift apart on that question.
   const GRADE_STYLE = {
     unexpected: 'background:#fdecea;color:#a3261a;border-color:#f2c2bb',
     unclear: 'background:#fff6e5;color:#8a5a00;border-color:#f0dcb0',
@@ -5484,7 +5573,7 @@ function rptAbVisualDiffSection(vd) {
   const SEV_OK = { low: 1, medium: 1, high: 1 };
   const gradeChip = (f) => {
     const g = f.classification;
-    if (!g || !GRADE_STYLE[g]) return '';
+    if (!vdIsGrade(g) || !GRADE_STYLE[g]) return '';
     const sev = SEV_OK[f.severity] ? ` · ${q(f.severity)}` : '';
     return `<span style="display:inline-block;border:1px solid;border-radius:3px;padding:0 4px;margin-right:5px;font-size:9px;text-transform:uppercase;letter-spacing:.03em;${GRADE_STYLE[g]}">${q(g)}${sev}</span>`;
   };
@@ -5680,6 +5769,7 @@ function rptAbVisualDiffSection(vd) {
   const vv = vdVerdict(vd);
   const dupVariants = (vd.perVariant || []).filter(v => v.controlDuplicate);
   const badge = vv.notCompared ? rptBadge('fail', 'NOT COMPARED')
+    : vv.ungraded ? rptBadge('issues', 'NOT GRADED')
     : vv.issues ? rptBadge('issues', 'ISSUES FOUND')
     : rptBadge('pass', 'PASS');
   let summary = `Visual Diff vs ${vd.baselineLabel}${vd.baselineWarning ? ' — ' + vd.baselineWarning : ''}`;
@@ -5767,8 +5857,24 @@ function rptAbVisualDiffSection(vd) {
         : '',
       v.diffMode === 'redesign' ? `<div class="ab-cline ab-warn">Only ${Math.round((v.matchedFraction || 0) * 100)}% of elements have a counterpart in ${q(vd.baselineLabel)} — this looks like a wholesale redesign rather than a targeted experiment, so differences are summarized per page region instead of element by element.</div>` : '',
       (s.addedCount || s.removedCount || s.modifiedCount || s.styleChangedCount) ? `<div class="ab-cline rpt-muted">${s.addedCount || 0} added, ${s.removedCount || 0} removed, ${s.modifiedCount || 0} modified, ${s.styleChangedCount || 0} style-changed, ${s.unchangedCount || 0} unchanged content block${s.unchangedCount === 1 ? '' : 's'} detected.</div>` : '',
-      v.pixelDiff?.flagged ? `<div class="ab-cline ab-warn">${Math.round(v.pixelDiff.ratio * 100)}% of pixels differ across the page (including any changes already described above) — review directly if this seems high relative to the findings above.</div>` : '',
-      v.fullPageTruncated ? '<div class="ab-cline ab-warn">Page exceeds the 8000px capture limit — content below the cutoff was not evaluated.</div>' : '',
+      v.pixelDiff?.flagged ? `<div class="ab-cline ab-warn">${Math.round(v.pixelDiff.ratio * 100)}% of pixels differ across the page (including any changes already described above) — review directly if this seems high relative to the findings above.</div>`
+        // Withheld, not zero. The guard above is `?.flagged`, so before this the
+        // line simply vanished and the only explanation sat in Run Diagnostics
+        // at the end of the document — the same silent degradation gradingFailed
+        // had before 7e38210. NOT gated on v.diffDebug: that mistake already
+        // silenced gradingFailed and requirementsUnsupported once.
+        : vdScaleMismatch(v.diffDebug?.imageScale)
+          ? `<div class="ab-cline ab-warn">Whole-page pixel comparison withheld — the two screenshots came back at different scales (Control ${v.diffDebug.imageScale.control}×, Variant ${v.diffDebug.imageScale.variant}×), usually because the windows were on displays with different scaling. Everything else here is unaffected: the findings, the matching and the copy checks are measured from the page itself, not from the screenshots.</div>`
+        : '',
+      // NOT "was not evaluated" — that was wrong, and it understated the tool's
+      // own coverage. domCandidateWalkFn treats the capture height as a FLAG
+      // bound, not a rejection bound (background.js): candidates past the line
+      // are walked and diffed normally and only marked belowCapture/offCanvas,
+      // so text, colour, layout and element presence are all compared down
+      // there. Only the two things that genuinely need pixels skip it. The
+      // debug log has always said this correctly; the client-facing line did
+      // not, and would send a reviewer to re-check content already checked.
+      v.fullPageTruncated ? '<div class="ab-cline ab-warn">Page exceeds the 8000px screenshot limit. Text, layout and element presence were still compared below the cutoff — only the pixel comparison and the crop images stop there, so findings down there have no image.</div>' : '',
       abState.qaMode ? '<div class="ab-cline">QA Mode is on — its on-page badge usually shows the variant’s own name, so it may appear as a difference here even though it isn’t one.</div>' : '',
       v.truncatedFindingCount ? `<div class="ab-cline">${v.truncatedFindingCount} finding${v.truncatedFindingCount !== 1 ? 's' : ''} not analyzed — this page has an unusually large number of changes.</div>` : '',
       v.noVerdictCount ? `<div class="ab-cline rpt-muted">${v.noVerdictCount} finding${v.noVerdictCount !== 1 ? 's' : ''} returned without a grade.</div>` : '',
@@ -6221,14 +6327,26 @@ function vdCollectProblems(sections) {
         // vdImageScale clamps anything outside [0.5, 4] to 1, so two genuinely
         // divergent bitmaps can both report a tidy 1.
         const sc = d.imageScale;
-        if (sc) {
+        if (vdScaleMismatch(sc)) {
           const rawC = sc.controlImage?.w && sc.pageW?.control ? sc.controlImage.w / sc.pageW.control : null;
           const rawV = sc.variantImage?.w && sc.pageW?.variant ? sc.variantImage.w / sc.pageW.variant : null;
-          const mismatch = (sc.control !== sc.variant)
-            || (rawC != null && rawV != null && Math.abs(rawC - rawV) > 0.01);
-          if (mismatch) {
-            add('error', at, `The two screenshots came back at different pixel scales — Control ${sc.controlImage?.w}px wide for a ${sc.pageW?.control}px page (${rawC != null ? rawC.toFixed(2) : '?'}x), Variant ${sc.variantImage?.w}px for ${sc.pageW?.variant}px (${rawV != null ? rawV.toFixed(2) : '?'}x). Nothing that reads pixels can be trusted across that gap: the whole-page pixel percentage is withheld for this variant, and any crop or per-block pixel check is comparing regions at different magnifications. Re-run before reading anything into the pixel figures.`);
-          }
+          // `warn`, not `error`. Severity drives the section badge
+          // (errors.length ? DEGRADED : CAVEATS) and nothing degraded here: one
+          // optional metric was unavailable and the pipeline withheld it exactly
+          // as designed. Measured on run 1788375660723 — matchedFraction
+          // identical to 17 digits against the three previous runs and
+          // requirements identical at 65/4/1 — yet the report badged DEGRADED.
+          //
+          // The old text also claimed "any crop or per-block pixel check is
+          // comparing regions at different magnifications". That was wrong and
+          // would make a reader distrust images that are fine: cropVisualDiffBlock
+          // crops each side from its own bitmap at its own scale, and
+          // vdPixelCheckMatchedPairs is handed BOTH scales and normalises. The
+          // one real casualty is computeCoarsePixelDiffRatio, which crops both
+          // bitmaps to min(width)/min(height) and compares raw pixels with no
+          // normalisation — at 1x vs 2x that compares Control's full width
+          // against the variant's left half.
+          add('warn', at, `The two screenshots came back at different pixel scales — Control ${sc.controlImage?.w}px wide for a ${sc.pageW?.control}px page (${rawC != null ? rawC.toFixed(2) : '?'}x), Variant ${sc.variantImage?.w}px for ${sc.pageW?.variant}px (${rawV != null ? rawV.toFixed(2) : '?'}x), which usually means the two windows were on displays with different scaling. One figure is affected and has been withheld: the whole-page pixel percentage, which compares the two bitmaps directly. Everything else stands — findings, matching, requirement coverage and the crops are measured per side or from the page's own geometry. Re-run with both windows on the same display if you want that percentage.`);
         }
         // Unmet requirements are a deterministic result, so unlike the model's
         // verdicts this line means the same thing on every run of the same page.

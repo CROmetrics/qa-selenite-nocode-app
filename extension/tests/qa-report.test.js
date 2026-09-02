@@ -287,19 +287,89 @@ function shortText(cell) {
      /unjudged/.test(c[2]), c[2]);
 })();
 
-(function imageRefColumn() {
+(function imageRefColumnAndTheFullWidthPair() {
+  // The pre-table format's crops were ~250px side by side and legible — its
+  // form before/after visibly showed Email Address moving down the field order.
+  // A quarter-width column capped at 120px cannot carry that, so the pair gets
+  // its own full-width row and Image Ref keeps a thumbnail as the locator.
   var f = rollup('section', 'expected');
   f.baselineCrop = 'data:image/png;base64,AAA';
   f.variantCrop = 'data:image/png;base64,BBB';
-  var c = cellsOf(render([f]));
-  ok('both crops land in the Image Ref column', /base64,AAA/.test(c[1]) && /base64,BBB/.test(c[1]), c[1]);
-  ok('  each labelled by side', /Control/.test(c[1]) && /Variant/.test(c[1]));
-  ok('  and no crop leaks into another column',
-     !/base64/.test(c[0]) && !/base64/.test(c[2]) && !/base64/.test(c[3]));
-  // Without crops, the column still anchors the finding.
+  var h = render([f]);
+  var c = cellsOf(h);
+  ok('Image Ref holds a thumbnail', /base64/.test(c[1]), c[1]);
+  ok('  the VARIANT one — what it looks like now', /base64,BBB/.test(c[1]) && /Variant thumbnail/.test(c[1]), c[1]);
+  ok('  and still carries the coordinates as a locator', /695, 187/.test(c[1]), c[1]);
+  ok('  capped small, since the real comparison is below', /max-height:64px/.test(c[1]));
+  // Row two: the pair, full width, side by side, uncapped in height.
+  // Anchored on padding-top, not just colspan — the GROUP HEADING row is also
+  // a colspan=4 and matches first, which is how this assertion first failed.
+  var pair = /<tr><td colspan="4" style="padding-top:0">[\s\S]*?<\/tr>/.exec(h);
+  ok('a full-width second row carries both crops',
+     !!pair && /base64,AAA/.test(pair[0]) && /base64,BBB/.test(pair[0]), pair && pair[0].slice(0, 120));
+  ok('  labelled Control and Variant', !!pair && /Control/.test(pair[0]) && /Variant/.test(pair[0]));
+  ok('  side by side', !!pair && /display:flex/.test(pair[0]));
+  ok('  and not height-capped, so it is legible',
+     !!pair && !/max-height/.test(pair[0]), pair && pair[0].slice(0, 200));
+
+  // No crops: one row only, and the cell still anchors the finding.
   var g = rollup('footer', 'expected', { controlRect: { x: 695, y: 3912, w: 1296, h: 614 } });
-  var gc = cellsOf(render([g]));
-  ok('with no crop it falls back to coordinates', /695, 3912/.test(gc[1]), gc[1]);
+  var gh = render([g]);
+  ok('with no crop it falls back to coordinates', /695, 3912/.test(cellsOf(gh)[1]), cellsOf(gh)[1]);
+  ok('  and emits no second row', !/<tr><td colspan="4"[^>]*style="padding-top:0"/.test(gh));
+})();
+
+(function sharedFindingsGetTheFourColumnsToo() {
+  // 5d934d2 converted findings to <tr> but left this section emitting them with
+  // no <table> around them, so every "Common to all variants" finding rendered
+  // as a run of unlabelled text — the parser drops rows it cannot place. These
+  // are the findings a reviewer most needs the Verdict column for, since they
+  // are present in EVERY variant.
+  var sh = rollup('nav', 'unexpected');
+  sh.sharedAcross = ['v1', 'v2'];
+  var h = render([], { vd: { sharedFindings: [sh] } });
+  var i = h.indexOf('Common to all variants');
+  ok('the shared section renders', i !== -1);
+  var after = h.slice(i);
+  var tableAt = after.indexOf('<table'), rowAt = after.indexOf('<tbody');
+  ok('its rows are inside a table', tableAt !== -1 && tableAt < rowAt,
+     'table@' + tableAt + ' tbody@' + rowAt);
+  ok('  with the same four headers', /Short Description[\s\S]*?Image Ref[\s\S]*?Verdict[\s\S]*?Detailed Description/
+     .test(after.slice(tableAt, rowAt)));
+})();
+
+(function findingAndItsCropsCannotBeSplitByAPageBreak() {
+  // page-break-inside in the stylesheet is on `tr`, which would happily put a
+  // finding on one page and its crops on the next.
+  var f = rollup('section', 'expected');
+  f.baselineCrop = 'data:image/png;base64,AAA';
+  f.variantCrop = 'data:image/png;base64,BBB';
+  var h = render([f]);
+  ok('each finding is wrapped in its own tbody',
+     /<tbody style="page-break-inside:avoid">/.test(h), h.slice(0, 300));
+  var tb = h.split('<tbody').filter(function (x) { return x.indexOf('class="ab-delta"') !== -1; });
+  eq('one tbody per finding', tb.length, 1);
+  ok('  containing both of its rows', (tb[0].match(/<tr>/g) || []).length === 2, tb[0].slice(0, 80));
+})();
+
+(function derivedShortDescriptionStopsRepeatingItself() {
+  // Run 1788360614883 rendered "Region / region: section" beside a detail
+  // column that then said "Region: section" — the same word three times.
+  var r = rollup('section', null);
+  r.classification = null; r.shortDescription = null; r.note = null;
+  r.engineNote = 'section: 45 elements in Control, 106 in Variant, 1 matched.';
+  var rc = cellsOf(render([r]));
+  ok('a rollup falls back to its COUNTS, not its region name',
+     /45 elements in Control, 106 in Variant, 1 matched/.test(rc[0]), rc[0]);
+  ok('  with no "region:" prefix duplicating the chip', !/region:\s*section/i.test(rc[0]), rc[0]);
+
+  var e = element('removed', 'section', 'Move forward with fast business funding.');
+  e.shortDescription = null; e.note = null; e.classification = null;
+  var ec = cellsOf(render([e]));
+  ok('an element falls back to its text with no "removed:" prefix',
+     /Move forward with fast business funding/.test(ec[0]) && !/^\s*removed:/.test(shortText(ec[0])), shortText(ec[0]));
+  ok('  and the detail column does not repeat it verbatim',
+     !/Control text/.test(ec[3]), ec[3]);
 })();
 
 (function groupHeadingsStayInsideTheTable() {

@@ -4025,6 +4025,25 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
       continue;
     }
 
+    // Crop BEFORE grading. Cropping needs only the rects the diff already
+    // produced — the handler reads controlBlock/variantBlock and never touches
+    // model output — and running it after the report call meant a grading
+    // failure took every image with it: run 1788360614883 rendered all 67
+    // Image Ref cells as "No crop", because the degraded push at 7e38210
+    // returns before this point. Same work, earlier.
+    let cropped = kept;
+    if (abState.visualDiffCrops) {
+      onStatus?.(`Cropping ${c.label}…`);
+      const cropRes = await chrome.runtime.sendMessage({
+        action: 'cropVisualDiffFindings',
+        payload: {
+          winId: WIN_ID, baselineLabel: base.label, variantLabel: c.label, findings: kept,
+          basePageW: base.fullPage?.pageW ?? null, variantPageW: c.fullPage?.pageW ?? null,
+        },
+      });
+      if (cropRes?.ok) cropped = kept.map(f => ({ ...f, ...(cropRes.crops[f.findingId] || {}) }));
+    }
+
     onStatus?.(`Analyzing ${c.label}…`);
     const reportRes = await chrome.runtime.sendMessage({
       action: 'reportVisualDiffFindings',
@@ -4050,7 +4069,7 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
       // classification land in the renderer's "unjudged, not cleared" bucket
       // (5ed70e5), which is exactly what they are.
       perVariant.push({
-        label: c.label, sameUrlNote, findings: kept, overallSummary: null,
+        label: c.label, sameUrlNote, findings: cropped, overallSummary: null,
         gradingFailed: reportRes?.error || 'Analysis failed',
         noSpecText: !gradedSpec, requirements, requirementsUnsupported,
         structuralStats, truncatedFindingCount: truncatedCount,
@@ -4065,19 +4084,7 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
     // never saw controlBlock/variantBlock/rect directly, only a text summary
     // of them, so those fields still need to come from `kept`.
     const byId = new Map(reportRes.findings.map(f => [f.findingId, f]));
-    let findings = kept.map(f => ({ ...f, ...(byId.get(f.findingId) || {}) }));
-
-    if (abState.visualDiffCrops) {
-      onStatus?.(`Cropping ${c.label}…`);
-      const cropRes = await chrome.runtime.sendMessage({
-        action: 'cropVisualDiffFindings',
-        payload: {
-          winId: WIN_ID, baselineLabel: base.label, variantLabel: c.label, findings,
-          basePageW: base.fullPage?.pageW ?? null, variantPageW: c.fullPage?.pageW ?? null,
-        },
-      });
-      if (cropRes?.ok) findings = findings.map(f => ({ ...f, ...(cropRes.crops[f.findingId] || {}) }));
-    }
+    const findings = cropped.map(f => ({ ...f, ...(byId.get(f.findingId) || {}) }));
 
     perVariant.push({
       label: c.label, sameUrlNote, findings, overallSummary: reportRes.overallSummary,
@@ -5315,11 +5322,17 @@ function rptAbVisualDiffSection(vd) {
   // blank — the diff always knows what kind of change this was and to what.
   const shortOf = (f) => {
     if (f.shortDescription) return clip(f.shortDescription, SHORT_MAX);
-    const label = f.controlBlock?.label || f.variantBlock?.label || '';
+    // No `${kind}:` prefix — the type chip sits in this same cell and already
+    // says it. Run 1788360614883 rendered "Region / region: section" beside a
+    // detail column that then said "Region: section", the same word three times.
+    if (f.changeClass === 'region-rollup') {
+      // The region name is already the chip and the detail line. Its COUNTS are
+      // the part a reviewer cannot get anywhere else at a glance.
+      const m = /:\s*(\d+ elements in Control, \d+ in Variant, \d+ matched)/.exec(f.engineNote || '');
+      return clip(m ? m[1] : (f.region || 'region'), SHORT_MAX);
+    }
     const text = (f.variantBlock?.text || f.controlBlock?.text || '').trim();
-    const subject = text || label || f.region || '';
-    const kind = findingType(f);
-    return clip(subject ? `${kind}: ${subject}` : kind, SHORT_MAX);
+    return clip(text || f.controlBlock?.label || f.variantBlock?.label || f.region || findingType(f), SHORT_MAX);
   };
 
   // Deterministic facts about the finding, appended under the model's prose.
@@ -5333,9 +5346,14 @@ function rptAbVisualDiffSection(vd) {
         + (f.groupMembers?.length ? `: ${q(f.groupMembers.slice(0, 6).join('; '))}` : ''));
     }
     const ct = (f.controlBlock?.text || '').trim(), vt = (f.variantBlock?.text || '').trim();
+    // Suppressed when the short description is already showing this exact
+    // string, which is the common case on the derived fallback — printing it
+    // twice in adjacent columns is noise, not detail.
+    const shown = shortOf(f).replace(/\u2026$/, '');
+    const dup = (t) => t && shown && t.indexOf(shown) === 0;
     if (ct && vt && ct !== vt) bits.push(`Control: “${q(clip(ct, 200))}”<br>Variant: “${q(clip(vt, 200))}”`);
-    else if (ct && !vt) bits.push(`Control text: “${q(clip(ct, 200))}”`);
-    else if (vt && !ct) bits.push(`Variant text: “${q(clip(vt, 200))}”`);
+    else if (ct && !vt && !dup(ct)) bits.push(`Control text: “${q(clip(ct, 200))}”`);
+    else if (vt && !ct && !dup(vt)) bits.push(`Variant text: “${q(clip(vt, 200))}”`);
     if (f.dx || f.dy) bits.push(`Moved ${f.dx ? `${f.dx}px horizontally` : ''}${f.dx && f.dy ? ', ' : ''}${f.dy ? `${f.dy}px vertically` : ''}`);
     if (f.pixelRatio != null) bits.push(`${Math.round(f.pixelRatio * 100)}% of its pixels differ`);
     if (f.changeSignals?.length) bits.push(`Signals: ${q(f.changeSignals.join(', '))}`);
@@ -5347,38 +5365,72 @@ function rptAbVisualDiffSection(vd) {
     return bits;
   };
 
-  // One <tr> per finding: Short Description | Image Ref | Verdict | Detailed.
-  const findingRow = (f, resumedVariant) => {
+  // Two rows per finding, wrapped in their own <tbody>.
+  //
+  // The second row exists because of a direct comparison with the pre-table
+  // format: its crops were ~250px side by side and LEGIBLE — the lead-gen form
+  // before/after visibly showed Email Address moving down the field order,
+  // which was the most useful thing in that whole report. A quarter-width
+  // column capped at 120px cannot carry that, so the pair gets the full width
+  // and the Image Ref cell keeps one small thumbnail as the scanning locator.
+  //
+  // <tbody> rather than two loose <tr>s so a finding cannot be separated from
+  // its own crops by a page break: the stylesheet's page-break-inside rule is
+  // on `tr`, which would happily split the pair across pages.
+  const findingRows = (f, resumedVariant) => {
     const rect = f.controlBlock?.rect || f.variantBlock?.rect;
-    const shot = (src, side) => `<figure style="margin:0 0 4px">
-      <img src="${qa(src)}" style="max-width:100%;max-height:120px;border:1px solid #d8dbe0;border-radius:3px;display:block" alt="${side} crop">
-      <figcaption class="rpt-muted" style="font-size:9px">${side}</figcaption></figure>`;
-    let media;
-    if (f.baselineCrop || f.variantCrop) {
-      // Stacked, not side by side: this column is a quarter of the page and two
-      // crops beside each other in it are too small to read.
-      media = (f.baselineCrop ? shot(f.baselineCrop, 'Control') : '')
-            + (f.variantCrop ? shot(f.variantCrop, 'Variant') : '');
-    } else if (rect) {
-      media = `<span class="rpt-muted">${resumedVariant ? 'Crop unavailable (restored from a checkpoint)' : 'No crop'} — near (${rect.x}, ${rect.y}), ${rect.w}×${rect.h}px</span>`;
-    } else {
-      media = `<span class="rpt-muted">No crop — no page element to anchor to</span>`;
-    }
+    const hasCrop = !!(f.baselineCrop || f.variantCrop);
+    // Variant preferred in the thumbnail: "what it looks like now".
+    const thumbSrc = f.variantCrop || f.baselineCrop;
+    const thumb = hasCrop
+      ? `<img src="${qa(thumbSrc)}" style="max-width:100%;max-height:64px;border:1px solid #d8dbe0;border-radius:3px;display:block" alt="${f.variantCrop ? 'Variant' : 'Control'} thumbnail">`
+      : '';
+    const locator = rect
+      ? `<span class="rpt-muted" style="font-size:10px">near (${rect.x}, ${rect.y}), ${rect.w}×${rect.h}px</span>`
+      : `<span class="rpt-muted" style="font-size:10px">no page element to anchor to</span>`;
+    const noCropNote = resumedVariant ? 'Crop unavailable (restored from a checkpoint)' : 'No crop';
     const detail = detailBits(f);
-    return `<tr>
-      <td style="vertical-align:top"><span class="ab-delta">${q(findingType(f))}</span><br>${q(shortOf(f))}</td>
-      <td style="vertical-align:top">${media}</td>
-      <td style="vertical-align:top">${gradeChip(f) || '<span class="rpt-muted">unjudged</span>'}</td>
-      <td style="vertical-align:top">${f.note ? `<div>${q(f.note)}</div>` : ''}${
-        detail.length ? `<div class="rpt-muted" style="margin-top:${f.note ? '4px' : '0'};font-size:11px">${detail.join('<br>')}</div>` : ''
-      }</td>
-    </tr>`;
+    const shot = (src, side) => `<figure style="margin:0;flex:1 1 0">
+      <img src="${qa(src)}" style="max-width:100%;border:1px solid #d8dbe0;border-radius:3px;display:block" alt="${side} crop">
+      <figcaption class="rpt-muted" style="font-size:9px;margin-top:2px">${side}</figcaption></figure>`;
+    return `<tbody style="page-break-inside:avoid">
+      <tr>
+        <td style="vertical-align:top"><span class="ab-delta">${q(findingType(f))}</span><br>${q(shortOf(f))}</td>
+        <td style="vertical-align:top">${thumb || `<span class="rpt-muted" style="font-size:10px">${noCropNote}</span><br>`}${locator}</td>
+        <td style="vertical-align:top">${gradeChip(f) || '<span class="rpt-muted">unjudged</span>'}</td>
+        <td style="vertical-align:top">${f.note ? `<div>${q(f.note)}</div>` : ''}${
+          detail.length ? `<div class="rpt-muted" style="margin-top:${f.note ? '4px' : '0'};font-size:11px">${detail.join('<br>')}</div>` : ''
+        }</td>
+      </tr>
+      ${hasCrop ? `<tr><td colspan="4" style="padding-top:0">
+        <div style="display:flex;gap:10px;align-items:flex-start;max-width:560px">
+          ${f.baselineCrop ? shot(f.baselineCrop, 'Control') : ''}
+          ${f.variantCrop ? shot(f.variantCrop, 'Variant') : ''}
+        </div></td></tr>` : ''}
+    </tbody>`;
   };
 
-  // A group heading has to be a row, or the four groups become four tables and
-  // the column widths stop lining up across them.
+  // A group heading gets its own <tbody> for the same page-break reason, and
+  // stays inside the one table so the column widths line up across groups.
   const groupRow = (text, warn) =>
-    `<tr><td colspan="4" class="${warn ? 'ab-warn' : 'rpt-muted'}" style="font-size:11px">${text}</td></tr>`;
+    `<tbody><tr><td colspan="4" class="${warn ? 'ab-warn' : 'rpt-muted'}" style="font-size:11px">${text}</td></tr></tbody>`;
+
+  // Both places that emit findings need this identical shell. It used to be
+  // inline in the per-variant section only, so the "Common to all variants"
+  // block emitted bare rows with no table around them — the parser drops the
+  // tags and the four columns collapse into a run of unlabelled text. Shared
+  // findings are the ones a reviewer most needs the Verdict column for, since
+  // they are the changes present in EVERY variant.
+  const findingTable = (rows) => `
+      <table class="rpt-table">
+        <thead><tr>
+          <th style="width:24%">Short Description</th>
+          <th style="width:24%">Image Ref</th>
+          <th style="width:9%">Verdict</th>
+          <th>Detailed Description</th>
+        </tr></thead>
+        ${rows}
+      </table>`;
 
   // Same noSpecText-aware counting as before: a no-spec variant returns
   // ONLY 'unclear' verdicts by construction, so treating 'unexpected' as the
@@ -5514,22 +5566,12 @@ function rptAbVisualDiffSection(vd) {
       v.resumed ? '<div class="ab-cline rpt-muted">Restored from a previous run that didn’t finish — crops unavailable.</div>' : '',
     ].filter(Boolean).join('');
 
-    const body = summaryHtml + notes + (findings.length ? `
-      <table class="rpt-table">
-        <thead><tr>
-          <th style="width:24%">Short Description</th>
-          <th style="width:24%">Image Ref</th>
-          <th style="width:9%">Verdict</th>
-          <th>Detailed Description</th>
-        </tr></thead>
-        <tbody>
-          ${unexpected.map(f => findingRow(f, v.resumed)).join('')}
-          ${unclear.map(f => findingRow(f, v.resumed)).join('')}
-          ${ungraded.length ? groupRow(`${ungraded.length} finding${ungraded.length !== 1 ? 's' : ''} came back without a usable verdict — unjudged, not cleared. Review directly.`, true) + ungraded.map(f => findingRow(f, v.resumed)).join('') : ''}
-          ${expected.length ? groupRow(`${expected.length} difference${expected.length !== 1 ? 's' : ''} graded expected against the spec, shown in full. This grade and its severity are model judgments, both measured to move between runs on a byte-identical prompt — read the findings rather than trusting the label.`, false) + expected.map(f => findingRow(f, v.resumed)).join('') : ''}
-        </tbody>
-      </table>
-    ` : `<p class="rpt-muted">${shared.length
+    const body = summaryHtml + notes + (findings.length ? findingTable(`
+          ${unexpected.map(f => findingRows(f, v.resumed)).join('')}
+          ${unclear.map(f => findingRows(f, v.resumed)).join('')}
+          ${ungraded.length ? groupRow(`${ungraded.length} finding${ungraded.length !== 1 ? 's' : ''} came back without a usable verdict — unjudged, not cleared. Review directly.`, true) + ungraded.map(f => findingRows(f, v.resumed)).join('') : ''}
+          ${expected.length ? groupRow(`${expected.length} difference${expected.length !== 1 ? 's' : ''} graded expected against the spec, shown in full. This grade and its severity are model judgments, both measured to move between runs on a byte-identical prompt — read the findings rather than trusting the label.`, false) + expected.map(f => findingRows(f, v.resumed)).join('') : ''}
+    `) : `<p class="rpt-muted">${shared.length
         ? 'Nothing unique to this variant — every difference it has from ' + q(vd.baselineLabel) + ' is listed under “Common to all variants” above.'
         : 'No differences detected.'}</p>`);
 
@@ -5541,7 +5583,7 @@ function rptAbVisualDiffSection(vd) {
   const sharedHtml = shared.length ? `
     <h3>Common to all variants <span class="rpt-muted" style="font-size:9px">(${shared.length} change${shared.length !== 1 ? 's' : ''} vs ${q(vd.baselineLabel)}, identical in ${q((shared[0].sharedAcross || []).join(', '))})</span></h3>
     <p class="rpt-muted">These differ from ${q(vd.baselineLabel)} in exactly the same way in every variant, so they are listed once here rather than repeated under each. They are still real differences from Control — review them.</p>
-    ${shared.map(f => findingRow(f, false)).join('')}` : '';
+    ${findingTable(shared.map(f => findingRows(f, false)).join(''))}` : '';
 
   return rptSection('Visual Diff (AI)', badge, summary, sharedHtml + variantSections.join(''));
 }
@@ -6104,6 +6146,17 @@ function buildDebugLog(sections) {
         suppressionAggregate: v.aggregate || null,
         reportedFindingCount: (v.findings || []).length,
         truncatedFindingCount: v.truncatedFindingCount || 0,
+        // Without these six, a run that degraded gracefully looks identical in
+        // the log to one where the model returned nothing — which is the wrong
+        // conclusion and the one I drew from run 1788360614883 before reading
+        // `problems`. Third time this class of gap has cost a misread, after
+        // engineNote (817d4a0) and the model's own note (1030c21).
+        gradingFailed: v.gradingFailed || null,
+        overallSummary: v.overallSummary || null,
+        noVerdictCount: v.noVerdictCount ?? null,
+        duplicateIndexCount: v.duplicateIndexCount ?? null,
+        truncated: v.truncated ?? null,
+        noSpecText: v.noSpecText ?? null,
         // Deterministic and byte-reproducible, so two logs of the same page can
         // be compared on it directly — unlike the model's classifications.
         requirements: v.requirements || null,
@@ -6119,6 +6172,12 @@ function buildDebugLog(sections) {
           controlText: (f.controlBlock?.text || '').slice(0, 160) || null,
           variantText: (f.variantBlock?.text || '').slice(0, 160) || null,
           controlRect: f.controlBlock?.rect || null, variantRect: f.variantBlock?.rect || null,
+          // Booleans, never the crops themselves — a data URL is ~100KB and 67
+          // of them would make the export unopenable. But WHETHER a finding got
+          // its crops is exactly what run 1788360614883 could not be answered
+          // from: all 67 Image Ref cells were empty and the log could not say
+          // whether cropping had failed, been switched off, or never run.
+          hasControlCrop: !!f.baselineCrop, hasVariantCrop: !!f.variantCrop,
           // For a synthetic finding — every finding in redesign mode — this
           // string IS the entire model input (buildVisualReportPrompt emits it
           // as the finding's only content). Without it here, two logs cannot

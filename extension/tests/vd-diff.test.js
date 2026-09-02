@@ -83,6 +83,11 @@ eval(_bg.slice(_bg.indexOf('function vdPixelCheckMatchedPairs'),
 eval(_bg.slice(_bg.indexOf('function cropVisualDiffBlock'),
                 _bg.indexOf('\n// ──', _bg.indexOf('function cropVisualDiffBlock'))));
 // CSS-px rects vs device-px bitmaps — the correction both stages depend on.
+// The retry predicate. Sliced to just before runVisualReport so the
+// VIS_REPORT_RETRIES const comes with it.
+eval(_bg.slice(_bg.indexOf('function vdShouldRetryReport'),
+                _bg.indexOf('async function runVisualReport')));
+
 eval(_bg.slice(_bg.indexOf('function vdImageScale'),
                 _bg.indexOf('function clampBox')));
 
@@ -2158,6 +2163,107 @@ section('perf');
   var m = vdMatchCandidates(a, b);
   eq('a fully-disjoint 3000x3000 page falls to redesign, skipping the O(n*m) pass', m.mode, 'redesign');
   eq('  and pairs nothing', m.pairs.length, 0);
+})();
+
+// ── 12. report retry, crop ordering, degraded-run export ───────────────────
+section('grading failure survivability');
+
+(function retryOnlyWhatCanSucceedOnASecondTry() {
+  // Guarded: the slice above yields nothing if the function is renamed, and an
+  // unguarded call would throw and abort every remaining section of this suite
+  // rather than failing this one assertion. Four suites have been lost that way.
+  if (typeof vdShouldRetryReport !== 'function') {
+    ok('vdShouldRetryReport is exported from background.js', false, 'not found — slice markers stale?');
+    return;
+  }
+  ok('a rejected fetch retries', vdShouldRetryReport(0, true));
+  ok('  even carrying a status, since the throw is what we saw', vdShouldRetryReport(400, true));
+  ok('429 retries', vdShouldRetryReport(429, false));
+  ok('500 retries', vdShouldRetryReport(500, false));
+  ok('529 retries — Anthropic overloaded', vdShouldRetryReport(529, false));
+  // These are deterministic. A retry cannot change the answer and costs tokens.
+  ok('400 does not', !vdShouldRetryReport(400, false));
+  ok('401 does not', !vdShouldRetryReport(401, false));
+  ok('403 does not', !vdShouldRetryReport(403, false));
+  ok('404 does not', !vdShouldRetryReport(404, false));
+  ok('a 200 does not', !vdShouldRetryReport(200, false));
+  // Read from source: a `const` declared inside eval() is block-scoped to the
+  // eval and never reaches this scope.
+  var n = /VIS_REPORT_RETRIES\s*=\s*(\d+)/.exec(_bg);
+  ok('VIS_REPORT_RETRIES is declared', !!n, 'not found in background.js');
+  eq('  two retries, so three attempts', n && +n[1], 2);
+})();
+
+(function cropsAreTakenBeforeGradingCanFail() {
+  // Run 1788360614883 rendered all 67 Image Ref cells as "No crop" because the
+  // crop step sat AFTER the report call and the degraded path returned first.
+  // Cropping needs only the rects the diff already produced, so ordering is the
+  // entire fix — and ordering inside an async pipeline is not reachable from
+  // here. Pin it in the source instead. Crude, but it fails loudly if anyone
+  // moves the crop step back down, which is the regression that actually
+  // happened.
+  var crop = _pu.indexOf("action: 'cropVisualDiffFindings'");
+  var report = _pu.indexOf("action: 'reportVisualDiffFindings'");
+  ok('both calls are present', crop !== -1 && report !== -1);
+  ok('cropping runs BEFORE grading', crop < report, 'crop@' + crop + ' report@' + report);
+  // And both exits must carry the cropped list, not the pre-crop one.
+  var degraded = _pu.indexOf('gradingFailed: reportRes?.error');
+  var slice = _pu.slice(_pu.lastIndexOf('perVariant.push({', degraded), degraded);
+  ok('the degraded push carries the cropped findings', /findings: cropped/.test(slice), slice);
+})();
+
+(function aDegradedVariantStillExportsItsCrops() {
+  var log = buildDebugLog(abSections([capture('v0', { fullPage: null })], [{
+    label: 'v1', gradingFailed: 'Failed to fetch', structuralStats: {},
+    findings: [{ findingId: 'f1', changeClass: 'text', region: 'hero',
+                 baselineCrop: 'data:image/png;base64,AAA',
+                 variantCrop: 'data:image/png;base64,BBB' }],
+  }]));
+  var f = log.visualDiff.perVariant[0].findings[0];
+  // Booleans, not the base64 — 67 data URLs would make the export unopenable.
+  eq('the export records that the control crop exists', f.hasControlCrop, true);
+  eq('  and the variant crop', f.hasVariantCrop, true);
+  ok('  but never the crop data itself', !/base64/.test(JSON.stringify(log)));
+
+  // The distinction the failed run could not make: findings but no crops.
+  var none = buildDebugLog(abSections([capture('v0', { fullPage: null })], [{
+    label: 'v1', gradingFailed: 'Failed to fetch', structuralStats: {},
+    findings: [{ findingId: 'f1', changeClass: 'text', region: 'hero' }],
+  }])).visualDiff.perVariant[0].findings[0];
+  eq('an uncropped finding says so', none.hasControlCrop, false);
+  eq('  on both sides', none.hasVariantCrop, false);
+})();
+
+(function theExportExplainsWhyARunWasDegraded() {
+  // Three times now a missing field has cost a misread — engineNote (817d4a0),
+  // the model note (1030c21), and this. A log from a degraded run used to look
+  // identical to one where the model returned nothing, which is the opposite
+  // conclusion.
+  var log = buildDebugLog(abSections([capture('v0', { fullPage: null })], [{
+    label: 'v1', findings: [], structuralStats: {},
+    gradingFailed: 'Failed to fetch', overallSummary: null,
+    noVerdictCount: 3, duplicateIndexCount: 1, truncated: true, noSpecText: false,
+  }]));
+  var v = log.visualDiff.perVariant[0];
+  eq('gradingFailed round-trips its message', v.gradingFailed, 'Failed to fetch');
+  eq('noVerdictCount', v.noVerdictCount, 3);
+  eq('duplicateIndexCount', v.duplicateIndexCount, 1);
+  eq('truncated', v.truncated, true);
+  eq('noSpecText', v.noSpecText, false);
+  ok('overallSummary is present as a key even when null', 'overallSummary' in v, Object.keys(v).join(','));
+
+  // A graded run must not report itself as failed.
+  var ok2 = buildDebugLog(abSections([capture('v0', { fullPage: null })], [{
+    label: 'v1', findings: [], structuralStats: {},
+    overallSummary: 'Two headline changes, both expected.',
+    noVerdictCount: 0, duplicateIndexCount: 0, truncated: false, noSpecText: false,
+  }])).visualDiff.perVariant[0];
+  eq('a graded run reports no failure', ok2.gradingFailed, null);
+  eq('  and carries its summary', ok2.overallSummary, 'Two headline changes, both expected.');
+  // 0 and false must survive as themselves — ?? not ||, or every clean run
+  // exports null and reads as "unknown".
+  eq('a zero count stays 0, not null', ok2.noVerdictCount, 0);
+  eq('  and false stays false', ok2.truncated, false);
 })();
 
 // ── report ─────────────────────────────────────────────────────────────────

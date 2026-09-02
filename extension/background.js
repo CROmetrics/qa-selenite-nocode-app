@@ -2688,6 +2688,28 @@ function buildVisualDiffDebug({ match, matchTierCounts, all, shiftClusters, aggr
   };
 }
 
+// Whether a failed report attempt is worth repeating. Extracted because it is
+// the only part of the retry worth pinning in a test — the loop around it is
+// three lines, but getting this predicate wrong either burns tokens on a
+// deterministic 400 or gives up on a blip.
+//
+// `threw` means fetch() rejected. From a browser that is OPAQUE and we should
+// not pretend otherwise: DNS failure, connection reset, and a 429 or 529 whose
+// error response arrives without CORS headers all surface identically as
+// "Failed to fetch", because the browser refuses to expose a response it could
+// not read. This extension calls the API straight from the page context
+// (anthropic-dangerous-direct-browser-access), so the CORS-hidden rate-limit
+// case is a live candidate and would explain why the failures cluster on the
+// largest reports. We cannot tell which from here. Retry covers every
+// transient variant, and that is the whole justification.
+function vdShouldRetryReport(status, threw) {
+  if (threw) return true;                       // network-level, opaque, possibly a hidden 429
+  if (status === 429) return true;              // rate limited
+  if (status >= 500) return true;               // server side
+  return false;                                 // 400/401/403/404 are deterministic
+}
+const VIS_REPORT_RETRIES = 2;                   // 3 attempts total
+
 // ── Visual Diff Stage 3: Opus report ────────────────────────────────────────
 // One call per variant, given only the (capped) diff findings computed by
 // diffPageScrapes (popup.js) — never the full page scrapes, to keep the
@@ -2696,25 +2718,41 @@ function buildVisualDiffDebug({ match, matchTierCounts, all, shiftClusters, aggr
 // same belt-and-braces no-spec-text coercion (every classification forced to
 // 'unclear' when there's nothing to judge against).
 async function runVisualReport(findings, stats, ticketVariantText, apiKey, signal, specSource) {
-  let res;
-  try {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST', signal,
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-opus-5',
-        max_tokens: VIS_REPORT_MAX_TOKENS,
-        output_config: { format: { type: 'json_schema', schema: VIS_REPORT_SCHEMA } },
-        messages: [{ role: 'user', content: [{ type: 'text', text: buildVisualReportPrompt(findings, stats, ticketVariantText, specSource) }] }],
-      }),
-    });
-  } catch (e) {
-    return { ok: false, stoppedAbort: e.name === 'AbortError', error: e.name === 'AbortError' ? 'Stopped' : e.message };
+  const body = JSON.stringify({
+    model: 'claude-opus-5',
+    max_tokens: VIS_REPORT_MAX_TOKENS,
+    output_config: { format: { type: 'json_schema', schema: VIS_REPORT_SCHEMA } },
+    messages: [{ role: 'user', content: [{ type: 'text', text: buildVisualReportPrompt(findings, stats, ticketVariantText, specSource) }] }],
+  });
+  // "Failed to fetch" cost 2 of 3 consecutive real runs their grading, and the
+  // whole variant with them until 7e38210. One request had no second chance.
+  // The handler's 20s getPlatformInfo keepalive spans these attempts, so the
+  // worker stays alive across the backoff.
+  let res, lastErr = null;
+  for (let attempt = 0; ; attempt++) {
+    let threw = false;
+    try {
+      res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST', signal, body,
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+          'content-type': 'application/json',
+        },
+      });
+    } catch (e) {
+      // Stop is the user's decision and must never be retried past.
+      if (e.name === 'AbortError') return { ok: false, stoppedAbort: true, error: 'Stopped' };
+      threw = true; lastErr = e.message; res = null;
+    }
+    if (!threw && !vdShouldRetryReport(res.status, false)) break;
+    if (attempt >= VIS_REPORT_RETRIES) {
+      if (threw) return { ok: false, error: `${lastErr} (after ${attempt + 1} attempts)` };
+      break;                                    // fall through to the !res.ok path below
+    }
+    // Exponential with jitter, so a rate limit is not retried in lockstep.
+    await new Promise(r => setTimeout(r, (500 * Math.pow(2, attempt)) + Math.random() * 400));
   }
   const data = await res.json();
   if (!res.ok) return { ok: false, error: data?.error?.message || res.statusText };

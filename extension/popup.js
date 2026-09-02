@@ -637,7 +637,7 @@ async function runTestAgent() {
         aiSectionHtml = rptAiSummarySection(null, 'Agentic Analysis is off — enable it in Test Controls for an AI-written summary.');
       }
       status.textContent = 'Done — report opened in a new tab.';
-      await openReportTab({ ts: Date.now(), pageUrls: [], modes: modeResults, extraHtml: aiSectionHtml });
+      await openReportTab({ ts: Date.now(), pageUrls: abPageUrls(modeResults), modes: modeResults, extraHtml: aiSectionHtml });
     } else {
       status.textContent = 'Done — nothing configured to run.';
     }
@@ -3326,12 +3326,13 @@ async function runAbComparison(opts = {}) {
       // ever read by rptAbVisualDiffSection on this standalone path.
       setAbStatus('Building report…');
       const { figmaPat: _figmaPat } = await chrome.storage.sync.get('figmaPat');
+      const reportModes = [{
+        mode: 2, name: 'A/B Variant Comparison', status: 'ran',
+        data: { captures, metricsList, selectors, agenticNote: res.agenticNote || null, visualDiffFull: visualDiffResult },
+      }];
       await openReportTab({
-        ts: Date.now(), pageUrls: [],
-        modes: [{
-          mode: 2, name: 'A/B Variant Comparison', status: 'ran',
-          data: { captures, metricsList, selectors, agenticNote: res.agenticNote || null, visualDiffFull: visualDiffResult },
-        }],
+        ts: Date.now(), pageUrls: abPageUrls(reportModes),
+        modes: reportModes,
         designReference: buildDesignReferenceDebug(ctx, abState, _figmaPat),
         extraHtml: '',
       });
@@ -5259,6 +5260,40 @@ function vdVerdict(vd) {
   };
 }
 
+// The pages this run actually tested, for the report's cover. `pageUrls: []` was
+// hardcoded at both openReportTab call sites, so the cover has read
+// "No page URLs recorded." in every report ever produced — directly above a Page
+// Basics table listing the real URL for every variant.
+//
+// finalUrl, NEVER url. cap.url is the forced-variation PREVIEW url:
+//
+//   http://ondeck.com/soc/b?optimizely_x=5542293380268032
+//     &optimizely_token=c0a6a2659a2b…&optimizely_preview_layer_ids=6291814800424960…
+//
+// Putting that on the cover of a document that gets shared with a client
+// publishes the preview token, and it is unreadable besides. finalUrl is the
+// clean post-redirect address and is normally identical across variants, so the
+// deduplicated list is usually one line.
+//
+// This is the OPPOSITE of vdForcedVariationId, which must read cap.url precisely
+// because the redirect strips optimizely_x. Different purpose, different field —
+// do not "make them consistent".
+//
+// Reads captures off whichever modes carry them rather than assuming mode 2; the
+// other modes have different data shapes.
+function abPageUrls(modes) {
+  const seen = new Set(), out = [];
+  for (const m of (modes || [])) {
+    for (const c of (m?.data?.captures || [])) {
+      if (c.skipped) continue;
+      const u = (c.finalUrl || '').trim();
+      if (!u || seen.has(u)) continue;
+      seen.add(u); out.push(u);
+    }
+  }
+  return out;
+}
+
 // Which configured metrics earn a row in the report: the ones that fired
 // somewhere. The metric list is persisted GLOBAL config, not per-test, so a run
 // inherits whatever was last configured — one OnDeck report carried ten rows of
@@ -5436,31 +5471,65 @@ function rptAbVisualDiffSection(vd) {
   // Deterministic facts about the finding, appended under the model's prose.
   // These need no network and cannot churn between runs, which is exactly why
   // they belong in the column a reviewer reads when the prose is not enough.
+  //
+  // Returns { inline, block }. `inline` are short labels that join with · on one
+  // flowing line; `block` are sentences that need their own. Measured on run
+  // 1788372126965, this column was the tallest cell in 67 of 67 rows while the
+  // other three sat 34% / 30% / 20% full — and the facts were 55% of its
+  // content against the model's 45%. Emitting each on its own <br> was what
+  // made the rows tall, not their length: most are short enough to sit
+  // together, and inlining them is the single biggest reduction available
+  // (565 stacked lines across the report down to 466).
+  const DETAIL_QUOTE_MAX = 80;
   const detailBits = (f) => {
-    const bits = [];
-    if (f.region) bits.push(`Region: ${q(f.region)}`);
+    const inline = [], block = [];
+    if (f.region) inline.push(`Region: ${q(f.region)}`);
     if (f.memberCount > 1) {
-      bits.push(`${f.memberCount} adjacent elements changed the same way`
+      // The member list is a semicolon-joined run of element labels — a
+      // sentence's worth, so it gets its own line.
+      block.push(`${f.memberCount} adjacent elements changed the same way`
         + (f.groupMembers?.length ? `: ${q(f.groupMembers.slice(0, 6).join('; '))}` : ''));
     }
+    // Capped at 80, down from 200. This was 45% of all the facts in the report
+    // (4,377 chars across 55 of 67 findings) and it duplicated three other
+    // things: the crop, the model's note, and the Short Description. On the FAQ
+    // rows it transcribed the same paragraph a fourth time.
+    //
+    // Kept on every row rather than dropped, because at a 248px crop width a
+    // 1076×54 strip is genuinely unreadable, and this is the only thing that
+    // names the element in words. 80 characters identifies it without
+    // transcribing it.
+    //
+    // NB the `dup()` suppression that used to live here is gone. It compared
+    // against shortOf(f) to stop the quote repeating the Short Description, and
+    // only ever matched while shortDescription was the raw-text FALLBACK. Now
+    // that the model supplies a real summary (ceed7aa) the prefix never
+    // matches, so it suppressed nothing and cost a shortOf() call per finding.
     const ct = (f.controlBlock?.text || '').trim(), vt = (f.variantBlock?.text || '').trim();
-    // Suppressed when the short description is already showing this exact
-    // string, which is the common case on the derived fallback — printing it
-    // twice in adjacent columns is noise, not detail.
-    const shown = shortOf(f).replace(/\u2026$/, '');
-    const dup = (t) => t && shown && t.indexOf(shown) === 0;
-    if (ct && vt && ct !== vt) bits.push(`Control: “${q(clip(ct, 200))}”<br>Variant: “${q(clip(vt, 200))}”`);
-    else if (ct && !vt && !dup(ct)) bits.push(`Control text: “${q(clip(ct, 200))}”`);
-    else if (vt && !ct && !dup(vt)) bits.push(`Variant text: “${q(clip(vt, 200))}”`);
-    if (f.dx || f.dy) bits.push(`Moved ${f.dx ? `${f.dx}px horizontally` : ''}${f.dx && f.dy ? ', ' : ''}${f.dy ? `${f.dy}px vertically` : ''}`);
-    if (f.pixelRatio != null) bits.push(`${Math.round(f.pixelRatio * 100)}% of its pixels differ`);
-    if (f.changeSignals?.length) bits.push(`Signals: ${q(f.changeSignals.join(', '))}`);
+    if (ct && vt && ct !== vt) {
+      block.push(`Control: “${q(clip(ct, DETAIL_QUOTE_MAX))}” → Variant: “${q(clip(vt, DETAIL_QUOTE_MAX))}”`);
+    } else if (ct && !vt) block.push(`Control text: “${q(clip(ct, DETAIL_QUOTE_MAX))}”`);
+    else if (vt && !ct) block.push(`Variant text: “${q(clip(vt, DETAIL_QUOTE_MAX))}”`);
+    if (f.dx || f.dy) inline.push(`Moved ${f.dx ? `${f.dx}px horizontally` : ''}${f.dx && f.dy ? ', ' : ''}${f.dy ? `${f.dy}px vertically` : ''}`);
+    if (f.pixelRatio != null) inline.push(`${Math.round(f.pixelRatio * 100)}% of its pixels differ`);
+    if (f.changeSignals?.length) inline.push(`Signals: ${q(f.changeSignals.join(', '))}`);
     if (f.matchTier) {
-      bits.push(`Paired by ${q(f.matchTier)}`
+      inline.push(`Paired by ${q(f.matchTier)}`
         + (f.matchTier === 'fuzzy' ? ' — approximate, so the pairing itself may be wrong' : ''));
     }
-    if (f.engineNote) bits.push(q(f.engineNote));
-    return bits;
+    // A whole sentence carrying per-region counts and the largest differences.
+    if (f.engineNote) block.push(q(f.engineNote));
+    return { inline, block };
+  };
+
+  // The facts as markup: the short labels on one flowing line, then whatever
+  // needed its own.
+  const detailHtml = (f) => {
+    const { inline, block } = detailBits(f);
+    const parts = [];
+    if (inline.length) parts.push(inline.join(' · '));
+    parts.push(...block);
+    return parts;
   };
 
   // ONE row per finding, and Image Ref is ONE column holding two contained
@@ -5481,7 +5550,7 @@ function rptAbVisualDiffSection(vd) {
     const rect = f.controlBlock?.rect || f.variantBlock?.rect;
     const hasCrop = !!(f.baselineCrop || f.variantCrop);
     const noCropNote = resumedVariant ? 'Crop unavailable (restored from a checkpoint)' : 'No crop';
-    const detail = detailBits(f);
+    const detail = detailHtml(f);
     // The cap is per box, and stacking is why it is 160px rather than the 220px
     // the side-by-side version could afford: two stacked boxes make the row
     // twice as tall, and uncapped the section rollup's 1296×3105 crop rendered
@@ -5497,9 +5566,17 @@ function rptAbVisualDiffSection(vd) {
           <div class="rpt-muted" style="font-size:9px;margin-bottom:2px">${side}</div>
           <img src="${qa(src)}" style="max-width:100%;max-height:160px;display:block" alt="${side} crop">
         </div>`;
+    // The verdict is a stacked contained cell UNDER the description, in the same
+    // column — same shape as the crop boxes in Image Ref. It had a column of its
+    // own at 8% width that was 20% full, which is width the Detailed Description
+    // column needed: that one was the tallest cell in 67 of 67 rows.
+    const verdictBox = `<div style="border:1px solid #d8dbe0;border-radius:3px;padding:3px;margin-top:4px">
+          <div class="rpt-muted" style="font-size:9px;margin-bottom:2px">Verdict</div>
+          ${gradeChip(f) || '<span class="rpt-muted" style="font-size:10px">unjudged</span>'}
+        </div>`;
     return `<tbody style="page-break-inside:avoid">
       <tr>
-        <td style="vertical-align:top"><span class="ab-delta">${q(findingType(f))}</span><br>${q(shortOf(f))}</td>
+        <td style="vertical-align:top"><span class="ab-delta">${q(findingType(f))}</span><br>${q(shortOf(f))}${verdictBox}</td>
         <td style="vertical-align:top">${
           hasCrop
             ? (f.baselineCrop ? cell(f.baselineCrop, 'Control') : '')
@@ -5508,7 +5585,6 @@ function rptAbVisualDiffSection(vd) {
         }<span class="rpt-muted" style="font-size:10px">${
           rect ? `near (${rect.x}, ${rect.y}), ${rect.w}×${rect.h}px` : 'no page element to anchor to'
         }</span></td>
-        <td style="vertical-align:top">${gradeChip(f) || '<span class="rpt-muted">unjudged</span>'}</td>
         <td style="vertical-align:top">${f.note ? `<div>${q(f.note)}</div>` : ''}${
           detail.length ? `<div class="rpt-muted" style="margin-top:${f.note ? '4px' : '0'};font-size:11px">${detail.join('<br>')}</div>` : ''
         }</td>
@@ -5519,7 +5595,7 @@ function rptAbVisualDiffSection(vd) {
   // A group heading gets its own <tbody> for the same page-break reason, and
   // stays inside the one table so the column widths line up across groups.
   const groupRow = (text, warn) =>
-    `<tbody><tr><td colspan="4" class="${warn ? 'ab-warn' : 'rpt-muted'}" style="font-size:11px">${text}</td></tr></tbody>`;
+    `<tbody><tr><td colspan="3" class="${warn ? 'ab-warn' : 'rpt-muted'}" style="font-size:11px">${text}</td></tr></tbody>`;
 
   // Both places that emit findings need this identical shell. It used to be
   // inline in the per-variant section only, so the "Common to all variants"
@@ -5527,14 +5603,15 @@ function rptAbVisualDiffSection(vd) {
   // tags and the four columns collapse into a run of unlabelled text. Shared
   // findings are the ones a reviewer most needs the Verdict column for, since
   // they are the changes present in EVERY variant.
-  // Image Ref is one column again, so one header row. Control/Variant label
-  // the stacked cells inside it rather than needing header columns of their own.
+  // Three columns. Verdict is a stacked cell inside Short Description now, and
+  // Image Ref stays at 34% deliberately — that is what keeps a stacked crop at
+  // ~248px, and lowering it undoes 0516d9f. The freed width goes to Detailed
+  // Description, which set the row height in 67 of 67 rows at 38%.
   const findingTable = (rows) => `
       <table class="rpt-table">
         <thead><tr>
-          <th style="width:20%">Short Description</th>
+          <th style="width:22%">Short Description</th>
           <th style="width:34%">Image Ref</th>
-          <th style="width:8%">Verdict</th>
           <th>Detailed Description</th>
         </tr></thead>
         ${rows}

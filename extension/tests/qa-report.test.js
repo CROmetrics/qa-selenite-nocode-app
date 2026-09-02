@@ -45,7 +45,8 @@ eval(slicePopup('function esc(s) {', '\nfunction '));
 eval(slicePopup('function rptBadge(kind, label) {', 'function rptAgenticNoteHtml('));
 // The run's ONE visual-diff verdict, shared by rptAbSection and
 // rptAbVisualDiffSection so their badges cannot disagree.
-eval(slicePopup('function vdUnmetRequirements(v) {', '\n// Which configured metrics'));
+eval(slicePopup('function vdUnmetRequirements(v) {', '\n// The pages this run actually tested'));
+eval(slicePopup('function abPageUrls(modes) {', '\n// Which configured metrics'));
 eval(slicePopup('function rptAbVisualDiffSection(vd) {', '\nfunction rptWcagSection('));
 eval(slicePopup('function abFiredMetricRows(metricRows) {', '\nfunction rptAbSection('));
 var abState = { qaMode: false };
@@ -90,8 +91,9 @@ function render(findings, over) {
     }, (over || {}).variant || {})],
   }, (over || {}).vd || {}));
 }
-// Findings are <tr> in a four-column table, four cells per row. Image Ref is
-// ONE cell holding two contained cells STACKED (Control above Variant).
+// Findings are <tr> in a THREE-column table. Image Ref holds two contained
+// cells stacked (Control above Variant); Short Description holds the
+// description and then the Verdict in its own contained cell beneath it.
 // Counted by the type chip because every finding row carries one and the
 // group-heading rows (which are also <tr>, colspan=4) do not — counting bare
 // <tr> would include the header and the group headings.
@@ -248,18 +250,25 @@ function shortText(cell) {
   f.shortDescription = 'Hero headline replaced and a business-owner photo added';
   f.note = 'The hero was rebuilt per the ticket. Confirm the photo is the approved asset.';
   var h = render([f]);
-  eq('exactly four columns, in the requested order',
+  eq('three columns, in order',
      headers(h).join(' | '),
-     'Short Description | Image Ref | Verdict | Detailed Description');
+     'Short Description | Image Ref | Detailed Description');
   var c = cellsOf(h);
-  eq('four cells per finding', c.length, 4);
+  eq('three cells per finding', c.length, 3);
   ok('col 1 carries the short description',
      /Hero headline replaced/.test(c[0]), c[0]);
   ok('col 1 also carries the change type', /class="ab-delta"/.test(c[0]));
-  ok('col 3 carries the verdict chip', /unexpected/.test(c[2]), c[2]);
-  ok('col 4 carries the detailed description',
-     /Confirm the photo is the approved asset/.test(c[3]), c[3]);
-  ok('  and the deterministic facts under it', /Region:/.test(c[3]), c[3]);
+  // The verdict moved into col 1 as its own stacked cell — it had a column of
+  // its own at 8% width that was 20% full, and Detailed needed that width.
+  ok('col 1 carries the verdict too', /unexpected/.test(c[0]), c[0]);
+  ok('  in its own contained cell, labelled',
+     /border:1px solid[\s\S]*?>Verdict</.test(c[0]), c[0]);
+  ok('  below the description, not above it',
+     c[0].indexOf('Hero headline replaced') < c[0].indexOf('>Verdict<'), c[0]);
+  ok('no verdict column remains', headers(h).indexOf('Verdict') === -1, headers(h).join('|'));
+  ok('col 3 carries the detailed description',
+     /Confirm the photo is the approved asset/.test(c[2]), c[2]);
+  ok('  and the deterministic facts under it', /Region:/.test(c[2]), c[2]);
   ok('the short description does NOT repeat the long one',
      !/Confirm the photo/.test(c[0]));
 })();
@@ -290,8 +299,8 @@ function shortText(cell) {
   ok('the column is derived from the diff, not left blank',
      /See My Funding Options/.test(c[0]), c[0]);
   ok('  and names the change type', /added/.test(c[0]), c[0]);
-  ok('the verdict cell says unjudged rather than nothing',
-     /unjudged/.test(c[2]), c[2]);
+  ok('the verdict cell says unjudged rather than nothing, so it is never empty',
+     /unjudged/.test(c[0]), c[0]);
 })();
 
 (function imageRefHoldsTwoContainedCellsStackedVertically() {
@@ -304,10 +313,11 @@ function shortText(cell) {
   f.variantCrop = 'data:image/png;base64,BBB';
   var h = render([f]);
   var c = cellsOf(h);
-  eq('four cells — Image Ref is one of them', c.length, 4);
+  eq('three cells — Image Ref is one of them', c.length, 3);
   ok('both crops are in the Image Ref cell',
      /base64,AAA/.test(c[1]) && /base64,BBB/.test(c[1]), c[1]);
   ok('  each in its own contained cell', (c[1].match(/border:1px solid/g) || []).length === 2, c[1]);
+  ok('  and the verdict box does not land in this column', !/>Verdict</.test(c[1]), c[1]);
   ok('  labelled Control and Variant', /Control/.test(c[1]) && /Variant/.test(c[1]));
   ok('Control stacks above Variant',
      c[1].indexOf('base64,AAA') < c[1].indexOf('base64,BBB'), c[1]);
@@ -318,7 +328,7 @@ function shortText(cell) {
      (h.match(/base64,AAA/g) || []).length, 1);
   eq('  on both sides', (h.match(/base64,BBB/g) || []).length, 1);
   ok('no crop leaks into another column',
-     !/base64/.test(c[0]) && !/base64/.test(c[2]) && !/base64/.test(c[3]));
+     !/base64/.test(c[0]) && !/base64/.test(c[2]));
   // Per box, and 160px rather than 220px BECAUSE they stack: two boxes make the
   // row twice as tall, and uncapped the section rollup's 1296x3105 crop renders
   // ~594px in a 248px box. A stacked pair of those is most of a page, and
@@ -345,7 +355,7 @@ function shortText(cell) {
   f.baselineCrop = 'data:image/png;base64,AAA';
   f.variantCrop = null;
   var c = cellsOf(render([f]));
-  eq('still four cells', c.length, 4);
+  eq('still three cells', c.length, 3);
   ok('the Control box is there', /base64,AAA/.test(c[1]) && /Control/.test(c[1]), c[1]);
   ok('  and only one box', (c[1].match(/border:1px solid/g) || []).length === 1, c[1]);
   ok('  with no empty Variant box', !/Variant/.test(c[1]), c[1]);
@@ -387,7 +397,7 @@ function shortText(cell) {
   var tableAt = after.indexOf('<table'), rowAt = after.indexOf('<tbody');
   ok('its rows are inside a table', tableAt !== -1 && tableAt < rowAt,
      'table@' + tableAt + ' tbody@' + rowAt);
-  ok('  with the same four headers', /Short Description[\s\S]*?Image Ref[\s\S]*?Verdict[\s\S]*?Detailed Description/
+  ok('  with the same three headers', /Short Description[\s\S]*?Image Ref[\s\S]*?Detailed Description/
      .test(after.slice(tableAt, rowAt)));
 })();
 
@@ -433,7 +443,7 @@ function shortText(cell) {
   ]);
   eq('one table', (h.match(/<table/g) || []).length, 1);
   ok('the expected-group heading is a full-width row',
-     /<td colspan="4"/.test(h), h.slice(0, 400));
+     /<td colspan="3"/.test(h), h.slice(0, 400));
   ok('  and still carries the instability caveat', /move between runs/.test(h));
 })();
 
@@ -648,6 +658,151 @@ eval(slicePopup('function buildDesignReferenceDebug(ctx, state, hasFigmaPat) {',
   eq('an empty spec records null rather than an empty string', d.summaryOfChanges.text, null);
   eq('and is not marked present', d.summaryOfChanges.present, false);
   eq('and reports zero length', d.summaryOfChanges.length, 0);
+})();
+
+// ── the Detailed Description column ───────────────────────────────────────
+section('the detail column stops setting every row height');
+
+(function quotedTextIsCappedAt80() {
+  // It was 45% of ALL the deterministic facts in the report — 4,377 chars across
+  // 55 of 67 findings — and duplicated the crop, the note AND the Short
+  // Description. On the FAQ rows it transcribed the same paragraph a fourth time.
+  var long = 'Business line of credit. A small business line of credit can offer ongoing '
+    + 'access to funds. If you are approved, you will be able to draw funds up to a certain '
+    + 'credit limit. You will only pay interest on what you borrow.';
+  ok('the fixture is long enough to exercise the cap', long.length > 200);
+
+  // One-sided: an added element has no control text.
+  var a = element('added', 'section', long);
+  a.controlBlock = null;
+  a.variantBlock = { label: 'p', text: long, rect: { x: 828, y: 4930, w: 860, h: 104 } };
+  a.shortDescription = 'FAQ A4 line-of-credit detail paragraph added';
+  a.note = 'Matches the ticket line-of-credit explanation.';
+  var q1 = /Variant text: “([^”]*)”/.exec(cellsOf(render([a]))[2]);
+  ok('a one-sided quote renders', !!q1, cellsOf(render([a]))[2]);
+  ok('  capped at 80 or fewer', q1 && q1[1].length <= 80, q1 && q1[1].length);
+  ok('  with an ellipsis, so truncation is visible', q1 && /…$/.test(q1[1]), q1 && q1[1]);
+  ok('  and it is the START of the text, not the middle',
+     q1 && long.indexOf(q1[1].replace(/…$/, '')) === 0, q1 && q1[1]);
+
+  // Two-sided: a modified element quotes both.
+  var m = element('modified', 'section', long);
+  m.controlBlock = { label: 'p', text: long, rect: { x: 1, y: 2, w: 3, h: 4 } };
+  m.variantBlock = { label: 'p', text: long.replace('Business', 'Small-business'), rect: { x: 1, y: 2, w: 3, h: 4 } };
+  var cell = cellsOf(render([m]))[2];
+  var both = cell.match(/“([^”]*)”/g) || [];
+  eq('two-sided quotes both sides', both.length, 2);
+  both.forEach(function (t, i) {
+    ok('  side ' + (i + 1) + ' capped at 80 or fewer', t.replace(/[“”]/g, '').length <= 80, t.length);
+  });
+  ok('  joined on ONE line with an arrow, not two <br> lines',
+     /Control: “[^”]*” → Variant: “[^”]*”/.test(cell), cell);
+
+  // Short text must pass through untouched — the cap is not a reformat.
+  var sh = element('added', 'hero', 'Apply Now');
+  sh.controlBlock = null;
+  sh.variantBlock = { label: 'a', text: 'Apply Now', rect: { x: 1, y: 2, w: 3, h: 4 } };
+  ok('short text is left alone', /Variant text: “Apply Now”/.test(cellsOf(render([sh]))[2]),
+     cellsOf(render([sh]))[2]);
+})();
+
+(function shortFactsShareOneLine() {
+  // Emitting each fact on its own <br> is what made the rows tall, not their
+  // length — most are short enough to sit together. Inlining is the single
+  // biggest reduction available: 565 stacked lines across the report to 466.
+  var f = element('modified', 'lead form', 'Email Address');
+  f.controlBlock = { label: 'input', text: 'Email Address', rect: { x: 1, y: 2, w: 3, h: 4 } };
+  f.variantBlock = { label: 'input', text: 'Email Address', rect: { x: 1, y: 2, w: 3, h: 4 } };
+  f.changeSignals = ['moved-vertically'];
+  f.dy = 192; f.matchTier = 'path+text'; f.pixelRatio = 0.42;
+  var cell = cellsOf(render([f]))[2];
+  ok('Region, Moved, pixels, Signals and Paired by share a line',
+     /Region: lead form · Moved 192px vertically · 42% of its pixels differ · Signals: moved-vertically · Paired by path\+text/
+       .test(cell.replace(/<[^>]*>/g, '')), cell.replace(/<[^>]*>/g, '').slice(0, 400));
+
+  // engineNote is a sentence carrying counts and samples — it keeps its own line.
+  var r = rollup('section', 'expected');
+  r.engineNote = 'section: 45 elements in Control, 106 in Variant, 1 matched.';
+  var rc = cellsOf(render([r]))[2];
+  ok('engineNote is not inlined with the labels',
+     !/·\s*section: 45 elements/.test(rc.replace(/<[^>]*>/g, '')), rc);
+  ok('  and still renders', /45 elements in Control/.test(rc), rc);
+
+  // The member list is a sentence's worth too.
+  var g = rollup('section', 'expected');
+  g.memberCount = 6;
+  g.groupMembers = ['other "Features"', 'paragraph "Credit limits from $6K - $200K"', 'image'];
+  var gc = cellsOf(render([g]))[2].replace(/<[^>]*>/g, '');
+  ok('the member list gets its own line, not the inline run',
+     !/·\s*6 adjacent/.test(gc), gc.slice(0, 300));
+})();
+
+// ── the cover page ─────────────────────────────────────────────────────────
+section('the cover page says what was tested');
+
+(function bothCallSitesActuallyDeriveThem() {
+  // openReportTab's call sites are not reachable from this suite, and a correct
+  // helper that nobody calls is exactly the bug that shipped here twice
+  // (shortDescription in 5d934d2, the dead unmetRequirements alias in c197e87).
+  var calls = _pu.match(/openReportTab\(\{[\s\S]{0,200}?pageUrls:[^,\n]*/g) || [];
+  eq('both call sites are present', calls.length, 2);
+  calls.forEach(function (c, i) {
+    ok('call site ' + (i + 1) + ' derives pageUrls', /abPageUrls\(/.test(c), c);
+  });
+  // Comments stripped: the helper's own doc comment quotes the old
+  // `pageUrls: []` to explain what it replaced, and that must not read as code.
+  var code = _pu.split('\n').filter(function (l) { return l.trim().indexOf('//') !== 0; }).join('\n');
+  ok('no hardcoded empty pageUrls remain in code',
+     !/pageUrls: \[\]/.test(code), 'still hardcoded');
+})();
+
+(function pageUrlsComeFromTheCaptures() {
+  // pageUrls was hardcoded [] at BOTH openReportTab call sites, so the cover has
+  // read "No page URLs recorded." in every report ever produced — directly above
+  // a Page Basics table listing the real URL for every variant.
+  var forced = 'http://ondeck.com/soc/b?optimizely_x=5542293380268032'
+    + '&optimizely_token=c0a6a2659a2b5dac3f5653d94a31519cde057fe4deb5b5b4682bd0166a130c58'
+    + '&optimizely_preview_layer_ids=6291814800424960&cro_mode=qa';
+  var clean = 'https://www.ondeck.com/soc/b?cro_mode=qa';
+  var modes = [{ mode: 2, data: { captures: [
+    { label: 'v0', url: forced, finalUrl: clean },
+    { label: 'v1', url: forced.replace('5542293380268032', '4749145360039936'), finalUrl: clean },
+  ] } }];
+  var got = abPageUrls(modes);
+  eq('both variants resolved to one page, so one entry', got.length, 1);
+  eq('  and it is the clean post-redirect URL', got[0], clean);
+
+  // The one that matters: cap.url is the forced-variation PREVIEW url and
+  // carries the token. Publishing it on a client-facing cover page leaks it.
+  ok('NO forced-variation preview token reaches the cover',
+     got.every(function (u) { return u.indexOf('optimizely_token') === -1; }), got);
+  ok('  nor any optimizely_ parameter at all',
+     got.every(function (u) { return u.indexOf('optimizely_') === -1; }), got);
+
+  // Genuinely different pages both get listed, in capture order.
+  var two = abPageUrls([{ mode: 2, data: { captures: [
+    { label: 'v0', finalUrl: 'https://a.example/x' },
+    { label: 'v1', finalUrl: 'https://b.example/y' },
+    { label: 'v2', finalUrl: 'https://a.example/x' },
+  ] } }]);
+  eq('distinct pages are both listed', two.length, 2);
+  eq('  in capture order', two.join(','), 'https://a.example/x,https://b.example/y');
+
+  // Skipped captures never loaded anything, and blanks must not become entries.
+  eq('a skipped capture contributes nothing',
+     abPageUrls([{ data: { captures: [{ skipped: true, finalUrl: clean }] } }]).length, 0);
+  eq('a blank finalUrl contributes nothing',
+     abPageUrls([{ data: { captures: [{ finalUrl: '' }, { finalUrl: '   ' }, {}] } }]).length, 0);
+
+  // Reads whichever modes carry captures rather than assuming mode 2.
+  var multi = abPageUrls([
+    { mode: 1, data: { somethingElse: true } },
+    { mode: 7, data: { captures: [{ finalUrl: 'https://c.example/z' }] } },
+    { mode: 3, status: 'skipped' },
+  ]);
+  eq('captures are found on any mode that has them', multi.join(','), 'https://c.example/z');
+  eq('no modes at all', abPageUrls([]).length, 0);
+  eq('undefined', abPageUrls(undefined).length, 0);
 })();
 
 // ── the two badges must agree ──────────────────────────────────────────────

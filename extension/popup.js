@@ -5380,23 +5380,30 @@ function rptAbVisualDiffSection(vd) {
   const findingRows = (f, resumedVariant) => {
     const rect = f.controlBlock?.rect || f.variantBlock?.rect;
     const hasCrop = !!(f.baselineCrop || f.variantCrop);
-    // Variant preferred in the thumbnail: "what it looks like now".
-    const thumbSrc = f.variantCrop || f.baselineCrop;
-    const thumb = hasCrop
-      ? `<img src="${qa(thumbSrc)}" style="max-width:100%;max-height:64px;border:1px solid #d8dbe0;border-radius:3px;display:block" alt="${f.variantCrop ? 'Variant' : 'Control'} thumbnail">`
-      : '';
+    // No thumbnail here. It was the same image as the pair two inches below —
+    // measured across run 1788362945211: 90% of crops render under 120px tall
+    // (median 27px), so the 64px thumbnail was a shrunken, often illegible
+    // duplicate of a picture the reader was about to see at full size. Image Ref
+    // carries the locator; the pair below carries the comparison.
     const locator = rect
       ? `<span class="rpt-muted" style="font-size:10px">near (${rect.x}, ${rect.y}), ${rect.w}×${rect.h}px</span>`
       : `<span class="rpt-muted" style="font-size:10px">no page element to anchor to</span>`;
     const noCropNote = resumedVariant ? 'Crop unavailable (restored from a checkpoint)' : 'No crop';
     const detail = detailBits(f);
-    const shot = (src, side) => `<figure style="margin:0;flex:1 1 0">
-      <img src="${qa(src)}" style="max-width:100%;border:1px solid #d8dbe0;border-radius:3px;display:block" alt="${side} crop">
+    // max-height matters as much as max-width. Without it the section rollup's
+    // 1296×3105 crop rendered 659px tall at a 275px column width, and
+    // page-break-inside on the tbody then stranded the rest of that page —
+    // three pages of run 1788362945211 were 30-65% blank for this reason. A
+    // capped tall crop letterboxes to a narrow strip, which is the right
+    // trade: nobody reads a whole-page-region crop in a report at any size,
+    // and its counts and coordinates carry the finding.
+    const shot = (src, side) => `<figure style="margin:0;flex:1 1 0;min-width:0">
+      <img src="${qa(src)}" style="max-width:100%;max-height:320px;border:1px solid #d8dbe0;border-radius:3px;display:block" alt="${side} crop">
       <figcaption class="rpt-muted" style="font-size:9px;margin-top:2px">${side}</figcaption></figure>`;
     return `<tbody style="page-break-inside:avoid">
       <tr>
         <td style="vertical-align:top"><span class="ab-delta">${q(findingType(f))}</span><br>${q(shortOf(f))}</td>
-        <td style="vertical-align:top">${thumb || `<span class="rpt-muted" style="font-size:10px">${noCropNote}</span><br>`}${locator}</td>
+        <td style="vertical-align:top">${hasCrop ? '' : `<span class="rpt-muted" style="font-size:10px">${noCropNote}</span><br>`}${locator}</td>
         <td style="vertical-align:top">${gradeChip(f) || '<span class="rpt-muted">unjudged</span>'}</td>
         <td style="vertical-align:top">${f.note ? `<div>${q(f.note)}</div>` : ''}${
           detail.length ? `<div class="rpt-muted" style="margin-top:${f.note ? '4px' : '0'};font-size:11px">${detail.join('<br>')}</div>` : ''
@@ -5424,8 +5431,8 @@ function rptAbVisualDiffSection(vd) {
   const findingTable = (rows) => `
       <table class="rpt-table">
         <thead><tr>
-          <th style="width:24%">Short Description</th>
-          <th style="width:24%">Image Ref</th>
+          <th style="width:22%">Short Description</th>
+          <th style="width:12%">Image Ref</th>
           <th style="width:9%">Verdict</th>
           <th>Detailed Description</th>
         </tr></thead>

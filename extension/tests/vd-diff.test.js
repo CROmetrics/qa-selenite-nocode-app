@@ -2194,6 +2194,34 @@ section('grading failure survivability');
   eq('  two retries, so three attempts', n && +n[1], 2);
 })();
 
+(function theResponseProjectionMustNotDropTheModelsSummary() {
+  // 5d934d2 added shortDescription to VIS_REPORT_SCHEMA and to the prompt but
+  // not to the object runVisualReport returns, so the model was asked for it,
+  // returned it, and it was dropped here — 0 of 67 findings carried one in run
+  // 1788362945211, whose grading otherwise fully succeeded. Nothing failed
+  // loudly; column 1 just silently fell back to raw element text.
+  //
+  // Pinned as source text: the projection is inside runVisualReport, past a
+  // fetch, so it is not reachable from this suite.
+  var i = _bg.indexOf('const classified = findings.map');
+  ok('the response projection is present', i !== -1);
+  var proj = _bg.slice(i, _bg.indexOf('.filter(Boolean)', i));
+  ok('it carries the model note', /note: v\.note/.test(proj), proj);
+  ok('  AND the model shortDescription', /shortDescription: v\.shortDescription/.test(proj), proj);
+  // Every field the schema requires the model to return has to survive this
+  // projection, or it is requested and paid for and then thrown away.
+  var reqLine = /required: \[([^\]]*)\][^\]]*$/.exec(_bg.slice(0, _bg.indexOf("required: ['findingId'") + 200));
+  var required = /required: \['findingId'[^\]]*\]/.exec(_bg);
+  ok('the schema requires shortDescription', !!required && /shortDescription/.test(required[0]),
+     required && required[0]);
+  (required ? required[0].match(/'([a-zA-Z]+)'/g) || [] : []).forEach(function (m) {
+    var field = m.replace(/'/g, '');
+    if (field === 'findingId') return;                 // carried by identity, not from v
+    ok('  required field survives the projection: ' + field,
+       proj.indexOf(field) !== -1, proj);
+  });
+})();
+
 (function cropsAreTakenBeforeGradingCanFail() {
   // Run 1788360614883 rendered all 67 Image Ref cells as "No crop" because the
   // crop step sat AFTER the report call and the degraded path returned first.

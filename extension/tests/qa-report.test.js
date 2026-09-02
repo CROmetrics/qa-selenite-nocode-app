@@ -288,20 +288,25 @@ function shortText(cell) {
 })();
 
 (function imageRefColumnAndTheFullWidthPair() {
-  // The pre-table format's crops were ~250px side by side and legible — its
+  // The pre-table format's crops were ~250px side by side and LEGIBLE — its
   // form before/after visibly showed Email Address moving down the field order.
   // A quarter-width column capped at 120px cannot carry that, so the pair gets
-  // its own full-width row and Image Ref keeps a thumbnail as the locator.
+  // its own full-width row.
   var f = rollup('section', 'expected');
   f.baselineCrop = 'data:image/png;base64,AAA';
   f.variantCrop = 'data:image/png;base64,BBB';
   var h = render([f]);
   var c = cellsOf(h);
-  ok('Image Ref holds a thumbnail', /base64/.test(c[1]), c[1]);
-  ok('  the VARIANT one — what it looks like now', /base64,BBB/.test(c[1]) && /Variant thumbnail/.test(c[1]), c[1]);
-  ok('  and still carries the coordinates as a locator', /695, 187/.test(c[1]), c[1]);
-  ok('  capped small, since the real comparison is below', /max-height:64px/.test(c[1]));
-  // Row two: the pair, full width, side by side, uncapped in height.
+  // NO thumbnail. It was the same picture as the pair below it, shrunk to 64px
+  // — measured across run 1788362945211, 90% of crops render under 120px tall
+  // (median 27px), so the thumbnail was a smaller, often illegible duplicate.
+  ok('Image Ref carries NO thumbnail', !/base64/.test(c[1]), c[1]);
+  ok('  only the coordinates, as a locator', /695, 187/.test(c[1]), c[1]);
+  eq('  so each crop appears exactly once in the report',
+     (h.match(/base64,AAA/g) || []).length, 1);
+  eq('  on both sides', (h.match(/base64,BBB/g) || []).length, 1);
+
+  // Row two: the pair, full width, side by side.
   // Anchored on padding-top, not just colspan — the GROUP HEADING row is also
   // a colspan=4 and matches first, which is how this assertion first failed.
   var pair = /<tr><td colspan="4" style="padding-top:0">[\s\S]*?<\/tr>/.exec(h);
@@ -309,14 +314,36 @@ function shortText(cell) {
      !!pair && /base64,AAA/.test(pair[0]) && /base64,BBB/.test(pair[0]), pair && pair[0].slice(0, 120));
   ok('  labelled Control and Variant', !!pair && /Control/.test(pair[0]) && /Variant/.test(pair[0]));
   ok('  side by side', !!pair && /display:flex/.test(pair[0]));
-  ok('  and not height-capped, so it is legible',
-     !!pair && !/max-height/.test(pair[0]), pair && pair[0].slice(0, 200));
+  // Height IS capped, generously. Uncapped, the section rollup's 1296x3105
+  // crop rendered 659px tall at a 275px column and page-break-inside on the
+  // tbody stranded the rest of the page — three pages of run 1788362945211
+  // were 30-65% blank for exactly this.
+  ok('  height-capped so one tall crop cannot eat a page',
+     !!pair && /max-height:320px/.test(pair[0]), pair && pair[0].slice(0, 300));
+  ok('  but far above the 120px the column had, so it stays legible',
+     !!pair && !/max-height:(?:[0-9]|[1-9][0-9]|1[01][0-9]|12[0-9])px/.test(pair[0]));
+  ok('  and min-width:0, or a wide crop would refuse to shrink to its half',
+     !!pair && /min-width:0/.test(pair[0]));
 
   // No crops: one row only, and the cell still anchors the finding.
   var g = rollup('footer', 'expected', { controlRect: { x: 695, y: 3912, w: 1296, h: 614 } });
   var gh = render([g]);
   ok('with no crop it falls back to coordinates', /695, 3912/.test(cellsOf(gh)[1]), cellsOf(gh)[1]);
+  ok('  and says so', /No crop/.test(cellsOf(gh)[1]));
   ok('  and emits no second row', !/<tr><td colspan="4"[^>]*style="padding-top:0"/.test(gh));
+})();
+
+(function theModelsShortDescriptionIsActuallyUsed() {
+  // It was added to the schema and the prompt in 5d934d2 but never copied into
+  // the object leaving runVisualReport, so it came back on 0 of 67 findings in
+  // a run whose grading fully succeeded, and column 1 silently fell back to raw
+  // element text for every row. The renderer half is pinned here; the projection
+  // half is pinned in vd-diff.test.js.
+  var f = element('removed', 'section', 'By clicking "Get Started," I authorize OnDeck (ODK Capital, LLC, OnDeck Connect, LLC, and their affiliated entities) and its referral partners to contact me');
+  f.shortDescription = 'TCPA/autodialer consent disclaimer removed from under the lead form.';
+  var c = cellsOf(render([f]));
+  ok('the model summary fills column 1', /TCPA\/autodialer consent disclaimer removed/.test(c[0]), c[0]);
+  ok('  not the raw element text', !/ODK Capital/.test(c[0]), c[0]);
 })();
 
 (function sharedFindingsGetTheFourColumnsToo() {

@@ -2785,6 +2785,13 @@ async function runVisualReport(findings, stats, ticketVariantText, apiKey, signa
       findingId: f.findingId,
       classification: noSpec ? 'unclear' : v.classification,
       severity: noSpec ? null : v.severity,
+      // shortDescription was added to the schema and the prompt in 5d934d2 but
+      // NOT to this projection, so the model's summary was requested, returned,
+      // and then dropped on the floor here — measured at 0 of 67 findings in run
+      // 1788362945211, a run whose grading fully succeeded. Column 1 silently
+      // fell back to raw element text for every row, which is why it read as a
+      // truncated duplicate of the Detailed Description instead of a summary.
+      shortDescription: v.shortDescription,
       note: v.note,
     };
   }).filter(Boolean);

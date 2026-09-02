@@ -5218,46 +5218,93 @@ function vdUnmetRequirements(v) {
   return r.absent + r.items.filter(x => x.status === 'near' && !x.fragment).length;
 }
 
-// A no-spec variant returns ONLY 'unclear' verdicts by construction, so
-// treating 'unexpected' as the only signal would report 0 issues for a variant
-// that actually surfaced real findings.
-function vdVariantIssueCount(v) {
+// The model half: findings a human still has to look at. `unclear` counts the
+// same as `unexpected`, and it counts WHETHER OR NOT there was a spec.
+//
+// It used to be `v.noSpecText ? unexpected + unclear : unexpected`, which meant
+// that with a spec — the normal case — every `unclear` was discarded. Meanwhile
+// vdVerdict's shared-findings tally counted `unclear` unconditionally, so one
+// grade got two different answers depending only on whether the shared-findings
+// lifter had moved that finding out of its variant.
+//
+// Counting it is the correct side of that inconsistency to land on: `unclear`
+// means the model read the spec and could not decide, which is by definition a
+// human review item, and the renderer already treats it as one (bucket 2 of 4,
+// amber chip, ordered above `expected`). Measured on run 1788374677434 the old
+// rule reported the model as finding NOTHING while the table showed 6 amber
+// chips, one of them a consent-disclaimer removal the model's own prose called a
+// compliance item. Same on the run before it, with 5.
+function vdVariantNeedsReview(v) {
   if (v.skipped || v.error) return 0;
   const findings = v.findings || [];
-  const unexpected = findings.filter(f => f.classification === 'unexpected').length;
-  const unclear = findings.filter(f => f.classification === 'unclear').length;
-  // The model half, unchanged in behaviour — it still catches semantic problems
-  // no string comparison can (on run 1787947608728 the removed TCPA consent
-  // disclaimer was one of these, graded 'unclear').
-  const model = v.noSpecText ? unexpected + unclear : unexpected;
-  // The deterministic half. Measured across twelve runs the model produced four
-  // different classification vectors on identical input, so a badge resting on
-  // it alone moves for no reason. A missing quoted requirement badges
-  // regardless of what the model said about it.
-  return vdUnmetRequirements(v) + model;
+  return findings.filter(f =>
+    f.classification === 'unexpected' || f.classification === 'unclear').length;
 }
 
+// Kept as the per-variant unit: the deterministic half plus the model half.
+// Measured across twelve runs the model produced four different classification
+// vectors on identical input, so a badge resting on it alone moves for no
+// reason — a missing quoted requirement counts regardless of the grade.
+function vdVariantIssueCount(v) {
+  if (v.skipped || v.error) return 0;
+  return vdUnmetRequirements(v) + vdVariantNeedsReview(v);
+}
+
+// The run's one visual-diff verdict. Returns the two halves SEPARATELY, because
+// they mean different things and they overlap:
+//
+//   unmetCopy   exact string comparison against the spec. Byte-reproducible —
+//               identical across four consecutive runs of ENOC-97.
+//   needsReview the model's judgement. Swung 0/2/1/2/0/0 unexpected across six
+//               runs of the same page.
+//
+// They must NOT be summed for display. On run 1788374677434, 2 of the 4 unmet
+// requirements were the same underlying defect as 2 of the 6 review items —
+// `Questions? (888) 269-4246` absent alongside "Phone number … removed", and
+// `Lump Sum Loan` alongside the "Lump-Sum Funding" eyebrow — so 4 + 6 = 10 would
+// count two defects twice. Both summary lines name the two numbers instead.
 function vdVerdict(vd) {
-  const none = { ran: false, issues: 0, findings: 0, notCompared: 0 };
+  const none = { ran: false, issues: 0, findings: 0, notCompared: 0, unmetCopy: 0, needsReview: 0 };
   if (!vd || vd.skipped) return none;
   const perVariant = vd.perVariant || [];
   if (!perVariant.length) return none;
   const shared = vd.sharedFindings || [];
   // Shared changes were lifted out of every variant, so they must be counted
   // here or a run whose only findings are common to all variants would tally
-  // zero issues and badge PASS.
-  const sharedIssues = shared.filter(f =>
+  // zero and badge PASS. Same rule as vdVariantNeedsReview — that is the point.
+  const sharedReview = shared.filter(f =>
     f.classification === 'unexpected' || f.classification === 'unclear').length;
+  const unmetCopy = perVariant.reduce((n, v) => n + (v.skipped || v.error ? 0 : vdUnmetRequirements(v)), 0);
+  const needsReview = perVariant.reduce((n, v) => n + vdVariantNeedsReview(v), 0) + sharedReview;
   return {
     ran: true,
-    issues: perVariant.reduce((n, v) => n + vdVariantIssueCount(v), 0) + sharedIssues,
+    unmetCopy,
+    needsReview,
+    // BADGE PREDICATE ONLY — never render this as a total. It is exactly the
+    // double-counted sum described above; it exists so a caller can ask "is
+    // either half non-zero?" in one place.
+    issues: unmetCopy + needsReview,
     findings: perVariant.reduce((n, v) => n + (v.findings || []).length, 0) + shared.length,
-    // A Control-vs-Control variant contributes no findings, and
-    // vdVariantIssueCount returns 0 for anything errored — so without this a run
-    // where the experiment never applied badges a green PASS. That is the one
-    // verdict neither section may show for a comparison that did not happen.
+    // A Control-vs-Control variant contributes no findings, and the counters
+    // return 0 for anything errored — so without this a run where the experiment
+    // never applied badges a green PASS. That is the one verdict neither section
+    // may show for a comparison that did not happen.
     notCompared: perVariant.filter(v => v.controlDuplicate).length,
   };
+}
+
+// The two halves as report prose, omitted when zero so a clean run does not read
+// "0 · 0". Shared by both summary lines, so they cannot drift apart.
+function vdVerdictSummary(vv) {
+  if (!vv.ran) return '';
+  const parts = [`${vv.findings} visual difference${vv.findings !== 1 ? 's' : ''}`];
+  if (vv.unmetCopy) {
+    parts.push(`${vv.unmetCopy} specified copy string${vv.unmetCopy !== 1 ? 's' : ''} not on the page`);
+  }
+  if (vv.needsReview) {
+    parts.push(`${vv.needsReview} finding${vv.needsReview !== 1 ? 's' : ''} needing review`);
+  }
+  return parts.join(' · ');
 }
 
 // The pages this run actually tested, for the report's cover. `pageUrls: []` was
@@ -5336,7 +5383,7 @@ function rptAbSection(entry) {
   const summary = `Baseline: ${captures[0].label} · ${errCount ? errCount + ' error(s) · ' : ''}`
     + `${totalDeltas} difference(s) in page basics, watched selectors, metrics and console`
     + (vv.ran
-        ? ` · ${vv.findings} visual difference(s)${vv.issues ? `, ${vv.issues} flagged` : ''} — see Visual Diff below`
+        ? ` · ${vdVerdictSummary(vv)} — see Visual Diff below`
         : '')
     + (vv.notCompared
         ? ` · ${vv.notCompared} variant(s) resolved to the same page as Control and were not compared`
@@ -5636,6 +5683,10 @@ function rptAbVisualDiffSection(vd) {
     : vv.issues ? rptBadge('issues', 'ISSUES FOUND')
     : rptBadge('pass', 'PASS');
   let summary = `Visual Diff vs ${vd.baselineLabel}${vd.baselineWarning ? ' — ' + vd.baselineWarning : ''}`;
+  // Same two numbers as the A/B section's line, from the same helper — c197e87
+  // exists because these two sections used to compute verdicts independently
+  // and contradicted each other on the same run.
+  if (vv.ran) summary += ` · ${vdVerdictSummary(vv)}`;
   if (dupVariants.length) {
     summary += ` — ${dupVariants.length} variant(s) resolved to the same page as Control and were not compared. `
       + 'Their lack of findings is not a pass.';

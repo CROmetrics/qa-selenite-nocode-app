@@ -848,32 +848,93 @@ function vdOf(over) {
   }, (over || {}).vd || {});
 }
 
-(function theVisualDiffVerdictIsComputedOnce() {
+(function theTwoHalvesAreCountedSeparately() {
   var quiet = vdOf({ variant: { findings: [{ classification: 'expected' }] } });
-  eq('a run with only expected findings has no issues', vdVerdict(quiet).issues, 0);
-  eq('  but still reports its findings', vdVerdict(quiet).findings, 1);
+  eq('a run with only expected findings has nothing to review', vdVerdict(quiet).needsReview, 0);
+  eq('  and no copy misses', vdVerdict(quiet).unmetCopy, 0);
+  eq('  so the badge predicate is clean', vdVerdict(quiet).issues, 0);
+  eq('  but it still reports its findings', vdVerdict(quiet).findings, 1);
   eq('  and ran', vdVerdict(quiet).ran, true);
 
-  // 2 unexpected + 4 unmet requirements = the 6 that badged page 3 while page 2
-  // said PASS.
-  var loud = vdOf({ variant: {
-    findings: [{ classification: 'unexpected' }, { classification: 'unexpected' },
-               { classification: 'unclear' }].concat(
-              Array.apply(null, Array(64)).map(function () { return { classification: 'expected' }; })),
-    requirements: { absent: 3, items: [
+  // Run 1788374677434 exactly: 0 unexpected, 6 unclear, 1 absent + 3
+  // non-fragment near. The old rule reported the model as finding NOTHING.
+  var real = vdOf({ variant: {
+    findings: Array.apply(null, Array(6)).map(function () { return { classification: 'unclear' }; })
+      .concat(Array.apply(null, Array(61)).map(function () { return { classification: 'expected' }; })),
+    requirements: { absent: 1, items: [
+      { status: 'near', fragment: false }, { status: 'near', fragment: false },
       { status: 'near', fragment: false },
       { status: 'near', fragment: true },      // wording unchanged — NOT a defect
-      { status: 'found' }] },
+      { status: 'verbatim' }] },
   } });
-  var v = vdVerdict(loud);
-  eq('67 findings', v.findings, 67);
-  eq('2 unexpected + 3 absent + 1 non-fragment near = 6 issues', v.issues, 6);
+  var r = vdVerdict(real);
+  eq('67 findings', r.findings, 67);
+  eq('4 copy misses — 1 absent + 3 non-fragment near', r.unmetCopy, 4);
+  eq('6 findings needing review, all of them unclear', r.needsReview, 6);
+  ok('  the badge still trips', r.issues > 0);
+
+  // The halves overlap in reality (2 of 4 on that run were the same defects as
+  // 2 of the 6), so `issues` is a PREDICATE and must never be shown as a total.
+  var ab = _pu.slice(_pu.indexOf('function rptAbSection(entry) {'),
+                     _pu.indexOf('function rptAbVisualDiffSection(vd) {'));
+  ok('the A/B summary does not render the summed issues count',
+     !/vv\.issues[^?]*\}/.test((/const summary = [\s\S]*?;\n/.exec(ab) || [''])[0]),
+     (/const summary = [\s\S]*?;\n/.exec(ab) || [''])[0]);
+
+  // Mixed grades still add up across both kinds.
+  var mixed = vdOf({ variant: { findings: [
+    { classification: 'unexpected' }, { classification: 'unclear' }, { classification: 'expected' }] } });
+  eq('unexpected and unclear both count as needing review', vdVerdict(mixed).needsReview, 2);
 
   // Not run / skipped / empty must be distinguishable from "ran and was clean".
   eq('no visual diff at all did not run', vdVerdict(undefined).ran, false);
   eq('a skipped one did not run', vdVerdict({ skipped: true, perVariant: [] }).ran, false);
-  eq('  and reports no issues', vdVerdict({ skipped: true }).issues, 0);
+  eq('  and reports nothing', vdVerdict({ skipped: true }).issues, 0);
+  eq('  on both halves', vdVerdict({ skipped: true }).needsReview + vdVerdict({ skipped: true }).unmetCopy, 0);
   eq('an empty perVariant did not run', vdVerdict({ perVariant: [] }).ran, false);
+})();
+
+(function anUnclearFindingCountsTheSameWhereverItSits() {
+  // THE BUG. vdVerdict counted `unclear` unconditionally for SHARED findings but
+  // only when noSpecText for PER-VARIANT ones, so one grade got two answers
+  // depending purely on whether the shared-findings lifter had moved it out of
+  // its variant. Before the fix these two gave 0 and 1.
+  var inVariant = vdOf({ variant: { findings: [{ classification: 'unclear' }] } });
+  var inShared  = vdOf({ vd: { sharedFindings: [{ classification: 'unclear' }] } });
+  eq('unclear in a variant needs review', vdVerdict(inVariant).needsReview, 1);
+  eq('unclear in the shared bucket needs review', vdVerdict(inShared).needsReview, 1);
+  eq('  identically — that is the whole point',
+     vdVerdict(inVariant).needsReview, vdVerdict(inShared).needsReview);
+
+  // And it counts whether or not there was a spec. It used to depend on that.
+  var withSpec = vdOf({ variant: { noSpecText: false, findings: [{ classification: 'unclear' }] } });
+  var noSpec   = vdOf({ variant: { noSpecText: true,  findings: [{ classification: 'unclear' }] } });
+  eq('with a spec', vdVerdict(withSpec).needsReview, 1);
+  eq('without a spec', vdVerdict(noSpec).needsReview, 1);
+  ok('the noSpecText branch is gone from the counter',
+     !/noSpecText/.test(_pu.slice(_pu.indexOf('function vdVariantNeedsReview'),
+                                  _pu.indexOf('function vdVariantIssueCount'))),
+     'still conditional on noSpecText');
+})();
+
+(function theSummaryNamesBothHalvesAndOmitsEmptyOnes() {
+  eq('both halves present',
+     vdVerdictSummary({ ran: true, findings: 67, unmetCopy: 4, needsReview: 6 }),
+     '67 visual differences · 4 specified copy strings not on the page · 6 findings needing review');
+  eq('copy misses only',
+     vdVerdictSummary({ ran: true, findings: 67, unmetCopy: 4, needsReview: 0 }),
+     '67 visual differences · 4 specified copy strings not on the page');
+  eq('review items only',
+     vdVerdictSummary({ ran: true, findings: 67, unmetCopy: 0, needsReview: 6 }),
+     '67 visual differences · 6 findings needing review');
+  eq('a fully clean run says neither, rather than "0 · 0"',
+     vdVerdictSummary({ ran: true, findings: 12, unmetCopy: 0, needsReview: 0 }),
+     '12 visual differences');
+  eq('singulars agree',
+     vdVerdictSummary({ ran: true, findings: 1, unmetCopy: 1, needsReview: 1 }),
+     '1 visual difference · 1 specified copy string not on the page · 1 finding needing review');
+  eq('a run that did not happen says nothing at all',
+     vdVerdictSummary({ ran: false, findings: 0, unmetCopy: 0, needsReview: 0 }), '');
 })();
 
 (function bothSectionsActuallyReadThatOneVerdict() {
@@ -891,7 +952,17 @@ function vdOf(over) {
   ok('  and the summary names its own scope rather than saying "vs baseline"',
      !!summary && /page basics/.test(summary[0]) && !/difference\(s\) vs baseline/.test(summary[0]),
      summary && summary[0]);
-  ok('  and reports the visual count', !!summary && /vv\.findings/.test(summary[0]));
+  ok('  and reports both halves through the shared helper',
+     !!summary && /vdVerdictSummary\(vv\)/.test(summary[0]), summary && summary[0]);
+
+  // Both summary lines must go through that ONE helper, or they drift apart
+  // again — which is the failure c197e87 exists to prevent.
+  var vdsec = _pu.slice(_pu.indexOf('function rptAbVisualDiffSection(vd) {'),
+                        _pu.indexOf('function rptWcagSection('));
+  ok('the Visual Diff summary uses the same helper',
+     /vdVerdictSummary\(vv\)/.test(vdsec), 'not shared');
+  eq('and nothing else builds one of its own',
+     (_pu.match(/vdVerdictSummary\(/g) || []).length, 3);   // definition + 2 call sites
 
   // Neither section may compute its own tally any more.
   var vdsec = _pu.slice(_pu.indexOf('function rptAbVisualDiffSection(vd) {'),
@@ -914,7 +985,7 @@ function vdOf(over) {
   // Shared findings were lifted out of every variant, so a run whose only
   // findings are common to all variants must not tally zero and badge PASS.
   var sh = vdOf({ vd: { sharedFindings: [{ classification: 'unexpected' }, { classification: 'expected' }] } });
-  eq('a shared unexpected finding is an issue', vdVerdict(sh).issues, 1);
+  eq('a shared unexpected finding needs review', vdVerdict(sh).needsReview, 1);
   eq('  and shared findings are counted in the total', vdVerdict(sh).findings, 2);
 
   // A Control-vs-Control variant produces no findings, so without this a run
@@ -928,15 +999,22 @@ function vdOf(over) {
 (function anErroredVariantContributesNothing() {
   eq('skipped', vdVariantIssueCount({ skipped: true, findings: [{ classification: 'unexpected' }] }), 0);
   eq('errored', vdVariantIssueCount({ error: 'x', findings: [{ classification: 'unexpected' }] }), 0);
+  eq('skipped, needs-review half', vdVariantNeedsReview({ skipped: true, findings: [{ classification: 'unclear' }] }), 0);
+  eq('errored, needs-review half', vdVariantNeedsReview({ error: 'x', findings: [{ classification: 'unclear' }] }), 0);
+  // A skipped variant must not contribute copy misses either, or a variant that
+  // never loaded would badge on requirements it was never measured against.
+  eq('skipped contributes no copy misses',
+     vdVerdict(vdOf({ variant: { skipped: true, requirements: { absent: 3, items: [] } } })).unmetCopy, 0);
 })();
 
-(function withNoSpecEveryUnclearCounts() {
-  // A no-spec variant returns ONLY 'unclear' by construction, so counting only
-  // 'unexpected' would report 0 issues for a variant full of real findings.
-  var v = { noSpecText: true, findings: [{ classification: 'unclear' }, { classification: 'unclear' }] };
-  eq('unclear counts when there was no spec to judge against', vdVariantIssueCount(v), 2);
-  v.noSpecText = false;
-  eq('  but not when there was one', vdVariantIssueCount(v), 0);
+(function theUnitCountIsStillTheSumOfBothHalves() {
+  // vdVariantIssueCount stays the per-variant unit: deterministic + model.
+  var v = { noSpecText: false,
+    findings: [{ classification: 'unexpected' }, { classification: 'unclear' }],
+    requirements: { absent: 2, items: [{ status: 'near', fragment: true }] } };
+  eq('2 copy misses + 2 review items', vdVariantIssueCount(v), 4);
+  eq('  the model half alone', vdVariantNeedsReview(v), 2);
+  eq('  the deterministic half alone', vdUnmetRequirements(v), 2);
 })();
 
 // ── the Metrics section ────────────────────────────────────────────────────

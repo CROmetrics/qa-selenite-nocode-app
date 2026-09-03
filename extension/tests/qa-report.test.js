@@ -1086,20 +1086,27 @@ section('a run that was not validly compared must never badge PASS');
   var ab = _pu.slice(_pu.indexOf('function rptAbSection(entry) {'),
                      _pu.indexOf('function rptAbVisualDiffSection(vd) {'));
   var abBadge = (/const badge = [\s\S]*?;\n/.exec(ab) || [''])[0];
-  ok('the A/B ladder checks notCompared before ISSUES/PASS',
+  ok('the A/B ladder checks notCompared before PASS',
      abBadge.indexOf('notCompared') !== -1
      && abBadge.indexOf('notCompared') < abBadge.indexOf("'PASS'"), abBadge);
-  ok('  and checks ungraded before ISSUES/PASS',
-     abBadge.indexOf('ungraded') !== -1
+  ok('  and ungraded before PASS', abBadge.indexOf('ungraded') !== -1
      && abBadge.indexOf('ungraded') < abBadge.indexOf("'PASS'"), abBadge);
+  // The FULL order matters, not just "above PASS". f529775 put ungraded above
+  // issues, so ONE omitted finding out of 67 relabelled the variant NOT GRADED
+  // and buried 4 unmet copy strings and 5 review items.
+  ok('  and ISSUES FOUND before ungraded, so real issues outrank a grading gap',
+     abBadge.indexOf("'ISSUES FOUND'") < abBadge.indexOf('ungraded'), abBadge);
+  ok('  with notCompared above both', abBadge.indexOf('notCompared') < abBadge.indexOf("'ISSUES FOUND'"), abBadge);
 
   var vdsec = _pu.slice(_pu.indexOf('function rptAbVisualDiffSection(vd) {'),
                         _pu.indexOf('function rptWcagSection('));
   var vdBadge = (/const badge = [\s\S]*?;\n/.exec(vdsec) || [''])[0];
-  ok('the Visual Diff ladder checks ungraded before ISSUES/PASS',
+  ok('the Visual Diff ladder checks ungraded before PASS',
      vdBadge.indexOf('ungraded') !== -1
      && vdBadge.indexOf('ungraded') < vdBadge.indexOf("'PASS'"), vdBadge);
-  ok('  and notCompared before that', vdBadge.indexOf('notCompared') < vdBadge.indexOf('ungraded'), vdBadge);
+  ok('  and notCompared before everything', vdBadge.indexOf('notCompared') < vdBadge.indexOf("'ISSUES FOUND'"), vdBadge);
+  ok('  and the SAME order as the A/B ladder — issues above ungraded',
+     vdBadge.indexOf("'ISSUES FOUND'") < vdBadge.indexOf('ungraded'), vdBadge);
 })();
 
 (function theQueuedPathStillGetsItsVisualDiff() {
@@ -1158,6 +1165,93 @@ section('a run that was not validly compared must never badge PASS');
   var quiet = render([rollup('section', 'expected')], { variant: { pixelDiff: null } });
   ok('no diffDebug at all: no note, and no throw',
      !/withheld/.test(quiet) && !/of pixels differ/.test(quiet));
+})();
+
+(function realIssuesOutrankAPartialGradingGap() {
+  // NB this is a LOCAL copy of the intended order, so these assertions check the
+  // COUNTS vdVerdict produces and what the intended ladder does with them — not
+  // the ladder in popup.js. The real order is guarded by the source assertions in
+  // bothBadgeLaddersRefusePassInThoseStates above, which is what caught the
+  // f529775 inversion. Both halves are needed: counts here, order there.
+  function ladder(v) {
+    return v.notCompared ? 'NOT COMPARED' : v.issues ? 'ISSUES FOUND'
+         : v.ungraded ? 'NOT GRADED' : 'PASS';
+  }
+  var REQS = { absent: 1, items: [
+    { status: 'near', fragment: false }, { status: 'near', fragment: false },
+    { status: 'near', fragment: false }, { status: 'near', fragment: true }] };
+  function grade(n, cls) {
+    return Array.apply(null, Array(n)).map(function () { return { classification: cls }; });
+  }
+
+  // THE REGRESSION: one finding the model omitted, alongside 4 unmet copy
+  // strings and 5 review items. f529775 badged this NOT GRADED and buried all
+  // nine actionable items. Run 1788372126965 had exactly this shape.
+  var partial = vdOf({ variant: {
+    findings: grade(1, null).concat(grade(5, 'unclear'), grade(61, 'expected')),
+    requirements: REQS } });
+  var pv = vdVerdict(partial);
+  eq('one omitted finding is still reported as ungraded', pv.ungraded, 1);
+  eq('  and the real issues are still counted', pv.unmetCopy, 4);
+  eq('  as are the review items', pv.needsReview, 5);
+  eq('  but the badge names the ISSUES, not the gap', ladder(pv), 'ISSUES FOUND');
+
+  // A dead call WITH copy evidence: the copy defects are deterministic and do
+  // not depend on the model, so they are the headline.
+  var deadWithCopy = vdOf({ variant: {
+    gradingFailed: 'Failed to fetch', findings: grade(67, null), requirements: REQS } });
+  eq('a dead call alongside copy misses badges ISSUES FOUND',
+     ladder(vdVerdict(deadWithCopy)), 'ISSUES FOUND');
+  eq('  and still reports all 67 as ungraded', vdVerdict(deadWithCopy).ungraded, 67);
+
+  // The case the ungraded rung exists for — nothing else to say. Must NOT be PASS.
+  var deadNoSpec = vdOf({ variant: { gradingFailed: 'Failed to fetch', findings: grade(67, null) } });
+  eq('a dead call with nothing else to report badges NOT GRADED',
+     ladder(vdVerdict(deadNoSpec)), 'NOT GRADED');
+
+  eq('a clean run still passes', ladder(vdVerdict(vdOf({ variant: { findings: grade(9, 'expected') } }))), 'PASS');
+  eq('an all-Control run still outranks everything',
+     ladder(vdVerdict({ skipped: true, baselineLabel: 'v0', sharedFindings: [],
+       perVariant: [{ label: 'v1', controlDuplicate: true, findings: [], structuralStats: {} }] })),
+     'NOT COMPARED');
+})();
+
+(function theTestAgentMirrorMustNotReadAsACleanRun() {
+  // f529775 added the `visualDiffFull || visualDiff` fallback so the queued path
+  // would stop dropping its visual diff — but handed the METADATA MIRROR to a
+  // renderer that had only ever seen the full pipeline result. The mirror has no
+  // `findings` array, only counts, so the verdict read every count as 0: PASS,
+  // "0 visual differences", and the body printed "No differences detected." over
+  // a run that found 67. A silent omission became a false claim.
+  var mirror = { baselineLabel: 'v0', perVariant: [{
+    label: 'v1', findingCount: 67, unexpectedCount: 0, unclearCount: 5,
+    noVerdictCount: 0, unmetCopyCount: 4, requirementTotal: 70,
+    structuralStats: { addedCount: 106, removedCount: 51 }, diffMode: 'redesign',
+  }] };
+  ok('the mirror shape is recognised', vdIsMirrorVariant(mirror.perVariant[0]));
+  ok('  a full result is NOT', !vdIsMirrorVariant({ findings: [], findingCount: 0 }));
+  var v = vdVerdict(mirror);
+  eq('the finding count comes from findingCount', v.findings, 67);
+  eq('  review items from the count fields', v.needsReview, 5);
+  eq('  copy misses from the precomputed scalar', v.unmetCopy, 4);
+  ok('  so it cannot badge PASS', v.issues > 0);
+  eq('  and the renderer is told the detail is elsewhere', v.detailUnavailable, true);
+
+  // A dead call on the queued path: gradingFailed now rides the mirror, so this
+  // cannot read as clean either.
+  var deadMirror = { baselineLabel: 'v0', perVariant: [{
+    label: 'v1', findingCount: 67, unexpectedCount: 0, unclearCount: 0,
+    noVerdictCount: 0, unmetCopyCount: 0, gradingFailed: 'Failed to fetch' }] };
+  eq('a dead call on the queued path reports its findings as ungraded',
+     vdVerdict(deadMirror).ungraded, 67);
+  ok('  and does not badge PASS', vdVerdict(deadMirror).ungraded > 0);
+
+  // And the mirror must carry the fields the verdict now depends on.
+  var proj = _pu.slice(_pu.indexOf('perVariant: (visualDiffResult.perVariant || []).map'),
+                       _pu.indexOf('findingCount: v.findings'));
+  var full = _pu.slice(_pu.indexOf('perVariant: (visualDiffResult.perVariant || []).map'));
+  ok('the mirror carries gradingFailed', /gradingFailed: v\.gradingFailed/.test(full.slice(0, 2200)), 'missing');
+  ok('  and a precomputed unmetCopyCount', /unmetCopyCount: vdUnmetRequirements\(v\)/.test(full.slice(0, 2200)), 'missing');
 })();
 
 // ── the Metrics section ────────────────────────────────────────────────────

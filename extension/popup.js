@@ -3309,6 +3309,15 @@ async function runAbComparison(opts = {}) {
               aggregate: v.aggregate, diffMode: v.diffMode, matchedFraction: v.matchedFraction,
               matchTierCounts: v.matchTierCounts, diffDebug: v.diffDebug,
               findingCount: v.findings ? v.findings.length : 0,
+              // A dead model call and the deterministic copy count both have to
+              // survive onto this mirror, or the queued report's badge cannot
+              // tell a broken run from a clean one. gradingFailed is a short
+              // string; unmetCopyCount is a precomputed scalar rather than the
+              // 70-item requirements object, so neither adds bulk to the
+              // text-summarization prompt this mirror also feeds.
+              gradingFailed: v.gradingFailed || null,
+              unmetCopyCount: vdUnmetRequirements(v),
+              requirementTotal: v.requirements?.total ?? null,
               // noSpecText variants carry no expected/unexpected verdicts at all — every
               // finding for them lands in unclearCount instead, so a no-spec run's real
               // finding count isn't silently reported as zero.
@@ -5218,6 +5227,23 @@ function vdUnmetRequirements(v) {
   return r.absent + r.items.filter(x => x.status === 'near' && !x.fragment).length;
 }
 
+// Is this perVariant entry the Test-Agent metadata MIRROR rather than a full
+// pipeline result? The mirror deliberately omits the findings array (it exists
+// to keep crop data URLs out of the combined report and the summarization
+// prompt) but carries counts instead.
+//
+// f529775 added the `visualDiffFull || visualDiff` fallback so the queued path
+// would stop dropping its visual diff entirely — but handed the mirror to a
+// renderer that had only ever seen the full result. With no `findings` array,
+// vdVerdict reported ran:true with every count 0, the section badged PASS, the
+// summary read "0 visual differences" and the body printed "No differences
+// detected." — three lines above "106 added, 51 removed" from the
+// structuralStats the mirror DOES carry. A silent omission became an
+// affirmative false claim. Detect the shape and read the counts instead.
+function vdIsMirrorVariant(v) {
+  return !!v && !Array.isArray(v.findings) && typeof v.findingCount === 'number';
+}
+
 // Did the two screenshots come back at different pixel scales? One predicate,
 // read by the inline note in the report AND by the Run Diagnostics entry, so
 // they cannot disagree — c197e87 exists because two places computed the same
@@ -5339,20 +5365,32 @@ function vdVerdict(vd) {
   // zero and badge PASS. Same rule as vdVariantNeedsReview — that is the point.
   const sharedReview = shared.filter(f =>
     f.classification === 'unexpected' || f.classification === 'unclear').length;
-  const unmetCopy = perVariant.reduce((n, v) => n + (v.skipped || v.error ? 0 : vdUnmetRequirements(v)), 0);
-  const needsReview = perVariant.reduce((n, v) => n + vdVariantNeedsReview(v), 0) + sharedReview;
-  const ungraded = perVariant.reduce((n, v) => n + vdVariantUngraded(v), 0)
+  const live = (v) => !v.skipped && !v.error;
+  const unmetCopy = perVariant.reduce((n, v) => n + (!live(v) ? 0
+    : vdIsMirrorVariant(v) ? (v.unmetCopyCount || 0) : vdUnmetRequirements(v)), 0);
+  const needsReview = perVariant.reduce((n, v) => n + (!live(v) ? 0
+    : vdIsMirrorVariant(v) ? ((v.unexpectedCount || 0) + (v.unclearCount || 0))
+    : vdVariantNeedsReview(v)), 0) + sharedReview;
+  const ungraded = perVariant.reduce((n, v) => n + (!live(v) ? 0
+    : vdIsMirrorVariant(v)
+      ? (v.gradingFailed ? Math.max(1, v.findingCount || 0) : (v.noVerdictCount || 0))
+      : vdVariantUngraded(v)), 0)
     + shared.filter(f => !vdIsGrade(f.classification)).length;
+  // The per-finding detail is not on this path, so the renderer must not claim
+  // "No differences detected." from an empty findings array.
+  const detailUnavailable = perVariant.some(v => live(v) && vdIsMirrorVariant(v));
   return {
     ran: true,
     unmetCopy,
     needsReview,
     ungraded,
+    detailUnavailable,
     // BADGE PREDICATE ONLY — never render this as a total. It is exactly the
     // double-counted sum described above; it exists so a caller can ask "is
     // either half non-zero?" in one place.
     issues: unmetCopy + needsReview,
-    findings: perVariant.reduce((n, v) => n + (v.findings || []).length, 0) + shared.length,
+    findings: perVariant.reduce((n, v) =>
+      n + (vdIsMirrorVariant(v) ? (v.findingCount || 0) : (v.findings || []).length), 0) + shared.length,
     // A Control-vs-Control variant contributes no findings, and the counters
     // return 0 for anything errored — so without this a run where the experiment
     // never applied badges a green PASS. That is the one verdict neither section
@@ -5455,14 +5493,26 @@ function rptAbSection(entry) {
   // vdCollectProblems has always used.
   const vdData = entry.data.visualDiffFull || entry.data.visualDiff;
   const vv = vdVerdict(vdData);
-  // Order matters and is asserted: a comparison that did not happen, or one
-  // nobody graded, must never fall through to PASS just because the counters
-  // that feed ISSUES FOUND came back zero — which is exactly how they come back
-  // in both of those states.
+  // Order matters and is asserted twice over.
+  //
+  // notCompared and ungraded must both sit ABOVE PASS, because in both states
+  // the counters that feed ISSUES FOUND come back zero — that is the false-PASS
+  // hole f529775 closed.
+  //
+  // But ISSUES FOUND must sit above ungraded, which f529775 got backwards. With
+  // ungraded first, ONE finding the model omitted out of 67 relabelled the whole
+  // variant NOT GRADED and buried 4 unmet copy strings and 5 review items behind
+  // a phrase saying nothing was judged — when 66 of 67 were. Run 1788372126965
+  // had exactly that shape (noVerdictCount 1). Real issues outrank a partial
+  // grading gap; the gap is still reported, in the summary line and in the
+  // ungraded group heading.
+  //
+  // The case ungraded exists for is unaffected: a dead call with no spec leaves
+  // issues at 0 + 0, so it still falls through to NOT GRADED and never to PASS.
   const badge = errCount ? rptBadge('fail', 'FAIL')
     : vv.notCompared ? rptBadge('fail', 'NOT COMPARED')
-    : vv.ungraded ? rptBadge('issues', 'NOT GRADED')
     : (totalDeltas || vv.issues) ? rptBadge('issues', 'ISSUES FOUND')
+    : vv.ungraded ? rptBadge('issues', 'NOT GRADED')
     : rptBadge('pass', 'PASS');
   // "0 difference(s) vs baseline" was the other half of the contradiction: it
   // meant zero differences IN WHAT THIS SECTION CHECKS, and read as zero
@@ -5768,9 +5818,10 @@ function rptAbVisualDiffSection(vd) {
   const shared = vd.sharedFindings || [];
   const vv = vdVerdict(vd);
   const dupVariants = (vd.perVariant || []).filter(v => v.controlDuplicate);
+  // Same order as rptAbSection's ladder, for the same reasons — see there.
   const badge = vv.notCompared ? rptBadge('fail', 'NOT COMPARED')
-    : vv.ungraded ? rptBadge('issues', 'NOT GRADED')
     : vv.issues ? rptBadge('issues', 'ISSUES FOUND')
+    : vv.ungraded ? rptBadge('issues', 'NOT GRADED')
     : rptBadge('pass', 'PASS');
   let summary = `Visual Diff vs ${vd.baselineLabel}${vd.baselineWarning ? ' — ' + vd.baselineWarning : ''}`;
   // Same two numbers as the A/B section's line, from the same helper — c197e87
@@ -5881,6 +5932,10 @@ function rptAbVisualDiffSection(vd) {
       v.duplicateIndexCount ? `<div class="ab-cline ab-warn">The model returned inconsistent finding references for ${v.duplicateIndexCount} item${v.duplicateIndexCount !== 1 ? 's' : ''}.</div>` : '',
       v.truncated ? '<div class="ab-cline ab-warn">Response was cut off — some findings may be incomplete.</div>' : '',
       v.resumed ? '<div class="ab-cline rpt-muted">Restored from a previous run that didn’t finish — crops unavailable.</div>' : '',
+      // Without this a missing requirements object reads as "every specified
+      // string was found", which is the opposite of what it means.
+      vdIsMirrorVariant(v) && v.requirementTotal == null
+        ? '<div class="ab-cline ab-warn">The specified-copy check is not included in this combined report — run Visual Diff on its own to see it.</div>' : '',
     ].filter(Boolean).join('');
 
     const body = summaryHtml + notes + (findings.length ? findingTable(`
@@ -5888,7 +5943,14 @@ function rptAbVisualDiffSection(vd) {
           ${unclear.map(f => findingRows(f, v.resumed)).join('')}
           ${ungraded.length ? groupRow(`${ungraded.length} finding${ungraded.length !== 1 ? 's' : ''} came back without a usable grade — unjudged, not cleared. Review directly.`, true) + ungraded.map(f => findingRows(f, v.resumed)).join('') : ''}
           ${expected.length ? groupRow(`${expected.length} difference${expected.length !== 1 ? 's' : ''} graded expected against the spec, shown in full. This grade and its severity are model judgments, both measured to move between runs on a byte-identical prompt — read the findings rather than trusting the label.`, false) + expected.map(f => findingRows(f, v.resumed)).join('') : ''}
-    `) : `<p class="rpt-muted">${shared.length
+    `) : `<p class="rpt-muted">${
+      // An empty findings array means three different things and they must not
+      // share a sentence. On the Test-Agent path there is no findings array at
+      // all — only counts — so claiming "No differences detected." there was an
+      // affirmative false statement over a run that found 67.
+      vdIsMirrorVariant(v)
+        ? `${v.findingCount} difference${v.findingCount !== 1 ? 's' : ''} were found and graded, but the per-finding table, the crops and the specified-copy check are only produced by the standalone A/B report — this combined report carries the counts and the summary above. Re-run Visual Diff on its own for the detail.`
+        : shared.length
         ? 'Nothing unique to this variant — every difference it has from ' + q(vd.baselineLabel) + ' is listed under “Common to all variants” above.'
         : 'No differences detected.'}</p>`);
 

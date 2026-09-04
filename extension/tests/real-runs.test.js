@@ -129,6 +129,51 @@ ids.forEach(function (rid) {
   ok(rid + '   omits ungraded when there are none', v.ungraded !== 0 || sm.indexOf('ungraded') === -1, sm);
 });
 
+section('the copy check\'s real-world verdicts are pinned');
+
+// A guard for a change I have NOT made yet. The copy check calls indexOf on a
+// case-folded, punctuation-stripped string, so "$29/mo" matches "€29/mo",
+// "Free shipping" matches "No free shipping on orders under $50", and "$99"
+// matches inside "1996". Fixing that needs word boundaries — NOT a length
+// floor: real requirements here normalise to "25b" (3 chars, from
+// "$25 Billion+") and "185k" (4 chars) and are legitimately verbatim, so a
+// floor would flip genuine finds to absent and inflate unmetCopy.
+//
+// So this pins what the matcher concludes on every recorded run. When the
+// boundary fix lands, whatever moves here must be justified against real data
+// rather than against a fixture written alongside it.
+(function requirementVerdictsAcrossEveryRecordedRun() {
+  var seen = 0, byStatus = {};
+  ids.forEach(function (rid) {
+    (RUNS[rid].perVariant || []).forEach(function (v) {
+      var rq = v.requirements;
+      if (!rq || !rq.items) return;
+      seen++;
+      // The three published totals must equal the item statuses that produced them.
+      var counts = { verbatim: 0, near: 0, absent: 0 };
+      rq.items.forEach(function (i) {
+        counts[i.status] = (counts[i.status] || 0) + 1;
+        byStatus[i.status] = (byStatus[i.status] || 0) + 1;
+      });
+      eq(rid + ' verbatim total matches its items', counts.verbatim, rq.verbatim);
+      eq(rid + '   near total matches its items', counts.near, rq.near);
+      eq(rid + '   absent total matches its items', counts.absent, rq.absent);
+      eq(rid + '   and the three sum to total',
+         counts.verbatim + counts.near + counts.absent, rq.total);
+      // unmetCopy is absent + non-fragment near, and nothing else.
+      var nonFragNear = rq.items.filter(function (i) { return i.status === 'near' && !i.fragment; }).length;
+      eq(rid + '   unmetCopy is absent + non-fragment near',
+         vdUnmetRequirements(v), (rq.absent || 0) + nonFragNear);
+    });
+  });
+  ok('at least one recorded run carries a requirement set', seen > 0);
+  // The distribution itself, so a matcher change cannot quietly shift it.
+  print('    recorded item statuses: ' + JSON.stringify(byStatus));
+  ok('every recorded item has one of the three known statuses',
+     Object.keys(byStatus).sort().join(',') === 'absent,near,verbatim',
+     Object.keys(byStatus).sort().join(','));
+})();
+
 section('the badge is ONE implementation, not a copy per caller');
 // Both sections must call vdBadgeLabel. Every previous test and harness I wrote
 // hardcoded its own copy of the order and so validated my intent, not the code.

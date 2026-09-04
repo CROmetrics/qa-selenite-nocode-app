@@ -5332,7 +5332,9 @@ function vdVariantIssueCount(v) {
 // The run's one visual-diff verdict. Returns the two halves SEPARATELY, because
 // they mean different things and they overlap:
 //
-//   unmetCopy   exact string comparison against the spec. Byte-reproducible —
+//   unmetCopy   normalised string comparison against the spec (case- and
+//               punctuation-insensitive, containment not equality — see
+//               vdNormText). Byte-reproducible —
 //               identical across four consecutive runs of ENOC-97.
 //   needsReview the model's judgement. Swung 0/2/1/2/0/0 unexpected across six
 //               runs of the same page.
@@ -5941,7 +5943,7 @@ function rptAbVisualDiffSection(vd) {
     const reqHtml = !req || !req.total ? '' : `
       <div class="ab-cline${unmet.length ? ' ab-warn' : ''}"><b>Specified copy:</b> ${req.verbatim} of ${req.total} found verbatim${
         unmet.length ? ` · <b>${unmet.length} unmet</b>` : ''}${
-        fragments ? ` · ${fragments} partially present` : ''}. Checked by exact string comparison against every element, not by the model.</div>
+        fragments ? ` · ${fragments} partially present` : ''}. Checked by string comparison against every element on the page, not by the model — case and punctuation are ignored, and a string counts as found when it appears anywhere inside a longer one.</div>
       ${unmet.map(x => `<div class="ab-cline">${
         x.status === 'near'
           ? `Spec says ${q(JSON.stringify(x.required))} — page has ${q(JSON.stringify(x.foundText))}.`
@@ -6071,15 +6073,30 @@ function rptCvaSection(entry) {
   const diff = diffCvaRuns(run.runs, run.autoChecks);
   const checkMeta = Object.fromEntries(WCAG_CHECKS.map(c => [c.key, c]));
   const totalIntroduced = diff.variants.reduce((n, v) => n + v.introduced, 0);
-  const badge = rptBadge(totalIntroduced ? 'issues' : 'pass', totalIntroduced ? 'ISSUES FOUND' : 'PASS');
-  const summary = `Baseline: ${diff.base.label} · ${totalIntroduced} introduced issue(s) across ${diff.variants.length} variant(s)`;
+  // diffCvaRuns nulls the baseline's issue set when Control failed to load
+  // (`base.loadError ? null : issuesOf(base, k)`), so `bset` is empty and every
+  // pre-existing issue on the site counts as "introduced" by the variant. The
+  // live renderer discloses this in as many words; the report had no branch for
+  // it at all and printed "N introduced issue(s)" as if Control had loaded.
+  const baseFailed = !!diff.base.loadError;
+  const badge = baseFailed ? rptBadge('issues', 'NO BASELINE')
+    : totalIntroduced ? rptBadge('issues', 'ISSUES FOUND')
+    : rptBadge('pass', 'PASS');
+  const summary = baseFailed
+    ? `Baseline ${diff.base.label} failed to load (${diff.base.loadError}) — the ${totalIntroduced} issue(s) below are the variants' TOTAL accessibility issues, not regressions introduced by them.`
+    : `Baseline: ${diff.base.label} · ${totalIntroduced} introduced issue(s) across ${diff.variants.length} variant(s)`;
   const rows = diff.variants.map(v => {
     if (v.loadError) return `<tr><td>${esc(v.label)}</td><td colspan="2">Load failure: ${esc(v.loadError)}</td></tr>`;
     const detail = v.perCheck.filter(pc => pc.introduced.length)
       .map(pc => `${esc(checkMeta[pc.key]?.label || pc.key)}: ${pc.introduced.length} introduced`).join('; ') || '—';
     return `<tr><td>${esc(v.label)}</td><td>${v.introduced} introduced · ${v.resolved} resolved · ${v.preexisting} pre-existing</td><td>${detail}</td></tr>`;
   }).join('');
-  const body = `<table class="rpt-table"><thead><tr><th>Variant</th><th>Summary</th><th>Introduced checks</th></tr></thead><tbody>${rows}</tbody></table>`;
+  // Same sentence the live renderer uses, so the two cannot say different things.
+  const baseNote = baseFailed
+    ? '<p class="ab-warn">Variants below are shown against an empty baseline — every issue counts as introduced. Re-run once Control loads to see which are actually regressions.</p>'
+    : '';
+  const body = baseNote + `<table class="rpt-table"><thead><tr><th>Variant</th><th>Summary</th><th>${
+    baseFailed ? 'Checks with issues' : 'Introduced checks'}</th></tr></thead><tbody>${rows}</tbody></table>`;
   return rptSection(entry.name, badge, summary, body);
 }
 
@@ -6087,13 +6104,34 @@ function rptPerfSection(entry) {
   if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
   const run = entry.data;
   const shown = run.pages.filter(p => !p.skipped);
-  const overTotal = shown.reduce((n, p) => n + Object.values(p.summary.verdicts).filter(v => v === 'over').length, 0);
-  const badge = rptBadge(overTotal ? 'fail' : 'pass', overTotal ? 'FAIL' : 'PASS');
-  const summary = `${shown.length} page(s) measured · ${overTotal ? overTotal + ' metric(s) over budget' : 'all budgets met'}`;
+  // A page whose every run threw is NOT a page that met its budgets.
+  // perfSummarize nulls every median and every verdict when nothing succeeded,
+  // and `skipped` stays false because p.runs is full of error objects — so it
+  // survives the filter above, and `verdicts[k] === 'over' ? 'OVER' : 'OK'`
+  // rendered a null as "OK" while the summary said "all budgets met". The live
+  // panel already guards this (`if (!s.runCount) … 'No successful runs'`) and
+  // its verdict cell is a proper three-way; the report was the two-way.
+  const measured = shown.filter(p => (p.summary?.runCount || 0) > 0);
+  const unmeasured = shown.filter(p => !(p.summary?.runCount > 0));
+  const overTotal = measured.reduce((n, p) => n + Object.values(p.summary.verdicts).filter(v => v === 'over').length, 0);
+  const badge = overTotal ? rptBadge('fail', 'FAIL')
+    : unmeasured.length ? rptBadge('issues', 'NOT MEASURED')
+    : measured.length ? rptBadge('pass', 'PASS')
+    : rptBadge('issues', 'NOT MEASURED');
+  const summary = `${measured.length} page(s) measured`
+    + (unmeasured.length ? ` · ${unmeasured.length} page(s) produced no successful run` : '')
+    + ` · ${overTotal ? overTotal + ' metric(s) over budget'
+        : measured.length ? 'all budgets met on the pages that measured' : 'nothing measured'}`;
   const rows = shown.map(p => {
     const s = p.summary;
+    if (!(s?.runCount > 0)) {
+      return `<tr><td>${esc(shortUrl(p.url))}</td><td class="ab-warn">No successful run — ${
+        esc((s?.runErrors || [])[0] || 'every attempt failed')}. Nothing was measured, so no budget was checked.</td></tr>`;
+    }
+    // Three-way, matching the live panel: a null verdict is "—", not "OK".
     const cells = PERF_METRICS.filter(m => m.budget).map(m =>
-      `${esc(m.label)}: ${fmtMetric(s.medians[m.key], m)} (budget ${fmtMetric(run.budgets[m.budget], m)}) — ${s.verdicts[m.key] === 'over' ? 'OVER' : 'OK'}`
+      `${esc(m.label)}: ${fmtMetric(s.medians[m.key], m)} (budget ${fmtMetric(run.budgets[m.budget], m)}) — ${
+        s.verdicts[m.key] === 'over' ? 'OVER' : s.verdicts[m.key] === 'ok' ? 'OK' : '—'}`
     ).join('<br>');
     return `<tr><td>${esc(shortUrl(p.url))}</td><td>${cells}</td></tr>`;
   }).join('');
@@ -6491,7 +6529,9 @@ function vdCollectProblems(sections) {
           if (bad.length) {
             add('warn', at, `${bad.length} of ${rq.total} specified copy strings are not on the page as written`
               + ` (${rq.absent} absent, ${bad.length - rq.absent} shipped with different wording).`
-              + ' This is an exact string comparison, not a model judgment — it will read the same on every run.');
+              + ' This is a string comparison, not a model judgment, so it reads the same on every run —'
+              + ' but it ignores case and punctuation and matches a string found inside a longer one,'
+              + ' so a near miss can still count as found.');
           }
         }
         const fuzzy = d.matchTierCounts?.fuzzy || 0;

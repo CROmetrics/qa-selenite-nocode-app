@@ -217,10 +217,6 @@
 "skipped": false
 }
 ],
-"problemSeverities": [
-"info",
-"warn"
-],
 "sharedFindings": [],
 "skipped": false
 },
@@ -443,293 +439,361 @@
 "items": [
 {
 "fragment": false,
-"status": "absent"
+"status": "absent",
+"text": "Questions? (888) 269-4246"
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "After approval, get funds as soon as the same day."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "4.7/5 | Based on 6K+ reviews"
 },
 {
 "fragment": true,
-"status": "near"
+"status": "near",
+"text": "Typically, we only require basic information about yourself and your business. We may ask for: Business Tax ID; last three months of business bank statements; Social Security number of business owner(s)."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "Lump Sum Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply Now"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your business deserves funding that moves as fast as you do."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "deserves funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in minutes with no hard credit pull. Term loans up to $400K and lines of credit up to $200K."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Hard Credit Pull"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Same-Day Funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in Minutes"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See My Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Checking eligibility won't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See how much funding your business qualifies for."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Just a few questions to find the right fit for your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Tell us about your business"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Basic info \u2014 it should take just a few minutes."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Review your personalized offers"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Compare term loan and line of credit options."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Get funded \u2014 fast"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "As fast as same-day once approved.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Obligation"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Secure Application"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check Your Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hard credit pull. No obligation."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your information is encrypted and secure."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Two flexible ways to fund your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Term Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$5K \u2013 $400K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Repayment terms up to 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "One-time lump sum of cash upfront."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Predictable daily or weekly payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No prepayment penalties.\u2021"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Revolving Credit Line"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Line of Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$6K \u2013 $200K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Flexible repayment terms of 12, 18 or 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Available 24/7; get funds within seconds.*"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Only pay interest on what you use."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Credit replenishes as you repay."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Minimum requirements:** 1 year in business, business checking account, $100K annual revenue"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$25B+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Total Delivered"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "185K+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Businesses Funded"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "4.7/5"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Small business owners trust OnDeck."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Excellent Choice for Small Business Loans"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Honest, Straightforward, and No Pressure"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "My experience with OnDeck has honestly been exceptional. At no time did I feel pressured to take any action. [My loan advisor] took the time to very clearly (and in plain language) explain the differences between lending options offered by OnDeck. I felt very comfortable explaining my current financial situation with him, and I felt like he understood and communicated this quickly and accurately to the underwriters. The process was simple, quick, and direct. I'll be HIGHLY recommending OnDeck, and returning if I ever need business lending in the future."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "A Reliable Partner for Small Business Growth"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Funding built for real businesses, not just perfect ones."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We've spent 20+ years helping small business owners get the capital they need \u2014 fast, transparently, and without the runaround."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Our streamlined application takes just a few minutes to complete. No stacks of paperwork or branch visits required."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check your eligibility without affecting your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Easy Process"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We're not a broker \u2014 you can work with us directly. That means faster decisions, fewer middlemen, and transparent pricing."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Transparent Pricing"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hidden fees, no prepayment penalties on term loans. You'll know exactly what you owe before you sign \u2014 nothing more."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Build Business Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We report to business credit bureaus, which helps build business credit history with on-time payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Will applying affect my credit score?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "OnDeck uses soft pulls of personal credit reports that don't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "How fast can I receive funds?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Once you apply with OnDeck, we will quickly review the details of your application to determine if you're eligible for funding. If you are, your loan advisor will work with you to finalize funding options. Once you accept an offer for a line of credit or term loan, you can complete your online checkout and receive funds as soon as the same day.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What information do I need to apply?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What's the difference between a business line of credit and a business term loan?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Can I repay my OnDeck Term Loan early?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Yes. If you qualify for our 100% prepayment benefit option, you can pay your loan off early in full and have all remaining interest waived without any penalty or fee.\u2021 If you don't qualify for the 100% prepayment benefit option, you'll be responsible for repaying 75% of the remaining unpaid interest if you repay early."
 }
 ],
-"total": 70
+"near": 4,
+"total": 70,
+"verbatim": 65
 },
 "skipped": false
 }
-],
-"problemSeverities": [
-"info",
-"warn"
 ],
 "sharedFindings": [],
 "skipped": false
@@ -751,10 +815,6 @@
 "requirements": null,
 "skipped": false
 }
-],
-"problemSeverities": [
-"error",
-"info"
 ],
 "sharedFindings": [],
 "skipped": false
@@ -978,293 +1038,361 @@
 "items": [
 {
 "fragment": false,
-"status": "absent"
+"status": "absent",
+"text": "Questions? (888) 269-4246"
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "After approval, get funds as soon as the same day."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "4.7/5 | Based on 6K+ reviews"
 },
 {
 "fragment": true,
-"status": "near"
+"status": "near",
+"text": "Typically, we only require basic information about yourself and your business. We may ask for: Business Tax ID; last three months of business bank statements; Social Security number of business owner(s)."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "Lump Sum Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply Now"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your business deserves funding that moves as fast as you do."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "deserves funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in minutes with no hard credit pull. Term loans up to $400K and lines of credit up to $200K."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Hard Credit Pull"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Same-Day Funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in Minutes"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See My Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Checking eligibility won't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See how much funding your business qualifies for."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Just a few questions to find the right fit for your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Tell us about your business"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Basic info \u2014 it should take just a few minutes."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Review your personalized offers"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Compare term loan and line of credit options."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Get funded \u2014 fast"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "As fast as same-day once approved.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Obligation"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Secure Application"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check Your Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hard credit pull. No obligation."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your information is encrypted and secure."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Two flexible ways to fund your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Term Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$5K \u2013 $400K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Repayment terms up to 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "One-time lump sum of cash upfront."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Predictable daily or weekly payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No prepayment penalties.\u2021"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Revolving Credit Line"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Line of Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$6K \u2013 $200K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Flexible repayment terms of 12, 18 or 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Available 24/7; get funds within seconds.*"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Only pay interest on what you use."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Credit replenishes as you repay."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Minimum requirements:** 1 year in business, business checking account, $100K annual revenue"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$25B+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Total Delivered"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "185K+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Businesses Funded"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "4.7/5"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Small business owners trust OnDeck."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Excellent Choice for Small Business Loans"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Honest, Straightforward, and No Pressure"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "My experience with OnDeck has honestly been exceptional. At no time did I feel pressured to take any action. [My loan advisor] took the time to very clearly (and in plain language) explain the differences between lending options offered by OnDeck. I felt very comfortable explaining my current financial situation with him, and I felt like he understood and communicated this quickly and accurately to the underwriters. The process was simple, quick, and direct. I'll be HIGHLY recommending OnDeck, and returning if I ever need business lending in the future."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "A Reliable Partner for Small Business Growth"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Funding built for real businesses, not just perfect ones."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We've spent 20+ years helping small business owners get the capital they need \u2014 fast, transparently, and without the runaround."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Our streamlined application takes just a few minutes to complete. No stacks of paperwork or branch visits required."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check your eligibility without affecting your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Easy Process"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We're not a broker \u2014 you can work with us directly. That means faster decisions, fewer middlemen, and transparent pricing."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Transparent Pricing"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hidden fees, no prepayment penalties on term loans. You'll know exactly what you owe before you sign \u2014 nothing more."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Build Business Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We report to business credit bureaus, which helps build business credit history with on-time payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Will applying affect my credit score?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "OnDeck uses soft pulls of personal credit reports that don't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "How fast can I receive funds?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Once you apply with OnDeck, we will quickly review the details of your application to determine if you're eligible for funding. If you are, your loan advisor will work with you to finalize funding options. Once you accept an offer for a line of credit or term loan, you can complete your online checkout and receive funds as soon as the same day.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What information do I need to apply?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What's the difference between a business line of credit and a business term loan?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Can I repay my OnDeck Term Loan early?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Yes. If you qualify for our 100% prepayment benefit option, you can pay your loan off early in full and have all remaining interest waived without any penalty or fee.\u2021 If you don't qualify for the 100% prepayment benefit option, you'll be responsible for repaying 75% of the remaining unpaid interest if you repay early."
 }
 ],
-"total": 70
+"near": 4,
+"total": 70,
+"verbatim": 65
 },
 "skipped": false
 }
-],
-"problemSeverities": [
-"info",
-"warn"
 ],
 "sharedFindings": [],
 "skipped": false
@@ -1490,294 +1618,361 @@
 "items": [
 {
 "fragment": false,
-"status": "absent"
+"status": "absent",
+"text": "Questions? (888) 269-4246"
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "After approval, get funds as soon as the same day."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "4.7/5 | Based on 6K+ reviews"
 },
 {
 "fragment": true,
-"status": "near"
+"status": "near",
+"text": "Typically, we only require basic information about yourself and your business. We may ask for: Business Tax ID; last three months of business bank statements; Social Security number of business owner(s)."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "Lump Sum Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply Now"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your business deserves funding that moves as fast as you do."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "deserves funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in minutes with no hard credit pull. Term loans up to $400K and lines of credit up to $200K."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Hard Credit Pull"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Same-Day Funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in Minutes"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See My Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Checking eligibility won't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See how much funding your business qualifies for."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Just a few questions to find the right fit for your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Tell us about your business"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Basic info \u2014 it should take just a few minutes."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Review your personalized offers"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Compare term loan and line of credit options."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Get funded \u2014 fast"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "As fast as same-day once approved.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Obligation"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Secure Application"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check Your Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hard credit pull. No obligation."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your information is encrypted and secure."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Two flexible ways to fund your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Term Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$5K \u2013 $400K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Repayment terms up to 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "One-time lump sum of cash upfront."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Predictable daily or weekly payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No prepayment penalties.\u2021"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Revolving Credit Line"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Line of Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$6K \u2013 $200K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Flexible repayment terms of 12, 18 or 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Available 24/7; get funds within seconds.*"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Only pay interest on what you use."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Credit replenishes as you repay."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Minimum requirements:** 1 year in business, business checking account, $100K annual revenue"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$25B+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Total Delivered"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "185K+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Businesses Funded"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "4.7/5"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Small business owners trust OnDeck."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Excellent Choice for Small Business Loans"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Honest, Straightforward, and No Pressure"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "My experience with OnDeck has honestly been exceptional. At no time did I feel pressured to take any action. [My loan advisor] took the time to very clearly (and in plain language) explain the differences between lending options offered by OnDeck. I felt very comfortable explaining my current financial situation with him, and I felt like he understood and communicated this quickly and accurately to the underwriters. The process was simple, quick, and direct. I'll be HIGHLY recommending OnDeck, and returning if I ever need business lending in the future."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "A Reliable Partner for Small Business Growth"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Funding built for real businesses, not just perfect ones."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We've spent 20+ years helping small business owners get the capital they need \u2014 fast, transparently, and without the runaround."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Our streamlined application takes just a few minutes to complete. No stacks of paperwork or branch visits required."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check your eligibility without affecting your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Easy Process"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We're not a broker \u2014 you can work with us directly. That means faster decisions, fewer middlemen, and transparent pricing."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Transparent Pricing"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hidden fees, no prepayment penalties on term loans. You'll know exactly what you owe before you sign \u2014 nothing more."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Build Business Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We report to business credit bureaus, which helps build business credit history with on-time payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Will applying affect my credit score?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "OnDeck uses soft pulls of personal credit reports that don't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "How fast can I receive funds?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Once you apply with OnDeck, we will quickly review the details of your application to determine if you're eligible for funding. If you are, your loan advisor will work with you to finalize funding options. Once you accept an offer for a line of credit or term loan, you can complete your online checkout and receive funds as soon as the same day.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What information do I need to apply?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What's the difference between a business line of credit and a business term loan?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Can I repay my OnDeck Term Loan early?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Yes. If you qualify for our 100% prepayment benefit option, you can pay your loan off early in full and have all remaining interest waived without any penalty or fee.\u2021 If you don't qualify for the 100% prepayment benefit option, you'll be responsible for repaying 75% of the remaining unpaid interest if you repay early."
 }
 ],
-"total": 70
+"near": 4,
+"total": 70,
+"verbatim": 65
 },
 "skipped": false
 }
-],
-"problemSeverities": [
-"error",
-"info",
-"warn"
 ],
 "sharedFindings": [],
 "skipped": false
@@ -2001,293 +2196,361 @@
 "items": [
 {
 "fragment": false,
-"status": "absent"
+"status": "absent",
+"text": "Questions? (888) 269-4246"
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "After approval, get funds as soon as the same day."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "4.7/5 | Based on 6K+ reviews"
 },
 {
 "fragment": true,
-"status": "near"
+"status": "near",
+"text": "Typically, we only require basic information about yourself and your business. We may ask for: Business Tax ID; last three months of business bank statements; Social Security number of business owner(s)."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "Lump Sum Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply Now"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your business deserves funding that moves as fast as you do."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "deserves funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in minutes with no hard credit pull. Term loans up to $400K and lines of credit up to $200K."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Hard Credit Pull"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Same-Day Funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in Minutes"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See My Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Checking eligibility won't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See how much funding your business qualifies for."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Just a few questions to find the right fit for your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Tell us about your business"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Basic info \u2014 it should take just a few minutes."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Review your personalized offers"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Compare term loan and line of credit options."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Get funded \u2014 fast"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "As fast as same-day once approved.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Obligation"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Secure Application"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check Your Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hard credit pull. No obligation."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your information is encrypted and secure."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Two flexible ways to fund your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Term Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$5K \u2013 $400K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Repayment terms up to 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "One-time lump sum of cash upfront."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Predictable daily or weekly payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No prepayment penalties.\u2021"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Revolving Credit Line"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Line of Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$6K \u2013 $200K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Flexible repayment terms of 12, 18 or 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Available 24/7; get funds within seconds.*"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Only pay interest on what you use."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Credit replenishes as you repay."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Minimum requirements:** 1 year in business, business checking account, $100K annual revenue"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$25B+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Total Delivered"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "185K+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Businesses Funded"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "4.7/5"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Small business owners trust OnDeck."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Excellent Choice for Small Business Loans"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Honest, Straightforward, and No Pressure"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "My experience with OnDeck has honestly been exceptional. At no time did I feel pressured to take any action. [My loan advisor] took the time to very clearly (and in plain language) explain the differences between lending options offered by OnDeck. I felt very comfortable explaining my current financial situation with him, and I felt like he understood and communicated this quickly and accurately to the underwriters. The process was simple, quick, and direct. I'll be HIGHLY recommending OnDeck, and returning if I ever need business lending in the future."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "A Reliable Partner for Small Business Growth"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Funding built for real businesses, not just perfect ones."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We've spent 20+ years helping small business owners get the capital they need \u2014 fast, transparently, and without the runaround."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Our streamlined application takes just a few minutes to complete. No stacks of paperwork or branch visits required."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check your eligibility without affecting your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Easy Process"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We're not a broker \u2014 you can work with us directly. That means faster decisions, fewer middlemen, and transparent pricing."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Transparent Pricing"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hidden fees, no prepayment penalties on term loans. You'll know exactly what you owe before you sign \u2014 nothing more."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Build Business Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We report to business credit bureaus, which helps build business credit history with on-time payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Will applying affect my credit score?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "OnDeck uses soft pulls of personal credit reports that don't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "How fast can I receive funds?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Once you apply with OnDeck, we will quickly review the details of your application to determine if you're eligible for funding. If you are, your loan advisor will work with you to finalize funding options. Once you accept an offer for a line of credit or term loan, you can complete your online checkout and receive funds as soon as the same day.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What information do I need to apply?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What's the difference between a business line of credit and a business term loan?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Can I repay my OnDeck Term Loan early?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Yes. If you qualify for our 100% prepayment benefit option, you can pay your loan off early in full and have all remaining interest waived without any penalty or fee.\u2021 If you don't qualify for the 100% prepayment benefit option, you'll be responsible for repaying 75% of the remaining unpaid interest if you repay early."
 }
 ],
-"total": 70
+"near": 4,
+"total": 70,
+"verbatim": 65
 },
 "skipped": false
 }
-],
-"problemSeverities": [
-"info",
-"warn"
 ],
 "sharedFindings": [],
 "skipped": false
@@ -2511,293 +2774,361 @@
 "items": [
 {
 "fragment": false,
-"status": "absent"
+"status": "absent",
+"text": "Questions? (888) 269-4246"
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "After approval, get funds as soon as the same day."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "4.7/5 | Based on 6K+ reviews"
 },
 {
 "fragment": true,
-"status": "near"
+"status": "near",
+"text": "Typically, we only require basic information about yourself and your business. We may ask for: Business Tax ID; last three months of business bank statements; Social Security number of business owner(s)."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "Lump Sum Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply Now"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your business deserves funding that moves as fast as you do."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "deserves funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in minutes with no hard credit pull. Term loans up to $400K and lines of credit up to $200K."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Hard Credit Pull"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Same-Day Funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in Minutes"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See My Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Checking eligibility won't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See how much funding your business qualifies for."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Just a few questions to find the right fit for your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Tell us about your business"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Basic info \u2014 it should take just a few minutes."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Review your personalized offers"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Compare term loan and line of credit options."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Get funded \u2014 fast"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "As fast as same-day once approved.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Obligation"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Secure Application"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check Your Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hard credit pull. No obligation."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your information is encrypted and secure."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Two flexible ways to fund your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Term Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$5K \u2013 $400K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Repayment terms up to 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "One-time lump sum of cash upfront."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Predictable daily or weekly payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No prepayment penalties.\u2021"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Revolving Credit Line"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Line of Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$6K \u2013 $200K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Flexible repayment terms of 12, 18 or 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Available 24/7; get funds within seconds.*"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Only pay interest on what you use."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Credit replenishes as you repay."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Minimum requirements:** 1 year in business, business checking account, $100K annual revenue"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$25B+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Total Delivered"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "185K+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Businesses Funded"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "4.7/5"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Small business owners trust OnDeck."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Excellent Choice for Small Business Loans"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Honest, Straightforward, and No Pressure"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "My experience with OnDeck has honestly been exceptional. At no time did I feel pressured to take any action. [My loan advisor] took the time to very clearly (and in plain language) explain the differences between lending options offered by OnDeck. I felt very comfortable explaining my current financial situation with him, and I felt like he understood and communicated this quickly and accurately to the underwriters. The process was simple, quick, and direct. I'll be HIGHLY recommending OnDeck, and returning if I ever need business lending in the future."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "A Reliable Partner for Small Business Growth"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Funding built for real businesses, not just perfect ones."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We've spent 20+ years helping small business owners get the capital they need \u2014 fast, transparently, and without the runaround."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Our streamlined application takes just a few minutes to complete. No stacks of paperwork or branch visits required."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check your eligibility without affecting your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Easy Process"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We're not a broker \u2014 you can work with us directly. That means faster decisions, fewer middlemen, and transparent pricing."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Transparent Pricing"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hidden fees, no prepayment penalties on term loans. You'll know exactly what you owe before you sign \u2014 nothing more."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Build Business Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We report to business credit bureaus, which helps build business credit history with on-time payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Will applying affect my credit score?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "OnDeck uses soft pulls of personal credit reports that don't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "How fast can I receive funds?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Once you apply with OnDeck, we will quickly review the details of your application to determine if you're eligible for funding. If you are, your loan advisor will work with you to finalize funding options. Once you accept an offer for a line of credit or term loan, you can complete your online checkout and receive funds as soon as the same day.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What information do I need to apply?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What's the difference between a business line of credit and a business term loan?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Can I repay my OnDeck Term Loan early?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Yes. If you qualify for our 100% prepayment benefit option, you can pay your loan off early in full and have all remaining interest waived without any penalty or fee.\u2021 If you don't qualify for the 100% prepayment benefit option, you'll be responsible for repaying 75% of the remaining unpaid interest if you repay early."
 }
 ],
-"total": 70
+"near": 4,
+"total": 70,
+"verbatim": 65
 },
 "skipped": false
 }
-],
-"problemSeverities": [
-"info",
-"warn"
 ],
 "sharedFindings": [],
 "skipped": false
@@ -3021,293 +3352,361 @@
 "items": [
 {
 "fragment": false,
-"status": "absent"
+"status": "absent",
+"text": "Questions? (888) 269-4246"
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "After approval, get funds as soon as the same day."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "4.7/5 | Based on 6K+ reviews"
 },
 {
 "fragment": true,
-"status": "near"
+"status": "near",
+"text": "Typically, we only require basic information about yourself and your business. We may ask for: Business Tax ID; last three months of business bank statements; Social Security number of business owner(s)."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "Lump Sum Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply Now"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your business deserves funding that moves as fast as you do."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "deserves funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in minutes with no hard credit pull. Term loans up to $400K and lines of credit up to $200K."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Hard Credit Pull"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Same-Day Funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in Minutes"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See My Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Checking eligibility won't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See how much funding your business qualifies for."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Just a few questions to find the right fit for your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Tell us about your business"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Basic info \u2014 it should take just a few minutes."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Review your personalized offers"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Compare term loan and line of credit options."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Get funded \u2014 fast"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "As fast as same-day once approved.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Obligation"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Secure Application"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check Your Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hard credit pull. No obligation."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your information is encrypted and secure."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Two flexible ways to fund your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Term Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$5K \u2013 $400K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Repayment terms up to 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "One-time lump sum of cash upfront."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Predictable daily or weekly payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No prepayment penalties.\u2021"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Revolving Credit Line"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Line of Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$6K \u2013 $200K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Flexible repayment terms of 12, 18 or 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Available 24/7; get funds within seconds.*"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Only pay interest on what you use."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Credit replenishes as you repay."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Minimum requirements:** 1 year in business, business checking account, $100K annual revenue"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$25B+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Total Delivered"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "185K+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Businesses Funded"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "4.7/5"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Small business owners trust OnDeck."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Excellent Choice for Small Business Loans"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Honest, Straightforward, and No Pressure"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "My experience with OnDeck has honestly been exceptional. At no time did I feel pressured to take any action. [My loan advisor] took the time to very clearly (and in plain language) explain the differences between lending options offered by OnDeck. I felt very comfortable explaining my current financial situation with him, and I felt like he understood and communicated this quickly and accurately to the underwriters. The process was simple, quick, and direct. I'll be HIGHLY recommending OnDeck, and returning if I ever need business lending in the future."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "A Reliable Partner for Small Business Growth"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Funding built for real businesses, not just perfect ones."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We've spent 20+ years helping small business owners get the capital they need \u2014 fast, transparently, and without the runaround."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Our streamlined application takes just a few minutes to complete. No stacks of paperwork or branch visits required."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check your eligibility without affecting your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Easy Process"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We're not a broker \u2014 you can work with us directly. That means faster decisions, fewer middlemen, and transparent pricing."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Transparent Pricing"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hidden fees, no prepayment penalties on term loans. You'll know exactly what you owe before you sign \u2014 nothing more."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Build Business Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We report to business credit bureaus, which helps build business credit history with on-time payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Will applying affect my credit score?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "OnDeck uses soft pulls of personal credit reports that don't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "How fast can I receive funds?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Once you apply with OnDeck, we will quickly review the details of your application to determine if you're eligible for funding. If you are, your loan advisor will work with you to finalize funding options. Once you accept an offer for a line of credit or term loan, you can complete your online checkout and receive funds as soon as the same day.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What information do I need to apply?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What's the difference between a business line of credit and a business term loan?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Can I repay my OnDeck Term Loan early?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Yes. If you qualify for our 100% prepayment benefit option, you can pay your loan off early in full and have all remaining interest waived without any penalty or fee.\u2021 If you don't qualify for the 100% prepayment benefit option, you'll be responsible for repaying 75% of the remaining unpaid interest if you repay early."
 }
 ],
-"total": 70
+"near": 4,
+"total": 70,
+"verbatim": 65
 },
 "skipped": false
 }
-],
-"problemSeverities": [
-"info",
-"warn"
 ],
 "sharedFindings": [],
 "skipped": false
@@ -3531,293 +3930,361 @@
 "items": [
 {
 "fragment": false,
-"status": "absent"
+"status": "absent",
+"text": "Questions? (888) 269-4246"
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "After approval, get funds as soon as the same day."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "4.7/5 | Based on 6K+ reviews"
 },
 {
 "fragment": true,
-"status": "near"
+"status": "near",
+"text": "Typically, we only require basic information about yourself and your business. We may ask for: Business Tax ID; last three months of business bank statements; Social Security number of business owner(s)."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "Lump Sum Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply Now"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your business deserves funding that moves as fast as you do."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "deserves funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in minutes with no hard credit pull. Term loans up to $400K and lines of credit up to $200K."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Hard Credit Pull"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Same-Day Funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in Minutes"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See My Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Checking eligibility won't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See how much funding your business qualifies for."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Just a few questions to find the right fit for your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Tell us about your business"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Basic info \u2014 it should take just a few minutes."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Review your personalized offers"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Compare term loan and line of credit options."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Get funded \u2014 fast"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "As fast as same-day once approved.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Obligation"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Secure Application"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check Your Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hard credit pull. No obligation."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your information is encrypted and secure."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Two flexible ways to fund your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Term Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$5K \u2013 $400K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Repayment terms up to 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "One-time lump sum of cash upfront."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Predictable daily or weekly payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No prepayment penalties.\u2021"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Revolving Credit Line"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Line of Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$6K \u2013 $200K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Flexible repayment terms of 12, 18 or 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Available 24/7; get funds within seconds.*"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Only pay interest on what you use."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Credit replenishes as you repay."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Minimum requirements:** 1 year in business, business checking account, $100K annual revenue"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$25B+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Total Delivered"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "185K+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Businesses Funded"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "4.7/5"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Small business owners trust OnDeck."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Excellent Choice for Small Business Loans"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Honest, Straightforward, and No Pressure"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "My experience with OnDeck has honestly been exceptional. At no time did I feel pressured to take any action. [My loan advisor] took the time to very clearly (and in plain language) explain the differences between lending options offered by OnDeck. I felt very comfortable explaining my current financial situation with him, and I felt like he understood and communicated this quickly and accurately to the underwriters. The process was simple, quick, and direct. I'll be HIGHLY recommending OnDeck, and returning if I ever need business lending in the future."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "A Reliable Partner for Small Business Growth"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Funding built for real businesses, not just perfect ones."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We've spent 20+ years helping small business owners get the capital they need \u2014 fast, transparently, and without the runaround."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Our streamlined application takes just a few minutes to complete. No stacks of paperwork or branch visits required."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check your eligibility without affecting your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Easy Process"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We're not a broker \u2014 you can work with us directly. That means faster decisions, fewer middlemen, and transparent pricing."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Transparent Pricing"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hidden fees, no prepayment penalties on term loans. You'll know exactly what you owe before you sign \u2014 nothing more."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Build Business Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We report to business credit bureaus, which helps build business credit history with on-time payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Will applying affect my credit score?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "OnDeck uses soft pulls of personal credit reports that don't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "How fast can I receive funds?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Once you apply with OnDeck, we will quickly review the details of your application to determine if you're eligible for funding. If you are, your loan advisor will work with you to finalize funding options. Once you accept an offer for a line of credit or term loan, you can complete your online checkout and receive funds as soon as the same day.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What information do I need to apply?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What's the difference between a business line of credit and a business term loan?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Can I repay my OnDeck Term Loan early?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Yes. If you qualify for our 100% prepayment benefit option, you can pay your loan off early in full and have all remaining interest waived without any penalty or fee.\u2021 If you don't qualify for the 100% prepayment benefit option, you'll be responsible for repaying 75% of the remaining unpaid interest if you repay early."
 }
 ],
-"total": 70
+"near": 4,
+"total": 70,
+"verbatim": 65
 },
 "skipped": false
 }
-],
-"problemSeverities": [
-"info",
-"warn"
 ],
 "sharedFindings": [],
 "skipped": false
@@ -4041,293 +4508,361 @@
 "items": [
 {
 "fragment": false,
-"status": "absent"
+"status": "absent",
+"text": "Questions? (888) 269-4246"
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "After approval, get funds as soon as the same day."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "4.7/5 | Based on 6K+ reviews"
 },
 {
 "fragment": true,
-"status": "near"
+"status": "near",
+"text": "Typically, we only require basic information about yourself and your business. We may ask for: Business Tax ID; last three months of business bank statements; Social Security number of business owner(s)."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "Lump Sum Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply Now"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your business deserves funding that moves as fast as you do."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "deserves funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in minutes with no hard credit pull. Term loans up to $400K and lines of credit up to $200K."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Hard Credit Pull"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Same-Day Funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in Minutes"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See My Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Checking eligibility won't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See how much funding your business qualifies for."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Just a few questions to find the right fit for your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Tell us about your business"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Basic info \u2014 it should take just a few minutes."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Review your personalized offers"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Compare term loan and line of credit options."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Get funded \u2014 fast"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "As fast as same-day once approved.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Obligation"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Secure Application"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check Your Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hard credit pull. No obligation."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your information is encrypted and secure."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Two flexible ways to fund your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Term Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$5K \u2013 $400K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Repayment terms up to 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "One-time lump sum of cash upfront."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Predictable daily or weekly payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No prepayment penalties.\u2021"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Revolving Credit Line"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Line of Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$6K \u2013 $200K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Flexible repayment terms of 12, 18 or 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Available 24/7; get funds within seconds.*"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Only pay interest on what you use."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Credit replenishes as you repay."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Minimum requirements:** 1 year in business, business checking account, $100K annual revenue"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$25B+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Total Delivered"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "185K+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Businesses Funded"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "4.7/5"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Small business owners trust OnDeck."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Excellent Choice for Small Business Loans"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Honest, Straightforward, and No Pressure"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "My experience with OnDeck has honestly been exceptional. At no time did I feel pressured to take any action. [My loan advisor] took the time to very clearly (and in plain language) explain the differences between lending options offered by OnDeck. I felt very comfortable explaining my current financial situation with him, and I felt like he understood and communicated this quickly and accurately to the underwriters. The process was simple, quick, and direct. I'll be HIGHLY recommending OnDeck, and returning if I ever need business lending in the future."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "A Reliable Partner for Small Business Growth"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Funding built for real businesses, not just perfect ones."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We've spent 20+ years helping small business owners get the capital they need \u2014 fast, transparently, and without the runaround."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Our streamlined application takes just a few minutes to complete. No stacks of paperwork or branch visits required."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check your eligibility without affecting your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Easy Process"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We're not a broker \u2014 you can work with us directly. That means faster decisions, fewer middlemen, and transparent pricing."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Transparent Pricing"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hidden fees, no prepayment penalties on term loans. You'll know exactly what you owe before you sign \u2014 nothing more."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Build Business Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We report to business credit bureaus, which helps build business credit history with on-time payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Will applying affect my credit score?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "OnDeck uses soft pulls of personal credit reports that don't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "How fast can I receive funds?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Once you apply with OnDeck, we will quickly review the details of your application to determine if you're eligible for funding. If you are, your loan advisor will work with you to finalize funding options. Once you accept an offer for a line of credit or term loan, you can complete your online checkout and receive funds as soon as the same day.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What information do I need to apply?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What's the difference between a business line of credit and a business term loan?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Can I repay my OnDeck Term Loan early?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Yes. If you qualify for our 100% prepayment benefit option, you can pay your loan off early in full and have all remaining interest waived without any penalty or fee.\u2021 If you don't qualify for the 100% prepayment benefit option, you'll be responsible for repaying 75% of the remaining unpaid interest if you repay early."
 }
 ],
-"total": 70
+"near": 4,
+"total": 70,
+"verbatim": 65
 },
 "skipped": false
 }
-],
-"problemSeverities": [
-"info",
-"warn"
 ],
 "sharedFindings": [],
 "skipped": false
@@ -4553,294 +5088,361 @@
 "items": [
 {
 "fragment": false,
-"status": "absent"
+"status": "absent",
+"text": "Questions? (888) 269-4246"
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "After approval, get funds as soon as the same day."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "4.7/5 | Based on 6K+ reviews"
 },
 {
 "fragment": true,
-"status": "near"
+"status": "near",
+"text": "Typically, we only require basic information about yourself and your business. We may ask for: Business Tax ID; last three months of business bank statements; Social Security number of business owner(s)."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "Lump Sum Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply Now"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your business deserves funding that moves as fast as you do."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "deserves funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in minutes with no hard credit pull. Term loans up to $400K and lines of credit up to $200K."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Hard Credit Pull"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Same-Day Funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in Minutes"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See My Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Checking eligibility won't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See how much funding your business qualifies for."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Just a few questions to find the right fit for your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Tell us about your business"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Basic info \u2014 it should take just a few minutes."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Review your personalized offers"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Compare term loan and line of credit options."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Get funded \u2014 fast"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "As fast as same-day once approved.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Obligation"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Secure Application"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check Your Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hard credit pull. No obligation."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your information is encrypted and secure."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Two flexible ways to fund your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Term Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$5K \u2013 $400K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Repayment terms up to 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "One-time lump sum of cash upfront."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Predictable daily or weekly payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No prepayment penalties.\u2021"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Revolving Credit Line"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Line of Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$6K \u2013 $200K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Flexible repayment terms of 12, 18 or 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Available 24/7; get funds within seconds.*"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Only pay interest on what you use."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Credit replenishes as you repay."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Minimum requirements:** 1 year in business, business checking account, $100K annual revenue"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$25B+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Total Delivered"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "185K+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Businesses Funded"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "4.7/5"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Small business owners trust OnDeck."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Excellent Choice for Small Business Loans"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Honest, Straightforward, and No Pressure"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "My experience with OnDeck has honestly been exceptional. At no time did I feel pressured to take any action. [My loan advisor] took the time to very clearly (and in plain language) explain the differences between lending options offered by OnDeck. I felt very comfortable explaining my current financial situation with him, and I felt like he understood and communicated this quickly and accurately to the underwriters. The process was simple, quick, and direct. I'll be HIGHLY recommending OnDeck, and returning if I ever need business lending in the future."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "A Reliable Partner for Small Business Growth"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Funding built for real businesses, not just perfect ones."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We've spent 20+ years helping small business owners get the capital they need \u2014 fast, transparently, and without the runaround."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Our streamlined application takes just a few minutes to complete. No stacks of paperwork or branch visits required."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check your eligibility without affecting your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Easy Process"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We're not a broker \u2014 you can work with us directly. That means faster decisions, fewer middlemen, and transparent pricing."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Transparent Pricing"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hidden fees, no prepayment penalties on term loans. You'll know exactly what you owe before you sign \u2014 nothing more."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Build Business Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We report to business credit bureaus, which helps build business credit history with on-time payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Will applying affect my credit score?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "OnDeck uses soft pulls of personal credit reports that don't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "How fast can I receive funds?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Once you apply with OnDeck, we will quickly review the details of your application to determine if you're eligible for funding. If you are, your loan advisor will work with you to finalize funding options. Once you accept an offer for a line of credit or term loan, you can complete your online checkout and receive funds as soon as the same day.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What information do I need to apply?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What's the difference between a business line of credit and a business term loan?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Can I repay my OnDeck Term Loan early?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Yes. If you qualify for our 100% prepayment benefit option, you can pay your loan off early in full and have all remaining interest waived without any penalty or fee.\u2021 If you don't qualify for the 100% prepayment benefit option, you'll be responsible for repaying 75% of the remaining unpaid interest if you repay early."
 }
 ],
-"total": 70
+"near": 4,
+"total": 70,
+"verbatim": 65
 },
 "skipped": false
 }
-],
-"problemSeverities": [
-"error",
-"info",
-"warn"
 ],
 "sharedFindings": [],
 "skipped": false
@@ -5064,293 +5666,939 @@
 "items": [
 {
 "fragment": false,
-"status": "absent"
+"status": "absent",
+"text": "Questions? (888) 269-4246"
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "After approval, get funds as soon as the same day."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "4.7/5 | Based on 6K+ reviews"
 },
 {
 "fragment": true,
-"status": "near"
+"status": "near",
+"text": "Typically, we only require basic information about yourself and your business. We may ask for: Business Tax ID; last three months of business bank statements; Social Security number of business owner(s)."
 },
 {
 "fragment": false,
-"status": "near"
+"status": "near",
+"text": "Lump Sum Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply Now"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your business deserves funding that moves as fast as you do."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "deserves funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in minutes with no hard credit pull. Term loans up to $400K and lines of credit up to $200K."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Hard Credit Pull"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Same-Day Funding"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Apply in Minutes"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See My Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Checking eligibility won't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "See how much funding your business qualifies for."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Just a few questions to find the right fit for your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Tell us about your business"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Basic info \u2014 it should take just a few minutes."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Review your personalized offers"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Compare term loan and line of credit options."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Get funded \u2014 fast"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "As fast as same-day once approved.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No Obligation"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Secure Application"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check Your Funding Options"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hard credit pull. No obligation."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Your information is encrypted and secure."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Two flexible ways to fund your business."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Term Loan"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$5K \u2013 $400K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Repayment terms up to 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "One-time lump sum of cash upfront."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Predictable daily or weekly payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No prepayment penalties.\u2021"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Revolving Credit Line"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Business Line of Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$6K \u2013 $200K"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Flexible repayment terms of 12, 18 or 24 months"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Available 24/7; get funds within seconds.*"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Only pay interest on what you use."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Credit replenishes as you repay."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Minimum requirements:** 1 year in business, business checking account, $100K annual revenue"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "$25B+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Total Delivered"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "185K+"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Businesses Funded"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "4.7/5"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Small business owners trust OnDeck."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Excellent Choice for Small Business Loans"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Honest, Straightforward, and No Pressure"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "My experience with OnDeck has honestly been exceptional. At no time did I feel pressured to take any action. [My loan advisor] took the time to very clearly (and in plain language) explain the differences between lending options offered by OnDeck. I felt very comfortable explaining my current financial situation with him, and I felt like he understood and communicated this quickly and accurately to the underwriters. The process was simple, quick, and direct. I'll be HIGHLY recommending OnDeck, and returning if I ever need business lending in the future."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "A Reliable Partner for Small Business Growth"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Funding built for real businesses, not just perfect ones."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We've spent 20+ years helping small business owners get the capital they need \u2014 fast, transparently, and without the runaround."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Our streamlined application takes just a few minutes to complete. No stacks of paperwork or branch visits required."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Check your eligibility without affecting your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Easy Process"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We're not a broker \u2014 you can work with us directly. That means faster decisions, fewer middlemen, and transparent pricing."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Transparent Pricing"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "No hidden fees, no prepayment penalties on term loans. You'll know exactly what you owe before you sign \u2014 nothing more."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Build Business Credit"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "We report to business credit bureaus, which helps build business credit history with on-time payments."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Will applying affect my credit score?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "OnDeck uses soft pulls of personal credit reports that don't affect your credit score."
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "How fast can I receive funds?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Once you apply with OnDeck, we will quickly review the details of your application to determine if you're eligible for funding. If you are, your loan advisor will work with you to finalize funding options. Once you accept an offer for a line of credit or term loan, you can complete your online checkout and receive funds as soon as the same day.\u2020"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What information do I need to apply?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "What's the difference between a business line of credit and a business term loan?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Can I repay my OnDeck Term Loan early?"
 },
 {
 "fragment": false,
-"status": "verbatim"
+"status": "verbatim",
+"text": "Yes. If you qualify for our 100% prepayment benefit option, you can pay your loan off early in full and have all remaining interest waived without any penalty or fee.\u2021 If you don't qualify for the 100% prepayment benefit option, you'll be responsible for repaying 75% of the remaining unpaid interest if you repay early."
 }
 ],
-"total": 70
+"near": 4,
+"total": 70,
+"verbatim": 65
 },
 "skipped": false
 }
 ],
-"problemSeverities": [
-"info",
-"warn"
+"sharedFindings": [],
+"skipped": false
+},
+"1788534558502": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"noVerdictCount": 0,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Questions? (888) 269-4246"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "After approval, get funds as soon as the same day."
+},
+{
+"fragment": false,
+"status": "near",
+"text": "4.7/5 | Based on 6K+ reviews"
+},
+{
+"fragment": true,
+"status": "near",
+"text": "Typically, we only require basic information about yourself and your business. We may ask for: Business Tax ID; last three months of business bank statements; Social Security number of business owner(s)."
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Lump Sum Loan"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Apply Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Your business deserves funding that moves as fast as you do."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "deserves funding"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Apply in minutes with no hard credit pull. Term loans up to $400K and lines of credit up to $200K."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "No Hard Credit Pull"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Same-Day Funding"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Apply in Minutes"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "See My Funding Options"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Checking eligibility won't affect your credit score."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "See how much funding your business qualifies for."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Just a few questions to find the right fit for your business."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Tell us about your business"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Basic info \u2014 it should take just a few minutes."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Review your personalized offers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Compare term loan and line of credit options."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Get funded \u2014 fast"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "As fast as same-day once approved.\u2020"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "No Obligation"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Secure Application"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Check Your Funding Options"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "No hard credit pull. No obligation."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Your information is encrypted and secure."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Two flexible ways to fund your business."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Business Term Loan"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "$5K \u2013 $400K"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Repayment terms up to 24 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "One-time lump sum of cash upfront."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Predictable daily or weekly payments."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "No prepayment penalties.\u2021"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Revolving Credit Line"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Business Line of Credit"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "$6K \u2013 $200K"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Flexible repayment terms of 12, 18 or 24 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Available 24/7; get funds within seconds.*"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Only pay interest on what you use."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Credit replenishes as you repay."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Minimum requirements:** 1 year in business, business checking account, $100K annual revenue"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "$25B+"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Total Delivered"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "185K+"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Businesses Funded"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "4.7/5"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Small business owners trust OnDeck."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Excellent Choice for Small Business Loans"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Honest, Straightforward, and No Pressure"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "My experience with OnDeck has honestly been exceptional. At no time did I feel pressured to take any action. [My loan advisor] took the time to very clearly (and in plain language) explain the differences between lending options offered by OnDeck. I felt very comfortable explaining my current financial situation with him, and I felt like he understood and communicated this quickly and accurately to the underwriters. The process was simple, quick, and direct. I'll be HIGHLY recommending OnDeck, and returning if I ever need business lending in the future."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "A Reliable Partner for Small Business Growth"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Funding built for real businesses, not just perfect ones."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We've spent 20+ years helping small business owners get the capital they need \u2014 fast, transparently, and without the runaround."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Our streamlined application takes just a few minutes to complete. No stacks of paperwork or branch visits required."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Check your eligibility without affecting your credit score."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Easy Process"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We're not a broker \u2014 you can work with us directly. That means faster decisions, fewer middlemen, and transparent pricing."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Transparent Pricing"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "No hidden fees, no prepayment penalties on term loans. You'll know exactly what you owe before you sign \u2014 nothing more."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Build Business Credit"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We report to business credit bureaus, which helps build business credit history with on-time payments."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Will applying affect my credit score?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "OnDeck uses soft pulls of personal credit reports that don't affect your credit score."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "How fast can I receive funds?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Once you apply with OnDeck, we will quickly review the details of your application to determine if you're eligible for funding. If you are, your loan advisor will work with you to finalize funding options. Once you accept an offer for a line of credit or term loan, you can complete your online checkout and receive funds as soon as the same day.\u2020"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "What information do I need to apply?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "What's the difference between a business line of credit and a business term loan?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Can I repay my OnDeck Term Loan early?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Yes. If you qualify for our 100% prepayment benefit option, you can pay your loan off early in full and have all remaining interest waived without any penalty or fee.\u2021 If you don't qualify for the 100% prepayment benefit option, you'll be responsible for repaying 75% of the remaining unpaid interest if you repay early."
+}
+],
+"near": 4,
+"total": 70,
+"verbatim": 65
+},
+"skipped": false
+}
 ],
 "sharedFindings": [],
 "skipped": false

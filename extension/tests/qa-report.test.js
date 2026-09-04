@@ -51,6 +51,22 @@ eval(slicePopup('function rptAbVisualDiffSection(vd) {', '\nfunction rptWcagSect
 eval(slicePopup('function abFiredMetricRows(metricRows) {', '\nfunction rptAbSection('));
 var abState = { qaMode: false };
 
+// The Performance and Cross-Variant Accessibility report sections. PERF_METRICS
+// and WCAG_CHECKS are `const` arrays and so do not survive eval-slicing (the
+// same trap that cost VIS_REPORT_RETRIES and VD_GRADES a test); stubbed here as
+// `var` before the slices, because the sliced functions resolve globals at call
+// time. The stubs are shaped like the real data, not simplified.
+var PERF_METRICS = [
+  { key: 'lcpMs', label: 'LCP', budget: 'lcpMs', unit: 'ms' },
+  { key: 'clsScore', label: 'CLS', budget: 'clsScore', unit: 'num' },
+];
+var WCAG_CHECKS = [{ key: 'contrast', label: 'Colour contrast' }, { key: 'alt', label: 'Image alt text' }];
+eval(slicePopup('function shortUrl(u) {', '\nfunction '));
+eval(slicePopup('function fmtMetric(v, m) {', '\nfunction '));
+eval(slicePopup('function diffCvaRuns(runs, checkKeys) {', '\nfunction '));
+eval(slicePopup('function rptCvaSection(entry) {', '\nfunction rptPerfSection'));
+eval(slicePopup('function rptPerfSection(entry) {', '\nfunction rptFunnelSection'));
+
 // ── harness ────────────────────────────────────────────────────────────────
 var pass = 0, fail = 0, failures = [];
 function ok(name, cond, detail) {
@@ -1368,6 +1384,133 @@ section('Metrics section only earns a place when a metric fired');
   eq('no metrics configured', abFiredMetricRows([]).length, 0);
   eq('undefined', abFiredMetricRows(undefined).length, 0);
   eq('a row with no counts', abFiredMetricRows([{ metric: 'x' }]).length, 0);
+})();
+
+// ── two sections that were making affirmatively false statements ──────────
+section('Performance must not report budgets met on a page it never measured');
+
+(function aPageThatMeasuredNothingIsNotAPass() {
+  // perfSummarize nulls every median and every verdict when no run succeeded,
+  // and `skipped` stays false because p.runs is full of error objects — so the
+  // page survived the filter and `verdicts[k] === 'over' ? 'OVER' : 'OK'`
+  // rendered null as "OK" under a summary reading "all budgets met".
+  function perf(pages) {
+    return rptPerfSection({ name: 'Performance', status: 'ran',
+      data: { budgets: { lcpMs: 2500, clsScore: 0.1 }, pages: pages } });
+  }
+  var deadPage = { url: 'https://example.com/x', skipped: false,
+    runs: [{ error: 'timeout' }, { error: 'timeout' }],
+    summary: { runCount: 0, runErrors: ['Load event never fired (45s)'],
+               medians: { lcpMs: null, clsScore: null },
+               verdicts: { lcpMs: null, clsScore: null } } };
+  var h = perf([deadPage]);
+  ok('it does not claim all budgets met', !/all budgets met/.test(h), h.slice(0, 400));
+  ok('  and does not badge PASS', !/>PASS</.test(h), h.slice(0, 300));
+  ok('  it says no successful run', /No successful run/.test(h), h.slice(0, 600));
+  ok('  and surfaces the reason', /Load event never fired/.test(h));
+  ok('  and prints no OK for an unmeasured metric', !/— OK/.test(h), h);
+  ok('  and reports 0 pages measured', /0 page\(s\) measured/.test(h), h.slice(0, 300));
+
+  // A page that DID measure is unchanged — this must not scare a healthy run.
+  var live = { url: 'https://example.com/y', skipped: false, runs: [{}],
+    summary: { runCount: 3, runErrors: [], medians: { lcpMs: 1800, clsScore: 0.04 },
+               verdicts: { lcpMs: 'ok', clsScore: 'ok' } } };
+  var g = perf([live]);
+  ok('a measured, in-budget page still passes', />PASS</.test(g), g.slice(0, 300));
+  ok('  and reports its budgets met', /all budgets met/.test(g), g.slice(0, 300));
+  ok('  with OK cells', /— OK/.test(g));
+  var over = { url: 'https://example.com/z', skipped: false, runs: [{}],
+    summary: { runCount: 3, runErrors: [], medians: { lcpMs: 4200, clsScore: 0.04 },
+               verdicts: { lcpMs: 'over', clsScore: 'ok' } } };
+  ok('an over-budget page still FAILs', />FAIL</.test(perf([over])));
+  ok('  and says so', /1 metric\(s\) over budget/.test(perf([over])));
+
+  // Mixed: one measured and clean, one dead. Must not read as a clean run.
+  var mixed = perf([live, deadPage]);
+  ok('a mixed run does not badge PASS', !/>PASS</.test(mixed), mixed.slice(0, 300));
+  ok('  and counts the unmeasured page separately',
+     /1 page\(s\) measured/.test(mixed) && /1 page\(s\) produced no successful run/.test(mixed),
+     mixed.slice(0, 400));
+  // A null verdict on an otherwise-measured page is a dash, matching the live panel.
+  var partial = { url: 'https://example.com/p', skipped: false, runs: [{}],
+    summary: { runCount: 2, runErrors: [], medians: { lcpMs: 1800, clsScore: null },
+               verdicts: { lcpMs: 'ok', clsScore: null } } };
+  ok('a null verdict renders as a dash, not OK', /— —/.test(perf([partial])), perf([partial]));
+})();
+
+section('Cross-Variant Accessibility must not blame the variant for the whole site');
+
+(function aFailedBaselineIsDisclosed() {
+  // diffCvaRuns does `base.loadError ? null : issuesOf(base, k)`, so bset is
+  // empty and `introduced` becomes the variant's ENTIRE issue list. The live
+  // renderer discloses this; the report had no branch for it.
+  // CVA issues are plain STRINGS — diffCvaRuns normalises with
+  // `String(s).replace(/\s+/g,' ').trim()`. My first attempt used
+  // {selector, html, summary} objects, and every one stringified to
+  // "[object Object]", so all five collapsed to one value and the assertion
+  // failed with introduced:0 / preexisting:1. Worth keeping the note: a fixture
+  // of the wrong shape is exactly how a test comes to agree with a bug.
+  function issues(n) {
+    return Array.apply(null, Array(n)).map(function (_, i) {
+      return 'contrast: #e' + i + ' has insufficient ratio';
+    });
+  }
+  function cva(baseOver) {
+    return rptCvaSection({ name: 'Cross-Variant Accessibility', status: 'ran', data: {
+      autoChecks: ['contrast'],
+      runs: [
+        Object.assign({ label: 'v0', url: 'https://example.com', loadError: null,
+                        results: { contrast: { issues: issues(3) } } }, baseOver || {}),
+        { label: 'v1', url: 'https://example.com?v=1', loadError: null,
+          results: { contrast: { issues: issues(5) } } },
+      ] } });
+  }
+  var broken = cva({ loadError: 'Navigation timeout', results: null });
+  ok('a failed baseline is stated in the summary',
+     /failed to load/.test(broken), broken.slice(0, 500));
+  ok('  naming the error', /Navigation timeout/.test(broken));
+  ok('  and saying the issues are TOTALS, not regressions',
+     /not regressions introduced by them/.test(broken), broken.slice(0, 600));
+  ok('  it does not badge ISSUES FOUND as though they were introduced',
+     !/>ISSUES FOUND</.test(broken), broken.slice(0, 300));
+  ok('  it carries the same sentence the live renderer uses',
+     /shown against an empty baseline/.test(broken), broken.slice(0, 800));
+  ok('  and relabels the column away from "Introduced"',
+     /Checks with issues/.test(broken) && !/>Introduced checks</.test(broken), broken);
+
+  // A healthy baseline must be completely unchanged.
+  var fine = cva(null);
+  ok('a healthy baseline still reports introduced issues',
+     />ISSUES FOUND</.test(fine), fine.slice(0, 300));
+  ok('  with the original summary wording',
+     /introduced issue\(s\) across/.test(fine), fine.slice(0, 300));
+  ok('  the original column header', /Introduced checks/.test(fine));
+  ok('  and no empty-baseline warning', !/empty baseline/.test(fine));
+})();
+
+section('the copy check must not call itself an exact string comparison');
+
+(function theCopyCheckDescribesWhatItActuallyDoes() {
+  // Executed against the real vdNormText: "$29/mo" and "€29/mo" both normalise
+  // to "29 mo"; "Free shipping" is contained in "No free shipping on orders
+  // under $50"; "$99" normalises to "99" and is found inside "1996". Calling
+  // that "exact" is why a reviewer would not double-check a verbatim line.
+  var f = rollup('section', 'expected');
+  var h = render([f], { variant: { requirements: {
+    total: 70, verbatim: 65, near: 4, absent: 1,
+    items: [{ status: 'absent', text: 'Questions? (888) 269-4246' }] } } });
+  ok('the coverage line renders', /found verbatim/.test(h), h.slice(0, 400));
+  ok('  and does NOT say "exact"', !/exact/i.test(h),
+     (/.{0,90}exact.{0,60}/i.exec(h) || [''])[0]);
+  ok('  it says case and punctuation are ignored',
+     /case and punctuation are ignored/.test(h), h.slice(0, 700));
+  ok('  and that a string inside a longer one counts as found',
+     /inside a longer one/.test(h), h.slice(0, 700));
+  // The claim also appears in Run Diagnostics; both must agree.
+  ok('the word "exact" appears nowhere in popup.js any more',
+     _pu.indexOf('exact string comparison') === -1, 'still present');
+  ok('  and the true half of the claim survives',
+     /reads the same on every run/.test(_pu), 'lost the reproducibility claim');
 })();
 
 // ── report ─────────────────────────────────────────────────────────────────

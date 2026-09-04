@@ -17,6 +17,11 @@
 //
 // When a run surfaces a new shape, add its log to the fixture. That is the point.
 
+// vdReorderContradiction and the thresholds come from the real sources, sliced
+// the same way every other suite does it.
+load('../vd-config.js');
+load('../vd-diff.js');
+
 function readFile(p) { return read(p); }
 var _pu = readFile('../popup.js');
 function slicePopup(from, to) {
@@ -27,6 +32,17 @@ function slicePopup(from, to) {
 eval(slicePopup('function vdUnmetRequirements(v) {', '\n// The pages this run actually tested'));
 
 var RUNS = JSON.parse(readFile('fixtures-real-runs.json'));
+
+// Kept in its own file on purpose. fixtures-real-runs.json is a verdict
+// projection whose invariants are derived by counting classifications; bolting
+// geometry onto it muddles a file with one clear job. This one carries the
+// shiftClusters each run recorded, verbatim.
+//
+// It exists because you CANNOT re-run vdSuppressFindings from a debug log — the
+// log carries no candidate lists, only capped 40-item samples. So the only way
+// to check the reordering rule against real pages is to feed the recorded
+// clusters back through the predicate, which is what this does.
+var CLUSTERS = JSON.parse(readFile('fixtures-real-clusters.json'));
 
 var pass = 0, fail = 0, failures = [];
 function ok(name, cond, detail) {
@@ -172,6 +188,61 @@ section('the copy check\'s real-world verdicts are pinned');
   ok('every recorded item has one of the three known statuses',
      Object.keys(byStatus).sort().join(',') === 'absent,near,verbatim',
      Object.keys(byStatus).sort().join(','));
+})();
+
+section('the reordering rule, checked against every recorded run');
+
+(function theReorderingRuleIsInertOnEveryRecordedRun() {
+  var ids = Object.keys(CLUSTERS).sort();
+  ok('there are recorded cluster sets to check', ids.length > 0);
+
+  var multi = 0, annotated = 0, vertSeen = 0;
+  ids.forEach(function (rid) {
+    var run = CLUSTERS[rid];
+    var sc = run.shiftClusters || {};
+    var vert = sc.vertical || [], horz = sc.horizontal || [];
+    vertSeen += vert.length;
+    if (vert.filter(function (c) { return c.trusted; }).length >= 2) multi++;
+
+    // EVERY run, annotated or not: feed the recorded geometry back through the
+    // live predicate. This is the check that matters, and it works on logs from
+    // before the rule shipped because cluster geometry is cluster geometry.
+    var copy = JSON.parse(JSON.stringify(vert));
+    vdReorderContradiction(copy, VD_SHIFT_TOL_PX, VD_MOVE_MIN_PX);
+    copy.forEach(function (c, i) {
+      eq(rid + ' the live predicate contradicts nothing recorded [' + i + ']',
+         c.contradictedBy, null);
+    });
+
+    // Only logs produced by a build carrying the rule can be checked for the
+    // annotation itself. Twelve of these predate 4b4e236 — asserting the key on
+    // those would be asserting that history changed.
+    if (!run.annotated) return;
+    annotated++;
+    vert.forEach(function (c) {
+      ok(rid + '   vertical cluster carries contradictedBy', 'contradictedBy' in c, c);
+      eq(rid + '   and it is null — the rule ran and cleared it', c.contradictedBy, null);
+    });
+    // AXIS SCOPING, proven from production rather than asserted: the rule is
+    // vertical-only, so horizontal clusters must carry no annotation at all.
+    horz.forEach(function (c) {
+      ok(rid + '   horizontal cluster is NOT annotated', !('contradictedBy' in c), c);
+    });
+  });
+
+  print('    ' + vertSeen + ' vertical clusters across ' + ids.length + ' runs; '
+        + annotated + ' run(s) carry the annotation; '
+        + multi + ' run(s) have >= 2 trusted vertical clusters');
+  ok('at least one run was produced by a build carrying the rule', annotated > 0,
+     'no annotated run yet — reload the extension and re-run');
+  // Said out loud rather than implied. The rule needs two trusted vertical
+  // clusters to fire at all, so while this is 0 the corpus CANNOT exercise it:
+  // the inertness above is structural, not evidence of correctness. The first
+  // multi-cluster log is the one the flag is waiting for.
+  if (multi === 0) {
+    print('    NOTE: no recorded run can fire the rule (needs >= 2 trusted vertical');
+    print('          clusters). Inertness above is STRUCTURAL, not proof of correctness.');
+  }
 })();
 
 section('the badge is ONE implementation, not a copy per caller');

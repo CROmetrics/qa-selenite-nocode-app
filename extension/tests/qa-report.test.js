@@ -943,11 +943,14 @@ function vdOf(over) {
   var ab = _pu.slice(_pu.indexOf('function rptAbSection(entry) {'),
                      _pu.indexOf('function rptAbVisualDiffSection(vd) {'));
   ok('the A/B section computes the visual verdict', /vdVerdict\(/.test(ab), ab.slice(0, 200));
-  var badge = /const badge = [\s\S]*?;\n/.exec(ab);
-  ok('  and its badge reads it', !!badge && /vv\.(issues|notCompared)/.test(badge[0]),
-     badge && badge[0]);
-  ok('  so PASS requires the visual half to be clean too',
-     !!badge && /totalDeltas \|\| vv\.issues/.test(badge[0]), badge && badge[0]);
+  // The badge is one shared function now, so the assertion is that this section
+  // DELEGATES rather than that its inline ternary is spelled correctly. Every
+  // previous version of this test regexed the ternary and so pinned the spelling
+  // while the f529775 clause inversion sailed through.
+  ok('  and its badge delegates to the one shared ladder',
+     /vdBadgeLabel\(vv,/.test(ab), ab.slice(0, 300));
+  ok('  passing its own capture errors and totalDeltas in',
+     /errCount, extraIssues: totalDeltas/.test(ab), ab.slice(0, 300));
   var summary = /const summary = [\s\S]*?;\n/.exec(ab);
   ok('  and the summary names its own scope rather than saying "vs baseline"',
      !!summary && /page basics/.test(summary[0]) && !/difference\(s\) vs baseline/.test(summary[0]),
@@ -1080,33 +1083,111 @@ section('a run that was not validly compared must never badge PASS');
      vdVerdict({ skipped: true, perVariant: [{ label: 'v1', skipped: true }] }).ran, false);
 })();
 
-(function bothBadgeLaddersRefusePassInThoseStates() {
-  // rptAbSection is not sliceable here without diffAbCaptures and mtMatch, so
-  // pin the ladder in source — and pin BOTH, since they must agree.
+(function everyReasonAVariantIsNotCleanIsChecked() {
+  // vdVariantClean is what makes PASS earned instead of fallen-into, so each of
+  // its reasons needs its own case. SYNTHETIC on purpose: I regressed each line
+  // and found that removing the gradingFailed check broke NOTHING, in either
+  // suite — because in all 12 recorded runs a gradingFailed variant also carries
+  // unclassified findings, so an earlier check catches it. A failed call that
+  // produced zero findings is reachable and is not in the fixture, so the real
+  // data cannot cover this one.
+  function clean(over) {
+    return vdVerdict(vdOf({ variant: Object.assign(
+      { findings: [{ classification: 'expected' }], requirements: null }, over) })).allClean;
+  }
+  eq('a fully graded, clean variant IS clean', clean({}), true);
+  eq('an errored variant is not', clean({ error: 'Failed to fetch' }), false);
+  eq('a skipped variant is not', clean({ skipped: true }), false);
+  eq('a control duplicate is not', clean({ controlDuplicate: true }), false);
+  // The one nothing was guarding.
+  eq('a variant whose grading died is not clean, even with no findings',
+     clean({ gradingFailed: 'Failed to fetch', findings: [] }), false);
+  eq('  nor with findings that somehow all carry grades',
+     clean({ gradingFailed: 'Failed to fetch', findings: [{ classification: 'expected' }] }), false);
+  eq('an unjudged finding makes it not clean',
+     clean({ findings: [{ classification: 'expected' }, { classification: null }] }), false);
+  eq('an unclear finding makes it not clean',
+     clean({ findings: [{ classification: 'unclear' }] }), false);
+  eq('an unexpected finding makes it not clean',
+     clean({ findings: [{ classification: 'unexpected' }] }), false);
+  eq('an unmet copy string makes it not clean',
+     clean({ requirements: { absent: 1, items: [] } }), false);
+  eq('  but a fragment near-match does not', clean({
+     requirements: { absent: 0, items: [{ status: 'near', fragment: true }] } }), true);
+
+  // A variant with NO variants at all is not a pass either.
+  eq('an empty perVariant is not clean',
+     vdVerdict({ baselineLabel: 'v0', perVariant: [], sharedFindings: [] }).allClean, false);
+
+  // The did-not-run return and the success return must carry the SAME fields.
+  // They did not: allClean was undefined on one branch and a boolean on the
+  // other, which reads as falsy in one caller and as "not stated" in another.
+  var ran = vdVerdict(vdOf({ variant: { findings: [{ classification: 'expected' }] } }));
+  var notRan = vdVerdict({ baselineLabel: 'v0', perVariant: [], sharedFindings: [] });
+  Object.keys(ran).sort().forEach(function (k) {
+    ok('the did-not-run verdict also defines ' + k, k in notRan, Object.keys(notRan).sort().join(','));
+    eq('  and ' + k + ' has the same type', typeof notRan[k], typeof ran[k]);
+  });
+
+  // The mirror branch has its own reasons.
+  function mirrorClean(over) {
+    return vdVerdict({ baselineLabel: 'v0', sharedFindings: [], perVariant: [Object.assign(
+      { label: 'v1', findingCount: 9, unexpectedCount: 0, unclearCount: 0,
+        noVerdictCount: 0, unmetCopyCount: 0 }, over)] }).allClean;
+  }
+  eq('a clean mirror is clean', mirrorClean({}), true);
+  eq('  an unexpected count is not', mirrorClean({ unexpectedCount: 1 }), false);
+  eq('  an unclear count is not', mirrorClean({ unclearCount: 1 }), false);
+  eq('  a no-verdict count is not', mirrorClean({ noVerdictCount: 1 }), false);
+  eq('  an unmet copy count is not', mirrorClean({ unmetCopyCount: 1 }), false);
+  eq('  and a dead call on that path is not', mirrorClean({ gradingFailed: 'x' }), false);
+})();
+
+(function oneBadgeLadderThatBothSectionsCall() {
+  // There is no inline ternary to regex any more. vdBadgeLabel IS the ladder,
+  // so test it directly — and assert both sections call it rather than keeping
+  // a copy. A copy is how the f529775 inversion passed: the test and the
+  // scratch harness each hardcoded the intended order.
   var ab = _pu.slice(_pu.indexOf('function rptAbSection(entry) {'),
                      _pu.indexOf('function rptAbVisualDiffSection(vd) {'));
-  var abBadge = (/const badge = [\s\S]*?;\n/.exec(ab) || [''])[0];
-  ok('the A/B ladder checks notCompared before PASS',
-     abBadge.indexOf('notCompared') !== -1
-     && abBadge.indexOf('notCompared') < abBadge.indexOf("'PASS'"), abBadge);
-  ok('  and ungraded before PASS', abBadge.indexOf('ungraded') !== -1
-     && abBadge.indexOf('ungraded') < abBadge.indexOf("'PASS'"), abBadge);
-  // The FULL order matters, not just "above PASS". f529775 put ungraded above
-  // issues, so ONE omitted finding out of 67 relabelled the variant NOT GRADED
-  // and buried 4 unmet copy strings and 5 review items.
-  ok('  and ISSUES FOUND before ungraded, so real issues outrank a grading gap',
-     abBadge.indexOf("'ISSUES FOUND'") < abBadge.indexOf('ungraded'), abBadge);
-  ok('  with notCompared above both', abBadge.indexOf('notCompared') < abBadge.indexOf("'ISSUES FOUND'"), abBadge);
-
   var vdsec = _pu.slice(_pu.indexOf('function rptAbVisualDiffSection(vd) {'),
                         _pu.indexOf('function rptWcagSection('));
-  var vdBadge = (/const badge = [\s\S]*?;\n/.exec(vdsec) || [''])[0];
-  ok('the Visual Diff ladder checks ungraded before PASS',
-     vdBadge.indexOf('ungraded') !== -1
-     && vdBadge.indexOf('ungraded') < vdBadge.indexOf("'PASS'"), vdBadge);
-  ok('  and notCompared before everything', vdBadge.indexOf('notCompared') < vdBadge.indexOf("'ISSUES FOUND'"), vdBadge);
-  ok('  and the SAME order as the A/B ladder — issues above ungraded',
-     vdBadge.indexOf("'ISSUES FOUND'") < vdBadge.indexOf('ungraded'), vdBadge);
+  ok('the A/B section calls vdBadgeLabel', /vdBadgeLabel\(vv,/.test(ab));
+  ok('the Visual Diff section calls vdBadgeLabel', /vdBadgeLabel\(vv,/.test(vdsec));
+  ok('neither hardcodes a PASS rung of its own',
+     !/rptBadge\('pass', 'PASS'\)/.test(ab + vdsec), 'inline ladder remains');
+
+  var base = { ran: true, failed: 0, notRun: 0, notCompared: 0, issues: 0, ungraded: 0, allClean: true };
+  function at(over) { return vdBadgeLabel(Object.assign({}, base, over), {}); }
+
+  // Precedence, top to bottom.
+  eq('an errored variant outranks everything', at({ failed: 1, notCompared: 1, issues: 9, ungraded: 9 }), 'FAILED');
+  eq('a control duplicate outranks issues', at({ notCompared: 1, issues: 9, ungraded: 9 }), 'NOT COMPARED');
+  // THE REGRESSION: real issues must outrank a partial grading gap.
+  eq('real issues outrank a grading gap', at({ issues: 4, ungraded: 1, allClean: false }), 'ISSUES FOUND');
+  eq('a grading gap alone is NOT GRADED', at({ ungraded: 67, allClean: false }), 'NOT GRADED');
+  eq('a stopped variant is INCOMPLETE', at({ notRun: 1, allClean: false }), 'INCOMPLETE');
+  eq('a positively clean run is PASS', at({}), 'PASS');
+  // The class-level guard: anything unaccounted for cannot reach PASS.
+  eq('an unrecognised state is INCONCLUSIVE', at({ allClean: false }), 'INCONCLUSIVE');
+  eq('  even with every known counter at zero',
+     vdBadgeLabel({ ran: true, allClean: false }, {}), 'INCONCLUSIVE');
+
+  // rptAbSection's extras.
+  eq('capture errors outrank all of it', vdBadgeLabel(base, { errCount: 1 }), 'FAIL');
+  eq('its own totalDeltas raise ISSUES FOUND',
+     vdBadgeLabel(Object.assign({}, base, { allClean: false }), { extraIssues: 3 }), 'ISSUES FOUND');
+  eq('and a run with no visual diff at all still resolves for it',
+     vdBadgeLabel({ ran: false, allClean: false }, { allowNotRan: true }), 'PASS');
+
+  // Badge colour tracks the label, so a new rung cannot render green by default.
+  eq('PASS is the only green', vdBadgeKind('PASS'), 'pass');
+  ['FAIL', 'FAILED', 'NOT COMPARED'].forEach(function (l) {
+    eq('  ' + l + ' is a failure', vdBadgeKind(l), 'fail');
+  });
+  ['ISSUES FOUND', 'NOT GRADED', 'INCOMPLETE', 'INCONCLUSIVE'].forEach(function (l) {
+    eq('  ' + l + ' is an issue', vdBadgeKind(l), 'issues');
+  });
 })();
 
 (function theQueuedPathStillGetsItsVisualDiff() {

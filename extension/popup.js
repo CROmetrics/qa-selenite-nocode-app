@@ -5342,8 +5342,76 @@ function vdVariantIssueCount(v) {
 // `Questions? (888) 269-4246` absent alongside "Phone number … removed", and
 // `Lump Sum Loan` alongside the "Lump-Sum Funding" eyebrow — so 4 + 6 = 10 would
 // count two defects twice. Both summary lines name the two numbers instead.
+// Can we POSITIVELY say this variant was compared, graded, and had nothing to
+// report? PASS is only legal when every variant answers yes.
+//
+// This inversion is the point. Every false PASS in this file — a dead model
+// call, an all-Control run, the Test-Agent mirror, and now an errored variant
+// (real: run 1788193353815 carried error:"Failed to fetch" and badged PASS) —
+// was a state nobody had written a counter for, so the ladder fell THROUGH to
+// PASS. Adding a rung per state fixes the instance and leaves the class. Now an
+// unrecognised state cannot reach PASS, because PASS requires this to return
+// true rather than requiring the known counters to be zero.
+function vdVariantClean(v) {
+  if (!v) return false;
+  if (v.skipped || v.error) return false;          // never compared
+  if (v.controlDuplicate) return false;            // compared against itself
+  if (v.gradingFailed) return false;               // compared, never judged
+  if (vdIsMirrorVariant(v)) {
+    return (v.unexpectedCount || 0) === 0 && (v.unclearCount || 0) === 0
+        && (v.noVerdictCount || 0) === 0 && (v.unmetCopyCount || 0) === 0;
+  }
+  if ((v.findings || []).some(f => !vdIsGrade(f.classification))) return false;
+  return vdVariantNeedsReview(v) === 0 && vdUnmetRequirements(v) === 0;
+}
+
+// The badge, as a function rather than an inline ternary in two places.
+//
+// Extracted because every test and scratch harness I wrote for the previous
+// ladders hardcoded its OWN copy of the order, so they validated my intent
+// instead of the shipped code — and passed while production was wrong. The
+// f529775 inversion survived its own behavioural test that way. Now there is
+// one implementation and everything reads it.
+//
+// `extraIssues` lets rptAbSection fold in its own totalDeltas without a second
+// ladder. `errCount` is its capture-level errors, which are separate from
+// vv.failed (a visual-diff throw) and outrank everything.
+function vdBadgeLabel(vv, opts) {
+  const o = opts || {};
+  if (o.errCount) return 'FAIL';
+  if (vv.failed) return 'FAILED';
+  if (vv.notCompared) return 'NOT COMPARED';
+  if (o.extraIssues || vv.issues) return 'ISSUES FOUND';
+  if (vv.ungraded) return 'NOT GRADED';
+  if (vv.notRun) return 'INCOMPLETE';
+  // PASS is EARNED, never fallen into. o.allowNotRan covers rptAbSection, whose
+  // badge must still resolve when no visual diff ran at all.
+  if (vv.allClean || (o.allowNotRan && !vv.ran)) return 'PASS';
+  return 'INCONCLUSIVE';
+}
+
+// A function, not a const map: a `const` declared inside eval() does not reach
+// the calling scope, and the jsc suites slice these out and eval them. That has
+// already cost two tests (VIS_REPORT_RETRIES, VD_GRADES).
+function vdBadgeKind(label) {
+  if (label === 'PASS') return 'pass';
+  if (label === 'FAIL' || label === 'FAILED' || label === 'NOT COMPARED') return 'fail';
+  return 'issues';
+}
+
 function vdVerdict(vd) {
-  const none = { ran: false, issues: 0, findings: 0, notCompared: 0, unmetCopy: 0, needsReview: 0, ungraded: 0 };
+  // Every field the success path returns, so the two shapes cannot diverge —
+  // `allClean` was undefined here while the other branch set a boolean, and an
+  // undefined read as falsy in one caller and as "not stated" in another. That
+  // mismatched-return-shape pattern is the same class as the three false-PASS
+  // routes. allClean is FALSE, not true: with nothing to account for we cannot
+  // positively say a comparison was clean. rptAbSection's `allowNotRan` is what
+  // legitimately resolves a run that had no visual diff at all.
+  const none = {
+    ran: false, issues: 0, findings: 0, notCompared: 0, unmetCopy: 0,
+    needsReview: 0, ungraded: 0, failed: 0, notRun: 0,
+    detailUnavailable: false, allClean: false,
+  };
   if (!vd) return none;
   const perVariant = vd.perVariant || [];
   // ── B ──────────────────────────────────────────────────────────────────
@@ -5379,12 +5447,22 @@ function vdVerdict(vd) {
   // The per-finding detail is not on this path, so the renderer must not claim
   // "No differences detected." from an empty findings array.
   const detailUnavailable = perVariant.some(v => live(v) && vdIsMirrorVariant(v));
+  // A variant whose diff threw. Distinct from notCompared (which means it
+  // resolved to Control) and from notRun (which means the user stopped it).
+  // rptAbSection's own errCount cannot see these — it counts page loadError and
+  // jsErrors from diffAbCaptures, not visual-diff failures.
+  const failed = perVariant.filter(v => !!v.error).length;
+  const notRun = perVariant.filter(v => !!v.skipped).length;
+  const allClean = perVariant.length > 0 && perVariant.every(vdVariantClean);
   return {
     ran: true,
     unmetCopy,
     needsReview,
     ungraded,
     detailUnavailable,
+    failed,
+    notRun,
+    allClean,
     // BADGE PREDICATE ONLY — never render this as a total. It is exactly the
     // double-counted sum described above; it exists so a caller can ask "is
     // either half non-zero?" in one place.
@@ -5509,11 +5587,8 @@ function rptAbSection(entry) {
   //
   // The case ungraded exists for is unaffected: a dead call with no spec leaves
   // issues at 0 + 0, so it still falls through to NOT GRADED and never to PASS.
-  const badge = errCount ? rptBadge('fail', 'FAIL')
-    : vv.notCompared ? rptBadge('fail', 'NOT COMPARED')
-    : (totalDeltas || vv.issues) ? rptBadge('issues', 'ISSUES FOUND')
-    : vv.ungraded ? rptBadge('issues', 'NOT GRADED')
-    : rptBadge('pass', 'PASS');
+  const badgeLabel = vdBadgeLabel(vv, { errCount, extraIssues: totalDeltas, allowNotRan: true });
+  const badge = rptBadge(vdBadgeKind(badgeLabel), badgeLabel);
   // "0 difference(s) vs baseline" was the other half of the contradiction: it
   // meant zero differences IN WHAT THIS SECTION CHECKS, and read as zero
   // differences full stop. Name the scope, and name the visual half.
@@ -5818,11 +5893,9 @@ function rptAbVisualDiffSection(vd) {
   const shared = vd.sharedFindings || [];
   const vv = vdVerdict(vd);
   const dupVariants = (vd.perVariant || []).filter(v => v.controlDuplicate);
-  // Same order as rptAbSection's ladder, for the same reasons — see there.
-  const badge = vv.notCompared ? rptBadge('fail', 'NOT COMPARED')
-    : vv.issues ? rptBadge('issues', 'ISSUES FOUND')
-    : vv.ungraded ? rptBadge('issues', 'NOT GRADED')
-    : rptBadge('pass', 'PASS');
+  // The same one implementation rptAbSection uses. They cannot disagree.
+  const vdBadgeText = vdBadgeLabel(vv, {});
+  const badge = rptBadge(vdBadgeKind(vdBadgeText), vdBadgeText);
   let summary = `Visual Diff vs ${vd.baselineLabel}${vd.baselineWarning ? ' — ' + vd.baselineWarning : ''}`;
   // Same two numbers as the A/B section's line, from the same helper — c197e87
   // exists because these two sections used to compute verdicts independently

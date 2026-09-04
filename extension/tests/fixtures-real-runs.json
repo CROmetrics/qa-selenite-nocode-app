@@ -1,0 +1,5358 @@
+{
+"1788191807035": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"noVerdictCount": null,
+"requirements": null,
+"skipped": false
+}
+],
+"problemSeverities": [
+"info",
+"warn"
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1788192904924": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"noVerdictCount": null,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": true,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+}
+],
+"total": 70
+},
+"skipped": false
+}
+],
+"problemSeverities": [
+"info",
+"warn"
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1788193353815": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [
+"Failed to fetch"
+],
+"perVariant": [
+{
+"controlDuplicate": false,
+"error": "Failed to fetch",
+"findings": [],
+"gradingFailed": null,
+"label": "v1",
+"noVerdictCount": null,
+"requirements": null,
+"skipped": false
+}
+],
+"problemSeverities": [
+"error",
+"info"
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1788194537067": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"noVerdictCount": null,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": true,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+}
+],
+"total": 70
+},
+"skipped": false
+}
+],
+"problemSeverities": [
+"info",
+"warn"
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1788360614883": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [
+"The findings below were produced but never graded \u2014 the model call failed: Failed to fetch"
+],
+"perVariant": [
+{
+"controlDuplicate": false,
+"error": null,
+"findings": [
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+},
+{
+"classification": null
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"noVerdictCount": null,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": true,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+}
+],
+"total": 70
+},
+"skipped": false
+}
+],
+"problemSeverities": [
+"error",
+"info",
+"warn"
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1788362945211": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"noVerdictCount": 0,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": true,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+}
+],
+"total": 70
+},
+"skipped": false
+}
+],
+"problemSeverities": [
+"info",
+"warn"
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1788370328207": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"noVerdictCount": 0,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": true,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+}
+],
+"total": 70
+},
+"skipped": false
+}
+],
+"problemSeverities": [
+"info",
+"warn"
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1788372126965": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": null
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"noVerdictCount": 1,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": true,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+}
+],
+"total": 70
+},
+"skipped": false
+}
+],
+"problemSeverities": [
+"info",
+"warn"
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1788373948616": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"noVerdictCount": 0,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": true,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+}
+],
+"total": 70
+},
+"skipped": false
+}
+],
+"problemSeverities": [
+"info",
+"warn"
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1788374677434": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"noVerdictCount": 0,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": true,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+}
+],
+"total": 70
+},
+"skipped": false
+}
+],
+"problemSeverities": [
+"info",
+"warn"
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1788375660723": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [
+"The two screenshots came back at different pixel scales \u2014 Control 2936px wide for a 2936px"
+],
+"perVariant": [
+{
+"controlDuplicate": false,
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"noVerdictCount": 0,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": true,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+}
+],
+"total": 70
+},
+"skipped": false
+}
+],
+"problemSeverities": [
+"error",
+"info",
+"warn"
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1788460269499": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"noVerdictCount": 0,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": true,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "near"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+},
+{
+"fragment": false,
+"status": "verbatim"
+}
+],
+"total": 70
+},
+"skipped": false
+}
+],
+"problemSeverities": [
+"info",
+"warn"
+],
+"sharedFindings": [],
+"skipped": false
+}
+}

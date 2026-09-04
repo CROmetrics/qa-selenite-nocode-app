@@ -688,6 +688,179 @@ function falseMoves(deltas, y0) {
      falseMoves(Array.apply(null, Array(23)).map(function () { return 2108; })), 0);
 })();
 
+// ── reordering: characterization, then the rule (currently OFF) ───────────
+//
+// Written BEFORE the behaviour changes, pinning what the engine does TODAY on
+// every shape the rule touches. VD_REORDER_DETECTION is false, so every number
+// here is current behaviour — including the defect. When the flag flips, exactly
+// two of these move; if anything else does, the rule is wrong.
+//
+// Every case routes through vdSuppressFindings, not the primitives. The tests
+// that guard the original 49-leak root cause (overlappingBands, horizontalCascade)
+// call vdClusterShifts/vdExplainsShift directly and so stay green no matter what
+// the orchestrator does — that is a hazard, not a reassurance.
+function shiftPairs(spec) {
+  // spec: [{n, y0, step, dy, tag}] -> content-identical pairs, unique text/path
+  var out = [], k = 0;
+  spec.forEach(function (b) {
+    for (var i = 0; i < b.n; i++) {
+      var y = b.y0 + i * b.step, t = b.tag + i;
+      out.push({ a: cand({ text: t, y: y, w: 300, h: 40, path: '/p[' + (k) + ']' }),
+                 b: cand({ text: t, y: y + b.dy, w: 300, h: 40, path: '/p[' + (k) + ']' }),
+                 tier: 'path+text' });
+      k++;
+    }
+  });
+  return out;
+}
+function movedFindings(spec, opts) {
+  var s = vdSuppressFindings(shiftPairs(spec), opts);
+  return { moved: s.findings.filter(function (f) {
+             return (f.signals || []).some(function (g) { return String(g).indexOf('moved') === 0; });
+           }).length,
+           reflow: s.aggregate.reflow, pxMax: s.aggregate.reflowPxMax };
+}
+// The shapes, named once and reused by both the characterization and the rule.
+var SWAP = [{ n: 3, y0: 300, step: 100, dy: 250, tag: 'P' },
+            { n: 3, y0: 600, step: 100, dy: -250, tag: 'Q' },
+            { n: 8, y0: 100, step: 180, dy: 0, tag: 'static' }];
+var ROTATION = [{ n: 3, y0: 300, step: 100, dy: 600, tag: 'A' },
+                { n: 3, y0: 600, step: 100, dy: -300, tag: 'B' },
+                { n: 3, y0: 900, step: 100, dy: -300, tag: 'C' }];
+var HEADER_ABOVE = [{ n: 6, y0: 0, step: 150, dy: 0, tag: 'hdr' },
+                    { n: 20, y0: 1200, step: 120, dy: -259, tag: 'body' }];
+var SIDEBAR = [{ n: 10, y0: 600, step: 300, dy: -200, tag: 'article' },
+               { n: 30, y0: 500, step: 150, dy: 0, tag: 'nav' }];
+var MIN_HEIGHT_BOX = [{ n: 6, y0: 2000, step: 40, dy: 40, tag: 'inbox' },
+                      { n: 40, y0: 100, step: 200, dy: 0, tag: 'rest' }];
+var FOOTER_COL = [{ n: 6, y0: 5000, step: 40, dy: 40, tag: 'col1' },
+                  { n: 48, y0: 200, step: 104, dy: 0, tag: 'page' }];
+var CASCADE_OPPOSED = [{ n: 10, y0: 500, step: 100, dy: 40, tag: 'grow' },
+                       { n: 10, y0: 2000, step: 100, dy: -160, tag: 'shrink' }];
+var LONE_BLOCK = [{ n: 3, y0: 300, step: 100, dy: 250, tag: 'mv' },
+                  { n: 10, y0: 1000, step: 120, dy: 0, tag: 'static' }];
+
+(function reorderingIsCurrentlyInvisible() {
+  // THE DEFECT, pinned. ySamples is built only from unchanged/punctuation-only
+  // pairs — the pool this then judges — so the moved block is its own alibi.
+  var sw = movedFindings(SWAP);
+  eq('two 3-sections swapping report NOTHING today', sw.moved, 0);
+  eq('  all six are counted as reflow instead', sw.reflow, 6);
+  eq('  and 250px is under VD_REFLOW_ALERT_PX, so no alert either', sw.pxMax, 250);
+  ok('  which is below the alert threshold', sw.pxMax < VD_REFLOW_ALERT_PX);
+  eq('a three-block rotation reports nothing today', movedFindings(ROTATION).moved, 0);
+  eq('a lone block translating reports nothing today', movedFindings(LONE_BLOCK).moved, 0);
+})();
+
+(function legitimateReflowShapesThatMustNeverRegress() {
+  // These are the protection. Each one is 0 today and must be 0 forever; the
+  // rule was rewritten twice because earlier versions broke them. The counts in
+  // the comments are the measured false positives from those versions.
+  eq('static header above a shifted body', movedFindings(HEADER_ABOVE).moved, 0);
+  eq('docs sidebar beside a reflowing article (a static-contradictor rule gave 10)',
+     movedFindings(SIDEBAR).moved, 0);
+  eq('insertion inside a min-height box (gave 6)', movedFindings(MIN_HEIGHT_BOX).moved, 0);
+  eq('4-column footer, one link added to column 1 (gave 6)', movedFindings(FOOTER_COL).moved, 0);
+  eq('grow above then shrink below — a legitimate cascade (source-adjacency gave 10)',
+     movedFindings(CASCADE_OPPOSED).moved, 0);
+  // The recorded page, and the shape whose earlier leak this file exists to stop.
+  var enoc = []; for (var i = 0; i < 23; i++) enoc.push(2108);
+  eq("ENOC-97's recorded band (23 at one delta)", falseMoves(enoc), 0);
+})();
+
+(function theRuleIsOffByDefault() {
+  eq('VD_REORDER_DETECTION ships false', VD_REORDER_DETECTION, false);
+  // Annotation happens regardless, so debug logs record what it WOULD decide.
+  var cl = vdClusterShifts([{ pos: 300, delta: 250 }, { pos: 400, delta: 250 }, { pos: 500, delta: 250 },
+                            { pos: 600, delta: -250 }, { pos: 700, delta: -250 }, { pos: 800, delta: -250 }],
+                           VD_SHIFT_TOL_PX, VD_SHIFT_MIN_RUN);
+  vdReorderContradiction(cl, VD_SHIFT_TOL_PX, VD_MOVE_MIN_PX);
+  ok('every vertical cluster carries contradictedBy, null when cleared',
+     cl.every(function (c) { return 'contradictedBy' in c; }), cl);
+  ok('  and the witness is the full cluster, not a boolean',
+     cl.some(function (c) { return c.contradictedBy && typeof c.contradictedBy.delta === 'number'
+       && typeof c.contradictedBy.count === 'number'; }), cl.map(function (c) { return c.contradictedBy; }));
+})();
+
+(function theRuleWhenEnabled() {
+  var ON = { reorderDetection: true };
+  // Fixes the defect.
+  eq('the swap is reported', movedFindings(SWAP, ON).moved, 6);
+  eq('  and none of it is still counted as reflow', movedFindings(SWAP, ON).reflow, 0);
+  eq('  nor inflates reflowPxMax, which reports what was HIDDEN',
+     movedFindings(SWAP, ON).pxMax, 0);
+  // 3, not 9: the two -300 blocks merge into one cluster of 6, and the +600
+  // block is the one that moved against them. Pinned so nobody "fixes" it up.
+  eq('the rotation reports the block that moved against the others',
+     movedFindings(ROTATION, ON).moved, 3);
+
+  // Leaves every protection alone. These are the assertions that matter most.
+  eq('static header above a shifted body stays suppressed', movedFindings(HEADER_ABOVE, ON).moved, 0);
+  eq('docs sidebar stays suppressed', movedFindings(SIDEBAR, ON).moved, 0);
+  eq('min-height box stays suppressed', movedFindings(MIN_HEIGHT_BOX, ON).moved, 0);
+  eq('4-column footer stays suppressed', movedFindings(FOOTER_COL, ON).moved, 0);
+  eq('the opposed cascade stays suppressed', movedFindings(CASCADE_OPPOSED, ON).moved, 0);
+  var enoc = []; for (var i = 0; i < 23; i++) enoc.push(2108);
+  eq("ENOC-97's band stays suppressed",
+     vdSuppressFindings(reflowBand(enoc), ON).findings.filter(function (f) {
+       return (f.signals || []).some(function (g) { return String(g).indexOf('moved') === 0; });
+     }).length, 0);
+
+  // KNOWN MISS, pinned deliberately. The rule detects REORDERINGS — two groups
+  // moving in opposite directions such that one lands where the other was. A
+  // lone block translating has no opposing band to cross with. Distinguishing it
+  // from a sidebar beside a reflowing column needs x-extents that the vertical
+  // clusterer discards, and every rule that tried to use the static band as
+  // evidence instead broke the six protections above.
+  eq('a lone translating block is a KNOWN MISS, still 0', movedFindings(LONE_BLOCK, ON).moved, 0);
+})();
+
+(function eachTermOfTheRuleEarnsItsPlace() {
+  function C(delta, count, p0, p1) { return { delta: delta, count: count, p0: p0, p1: p1, trusted: true }; }
+  function run(cs) { return vdReorderContradiction(cs, VD_SHIFT_TOL_PX, VD_MOVE_MIN_PX); }
+  // term 1 — same direction is normal multi-container reflow, never a reorder
+  var same = run([C(-35, 40, 2000, 5900), C(-68, 40, 3000, 6900), C(-58, 30, 3500, 6400)]);
+  ok('same-direction bands never contradict each other',
+     same.every(function (c) { return !c.contradictedBy; }), same.map(function (c) { return c.contradictedBy; }));
+  // term 2 — a STATIC band is not evidence; that premise cost six layouts
+  var stat = run([C(250, 3, 300, 500), C(0, 30, 100, 5000)]);
+  ok('a static band cannot contradict a moving one', !stat[0].contradictedBy, stat[0]);
+  // term 3 — destination crossing, not source adjacency
+  var opposed = run([C(40, 10, 500, 1400), C(-160, 10, 2000, 2900)]);
+  ok('an opposed cascade that lands nowhere near the other band is not a reorder',
+     opposed.every(function (c) { return !c.contradictedBy; }), opposed.map(function (c) { return c.contradictedBy; }));
+  var crossing = run([C(250, 3, 300, 500), C(-250, 3, 600, 800)]);
+  ok('but a swap, where each lands where the other was, IS',
+     crossing.every(function (c) { return !!c.contradictedBy; }), crossing.map(function (c) { return c.contradictedBy; }));
+  // term 4 — a band yields only to an opposing band AT LEAST AS LARGE. Getting
+  // this backwards made a 3-element block moving against a 40-element page
+  // reflow report THE PAGE REFLOW instead of the block; measured, 40 findings
+  // where 3 were right.
+  var big = run([C(250, 3, 300, 500), C(-250, 40, 400, 900)]);
+  ok('the small block yields to the large opposing band', !!big[0].contradictedBy, big[0]);
+  ok('  and the large band does NOT yield to the small one', !big[1].contradictedBy, big[1]);
+  var tie = run([C(250, 3, 300, 500), C(-250, 3, 600, 800)]);
+  ok('equal counts BOTH yield — that is what a swap is',
+     !!tie[0].contradictedBy && !!tie[1].contradictedBy, [tie[0].contradictedBy, tie[1].contradictedBy]);
+  // untrusted and sub-threshold clusters are skipped
+  var un = run([{ delta: 250, count: 1, p0: 300, p1: 300, trusted: false }, C(-250, 3, 300, 500)]);
+  ok('an untrusted cluster is never a witness', !un[1].contradictedBy, un[1]);
+  ok('  and is never itself judged', un[0].contradictedBy === null, un[0]);
+})();
+
+(function vdClusterShiftsIsUntouched() {
+  // The rule lives in the orchestrator, not the primitive, so the x axis and
+  // vdDeriveShiftSegments cannot change. This is the assertion that catches
+  // someone later "simplifying" it into vdClusterShifts.
+  var samples = [{ pos: 100, delta: 250 }, { pos: 200, delta: 250 }, { pos: 300, delta: 250 },
+                 { pos: 400, delta: -250 }, { pos: 500, delta: -250 }, { pos: 600, delta: -250 }];
+  var raw = JSON.stringify(vdClusterShifts(samples, VD_SHIFT_TOL_PX, VD_SHIFT_MIN_RUN));
+  ok('vdClusterShifts annotates nothing', raw.indexOf('contradicted') === -1, raw);
+  var seg = JSON.stringify(vdDeriveShiftSegments(
+    samples.map(function (s) { return { y: s.pos, dy: s.delta }; }), VD_SHIFT_TOL_PX, VD_SHIFT_MIN_RUN));
+  ok('vdDeriveShiftSegments annotates nothing', seg.indexOf('contradicted') === -1, seg);
+})();
+
 (function chainingMustNotRunAway() {
   // Re-chaining alone is single-linkage, which can swallow an arbitrarily wide
   // staircase into one cluster whose median then explains almost none of its

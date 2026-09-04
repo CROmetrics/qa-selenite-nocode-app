@@ -50,6 +50,13 @@
   // suppression must never be the only place a large layout change is
   // visible.
   const VD_REFLOW_ALERT_PX = 400;
+  // Reordering detection, OFF by default on purpose -- see vdReorderContradiction
+  // in vd-diff.js. Turning this on changes which elements get reported, and the
+  // point of shipping it dark is that every debug log records what it WOULD have
+  // decided (`contradictedBy` on each vertical cluster) before any finding count
+  // moves. Flip it only once real multi-cluster logs show it clearing pages it
+  // should clear.
+  const VD_REORDER_DETECTION = false;
 
   // Whether a punctuation-only / numeric-only-shape text difference is
   // suppressed by default (counted in the aggregate line) rather than
@@ -107,6 +114,7 @@
   g.VD_SHIFT_MIN_RUN = VD_SHIFT_MIN_RUN;
   g.VD_MOVE_MIN_PX = VD_MOVE_MIN_PX;
   g.VD_REFLOW_ALERT_PX = VD_REFLOW_ALERT_PX;
+  g.VD_REORDER_DETECTION = VD_REORDER_DETECTION;
   g.VD_GROUP_GAP_PX = VD_GROUP_GAP_PX;
   g.VD_GROUP_MAX_MEMBERS = VD_GROUP_MAX_MEMBERS;
   g.VIS_CROP_PAD = VIS_CROP_PAD;

@@ -495,6 +495,88 @@
     return out;
   }
 
+  // Which shift bands are a REORDERING rather than page reflow.
+  //
+  // The defect this addresses: vdSuppressFindings builds ySamples only from
+  // pairs whose changeClass is unchanged/punctuation-only -- the same pool it
+  // then judges -- so a coherently moved block of >= minRun elements forms its
+  // own trusted cluster and every member is explained by it. Measured on the
+  // real vdSuppressFindings: two adjacent 3-element sections SWAPPING places
+  // amid 8 static elements produce ZERO findings, reflow 6, reflowPxMax 250 --
+  // under VD_REFLOW_ALERT_PX, so not even the synthetic alert fires. A
+  // deliberate reposition leaves no trace and the model is told "0 added, 0
+  // removed, 0 modified".
+  //
+  // WHAT THIS DETECTS, precisely: a reordering, not a translation. Two groups
+  // moving in OPPOSITE directions such that one lands where the other was. That
+  // is the signature of a swap or a rotation. A lone block translating on an
+  // otherwise-static page is NOT detected -- see the known misses below.
+  //
+  // Four terms, and each one exists because a simpler rule was measured failing:
+  //
+  //   1. opposite directions. Same-direction bands at different amounts are
+  //      NORMAL multi-container reflow -- different containers reflow by
+  //      different distances. Without this term the recorded Zapier shape
+  //      (bands at -35/-58/-68) has all three contradict each other and 110
+  //      pure-reflow samples leak.
+  //   2. the contradictor must itself have MOVED (|delta| > moveMinPx). An
+  //      earlier version required the opposite -- that a STATIC band contradict
+  //      a moving one -- on the premise that reflow cascades to the bottom of
+  //      the page. That premise is false and cost six realistic layouts:
+  //      measured false positives of 10 (docs sidebar beside a reflowing
+  //      article), 6 (insertion inside a min-height box), 4 (grid re-wrap), 12
+  //      (accordion with pinned page height), 6 (4-column footer, one link
+  //      added), 22 (PDP spec table beside a static rail). A band is bounded
+  //      below whenever it lives in a parallel formatting context or a container
+  //      absorbs the height change; neither is exotic.
+  //   3. DESTINATION crossing, not source adjacency: C's variant interval
+  //      [p0+delta, p1+delta] must overlap D's control interval. "C landed where
+  //      D used to be." Source adjacency (D.p1 >= C.p0) passes a grow-above /
+  //      shrink-below cascade, which is legitimate. No margin -- a 200px margin
+  //      re-breaks the static-header-above-shifted-body case, whose destination
+  //      clears the header by 191px.
+  //   4. a band yields only to an opposing band AT LEAST AS LARGE
+  //      (o.count >= c.count). I had this inverted first and measured the
+  //      consequence: a 3-element block moving +250 against a 40-element page
+  //      reflow of -250 reported THE PAGE REFLOW instead of the block. Equal
+  //      counts must both yield, because that is what a swap looks like -- two
+  //      groups of similar size trading places, and both are worth reporting.
+  //
+  // KNOWN MISSES, pinned as tests rather than papered over:
+  //   - a lone block translating with nothing else moving (no opposing band
+  //     exists to cross with);
+  //   - the same block moved to the very bottom of the document;
+  //   - a horizontal-only column swap (this is the vertical axis only);
+  //   - a move that cancels the page's own reflow to |dy| <= moveMinPx, which
+  //     never reaches the suppression branch at all.
+  //
+  // Returns the SAME array, annotating each vertical cluster with
+  // `contradictedBy`: null when the rule ran and cleared it, or the full witness
+  // {delta, count, p0, p1} when it did not. Null rather than absent is
+  // deliberate -- a missing key cannot be told apart from a build without the
+  // rule.
+  function vdReorderContradiction(clusters, tolPx, moveMinPx) {
+    var sign = function (d) { return Math.abs(d) <= moveMinPx ? 0 : (d > 0 ? 1 : -1); };
+    for (var i = 0; i < clusters.length; i++) {
+      var c = clusters[i];
+      c.contradictedBy = null;
+      if (!c.trusted || Math.abs(c.delta) <= moveMinPx) continue;
+      var landedFrom = c.p0 + c.delta, landedTo = c.p1 + c.delta;
+      for (var j = 0; j < clusters.length; j++) {
+        var o = clusters[j];
+        if (o === c || !o.trusted) continue;
+        if (Math.abs(o.delta - c.delta) <= tolPx) continue;      // same band
+        if (Math.abs(o.delta) <= moveMinPx) continue;            // term 2
+        if (sign(o.delta) === sign(c.delta)) continue;           // term 1
+        if (o.count < c.count) continue;                         // term 4
+        if (landedTo < o.p0 || o.p1 < landedFrom) continue;      // term 3
+        c.contradictedBy = { delta: o.delta, count: o.count, p0: o.p0, p1: o.p1 };
+        break;
+      }
+    }
+    return clusters;
+  }
+
   function vdDeriveShiftSegments(deltas, tolPx, minRun) {
     return vdClusterShifts(deltas.map(function (d) { return { pos: d.y, delta: d.dy }; }), tolPx, minRun)
       .map(function (s) { return { y0: s.p0, y1: s.p1, dy: s.delta, count: s.count, trusted: s.trusted }; });
@@ -529,6 +611,7 @@
       tolPx: g.VD_SHIFT_TOL_PX, minRun: g.VD_SHIFT_MIN_RUN, moveMinPx: g.VD_MOVE_MIN_PX,
       reflowAlertPx: g.VD_REFLOW_ALERT_PX,
       suppressPunctuation: g.VD_SUPPRESS_PUNCTUATION_ONLY, suppressNumeric: g.VD_SUPPRESS_NUMERIC_ONLY,
+      reorderDetection: g.VD_REORDER_DETECTION,
     }, opts || {});
 
     var classified = pairs.map(function (p) { return Object.assign({}, p, vdClassifyPair(p.a, p.b)); });
@@ -550,6 +633,19 @@
     }
     var yClusters = vdClusterShifts(ySamples, opts.tolPx, opts.minRun);
     var xClusters = vdClusterShifts(xSamples, opts.tolPx, opts.minRun);
+    // Annotated ALWAYS, consumed only when the flag is on. Shipping the
+    // annotation dark is the whole staging plan: every log from here on records
+    // what the rule would have decided, so it can be validated against real
+    // multi-cluster pages before any finding count changes.
+    //
+    // VERTICAL ONLY. Horizontal reflow inside a wrapping grid does not order
+    // itself along x -- the 12-chip case is a measured protection -- and
+    // vdClusterShifts itself is untouched, so vdDeriveShiftSegments and the x
+    // axis cannot change.
+    vdReorderContradiction(yClusters, opts.tolPx, opts.moveMinPx);
+    var yExplainers = opts.reorderDetection
+      ? yClusters.filter(function (c) { return !c.contradictedBy; })
+      : yClusters;
     var segments = yClusters.map(function (s) { return { y0: s.p0, y1: s.p1, dy: s.delta, count: s.count, trusted: s.trusted }; });
 
     var findings = [];
@@ -573,7 +669,7 @@
         // Each axis is explained independently: a shift is reflow only if
         // BOTH components are accounted for, either by being below the
         // noise floor or by matching a trusted band of that same amount.
-        var ySeg = Math.abs(dy) <= opts.moveMinPx ? null : vdExplainsShift(yClusters, rectA.y, dy, opts.tolPx);
+        var ySeg = Math.abs(dy) <= opts.moveMinPx ? null : vdExplainsShift(yExplainers, rectA.y, dy, opts.tolPx);
         var xSeg = Math.abs(dx) <= opts.moveMinPx ? null : vdExplainsShift(xClusters, rectA.x, dx, opts.tolPx);
         var yOk = Math.abs(dy) <= opts.moveMinPx || !!ySeg;
         var xOk = Math.abs(dx) <= opts.moveMinPx || !!xSeg;
@@ -1156,6 +1252,7 @@
   g.vdRollupByRegion = vdRollupByRegion;
   g.validateVisualDiffGeometry = validateVisualDiffGeometry;
   g.rankAndCapDiffFindings = rankAndCapDiffFindings;
+  g.vdReorderContradiction = vdReorderContradiction;
   g.vdComposeReportable = vdComposeReportable;
   g.vdVariantVerification = vdVariantVerification;
   g.vdSpecRequirements = vdSpecRequirements;

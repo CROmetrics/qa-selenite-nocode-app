@@ -821,12 +821,14 @@ function falseMoves(deltas, y0) {
      falseMoves(Array.apply(null, Array(23)).map(function () { return 2108; })), 0);
 })();
 
-// ── reordering: characterization, then the rule (currently OFF) ───────────
+// ── reordering: characterization, then the rule (now ON) ──────────────────
 //
-// Written BEFORE the behaviour changes, pinning what the engine does TODAY on
-// every shape the rule touches. VD_REORDER_DETECTION is false, so every number
-// here is current behaviour — including the defect. When the flag flips, exactly
-// two of these move; if anything else does, the rule is wrong.
+// Written BEFORE the behaviour changed, pinning what the engine did on every
+// shape the rule touches, and kept afterwards. VD_REORDER_DETECTION shipped
+// false; when it flipped on, the prediction recorded here was that exactly two
+// of these numbers move and any third means the rule is wrong. Measured at the
+// flip: the swap and the rotation moved, and nothing else did — all six reflow
+// protections, ENOC-97's 23-member band and the lone-block known miss held.
 //
 // Every case routes through vdSuppressFindings, not the primitives. The tests
 // that guard the original 49-leak root cause (overlappingBands, horizontalCascade)
@@ -877,12 +879,18 @@ var LONE_BLOCK = [{ n: 3, y0: 300, step: 100, dy: 250, tag: 'mv' },
   // THE DEFECT, pinned. ySamples is built only from unchanged/punctuation-only
   // pairs — the pool this then judges — so the moved block is its own alibi.
   var sw = movedFindings(SWAP);
-  eq('two 3-sections swapping report NOTHING today', sw.moved, 0);
-  eq('  all six are counted as reflow instead', sw.reflow, 6);
-  eq('  and 250px is under VD_REFLOW_ALERT_PX, so no alert either', sw.pxMax, 250);
-  ok('  which is below the alert threshold', sw.pxMax < VD_REFLOW_ALERT_PX);
-  eq('a three-block rotation reports nothing today', movedFindings(ROTATION).moved, 0);
-  eq('a lone block translating reports nothing today', movedFindings(LONE_BLOCK).moved, 0);
+  // These two were the defect, and they are the only two numbers that moved
+  // when VD_REORDER_DETECTION flipped on — the block comment above predicted
+  // exactly two, and the flip was verified against that prediction.
+  eq('two 3-sections swapping are now reported', sw.moved, 6);
+  eq('  and none of it is still counted as reflow', sw.reflow, 0);
+  eq('  nor inflates reflowPxMax, which reports what was HIDDEN', sw.pxMax, 0);
+  eq('a three-block rotation reports the block that moved against the others',
+     movedFindings(ROTATION).moved, 3);
+  // Still a known miss with the rule ON: a lone block has no opposing band to
+  // cross with. Pinned here as well as in theRuleWhenEnabled so it stays
+  // visible rather than being read as "reordering is handled".
+  eq('a lone block translating STILL reports nothing', movedFindings(LONE_BLOCK).moved, 0);
 })();
 
 (function legitimateReflowShapesThatMustNeverRegress() {
@@ -901,9 +909,19 @@ var LONE_BLOCK = [{ n: 3, y0: 300, step: 100, dy: 250, tag: 'mv' },
   eq("ENOC-97's recorded band (23 at one delta)", falseMoves(enoc), 0);
 })();
 
-(function theRuleIsOffByDefault() {
-  eq('VD_REORDER_DETECTION ships false', VD_REORDER_DETECTION, false);
-  // Annotation happens regardless, so debug logs record what it WOULD decide.
+(function theRuleShipsOn() {
+  // Flipped after the corpus grew to 27 cluster sets and 12 of them proved able
+  // to fire the rule. The evidence that settled it is production, not synthetic:
+  // across four zapier runs every variant relocates `a "Explore Zapier for
+  // Enterprise"` from #main/section[2]/div[1]/div[3]/a[2] to .../div[2]/a[1] --
+  // a DOM-ORDER reposition, ~1553px up -- and every variant carries a 16-element
+  // trusted cluster at y 1055..1948, immediately below where that link lands
+  // (y=984). Those 16 elements are the relocated block, and with the flag off
+  // the report showed only the single anchor and suppressed the rest as "page
+  // reflow".
+  eq('VD_REORDER_DETECTION ships true', VD_REORDER_DETECTION, true);
+  // Annotation happens regardless of the flag, so debug logs from before it
+  // shipped still record what it WOULD have decided.
   var cl = vdClusterShifts([{ pos: 300, delta: 250 }, { pos: 400, delta: 250 }, { pos: 500, delta: 250 },
                             { pos: 600, delta: -250 }, { pos: 700, delta: -250 }, { pos: 800, delta: -250 }],
                            VD_SHIFT_TOL_PX, VD_SHIFT_MIN_RUN);
@@ -1153,6 +1171,84 @@ section('grouping, rollup, ranking');
 
   var kinds = vdGroupFindings([f(100, 'text-changed', 'main'), f(110, 'style-changed', 'main')]);
   eq('never merges different change classes', kinds.length, 2);
+})();
+
+(function movedFindingsGroupByShift() {
+  // A block that moved together is ONE change however far apart its members
+  // sit. Proximity is the wrong key for this class, and the config comment has
+  // always named the right one ("changeClass, region, shift segment") even
+  // though only the first two were implemented.
+  //
+  // The numbers here are the geometry recorded identically in four zapier runs:
+  // 16 elements at dy +50 spanning y 1055..1948, so ~56px apart against a 48px
+  // gap. By proximity that was SIXTEEN report rows for one relocated block, on
+  // reports whose median is 11 findings.
+  function m(y, dy, dx, region) {
+    return { changeClass: 'moved', dx: dx === undefined ? 0 : dx, dy: dy,
+             a: cand({ y: y, region: region || 'section' }),
+             b: cand({ y: y + dy, region: region || 'section' }) };
+  }
+  var block = [];
+  for (var i = 0; i < 16; i++) block.push(m(1055 + i * 56, 50));
+  var g1 = vdGroupFindings(block);
+  eq('16 elements sharing one shift are ONE row', g1.length, 1);
+  eq('  carrying every member', g1[0].memberCount, 16);
+
+  // The member cap does not bound a shift group. It exists to stop a proximity
+  // chain running away into an arbitrary blob; a shift group cannot, because
+  // every member shares one measured delta.
+  ok('  and the group exceeds VD_GROUP_MAX_MEMBERS deliberately',
+     g1[0].memberCount > VD_GROUP_MAX_MEMBERS, VD_GROUP_MAX_MEMBERS);
+
+  // Different shifts stay separate — this is the case that makes the reordering
+  // rule readable: the reported block and the page reflow are two statements.
+  var two = [m(1055, 50), m(1111, 50), m(1167, 50), m(400, -47), m(430, -47), m(460, -47)];
+  eq('two different shifts are two rows', vdGroupFindings(two).length, 2);
+  var byCount = vdGroupFindings(two).map(function (x) { return x.memberCount; }).sort();
+  eq('  three members each', byCount.join(','), '3,3');
+
+  // Tolerance, so sub-pixel rounding does not split a block.
+  eq('a shift differing within tolerance still merges',
+     vdGroupFindings([m(1055, 50), m(1500, 50 + VD_SHIFT_TOL_PX)]).length, 1);
+  eq('  beyond tolerance does not',
+     vdGroupFindings([m(1055, 50), m(1500, 50 + VD_SHIFT_TOL_PX + 1)]).length, 2);
+  // The horizontal component counts too: same dy, different dx is a different
+  // shift. The recorded toryburch marquee moves purely in x.
+  eq('same dy but different dx is a different shift',
+     vdGroupFindings([m(1055, 0, 100), m(1500, 0, -1609)]).length, 2);
+
+  // Region still separates, and other classes are untouched.
+  eq('a shift group never crosses regions',
+     vdGroupFindings([m(1055, 50, 0, 'header'), m(1111, 50, 0, 'footer')]).length, 2);
+  // A moved finding with no measured shift falls back to proximity rather than
+  // throwing or merging everything — vdSuppressFindings always sets dx/dy, but
+  // the shared-findings lifter and the resume path both rebuild findings.
+  var noShift = [{ changeClass: 'moved', a: cand({ y: 100 }), b: cand({ y: 100 }) },
+                 { changeClass: 'moved', a: cand({ y: 900 }), b: cand({ y: 900 }) }];
+  eq('moved findings with no dx/dy fall back to proximity', vdGroupFindings(noShift).length, 2);
+  eq('vdSameShift needs both sides measured',
+     vdSameShift({ dx: 0, dy: 50 }, { changeClass: 'moved' }, VD_SHIFT_TOL_PX), false);
+
+  // ONLY 'moved'. Every other class carries dx/dy too -- run 1788900763308's
+  // shared findings record `text-changed dx=0 dy=0` and `numeric-only dx=0
+  // dy=0` -- so dropping the class restriction would merge every unrelated text
+  // change on the page into one row, since they all share the shift (0,0).
+  // Distance is the right key for those, and this is the case that says so.
+  function t(y, cls) {
+    return { changeClass: cls || 'text-changed', dx: 0, dy: 0,
+             a: cand({ y: y, region: 'section' }), b: cand({ y: y, region: 'section' }) };
+  }
+  eq('two distant text changes sharing dx/dy of 0 stay separate',
+     vdGroupFindings([t(100), t(9000)]).length, 2);
+  eq('  and numeric-only behaves the same way',
+     vdGroupFindings([t(100, 'numeric-only'), t(9000, 'numeric-only')]).length, 2);
+  eq('  while NEAR ones still merge by proximity as before',
+     vdGroupFindings([t(100), t(120)]).length, 1);
+  // The cap still bounds a proximity chain of those.
+  var many = []; for (var k = 0; k < 20; k++) many.push(t(100 + k * 20));
+  ok('  and the member cap still bounds them',
+     vdGroupFindings(many).every(function (x) { return (x.memberCount || 1) <= VD_GROUP_MAX_MEMBERS; }),
+     vdGroupFindings(many).map(function (x) { return x.memberCount || 1; }));
 })();
 
 (function redesignMode() {

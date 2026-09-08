@@ -67,7 +67,7 @@
   // decided (`contradictedBy` on each vertical cluster) before any finding count
   // moves. Flip it only once real multi-cluster logs show it clearing pages it
   // should clear.
-  const VD_REORDER_DETECTION = false;
+  const VD_REORDER_DETECTION = true;
 
   // Whether a punctuation-only / numeric-only-shape text difference is
   // suppressed by default (counted in the aggregate line) rather than

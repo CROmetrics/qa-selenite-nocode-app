@@ -766,8 +766,21 @@
     // most needs to work on when called by a downstream consumer.
     return f.region || (f.a && f.a.region) || (f.b && f.b.region) || null;
   }
+  // Two findings that moved by the SAME amount are two members of one shift,
+  // which is what the config comment has always described as the grouping key
+  // ("changeClass, region, shift segment") even though only the first two were
+  // ever implemented.
+  function vdHasShift(f) {
+    return f && typeof f.dx === 'number' && typeof f.dy === 'number';
+  }
+  function vdSameShift(a, b, tolPx) {
+    return vdHasShift(a) && vdHasShift(b)
+        && Math.abs(a.dx - b.dx) <= tolPx && Math.abs(a.dy - b.dy) <= tolPx;
+  }
+
   function vdGroupFindings(findings, opts) {
-    opts = Object.assign({ gapPx: g.VD_GROUP_GAP_PX, maxMembers: g.VD_GROUP_MAX_MEMBERS }, opts || {});
+    opts = Object.assign({ gapPx: g.VD_GROUP_GAP_PX, maxMembers: g.VD_GROUP_MAX_MEMBERS,
+                           tolPx: g.VD_SHIFT_TOL_PX }, opts || {});
     var real = findings.filter(function (f) { return !f.synthetic; });
     var synthetic = findings.filter(function (f) { return f.synthetic; });
     var order = real.map(function (_, i) { return i; }).sort(function (i, j) { return vdFindingY(real[i]) - vdFindingY(real[j]); });
@@ -781,12 +794,31 @@
       var group = [f];
       used[i] = true;
       var anchorY = vdFindingY(f);
+      // A block that moved together is ONE change however far apart its members
+      // sit, so proximity is the wrong key for this class and the member cap is
+      // the wrong bound. Measured on the geometry recorded identically in four
+      // zapier runs -- 16 elements at dy +50 spanning y 1055..1948, so ~56px
+      // apart against a 48px gap -- grouping by proximity produced SIXTEEN
+      // report rows for one relocated block, on reports whose median is 11
+      // findings. By shift it is one row that says 16 elements moved +50px.
+      //
+      // No member cap on a shift group, deliberately: the cap exists to stop a
+      // proximity chain from running away into an arbitrary blob, and a shift
+      // group cannot do that -- every member shares one measured delta, so even
+      // a 496-member group is exactly one true statement about the page.
+      var byShift = f.changeClass === 'moved' && vdHasShift(f);
       for (var oj = 0; oj < order.length; oj++) {
         var j = order[oj];
-        if (used[j] || group.length >= opts.maxMembers) continue;
+        if (used[j]) continue;
+        if (!byShift && group.length >= opts.maxMembers) continue;
         var cand = real[j];
         if (cand.changeClass !== f.changeClass) continue;
         if (vdFindingRegion(cand) !== vdFindingRegion(f)) continue;
+        if (byShift) {
+          if (!vdSameShift(cand, f, opts.tolPx)) continue;
+          group.push(cand); used[j] = true;
+          continue;
+        }
         var cy = vdFindingY(cand);
         if (Math.abs(cy - anchorY) <= opts.gapPx) {
           group.push(cand); used[j] = true; anchorY = cy; // chain: extends reach for a run of close members
@@ -1316,6 +1348,8 @@
   g.vdClassifyPair = vdClassifyPair;
   g.vdStyleDelta = vdStyleDelta;
   g.vdDeriveShiftSegments = vdDeriveShiftSegments;
+  g.vdSameShift = vdSameShift;
+  g.vdHasShift = vdHasShift;
   g.vdClusterShifts = vdClusterShifts;
   g.vdExplainsShift = vdExplainsShift;
   g.vdSuppressFindings = vdSuppressFindings;

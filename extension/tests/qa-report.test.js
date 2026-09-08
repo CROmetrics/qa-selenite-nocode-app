@@ -1099,6 +1099,96 @@ section('a run that was not validly compared must never badge PASS');
      vdVerdict({ skipped: true, perVariant: [{ label: 'v1', skipped: true }] }).ran, false);
 })();
 
+(function oneExportProjectionForEveryFinding() {
+  // The debug log had TWO finding projections: the per-variant list carried
+  // twenty fields, the shared list seven. Run 1788538681655 is where that bit
+  // -- both variants hold zero findings of their own, all 8 are shared, so the
+  // log carried no findingId, no matchTier, no geometry, no crop booleans, no
+  // engineNote, no shortDescription and no note for ANY of its findings.
+  //
+  // Structural, not behavioural, on purpose: the defect is that a field list
+  // exists twice, so what needs pinning is that it exists once. This is the
+  // fifth misread caused by an export projection dropping a field, and every
+  // one of the previous four was fixed by adding the field to one copy.
+  var fn = slicePopup('function vdExportFinding(f) {', '\nfunction buildDebugLog(sections) {');
+  ok('vdExportFinding exists as one named projection', fn.length > 200, fn.slice(0, 80));
+
+  // Every field the report and the diagnosis need, named here so dropping one
+  // fails loudly rather than showing up as an unanswerable log six runs later.
+  ['findingId', 'changeClass', 'status', 'region', 'matchTier', 'dx', 'dy',
+   'memberCount', 'signals', 'pixelRatio', 'classification', 'severity',
+   'controlText', 'variantText', 'controlRect', 'variantRect',
+   'hasControlCrop', 'hasVariantCrop', 'engineNote', 'shortDescription', 'note'
+  ].forEach(function (k) {
+    ok('  projects ' + k, new RegExp('(^|[^A-Za-z])' + k + ':').test(fn));
+  });
+
+  var log = _pu.slice(_pu.indexOf('function buildDebugLog(sections) {'));
+  var pv = /findings: \(v\.findings \|\| \[\]\)\.map\(vdExportFinding\)/.test(log);
+  var sh = /sharedFindings: \(vd\.sharedFindings \|\| \[\]\)\.map\(f => Object\.assign\(\s*vdExportFinding\(f\)/.test(log);
+  ok('the per-variant list uses it', pv);
+  ok('the shared list uses it too', sh);
+  ok('neither builds its own field list',
+     !/sharedFindings: \(vd\.sharedFindings \|\| \[\]\)\.map\(f => \(\{/.test(log),
+     'the shared projection has an inline object literal again');
+  // sharedAcross is the ONLY field that differs, and it belongs to the caller.
+  ok('sharedAcross is added by the caller, not by the shared projection',
+     /sharedAcross: f\.sharedAcross \|\| \[\]/.test(log) && !/sharedAcross/.test(fn));
+})();
+
+(function sharedFindingsCountTowardClean() {
+  // Run 1788538681655 (TB-1078) is the reason this exists: BOTH variants carry
+  // zero findings of their own and all 8 findings live in the shared pool, 2
+  // classified unclear. needsReview, ungraded and findings all counted the
+  // shared pool; allClean did not, so it reported true over a run with two
+  // unreviewed changes.
+  //
+  // Not the first multi-variant run on record -- four earlier 3-variant runs
+  // carry shared pools too -- but the only one where the variants are
+  // individually clean, which is what makes the shared terms load-bearing
+  // rather than redundant. In the other four every per-variant finding is
+  // unclear, so vdVariantClean is already false.
+  //
+  // SYNTHETIC shapes below, and one caveat about them: vdOf builds a
+  // one-element perVariant, and a shared pool cannot actually arise on one
+  // variant (vdExtractSharedFindings needs >= 2 analysed variants). These cases
+  // exercise vdVerdict's arithmetic, not a producible run; the real 2-variant
+  // shape is asserted from the corpus in real-runs.test.js.
+  if (typeof vdVerdict !== 'function') return;
+  function withShared(shared, variantOver) {
+    var vd = vdOf({ variant: Object.assign(
+      { findings: [{ classification: 'expected' }], requirements: null }, variantOver || {}) });
+    vd.sharedFindings = shared;
+    return vdVerdict(vd);
+  }
+  eq('no shared findings leaves a clean variant clean', withShared([]).allClean, true);
+  eq('shared findings that are all graded expected stay clean',
+     withShared([{ classification: 'expected' }, { classification: 'expected' }]).allClean, true);
+  eq('an unclear shared finding is not clean',
+     withShared([{ classification: 'expected' }, { classification: 'unclear' }]).allClean, false);
+  eq('an unexpected shared finding is not clean',
+     withShared([{ classification: 'unexpected' }]).allClean, false);
+  eq('an UNGRADED shared finding is not clean',
+     withShared([{ classification: null }]).allClean, false);
+
+  // The recorded run's GRADE VECTOR (6 expected + 2 unclear), on a synthetic
+  // one-variant vd -- see the caveat above. What is being pinned is that the two
+  // counts cannot disagree, not that this object is a producible run.
+  var real = withShared([
+    { classification: 'expected' }, { classification: 'expected' },
+    { classification: 'expected' }, { classification: 'expected' },
+    { classification: 'expected' }, { classification: 'expected' },
+    { classification: 'unclear' },  { classification: 'unclear' }
+  ], { findings: [] });
+  eq('the recorded run counts 2 findings needing review', real.needsReview, 2);
+  eq('  and is therefore NOT clean', real.allClean, false);
+  ok('  so allClean and needsReview cannot disagree',
+     !(real.allClean && real.needsReview > 0), real);
+  // PASS must not survive this even if the ladder is ever reordered -- which is
+  // the whole risk: today `issues` is checked first and hides the disagreement.
+  eq('  and the badge is not PASS', vdBadgeLabel(real, {}) === 'PASS', false);
+})();
+
 (function everyReasonAVariantIsNotCleanIsChecked() {
   // vdVariantClean is what makes PASS earned instead of fallen-into, so each of
   // its reasons needs its own case. SYNTHETIC on purpose: I regressed each line

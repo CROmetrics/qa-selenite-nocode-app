@@ -5455,7 +5455,16 @@ function vdVerdict(vd) {
   // jsErrors from diffAbCaptures, not visual-diff failures.
   const failed = perVariant.filter(v => !!v.error).length;
   const notRun = perVariant.filter(v => !!v.skipped).length;
-  const allClean = perVariant.length > 0 && perVariant.every(vdVariantClean);
+  // Shared findings count toward needsReview, ungraded and findings above, so
+  // they must count here too. Run 1788538681655 is the case: both variants hold
+  // zero findings of their own and all 8 live in the shared pool, 2 of them
+  // unclear -- yet allClean came back true. The badge stayed honest only
+  // because `issues` is checked before allClean; reorder that ladder and a run
+  // with unreviewed changes badges PASS. Same two reasons as vdVariantClean:
+  // nothing needing review, nothing ungraded. There is no unmetCopy term
+  // because requirements are matched per variant, never against this pool.
+  const allClean = perVariant.length > 0 && perVariant.every(vdVariantClean)
+    && sharedReview === 0 && shared.every(f => vdIsGrade(f.classification));
   return {
     ran: true,
     unmetCopy,
@@ -6585,6 +6594,52 @@ function vdCollectProblems(sections) {
   return problems;
 }
 
+// ONE projection for a finding in the debug log. It was two: the per-variant
+// list carried all twenty fields while the shared list carried seven, so a run
+// whose findings are ALL shared exported almost nothing diagnosable. Run
+// 1788538681655 is that run — both variants hold zero findings of their own and
+// all 8 sit in the shared pool, so its log had no findingId, no matchTier, no
+// geometry, no crop booleans, no engineNote, no shortDescription and no note.
+// Five separate misreads have now come from a field missing from an export
+// projection, and a second hand-maintained copy of the list is how the fifth
+// one happened — so there is one copy.
+//
+// A shared finding is a full spread of a per-variant finding
+// (vdExtractSharedFindings builds `{ ...f, sharedAcross }`), so every field
+// below is present on both and the caller only adds sharedAcross.
+function vdExportFinding(f) {
+  return {
+    findingId: f.findingId, changeClass: f.changeClass, status: f.status,
+    region: f.region || null, matchTier: f.matchTier || null,
+    dx: f.dx ?? null, dy: f.dy ?? null, memberCount: f.memberCount || null,
+    signals: f.changeSignals || [], pixelRatio: f.pixelRatio ?? null,
+    classification: f.classification || null, severity: f.severity || null,
+    controlText: (f.controlBlock?.text || '').slice(0, 160) || null,
+    variantText: (f.variantBlock?.text || '').slice(0, 160) || null,
+    controlRect: f.controlBlock?.rect || null, variantRect: f.variantBlock?.rect || null,
+    // Booleans, never the crops themselves — a data URL is ~100KB and 67
+    // of them would make the export unopenable. But WHETHER a finding got
+    // its crops is exactly what run 1788360614883 could not be answered
+    // from: all 67 Image Ref cells were empty and the log could not say
+    // whether cropping had failed, been switched off, or never run.
+    hasControlCrop: !!f.baselineCrop, hasVariantCrop: !!f.variantCrop,
+    // For a synthetic finding — every finding in redesign mode — this
+    // string IS the entire model input (buildVisualReportPrompt emits it
+    // as the finding's only content). Without it here, two logs cannot
+    // establish whether the grader was even asked the same question
+    // twice, which is exactly what four ENOC-97 runs grading the same
+    // seven findings four different ways needed to distinguish
+    // "unseeded sampling" from "the prompt string actually changed".
+    engineNote: f.engineNote || null,
+    shortDescription: f.shortDescription || null,
+    // The model's OWN sentence for this finding. engineNote is what it
+    // was GIVEN; this is what it concluded. Without it, 61 "unexpected"
+    // verdicts had to be diagnosed by inferring from the spec instead of
+    // reading the reasoning. Same gap engineNote had.
+    note: f.note || null,
+  };
+}
+
 function buildDebugLog(sections) {
   const abEntry = (sections.modes || []).find(m => m.mode === 2);
   const vd = abEntry?.data?.visualDiffFull || abEntry?.data?.visualDiff;
@@ -6635,13 +6690,8 @@ function buildDebugLog(sections) {
       baselineLabel: vd.baselineLabel, baselineWarning: vd.baselineWarning || null,
       // Lifted out of the per-variant lists — without these the debug log would
       // show fewer findings per variant than the diff actually produced.
-      sharedFindings: (vd.sharedFindings || []).map(f => ({
-        changeClass: f.changeClass, region: f.region || null,
-        sharedAcross: f.sharedAcross || [],
-        controlText: (f.controlBlock?.text || '').slice(0, 160) || null,
-        variantText: (f.variantBlock?.text || '').slice(0, 160) || null,
-        classification: f.classification || null, severity: f.severity || null,
-      })),
+      sharedFindings: (vd.sharedFindings || []).map(f => Object.assign(
+        vdExportFinding(f), { sharedAcross: f.sharedAcross || [] })),
       perVariant: (vd.perVariant || []).map(v => ({
         label: v.label, skipped: !!v.skipped, reason: v.reason || null, error: v.error || null,
         controlDuplicate: !!v.controlDuplicate,
@@ -6667,36 +6717,7 @@ function buildDebugLog(sections) {
         // The rendered report shows each finding's prose; this shows the
         // geometry and the identity tier behind it, which is what makes a
         // wrong finding traceable to the pass that produced it.
-        findings: (v.findings || []).map(f => ({
-          findingId: f.findingId, changeClass: f.changeClass, status: f.status,
-          region: f.region || null, matchTier: f.matchTier || null,
-          dx: f.dx ?? null, dy: f.dy ?? null, memberCount: f.memberCount || null,
-          signals: f.changeSignals || [], pixelRatio: f.pixelRatio ?? null,
-          classification: f.classification || null, severity: f.severity || null,
-          controlText: (f.controlBlock?.text || '').slice(0, 160) || null,
-          variantText: (f.variantBlock?.text || '').slice(0, 160) || null,
-          controlRect: f.controlBlock?.rect || null, variantRect: f.variantBlock?.rect || null,
-          // Booleans, never the crops themselves — a data URL is ~100KB and 67
-          // of them would make the export unopenable. But WHETHER a finding got
-          // its crops is exactly what run 1788360614883 could not be answered
-          // from: all 67 Image Ref cells were empty and the log could not say
-          // whether cropping had failed, been switched off, or never run.
-          hasControlCrop: !!f.baselineCrop, hasVariantCrop: !!f.variantCrop,
-          // For a synthetic finding — every finding in redesign mode — this
-          // string IS the entire model input (buildVisualReportPrompt emits it
-          // as the finding's only content). Without it here, two logs cannot
-          // establish whether the grader was even asked the same question
-          // twice, which is exactly what four ENOC-97 runs grading the same
-          // seven findings four different ways needed to distinguish
-          // "unseeded sampling" from "the prompt string actually changed".
-          engineNote: f.engineNote || null,
-          shortDescription: f.shortDescription || null,
-          // The model's OWN sentence for this finding. engineNote is what it
-          // was GIVEN; this is what it concluded. Without it, 61 "unexpected"
-          // verdicts had to be diagnosed by inferring from the spec instead of
-          // reading the reasoning. Same gap engineNote had.
-          note: f.note || null,
-        })),
+        findings: (v.findings || []).map(vdExportFinding),
         diagnostics: v.diffDebug || null,
       })),
     },

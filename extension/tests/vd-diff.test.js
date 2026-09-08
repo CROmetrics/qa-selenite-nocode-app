@@ -615,6 +615,135 @@ function reqCand(text) {
      'a,a,n,v,v');
 })();
 
+(function curlySingleQuotesArePairedNotAClass() {
+  // TB-1078's spec quotes its ONLY requirement in curly singles: a ‘See All’
+  // CTA. Before pass 2 the whole spec yielded zero requirements, so the copy
+  // check silently graded nothing and reported "0 of 0" as if satisfied.
+  if (typeof vdSpecRequirements !== 'function') return;
+  var SQ = '‘', SQE = '’';
+  var req = vdSpecRequirements(
+    'For QA: limit the images to 2, with a ' + SQ + 'See All' + SQE + ' CTA to expand the rest');
+  var got = req.map(function (r) { return r.required; });
+  eq('a paired curly-single requirement is extracted', got.length, 1);
+  eq('  and is the quoted run only', got[0], 'See All');
+
+  // The reason pass 2 is a separate pass and not four more members of the
+  // pass-1 delimiter class. U+2019 doubles as an apostrophe; as a delimiter it
+  // would close this double-quoted requirement at "it" and open a new one.
+  // Measured on the real ENOC-97 spec, widening the class took 70 clean
+  // requirements to 79 fragments.
+  var apos = vdSpecRequirements('Body: "Your rate is locked once it’s approved by the team."');
+  eq('a curly apostrophe does not split a double-quoted requirement', apos.length, 1);
+  eq('  the requirement survives whole',
+     (apos[0] || {}).required, 'Your rate is locked once it’s approved by the team.');
+
+  // Straight ' is the usual apostrophe in unstyled spec text and is not a
+  // delimiter in either pass.
+  var straight = vdSpecRequirements('Body: "We\'ll review it and we won\'t charge you."');
+  eq('a straight apostrophe is not a delimiter', straight.length, 1);
+  eq('  and the requirement survives whole',
+     (straight[0] || {}).required, 'We\'ll review it and we won\'t charge you.');
+
+  // Unpaired: pass 2 is keyed on the opener, so an opener with no closer -- and
+  // a closer with no opener -- extract nothing rather than running to the line
+  // end. This is what makes the pass provably inert on every spec on record:
+  // not one of them contains a single U+2018.
+  eq('an unclosed curly single extracts nothing',
+     vdSpecRequirements('CTA: ' + SQ + 'See All with no closer').length, 0);
+  eq('a lone curly close quote extracts nothing',
+     vdSpecRequirements('Nothing here' + SQE + ' at all to extract').length, 0);
+
+  // The inner class must exclude the CLOSER, not just the opener. Excluding
+  // only the opener leaves the match greedy across a later apostrophe, so
+  // this requirement becomes "See All’ CTA to expand the user" -- and a spec
+  // sentence that closes a quote and then uses an apostrophe is ordinary prose.
+  var tail = vdSpecRequirements(
+    'QA: with a ' + SQ + 'See All' + SQE + ' CTA to expand the user' + SQE + 's images');
+  eq('a later apostrophe does not extend the match', tail.length, 1);
+  eq('  the requirement stops at its own closer', (tail[0] || {}).required, 'See All');
+
+  // A requirement quoted inside another is taken twice, outer first. Both are
+  // genuinely quoted and the matcher tests containment, so the inner one is
+  // satisfied wherever the outer one is.
+  var nested = vdSpecRequirements('Copy: "expand with the ' + SQ + 'See All' + SQE + ' CTA below"');
+  eq('a nested curly-single requirement is taken alongside its container', nested.length, 2);
+  eq('  outer first', (nested[0] || {}).required, 'expand with the ' + SQ + 'See All' + SQE + ' CTA below');
+  eq('  inner second', (nested[1] || {}).required, 'See All');
+})();
+
+(function apostropheIsNotADelimiterEvenWhenItIsCurly() {
+  // Pass 2's guards. Smart-quote autocorrect emits ‘ for a LEADING apostrophe
+  // and ’ for every other one, so neither character is reliably a delimiter and
+  // a bare paired regex mis-reads ordinary prose two different ways. Both were
+  // found by adversarially reviewing the paired-pass fix, and both are defects
+  // that fix CREATED -- pass 2 does not exist without it.
+  if (typeof vdSpecRequirements !== 'function') return;
+  var SQ = '‘', SQE = '’';
+  var reqs = function (t) { return vdSpecRequirements(t).map(function (r) { return r.required; }); };
+
+  // 1. FABRICATION. A leading-apostrophe elision opens a span that closes on the
+  // next apostrophe, inventing a requirement out of prose. It grades absent and
+  // prints a string the spec never wrote into a client-facing report.
+  eq('a decade elision does not open a requirement',
+     JSON.stringify(reqs('bringing back the ' + SQ + '90s gallery that shoppers didn' + SQE + 't lose')), '[]');
+  eq('  nor does ' + SQ + 'til',
+     JSON.stringify(reqs('Note: ' + SQ + 'til launch we don' + SQE + 't ship the banner')), '[]');
+  eq('  nor does ' + SQ + 'em',
+     JSON.stringify(reqs('Copy: give ' + SQ + 'em the user' + SQE + 's name')), '[]');
+  eq('  nor a mid-word opener typed as an apostrophe',
+     JSON.stringify(reqs('Body: they don' + SQ + 't ship and won' + SQE + 't either')), '[]');
+  // And it must not fabricate ALONGSIDE a real requirement.
+  eq('a real requirement survives next to an elision',
+     JSON.stringify(reqs('with a ' + SQ + 'See All' + SQE + ' CTA, bringing back the '
+        + SQ + '90s gallery that shoppers didn' + SQE + 't lose')), '["See All"]');
+
+  // The opener guard is the narrower of the two: removing it left the suite at
+  // 512/0, because the elisions above are already denied a closer. What it
+  // catches is a mistyped opener whose span DOES reach a legitimate closer.
+  eq('a mistyped opener cannot reach a legitimate closer',
+     JSON.stringify(reqs('Body: they don' + SQ + 't ship it, and the label reads fine' + SQE + '.')), '[]');
+  eq('  nor consume prose after a real requirement',
+     JSON.stringify(reqs('QA: use the ' + SQ + 'See All' + SQE + ' CTA but they don'
+        + SQ + 't want the ' + SQE + ' symbol')), '["See All"]');
+
+  // 2. TRUNCATION, and the reason it is the worse of the two. A closer followed
+  // by a letter is an apostrophe: without that rule a possessive label is cut to
+  // its first word.
+  eq('a possessive label is extracted whole',
+     JSON.stringify(reqs('the CTA should read ' + SQ + 'Women' + SQE + 's Bags' + SQE + ' in the nav')),
+     '["Women' + SQE + 's Bags"]');
+  eq('  two of them, both whole',
+     JSON.stringify(reqs('Eyebrow: ' + SQ + 'Today' + SQE + 's Picks' + SQE + ' and the CTA ' + SQ + 'See All' + SQE)),
+     '["Today' + SQE + 's Picks","See All"]');
+
+  // Why truncation is worse than extracting nothing: vdMatchRequirements tests
+  // CONTAINMENT, so the one-word "Women" left by the old regex is satisfied
+  // verbatim by unrelated nav text and a label that is NOT on the page gets
+  // reported to the client as shipped. The whole label is correctly absent.
+  if (typeof vdMatchRequirements === 'function') {
+    var page = [reqCand('Women' + SQE + 's New Arrivals'), reqCand('Shop All Handbags')];
+    var truncated = vdMatchRequirements([{ required: 'Women', norm: vdNormText('Women') }], page, {});
+    eq('the TRUNCATED requirement is falsely satisfied by unrelated nav text',
+       truncated.items[0].status, 'verbatim');
+    var whole = vdMatchRequirements(
+      vdSpecRequirements('read ' + SQ + 'Women' + SQE + 's Bags' + SQE + ' in the nav'), page, {});
+    eq('  the WHOLE requirement is correctly absent', whole.items[0].status, 'absent');
+    ok('  which is the point of the closer guard', whole.absent === 1, whole);
+  }
+
+  // 3. Pass 2 must stay PAIRED, not become a delimiter class. This is the
+  // assertion the first version of these tests was missing: the two unpaired
+  // cases below passed unchanged when pass 2 was rewritten as [‘’], because
+  // neither input contains two apostrophes. ENOC-97 does -- four ’ and zero
+  // ‘ -- so a class-shaped pass 2 pairs apostrophe with apostrophe and
+  // fabricates requirements on the one spec that is meant to be untouched.
+  eq('apostrophes alone never pair into a requirement',
+     JSON.stringify(reqs("Body: it" + SQE + "s here, they" + SQE + "re there, we" + SQE + "ll see, don" + SQE + "t ask")), '[]');
+  eq('  even alongside a double-quoted requirement, which is unaffected',
+     JSON.stringify(reqs('Card: "Lump Sum Loan" -- it' + SQE + 's shown once you' + SQE + 're approved')),
+     '["Lump Sum Loan"]');
+})();
+
 (function fragmentIsNotAlteredCopy() {
   // "The page has the first half of this sentence" and "the page says something
   // different" are both near-matches and read completely differently to a

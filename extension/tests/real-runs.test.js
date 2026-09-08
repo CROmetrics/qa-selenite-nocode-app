@@ -73,7 +73,22 @@ function fromLog(run) {
         + rq.items.filter(function (i) { return i.status === 'near' && !i.fragment; }).length;
     }
   });
-  o.findings += (run.sharedFindings || []).length;
+  // Shared findings are graded exactly like per-variant ones and must be
+  // counted the same way. Five runs in the corpus carry a shared pool, but only
+  // ONE of them can tell whether this counts it: 1787686041687 and its three
+  // siblings (3 variants each) have every per-variant finding unclear as well,
+  // so vdVariantClean is already false there and the shared terms are redundant.
+  // 1788538681655 is the only recorded run whose variants are individually clean
+  // while its shared pool is not -- both carry zero findings of their own and
+  // all 8 sit in the pool, 2 unclear -- so it is the only run that catches a
+  // miscount here. Measured: reverting the shared terms fails exactly one
+  // assertion across all 19 runs, that one.
+  (run.sharedFindings || []).forEach(function (f) {
+    o.findings++;
+    if (f.classification === 'unexpected') o.unexpected++;
+    else if (f.classification === 'unclear') o.unclear++;
+    else if (!f.classification) o.ungraded++;
+  });
   return o;
 }
 
@@ -105,6 +120,13 @@ ids.forEach(function (rid) {
   ok(rid + '   a run with an error-severity problem is never PASS',
      !(run.errorProblems || []).length || label !== 'PASS',
      { badge: label, errors: run.errorProblems });
+  // allClean itself, not just the badge it feeds. The badge assertions above
+  // stayed green through the whole life of the allClean-ignores-sharedFindings
+  // bug, because the ladder checks `issues` first and ISSUES FOUND is the right
+  // badge either way -- so the disagreement was invisible from the outside.
+  // This is the assertion that catches it, from real data on the real 2-variant
+  // shape: over these runs it is 0 mismatches with the fix and 1 without it.
+  eq(rid + '   allClean agrees with the log', v.allClean, nothingWrong);
 });
 
 section('the real runs that used to be badged wrong');
@@ -192,36 +214,59 @@ section('the copy check\'s real-world verdicts are pinned');
 
 section('the reordering rule, checked against every recorded run');
 
-(function theReorderingRuleIsInertOnEveryRecordedRun() {
+(function theReorderingRuleOnEveryRecordedClusterSet() {
+  // This section used to assert the rule contradicts NOTHING on every recorded
+  // cluster set, and printed "no recorded run can fire the rule". Both were
+  // false, and the falsehood was load-bearing: VD_REORDER_DETECTION has been
+  // held off waiting for a multi-cluster log that was already on disk. The
+  // corpus only held 13 SINGLE-variant runs, all with one vertical cluster;
+  // four 3-variant runs were never projected into it. Twelve of the 27 entries
+  // now here carry >= 2 trusted vertical clusters.
   var ids = Object.keys(CLUSTERS).sort();
   ok('there are recorded cluster sets to check', ids.length > 0);
 
-  var multi = 0, annotated = 0, vertSeen = 0;
+  var multi = 0, annotated = 0, vertSeen = 0, fired = 0, census = {};
   ids.forEach(function (rid) {
     var run = CLUSTERS[rid];
     var sc = run.shiftClusters || {};
     var vert = sc.vertical || [], horz = sc.horizontal || [];
     vertSeen += vert.length;
-    if (vert.filter(function (c) { return c.trusted; }).length >= 2) multi++;
+    var trustedVert = vert.filter(function (c) { return c.trusted; }).length;
+    if (trustedVert >= 2) multi++;
 
-    // EVERY run, annotated or not: feed the recorded geometry back through the
-    // live predicate. This is the check that matters, and it works on logs from
-    // before the rule shipped because cluster geometry is cluster geometry.
+    // Feed the recorded geometry back through the LIVE predicate. This works on
+    // logs from before the rule shipped, because cluster geometry is cluster
+    // geometry.
     var copy = JSON.parse(JSON.stringify(vert));
+    copy.forEach(function (c) { delete c.contradictedBy; });
     vdReorderContradiction(copy, VD_SHIFT_TOL_PX, VD_MOVE_MIN_PX);
+    var hits = copy.filter(function (c) { return c.trusted && c.contradictedBy; });
+    if (hits.length) fired++;
+    census[rid] = hits.map(function (c) {
+      return c.delta + 'x' + c.count + '<-' + c.contradictedBy.delta + 'x' + c.contradictedBy.count;
+    }).join(',');
+
+    // A cluster with fewer than 2 trusted peers can never be contradicted --
+    // that is the structural floor the old assertion was really testing, and it
+    // still holds. Kept as its own claim so the two are not conflated again.
+    if (trustedVert < 2) {
+      copy.forEach(function (c, i) {
+        eq(rid + ' a lone trusted cluster is never contradicted [' + i + ']',
+           c.contradictedBy || null, null);
+      });
+    }
+    // An UNTRUSTED cluster is never reported whatever the geometry says.
     copy.forEach(function (c, i) {
-      eq(rid + ' the live predicate contradicts nothing recorded [' + i + ']',
-         c.contradictedBy, null);
+      if (!c.trusted) {
+        ok(rid + ' an untrusted cluster is not reported [' + i + ']',
+           !(c.trusted && c.contradictedBy), c);
+      }
     });
 
-    // Only logs produced by a build carrying the rule can be checked for the
-    // annotation itself. Twelve of these predate 4b4e236 — asserting the key on
-    // those would be asserting that history changed.
     if (!run.annotated) return;
     annotated++;
     vert.forEach(function (c) {
       ok(rid + '   vertical cluster carries contradictedBy', 'contradictedBy' in c, c);
-      eq(rid + '   and it is null — the rule ran and cleared it', c.contradictedBy, null);
     });
     // AXIS SCOPING, proven from production rather than asserted: the rule is
     // vertical-only, so horizontal clusters must carry no annotation at all.
@@ -230,19 +275,107 @@ section('the reordering rule, checked against every recorded run');
     });
   });
 
-  print('    ' + vertSeen + ' vertical clusters across ' + ids.length + ' runs; '
-        + annotated + ' run(s) carry the annotation; '
-        + multi + ' run(s) have >= 2 trusted vertical clusters');
-  ok('at least one run was produced by a build carrying the rule', annotated > 0,
+  // CHARACTERISATION, not a correctness claim. These are the conclusions the
+  // four terms reach on real geometry; pinning them means any change to the rule
+  // shows up here as a visible diff that has to be justified against a page
+  // rather than against this file. Two earlier versions of this rule were killed
+  // by measurement, so a silent change of conclusions is the thing to prevent.
+  //
+  // The pattern across all four runs is the same and is what the rule was for:
+  // a 16-element block at +50 against a ~496-element page reflow at -47, so the
+  // block is reported and the reflow stays suppressed. In each run's v3 the big
+  // cluster is +4 -- the SAME direction as the block -- and nothing is
+  // contradicted. The answer flips with the sign, which is the intended
+  // semantics and could not be observed until these runs were in the corpus.
+  // Measured, by reverting each of the four terms in vdReorderContradiction and
+  // running both suites (mutation -> vd-diff synthetic / real-runs production):
+  //
+  //   term 1  opposite directions      1 fail  /  0
+  //   term 2  D must have MOVED        4 fail  /  4 fail
+  //   term 3  destination crossing     2 fail  /  0
+  //   term 4  o.count >= c.count       2 fail  /  8 fail
+  //
+  // TWO of the four terms are now pinned by production, not one. When the rule
+  // shipped I had to amend its commit to admit term 2 could not be shown to
+  // bite: every log on record had ONE vertical cluster, so the inner loop never
+  // executed. These four runs execute it.
+  //
+  //   term 2 -- removing it contradicts the +100x16 block in every v3 with the
+  //     +4x~496 page cluster, which has not MOVED at all (|4| <= moveMinPx). A
+  //     cluster that sits still cannot be evidence that something swapped past
+  //     it, and v3 is where the corpus says so.
+  //
+  //   term 4 -- removing it makes the two clusters contradict EACH OTHER
+  //     ('-47x496<-50x16,50x16<--47x496'), so the ~496-element page reflow is
+  //     reported alongside the 16-element block. That is precisely the
+  //     inversion 4b4e236 recorded as the worst measured failure of an earlier
+  //     draft -- 40 findings where 3 were right -- and it now reproduces on
+  //     real geometry rather than on a synthetic shape. This term is pinned
+  //     HARDER by production (8) than by the synthetic suite (2).
+  //
+  // Terms 1 and 3 remain synthetic-only, which is worth knowing rather than
+  // glossing: no recorded page yet has same-direction bands large enough to
+  // need term 1, or a non-crossing destination to need term 3.
+  var EXPECTED = {
+    '1787686041687#v1': '50x16<--47x496', '1787686041687#v2': '50x16<--47x496', '1787686041687#v3': '',
+    '1787687832083#v1': '50x16<--47x496', '1787687832083#v2': '50x16<--47x497', '1787687832083#v3': '',
+    '1787688438071#v1': '50x16<--47x496', '1787688438071#v2': '50x16<--47x497', '1787688438071#v3': '',
+    '1787689543404#v1': '50x16<--47x527', '1787689543404#v2': '50x16<--47x527', '1787689543404#v3': '',
+  };
+  Object.keys(EXPECTED).forEach(function (rid) {
+    ok(rid + ' is in the cluster corpus', rid in census, Object.keys(census).slice(0, 3));
+    eq(rid + '   the rule reaches the recorded conclusion', census[rid], EXPECTED[rid]);
+  });
+  ids.forEach(function (rid) {
+    if (rid in EXPECTED) return;
+    eq(rid + ' contradicts nothing', census[rid], '');
+  });
+
+  print('    ' + vertSeen + ' vertical clusters across ' + ids.length + ' cluster sets; '
+        + annotated + ' carry the annotation; ' + multi + ' have >= 2 trusted vertical clusters; '
+        + fired + ' would fire the rule');
+  ok('at least one set was produced by a build carrying the rule', annotated > 0,
      'no annotated run yet — reload the extension and re-run');
-  // Said out loud rather than implied. The rule needs two trusted vertical
-  // clusters to fire at all, so while this is 0 the corpus CANNOT exercise it:
-  // the inertness above is structural, not evidence of correctness. The first
-  // multi-cluster log is the one the flag is waiting for.
-  if (multi === 0) {
-    print('    NOTE: no recorded run can fire the rule (needs >= 2 trusted vertical');
-    print('          clusters). Inertness above is STRUCTURAL, not proof of correctness.');
+  if (fired) {
+    print('    NOTE: the rule is NO LONGER inert on recorded data — ' + fired + ' cluster set(s)');
+    print('          would report a cluster instead of suppressing it. VD_REORDER_DETECTION');
+    print('          is still false, so this is annotation only. Turning it on is now a');
+    print('          decision with evidence behind it rather than a blocked one.');
   }
+})();
+
+section('fixture entries that the shipped code can no longer reproduce');
+(function staleRequirementProjection() {
+  // The corpus header promises these are shapes PRODUCTION ACTUALLY PRODUCED,
+  // never values written alongside a fix. One entry now breaks that promise and
+  // it is better named than quietly trusted.
+  //
+  // Run 1788538681655 recorded requirements {total: 0} for both variants because
+  // the extractor could not read the spec's curly-single-quoted requirement at
+  // all. That is exactly the defect the two-pass vdSpecRequirements fixed, so
+  // the shipped extractor cannot produce total: 0 for that spec any more -- it
+  // yields one requirement, "See All".
+  //
+  // What the entry SHOULD say is not derivable from the artifact: the log keeps
+  // only capped unmatched samples, not the candidate list, so whether "See All"
+  // grades verbatim or absent cannot be recomputed. All three of that run's
+  // error-severity problems say the page never bucketed into the variation it
+  // was asked for, which makes `absent` the likely truth -- but likely is not
+  // recorded, and guessing it here is precisely the thing this file exists to
+  // prevent. It needs a re-run of TB-1078, not a reasoned-out number.
+  var stale = RUNS['1788538681655'];
+  ok('the affected run is on record', !!stale);
+  if (!stale) return;
+  var totals = (stale.perVariant || []).map(function (v) {
+    return v.requirements ? v.requirements.total : null;
+  });
+  // Pinned so that re-capturing the run FAILS here and forces this note to be
+  // revisited, rather than leaving a stale zero to be read as a real result.
+  eq('  its requirement totals are still the pre-fix zeros',
+     JSON.stringify(totals), '[0,0]');
+  print('    NOTE: 1788538681655.requirements is a PRE-FIX projection — the shipped');
+  print('          extractor yields 1 requirement for that spec, not 0. Re-run TB-1078');
+  print('          to replace it; do not hand-edit a number in.');
 })();
 
 section('the badge is ONE implementation, not a copy per caller');

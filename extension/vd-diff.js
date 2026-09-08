@@ -1053,25 +1053,100 @@
   // absent rather than reporting a spurious near-match.
   var VD_REQ_NEAR_MIN_TOKENS = 2;
 
-  // Every quoted run in the spec. Straight and curly quotes are treated as
-  // interchangeable delimiters on purpose: real specs mix them, and ENOC-97's
-  // own FAQ block opens a quote curly and closes it straight.
+  // Every quoted run in the spec, collected in two passes.
+  //
+  // Pass 1, DOUBLE quotes: straight and curly are treated as interchangeable
+  // delimiters on purpose -- real specs mix them, and ENOC-97's own FAQ block
+  // opens a quote curly and closes it straight.
+  //
+  // Pass 2, curly SINGLE quotes: strictly PAIRED, ‘ open and ’ close, and
+  // deliberately a separate pass rather than more members of the pass-1
+  // delimiter class. ’ doubles as an apostrophe, so admitting it to the class
+  // lets `it’s` cut a double-quoted requirement in half: measured on ENOC-97,
+  // widening the class turned 70 clean requirements into 79 fragments. Keyed on
+  // ‘ as the opener this pass cannot fire on a spec that has no ‘ at all,
+  // which is every spec on record -- ENOC-97 extraction is byte-identical --
+  // while TB-1078, whose only quoted requirement is ‘See All’, goes 0 -> 1.
+  //
+  // Straight ' is not a delimiter in either pass and must not become one: it is
+  // the usual apostrophe in unstyled spec text.
+  //
+  // The two boundary guards are the whole difficulty, because smart-quote
+  // autocorrect uses ‘ for a LEADING apostrophe and ’ for every other one, so
+  // neither character is reliably a delimiter:
+  //
+  //   ’(?![\p{L}\p{N}]) on the closer, and ’(?=\p{L}) allowed INSIDE the span.
+  //     A closer followed by a letter is an apostrophe, not a close quote. Without
+  //     this, `‘Women’s Bags’` extracts "Women" -- and that is the worst failure
+  //     mode in this file, worse than extracting nothing: vdMatchRequirements tests
+  //     containment, so the one-word "Women" is satisfied verbatim by unrelated nav
+  //     text ("Women’s New Arrivals") and a label that is NOT on the page is
+  //     reported to the client as shipped. It now extracts `Women’s Bags` whole.
+  //
+  //     This guard alone kills the fabricated requirements, which are the other
+  //     half of the same problem: `the ‘90s gallery that shoppers didn’t lose`
+  //     used to yield the phantom "90s gallery that shoppers didn", which grades
+  //     absent and prints a string the spec never wrote into a client-facing
+  //     report. Same for ‘til and ‘em. The elision opens the span; the guard
+  //     denies it a closer, because the apostrophe it would have closed on is
+  //     followed by a letter.
+  //
+  //   (?<![\p{L}\p{N}]) on the opener.
+  //     An opener preceded by a letter is an apostrophe too (`don‘t`). This is
+  //     the narrower of the two guards -- measured by removing it, the elisions
+  //     above are already covered by the closer guard, and the suite stayed green
+  //     until a case was written for it. What it catches is a mistyped opener
+  //     whose span DOES reach a legitimate closer: `they don‘t ship it, and the
+  //     label reads fine’.` yields "t ship it, and the label reads fine" without
+  //     it.
+  //
+  // The alternation's two branches are mutually exclusive on the next character,
+  // so there is nothing to backtrack over: 234KB of real spec text extracts in
+  // 5.3ms and 20k unmatched openers in 1.6ms. That matters because this runs in
+  // the MV3 service worker.
   function vdSpecRequirements(specText) {
     var text = String(specText || '');
-    var re = new RegExp('["“”]([^"“”\\n]{' + VD_REQ_MIN_CHARS + ',' + VD_REQ_MAX_CHARS + '})["“”]', 'g');
-    var seen = new Set(), out = [], m;
-    while ((m = re.exec(text))) {
-      var raw = m[1].trim();
+    var seen = new Set(), out = [];
+
+    function take(m) {
+      // Group 1 defensively: a pass added later with no capturing group, or as
+      // an alternation whose other branch owns the group, hands us undefined.
+      // Under-extracting is caught by the suite; throwing here would abort the
+      // whole diff inside the service worker.
+      var raw = String(m[1] || '').trim();
       // A leading parenthetical annotates rather than specifies -- the
       // requirement in `"(Lock icon) Your information is encrypted and secure."`
       // is the sentence, not the icon note.
       raw = raw.replace(/^\([^)]{1,40}\)\s*/, '').trim();
-      if (raw.length < VD_REQ_MIN_CHARS) continue;
+      if (raw.length < VD_REQ_MIN_CHARS) return;
       var norm = vdNormText(raw);
-      if (!norm) continue;               // punctuation-only annotation
-      if (seen.has(norm)) continue;
+      if (!norm) return;                 // punctuation-only annotation
+      if (seen.has(norm)) return;
       seen.add(norm);
       out.push({ required: raw, norm: norm });
+    }
+
+    var span = '{' + VD_REQ_MIN_CHARS + ',' + VD_REQ_MAX_CHARS + '}';
+    var passes = [
+      new RegExp('["“”]([^"“”\\n]' + span + ')["“”]', 'g'),
+      new RegExp('(?<![\\p{L}\\p{N}])‘((?:[^‘’\\n]|’(?=\\p{L}))' + span + ')’(?![\\p{L}\\p{N}])', 'gu')
+    ];
+    // A requirement quoted inside another (`"the ‘See All’ CTA"`) is taken
+    // twice, outer then inner. Both are genuinely quoted, and the matcher tests
+    // containment, so the inner one is satisfied wherever the outer one is.
+    for (var i = 0; i < passes.length; i++) {
+      var re = passes[i], m;
+      while ((m = re.exec(text))) {
+        take(m);
+        // A zero-length match leaves lastIndex untouched and exec spins on it
+        // forever. Neither pass above can match empty -- both require a
+        // delimiter pair around >= VD_REQ_MIN_CHARS -- but a pass added later
+        // with an optional group would, and this loop runs in the service
+        // worker where a spin is a dead run with no error. Demonstrated by
+        // mutating pass 2 to a zero-width regex: the suite hung rather than
+        // failing.
+        if (m[0].length === 0) re.lastIndex++;
+      }
     }
     return out;
   }

@@ -1136,6 +1136,99 @@ section('a run that was not validly compared must never badge PASS');
      /sharedAcross: f\.sharedAcross \|\| \[\]/.test(log) && !/sharedAcross/.test(fn));
 })();
 
+(function whichVerificationStatesVoidThePair() {
+  // The stamping rule itself, which had no test at all: it lived inline in the
+  // async runVisualDiffPipeline, so mutating it to count every non-'confirmed'
+  // state -- or to ignore the baseline entirely -- left both suites green on all
+  // 20 recorded runs. Both recorded not-served runs have the variant AND the
+  // baseline contradicted, so real data cannot separate the two terms.
+  eval(_pu.slice(_pu.indexOf('function vdServedNoVariation(variantVer, baselineVer) {'),
+                 _pu.indexOf('// The variation the CONFIGURED url asked for.')));
+  var S = function (st) { return { state: st }; };
+  eq('variant contradicted voids the pair',
+     vdServedNoVariation(S('contradicted'), S('confirmed')), true);
+  eq('BASELINE contradicted voids it too — a Control that served no Control is no baseline',
+     vdServedNoVariation(S('confirmed'), S('contradicted')), true);
+  eq('both contradicted', vdServedNoVariation(S('contradicted'), S('contradicted')), true);
+  eq('both confirmed is fine', vdServedNoVariation(S('confirmed'), S('confirmed')), false);
+  // Absent evidence is not evidence of absence. 96 of 126 recorded captures
+  // predate the field; counting these would declare most of the corpus void.
+  eq("'unknown' is not a contradiction", vdServedNoVariation(S('unknown'), S('unknown')), false);
+  eq("'unsupported' is not a contradiction",
+     vdServedNoVariation(S('unsupported'), S('unsupported')), false);
+  eq('a missing verification is not a contradiction', vdServedNoVariation(null, null), false);
+  eq('  nor is a missing baseline alone', vdServedNoVariation(S('confirmed'), null), false);
+  eq('  and a missing variant with a contradicted baseline still voids it',
+     vdServedNoVariation(null, S('contradicted')), true);
+})();
+
+(function theMirrorCarriesNotServed() {
+  // The Test-Agent-queued path reads only _abLastRun.visualDiff. Without
+  // notServed on that projection the new rung is vacuously false there — which
+  // is exactly how sharedFindingCount went wrong, so it is pinned structurally.
+  var mirror = _pu.slice(_pu.indexOf('perVariant: (visualDiffResult.perVariant || []).map(v => ({'));
+  mirror = mirror.slice(0, mirror.indexOf('})),'));
+  ok('the mirror carries notServed', /notServed: v\.notServed/.test(mirror), mirror.slice(0, 400));
+  ok('  and the verification it derives from', /variantVerified: v\.variantVerified/.test(mirror));
+
+  // And the pipeline must actually CALL the predicate. Structural because
+  // runVisualDiffPipeline is async and cannot be sliced and driven: replacing
+  // the assignment with `false` left every behavioural assertion green, since
+  // the fixture derives notServed itself and the synthetic cases set it directly.
+  var pipe = _pu.slice(_pu.indexOf('async function runVisualDiffPipeline'));
+  ok('the pipeline stamps notServed from the predicate',
+     /v\.notServed = vdServedNoVariation\(own, baselineVer\);/.test(pipe),
+     'the pipeline no longer derives notServed from vdServedNoVariation');
+  ok('  from the baseline capture, not a hardcoded state',
+     /const baselineVer = vdCaptureVerification\(base\);/.test(pipe));
+})();
+
+(function servedNoVariationIsNotAVerdict() {
+  // Run 1788900763308: every capture `contradicted`, so nothing bucketed and
+  // all three URLs served the same page -- yet the report badged ISSUES FOUND
+  // with 7 findings graded `unexpected`, all of them a randomized product
+  // carousel. The verdict could not see the verification because it lives on
+  // the capture and vdVerdict only ever receives visualDiff.
+  if (typeof vdVerdict !== 'function') return;
+  function verdictOf(over) {
+    return vdVerdict(vdOf({ variant: Object.assign(
+      { findings: [{ classification: 'expected' }], requirements: null }, over) }));
+  }
+  var ns = verdictOf({ notServed: true });
+  eq('a variant that served no variation is counted', ns.notServed, 1);
+  eq('  is not clean', ns.allClean, false);
+  eq('  badges NOT COMPARED', vdBadgeLabel(ns, {}), 'NOT COMPARED');
+  ok('  and the summary leads with it, before any count',
+     /^1 variant\(s\) served no variation at all/.test(vdVerdictSummary(ns)), vdVerdictSummary(ns));
+
+  // NOT COMPARED outranks ISSUES FOUND. This is the whole point: the counts can
+  // be arithmetically right and the sentence still false, so the reader must be
+  // told the comparison did not happen before being told how many differences
+  // it found.
+  var withIssues = vdVerdict(vdOf({ variant: {
+    findings: [{ classification: 'unexpected' }, { classification: 'unclear' }],
+    requirements: null, notServed: true } }));
+  ok('  it outranks the issues rung', withIssues.needsReview > 0, withIssues);
+  eq('  so a not-served run with real issues still reads NOT COMPARED',
+     vdBadgeLabel(withIssues, {}), 'NOT COMPARED');
+
+  // A clean run is untouched.
+  var clean = verdictOf({});
+  eq('a served variant is not counted', clean.notServed, 0);
+  eq('  and still passes', vdBadgeLabel(clean, {}), 'PASS');
+  eq('  with no not-served clause in the summary',
+     /served no variation/.test(vdVerdictSummary(clean)), false);
+
+  // Absent evidence is not evidence of absence. 96 captures on record predate
+  // the verification field and 4 recorded 'unknown'; if either set notServed,
+  // most of the corpus would be declared uncompared.
+  eq('an undefined notServed is not counted', verdictOf({ notServed: undefined }).notServed, 0);
+  eq('  nor is false', verdictOf({ notServed: false }).notServed, 0);
+  // A skipped variant is already covered by notRun and must not be double-counted.
+  eq('a skipped variant is not counted as not-served',
+     vdVerdict(vdOf({ variant: { skipped: true, notServed: true, requirements: null } })).notServed, 0);
+})();
+
 (function sharedFindingsCountTowardClean() {
   // Run 1788538681655 (TB-1078) is the reason this exists: BOTH variants carry
   // zero findings of their own and all 8 findings live in the shared pool, 2

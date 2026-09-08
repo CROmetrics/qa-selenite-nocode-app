@@ -61,11 +61,16 @@ function section(t) { print('\n' + t); }
 
 // What the log itself says, counted rather than asserted from memory.
 function fromLog(run) {
-  var o = { findings: 0, unexpected: 0, unclear: 0, ungraded: 0, unmet: 0, errored: 0, skipped: 0, dup: 0, deadGrade: 0 };
+  var o = { findings: 0, unexpected: 0, unclear: 0, ungraded: 0, unmet: 0, errored: 0, skipped: 0, dup: 0, deadGrade: 0, notServed: 0 };
   (run.perVariant || []).forEach(function (v) {
     if (v.error) { o.errored++; return; }
     if (v.skipped) { o.skipped++; return; }
     if (v.controlDuplicate) o.dup++;
+    // The platform said this page bucketed into NO variation, so whatever the
+    // diff found is not evidence about the experiment. Counted as "something
+    // wrong" for the same reason controlDuplicate is: the comparison did not
+    // happen, whatever the findings say.
+    if (v.notServed) o.notServed++;
     if (v.gradingFailed) o.deadGrade++;
     var fs = v.findings || [];
     o.findings += fs.length;
@@ -117,7 +122,8 @@ ids.forEach(function (rid) {
   var run = RUNS[rid], v = vdVerdict(run), L = fromLog(run);
   var label = vdBadgeLabel(v, {});
   var nothingWrong = L.unexpected === 0 && L.unclear === 0 && L.ungraded === 0
-    && L.unmet === 0 && L.errored === 0 && L.skipped === 0 && L.dup === 0 && L.deadGrade === 0;
+    && L.unmet === 0 && L.errored === 0 && L.skipped === 0 && L.dup === 0 && L.deadGrade === 0
+    && L.notServed === 0;
   ok(rid + ' badges PASS only when the log shows nothing wrong',
      label !== 'PASS' || nothingWrong, { badge: label, log: L });
   // And the converse: a clean log must not be scared into a non-PASS.
@@ -344,10 +350,10 @@ section('the reordering rule, checked against every recorded run');
   ok('at least one set was produced by a build carrying the rule', annotated > 0,
      'no annotated run yet — reload the extension and re-run');
   if (fired) {
-    print('    NOTE: the rule is NO LONGER inert on recorded data — ' + fired + ' cluster set(s)');
-    print('          would report a cluster instead of suppressing it. VD_REORDER_DETECTION');
-    print('          is still false, so this is annotation only. Turning it on is now a');
-    print('          decision with evidence behind it rather than a blocked one.');
+    print('    NOTE: ' + fired + ' cluster set(s) would report a cluster instead of'
+          + ' suppressing it.');
+    print('          VD_REORDER_DETECTION is ' + VD_REORDER_DETECTION
+          + (VD_REORDER_DETECTION ? ', so these are LIVE.' : ', so this is annotation only.'));
   }
 })();
 
@@ -383,6 +389,45 @@ section('fixture entries that the shipped code can no longer reproduce');
   print('    NOTE: 1788538681655.requirements is a PRE-FIX projection — the shipped');
   print('          extractor yields 1 requirement for that spec, not 0. Re-run TB-1078');
   print('          to replace it; do not hand-edit a number in.');
+})();
+
+section('runs where the page served no variation');
+(function variantsThatServedNoVariation() {
+  // Two runs on record have every capture `contradicted` -- the platform's own
+  // answer that the page bucketed into NO variation, so all three URLs served
+  // the same experience. Both are TB-1078.
+  //
+  // Before notServed existed, 1788900763308 badged ISSUES FOUND and told the
+  // client "10 visual differences · 2 specified copy strings not on the page ·
+  // 8 findings needing review", with 7 findings graded `unexpected`. Every one
+  // of them was a randomized product-recommendations carousel serving different
+  // products between the two loads. The three error-severity problems in that
+  // same log already said "no verdict from it applies to the experiment"; the
+  // verdict was simply blind to them, because the verification lived on the
+  // capture and vdVerdict only ever sees visualDiff.
+  var hits = ids.filter(function (rid) {
+    return (RUNS[rid].perVariant || []).some(function (v) { return v.notServed; });
+  });
+  eq('exactly two recorded runs served no variation', hits.length, 2);
+  eq('  and they are the two TB-1078 runs',
+     hits.join(','), '1788538681655,1788900763308');
+  hits.forEach(function (rid) {
+    var v = vdVerdict(RUNS[rid]);
+    eq(rid + ' counts both variants as not served', v.notServed, 2);
+    eq(rid + '   is not clean', v.allClean, false);
+    eq(rid + '   badges NOT COMPARED, not ISSUES FOUND', vdBadgeLabel(v, {}), 'NOT COMPARED');
+    ok(rid + '   and says so before any count',
+       /^\d+ variant\(s\) served no variation at all/.test(vdVerdictSummary(v)), vdVerdictSummary(v));
+  });
+  // Absent evidence is not evidence of absence: 96 captures on record predate
+  // the verification field and 4 recorded 'unknown'. Neither may set notServed,
+  // or most of the corpus would be declared uncompared.
+  var falsePositives = ids.filter(function (rid) {
+    return hits.indexOf(rid) === -1
+        && (RUNS[rid].perVariant || []).some(function (v) { return v.notServed; });
+  });
+  eq('no run without a contradicted capture is marked not-served', falsePositives.length, 0);
+  print('    ' + hits.length + ' of ' + ids.length + ' recorded runs served no variation');
 })();
 
 section('capture width parity across every recorded run');

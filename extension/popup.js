@@ -3296,6 +3296,9 @@ async function runAbComparison(opts = {}) {
             perVariant: (visualDiffResult.perVariant || []).map(v => ({
               label: v.label, skipped: v.skipped, reason: v.reason, error: v.error,
               controlDuplicate: v.controlDuplicate,
+              // Without this the new notServed rung is vacuously false on the
+              // queued path, which is how sharedFindingCount already went wrong.
+              notServed: v.notServed, variantVerified: v.variantVerified,
               overallSummary: v.overallSummary, structuralStats: v.structuralStats,
               truncatedFindingCount: v.truncatedFindingCount, noVerdictCount: v.noVerdictCount,
               duplicateIndexCount: v.duplicateIndexCount, truncated: v.truncated, pixelDiff: v.pixelDiff,
@@ -3801,6 +3804,26 @@ function vdCaptureVerification(cap) {
   return vdVariantVerification(cap.expProbe, vdForcedVariationId(cap.url));
 }
 
+// Did this pair fail to serve the variation it asked for? A named function
+// rather than an inline clause in runVisualDiffPipeline, because the pipeline is
+// an async function the jsc suites cannot slice -- and logic that lives inline
+// gets no test, which is how the badge ladder shipped inverted. Mutating the
+// inline version left both suites green on all 20 recorded runs.
+//
+// Only 'contradicted' counts. That is the platform positively answering "this
+// page bucketed into NO variation"; 'unknown' and 'unsupported' are absent
+// evidence, not evidence of absence, and 96 of the 126 captures on record
+// predate the field entirely. Counting those would declare most of the corpus
+// uncompared.
+//
+// EITHER side voids the pair. A Control that did not serve Control is no
+// baseline whatever the variant did, and in run 1788900763308 the baseline
+// forced a variation id of its own and bucketed into nothing.
+function vdServedNoVariation(variantVer, baselineVer) {
+  return (!!variantVer && variantVer.state === 'contradicted')
+      || (!!baselineVer && baselineVer.state === 'contradicted');
+}
+
 // The variation the CONFIGURED url asked for. Must come from cap.url and never
 // cap.finalUrl: a site that redirects strips the parameter, and the probe only
 // ever sees the final url. On run 1788192904924 both captures had it stripped
@@ -4113,6 +4136,32 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
   // Every variant turned out to be Control. Nothing was compared, so the run
   // has no result at all — say that once at the top rather than leaving the
   // reader to infer it from a list of per-variant errors.
+  // The platform's own answer to "did this page serve the variation the URL
+  // asked for", carried onto the variant so the VERDICT can see it. It was read
+  // only by vdCollectProblems and the debug export — both of which say the right
+  // thing in prose ("no verdict from it applies to the experiment") while
+  // vdVerdict, structurally blind to it, graded the findings as experiment
+  // issues anyway.
+  //
+  // Run 1788900763308 is what that costs: all three captures contradicted, so
+  // nothing bucketed and all three URLs served the same page, yet the report
+  // badged ISSUES FOUND and told the client "10 visual differences · 2 specified
+  // copy strings not on the page · 8 findings needing review" with 7 findings
+  // graded `unexpected`. Every one of them was a randomized recommendations
+  // carousel serving different products.
+  //
+  // EITHER side voids the pair. A Control that did not serve Control is no
+  // baseline, whatever the variant did — and in that run the baseline forced a
+  // variation id of its own and bucketed into nothing.
+  const baselineVer = vdCaptureVerification(base);
+  perVariant.forEach(v => {
+    if (v.skipped) return;
+    const cap = captures.find(c => c.label === v.label);
+    const own = cap ? vdCaptureVerification(cap) : null;
+    v.variantVerified = own;
+    v.notServed = vdServedNoVariation(own, baselineVer);
+  });
+
   const analysed = perVariant.filter(v => !v.skipped);
   if (analysed.length && analysed.every(v => v.controlDuplicate)) {
     await finalizeVisualDiffCheckpoint(WIN_ID, runId, 'completed');
@@ -5397,6 +5446,7 @@ function vdVariantClean(v) {
   if (!v) return false;
   if (v.skipped || v.error) return false;          // never compared
   if (v.controlDuplicate) return false;            // compared against itself
+  if (v.notServed) return false;                   // the page served no variation
   if (v.gradingFailed) return false;               // compared, never judged
   if (vdIsMirrorVariant(v)) {
     return (v.unexpectedCount || 0) === 0 && (v.unclearCount || 0) === 0
@@ -5421,7 +5471,7 @@ function vdBadgeLabel(vv, opts) {
   const o = opts || {};
   if (o.errCount) return 'FAIL';
   if (vv.failed) return 'FAILED';
-  if (vv.notCompared) return 'NOT COMPARED';
+  if (vv.notCompared || vv.notServed) return 'NOT COMPARED';
   if (o.extraIssues || vv.issues) return 'ISSUES FOUND';
   if (vv.ungraded) return 'NOT GRADED';
   if (vv.notRun) return 'INCOMPLETE';
@@ -5449,7 +5499,7 @@ function vdVerdict(vd) {
   // positively say a comparison was clean. rptAbSection's `allowNotRan` is what
   // legitimately resolves a run that had no visual diff at all.
   const none = {
-    ran: false, issues: 0, findings: 0, notCompared: 0, unmetCopy: 0,
+    ran: false, issues: 0, findings: 0, notCompared: 0, notServed: 0, unmetCopy: 0,
     needsReview: 0, ungraded: 0, failed: 0, notRun: 0,
     detailUnavailable: false, allClean: false,
   };
@@ -5524,6 +5574,13 @@ function vdVerdict(vd) {
     // never applied badges a green PASS. That is the one verdict neither section
     // may show for a comparison that did not happen.
     notCompared: perVariant.filter(v => v.controlDuplicate).length,
+    // Distinct from notCompared, which means "resolved to Control's own URL".
+    // This means the platform says the page bucketed into NO variation at all,
+    // so the two pages may be identical for a reason that has nothing to do
+    // with the experiment. Same badge, different cause, different fix — one is
+    // a dropped forced-variant parameter, the other is a flag that never
+    // activated — so they are counted separately and worded separately.
+    notServed: perVariant.filter(v => !v.skipped && v.notServed).length,
   };
 }
 
@@ -5531,7 +5588,18 @@ function vdVerdict(vd) {
 // "0 · 0". Shared by both summary lines, so they cannot drift apart.
 function vdVerdictSummary(vv) {
   if (!vv.ran) return '';
-  const parts = [`${vv.findings} visual difference${vv.findings !== 1 ? 's' : ''}`];
+  const parts = [];
+  // Leads, because it changes what every number after it means. On run
+  // 1788900763308 the counts were arithmetically right and the sentence was
+  // still false: "10 visual differences · 2 specified copy strings not on the
+  // page · 8 findings needing review" described two loads of the same page,
+  // since no capture bucketed into any variation. The differences are real
+  // differences between two real pages; they are just not evidence about the
+  // experiment, and the reader has to be told that before being told how many.
+  if (vv.notServed) {
+    parts.push(`${vv.notServed} variant(s) served no variation at all — nothing below is evidence about the experiment`);
+  }
+  parts.push(`${vv.findings} visual difference${vv.findings !== 1 ? 's' : ''}`);
   if (vv.unmetCopy) {
     parts.push(`${vv.unmetCopy} specified copy string${vv.unmetCopy !== 1 ? 's' : ''} not on the page`);
   }

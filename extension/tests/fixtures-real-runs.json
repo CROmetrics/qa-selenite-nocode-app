@@ -24,6 +24,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": null,
+"notServed": false,
 "skipped": false
 },
 {
@@ -46,6 +47,7 @@
 "gradingFailed": null,
 "label": "v2",
 "noVerdictCount": null,
+"notServed": false,
 "skipped": false
 },
 {
@@ -68,6 +70,7 @@
 "gradingFailed": null,
 "label": "v3",
 "noVerdictCount": null,
+"notServed": false,
 "skipped": false
 }
 ],
@@ -124,6 +127,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": null,
+"notServed": false,
 "skipped": false
 },
 {
@@ -146,6 +150,7 @@
 "gradingFailed": null,
 "label": "v2",
 "noVerdictCount": null,
+"notServed": false,
 "skipped": false
 },
 {
@@ -168,6 +173,7 @@
 "gradingFailed": null,
 "label": "v3",
 "noVerdictCount": null,
+"notServed": false,
 "skipped": false
 }
 ],
@@ -227,6 +233,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": null,
+"notServed": false,
 "skipped": false
 },
 {
@@ -249,6 +256,7 @@
 "gradingFailed": null,
 "label": "v2",
 "noVerdictCount": null,
+"notServed": false,
 "skipped": false
 },
 {
@@ -274,6 +282,7 @@
 "gradingFailed": null,
 "label": "v3",
 "noVerdictCount": null,
+"notServed": false,
 "skipped": false
 }
 ],
@@ -327,6 +336,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": null,
+"notServed": false,
 "skipped": false
 },
 {
@@ -349,6 +359,7 @@
 "gradingFailed": null,
 "label": "v2",
 "noVerdictCount": null,
+"notServed": false,
 "skipped": false
 },
 {
@@ -371,6 +382,7 @@
 "gradingFailed": null,
 "label": "v3",
 "noVerdictCount": null,
+"notServed": false,
 "skipped": false
 }
 ],
@@ -607,6 +619,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": null,
+"notServed": false,
 "requirements": null,
 "skipped": false
 }
@@ -828,6 +841,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": null,
+"notServed": false,
 "requirements": {
 "absent": 1,
 "items": [
@@ -1206,6 +1220,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": null,
+"notServed": false,
 "requirements": null,
 "skipped": false
 }
@@ -1427,6 +1442,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": null,
+"notServed": false,
 "requirements": {
 "absent": 1,
 "items": [
@@ -2007,6 +2023,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": null,
+"notServed": false,
 "requirements": {
 "absent": 1,
 "items": [
@@ -2585,6 +2602,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": 0,
+"notServed": false,
 "requirements": {
 "absent": 1,
 "items": [
@@ -3163,6 +3181,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": 0,
+"notServed": false,
 "requirements": {
 "absent": 1,
 "items": [
@@ -3741,6 +3760,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": 1,
+"notServed": false,
 "requirements": {
 "absent": 1,
 "items": [
@@ -4319,6 +4339,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": 0,
+"notServed": false,
 "requirements": {
 "absent": 1,
 "items": [
@@ -4897,6 +4918,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": 0,
+"notServed": false,
 "requirements": {
 "absent": 1,
 "items": [
@@ -5477,6 +5499,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": 0,
+"notServed": false,
 "requirements": {
 "absent": 1,
 "items": [
@@ -6055,6 +6078,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": 0,
+"notServed": false,
 "requirements": {
 "absent": 1,
 "items": [
@@ -6633,6 +6657,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": 0,
+"notServed": false,
 "requirements": {
 "absent": 1,
 "items": [
@@ -7211,6 +7236,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": 0,
+"notServed": false,
 "requirements": {
 "absent": 1,
 "items": [
@@ -7591,6 +7617,7 @@
 "gradingFailed": null,
 "label": "v1",
 "noVerdictCount": 0,
+"notServed": true,
 "requirements": {
 "absent": 0,
 "items": [],
@@ -7607,6 +7634,7 @@
 "gradingFailed": null,
 "label": "v2",
 "noVerdictCount": 0,
+"notServed": true,
 "requirements": {
 "absent": 0,
 "items": [],
@@ -7641,6 +7669,96 @@
 },
 {
 "classification": "expected"
+}
+],
+"skipped": false
+},
+"1788900763308": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [
+"The page did not serve the variation this run asked for — the URL forced variation 6343432",
+"The page did not serve the variation this run asked for — the URL forced variation 4998657",
+"The page did not serve the variation this run asked for — the URL forced variation 6639557"
+],
+"perVariant": [
+{
+"controlDuplicate": false,
+"error": null,
+"findings": [],
+"gradingFailed": null,
+"label": "v1",
+"noVerdictCount": 0,
+"notServed": true,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "See All"
+}
+],
+"near": 0,
+"total": 1,
+"verbatim": 0
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"error": null,
+"findings": [],
+"gradingFailed": null,
+"label": "v2",
+"noVerdictCount": 0,
+"notServed": true,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "See All"
+}
+],
+"near": 0,
+"total": 1,
+"verbatim": 0
+},
+"skipped": false
+}
+],
+"sharedFindings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
 }
 ],
 "skipped": false

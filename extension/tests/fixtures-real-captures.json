@@ -1,0 +1,1441 @@
+{
+"1787604099659": {
+"captures": [
+{
+"fullPage": {
+"pageW": 1693,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"pageW": 1470,
+"viewportH": 802
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"pageW": 1470,
+"viewportH": 802
+},
+"label": "v2",
+"skipped": false
+},
+{
+"fullPage": {
+"pageW": 1470,
+"viewportH": 746
+},
+"label": "v3",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.12406015037593984
+},
+"1787605375396": {
+"captures": [
+{
+"fullPage": {
+"pageW": 1868,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"pageW": 1868,
+"viewportH": 1225
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"pageW": 1868,
+"viewportH": 1281
+},
+"label": "v2",
+"skipped": false
+},
+{
+"fullPage": {
+"pageW": 1868,
+"viewportH": 1225
+},
+"label": "v3",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9924528301886792
+},
+"1787605850646": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 1587,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 1587,
+"viewportH": 1281
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 1587,
+"viewportH": 1281
+},
+"label": "v2",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 1587,
+"viewportH": 1281
+},
+"label": "v3",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9923371647509579
+},
+"1787664557663": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 877,
+"viewportH": 738
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 877,
+"viewportH": 738
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 877,
+"viewportH": 738
+},
+"label": "v2",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 877,
+"viewportH": 738
+},
+"label": "v3",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9322033898305084
+},
+"1787676757742": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v2",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v3",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9565217391304348
+},
+"1787679423285": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v2",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v3",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9904030710172744
+},
+"1787682601292": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v2",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v3",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9942196531791907
+},
+"1787686041687": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v2",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v3",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9904030710172744
+},
+"1787687832083": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v2",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v3",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9847328244274809
+},
+"1787688438071": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v2",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v3",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9828571428571429
+},
+"1787689543404": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v2",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2847,
+"viewportH": 1281
+},
+"label": "v3",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9945454545454545
+},
+"1787841612232": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2581,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2581,
+"viewportH": 1281
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.8385416666666666
+},
+"1787844572377": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2581,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2581,
+"viewportH": 1281
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.8385416666666666
+},
+"1787845233096": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2581,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2581,
+"viewportH": 1281
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.8385416666666666
+},
+"1787845836262": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2581,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2581,
+"viewportH": 1281
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.8385416666666666
+},
+"1787846589672": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2581,
+"viewportH": 1281
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2581,
+"viewportH": 1281
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.8385416666666666
+},
+"1787848700025": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2581,
+"viewportH": 1225
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2581,
+"viewportH": 1225
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.8385416666666666
+},
+"1787848752423": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2581,
+"viewportH": 1225
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2581,
+"viewportH": 1225
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.8385416666666666
+},
+"1787849345723": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2581,
+"viewportH": 1225,
+"viewportW": 2581
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2581,
+"viewportH": 1225,
+"viewportW": 2581
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": null
+},
+"1787849378916": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2581,
+"viewportH": 1225,
+"viewportW": 2581
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2581,
+"viewportH": 1225,
+"viewportW": 2581
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": null
+},
+"1787850440084": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2581,
+"viewportH": 1225,
+"viewportW": 2581
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2581,
+"viewportH": 1225,
+"viewportW": 2581
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": null
+},
+"1787850504291": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2581,
+"viewportH": 1225,
+"viewportW": 2581
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2581,
+"viewportH": 1225,
+"viewportW": 2581
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": null
+},
+"1787851099552": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2688,
+"viewportH": 1225,
+"viewportW": 2688
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2688,
+"viewportH": 1225,
+"viewportW": 2688
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1787851156124": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2688,
+"viewportH": 1225,
+"viewportW": 2688
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2688,
+"viewportH": 1225,
+"viewportW": 2688
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1787851821352": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2687,
+"viewportH": 1225,
+"viewportW": 2687
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2687,
+"viewportH": 1225,
+"viewportW": 2687
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1787851866654": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2687,
+"viewportH": 1225,
+"viewportW": 2687
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2687,
+"viewportH": 1225,
+"viewportW": 2687
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1787852597442": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 1886,
+"viewportH": 1225,
+"viewportW": 1886
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 1886,
+"viewportH": 1225,
+"viewportW": 1886
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1787852811348": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 1886,
+"viewportH": 1225,
+"viewportW": 1886
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 1886,
+"viewportH": 1225,
+"viewportW": 1886
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1787854321750": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2686,
+"viewportH": 1225,
+"viewportW": 2686
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2686,
+"viewportH": 1225,
+"viewportW": 2686
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1787854427268": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2686,
+"viewportH": 1225,
+"viewportW": 2686
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2686,
+"viewportH": 1225,
+"viewportW": 2686
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1787855687825": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2686,
+"viewportH": 1225,
+"viewportW": 2686
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2686,
+"viewportH": 1225,
+"viewportW": 2686
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1787855751209": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2686,
+"viewportH": 1225,
+"viewportW": 2686
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2686,
+"viewportH": 1225,
+"viewportW": 2686
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1787858908622": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2688,
+"viewportH": 1225,
+"viewportW": 2688
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2688,
+"viewportH": 1225,
+"viewportW": 2688
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1787858958928": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2688,
+"viewportH": 1225,
+"viewportW": 2688
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2688,
+"viewportH": 1225,
+"viewportW": 2688
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1787945015802": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1787947608728": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1788191807035": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 1966,
+"viewportH": 1225,
+"viewportW": 1966
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 1966,
+"viewportH": 1225,
+"viewportW": 1966
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1788192904924": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 1966,
+"viewportH": 1225,
+"viewportW": 1966
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 1966,
+"viewportH": 1225,
+"viewportW": 1966
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1788193353815": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 1966,
+"viewportH": 1225,
+"viewportW": 1966
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 1966,
+"viewportH": 1225,
+"viewportW": 1966
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": null
+},
+"1788194537067": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 1966,
+"viewportH": 1225,
+"viewportW": 1966
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 1966,
+"viewportH": 1225,
+"viewportW": 1966
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1788360614883": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1788362945211": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1788370328207": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1788372126965": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1788373948616": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1788374677434": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1788375660723": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1788460269499": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1788534558502": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1788537251896": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
+},
+"1788538681655": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2936,
+"viewportH": 1225,
+"viewportW": 2936
+},
+"label": "v2",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9652406417112299
+}
+}

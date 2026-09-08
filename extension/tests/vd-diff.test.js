@@ -39,6 +39,10 @@ load('../vd-diff.js');
 var _pu = readFile('../popup.js');
 // vdCollectProblems calls vdScaleMismatch, which is shared with the report's
 // inline note so the two cannot disagree about a scale mismatch.
+// vdCaptureWidthMismatch is shared by the capture-parity error and the redesign
+// disclaimer, so both must be driven through the same predicate here.
+eval(_pu.slice(_pu.indexOf('function vdCaptureWidthMismatch(captures, tolPx)'),
+                _pu.indexOf('function vdScaleMismatch(sc)')));
 eval(_pu.slice(_pu.indexOf('function vdScaleMismatch(sc)'),
                 _pu.indexOf('\n// Is this a grade the model actually returned?')));
 
@@ -1430,6 +1434,141 @@ function capture(label, o) {
              ? { pageW: 1470, pageH: 9000, capturedH: 8000, truncated: true, viewportH: 802, viewportW: 1470 }
              : o.fullPage };
 }
+
+(function captureWidthParity() {
+  // Run 1787604099659 is the whole reason this exists: Control captured 1693px
+  // wide, all three variants at 1470px, every comparison collapsed to ~13%
+  // matched, and all three were reported as "a wholesale redesign". The same
+  // page 21 minutes later in one window matched 99.6%.
+  //
+  // Measured against all 51 debug logs on record: the predicate fires on that
+  // run and no other, including the 18 ondeck runs sitting at 24.3% matched --
+  // those are a genuine "Full Rebuild" and their widths agree to the pixel. So
+  // it is specific, not merely sensitive, and the redesign path it guards is
+  // not disturbed.
+  if (typeof vdCaptureWidthMismatch !== 'function') { ok('vdCaptureWidthMismatch is exported', false); return; }
+  var fp = function (o) { return { pageW: 1470, pageH: 9000, capturedH: 8000, truncated: true,
+                                   viewportH: 802, viewportW: 1470, geometryPinned: true, ...o }; };
+  var caps = function (list) { return list.map(function (o, i) {
+    return capture(o.label || ('v' + i), { fullPage: fp(o) }); }); };
+
+  // The real geometry, real field: that log predates viewportW, so the pageW
+  // fallback is what has to catch it.
+  var real = vdCaptureWidthMismatch(caps([
+    { label: 'v0', pageW: 1693, viewportW: null, viewportH: 1281 },
+    { label: 'v1', pageW: 1470, viewportW: null, viewportH: 802 },
+    { label: 'v2', pageW: 1470, viewportW: null, viewportH: 802 },
+    { label: 'v3', pageW: 1470, viewportW: null, viewportH: 746 }]));
+  ok('the real 1693-vs-1470 run is caught', !!real, real);
+  eq('  via the pageW fallback, since viewportW predates that log', real && real.field, 'pageW');
+  eq('  naming all three offenders', real && real.offenders.length, 3);
+  eq('  against the baseline', real && real.base.label, 'v0');
+
+  // THE FALSE POSITIVE THAT KILLED THE HEIGHT AXIS. The healthy sibling run
+  // 1787605375396 matched 99.6% with viewportH 1281/1225/1281/1225 -- a 56px
+  // benign spread from window chrome. Measuring height would void a good run.
+  var healthy = vdCaptureWidthMismatch(caps([
+    { label: 'v0', pageW: 1868, viewportW: null, viewportH: 1281 },
+    { label: 'v1', pageW: 1868, viewportW: null, viewportH: 1225 },
+    { label: 'v2', pageW: 1868, viewportW: null, viewportH: 1281 },
+    { label: 'v3', pageW: 1868, viewportW: null, viewportH: 1225 }]));
+  eq('a 56px viewportH spread on a 99.6%-matching run is NOT a mismatch', healthy, null);
+
+  // A genuine redesign has matching widths and must stay quiet, or the guard
+  // would relabel every real rebuild as a capture fault.
+  eq('the ondeck full-rebuild geometry is quiet', vdCaptureWidthMismatch(caps([
+    { label: 'v0', pageW: 2936, viewportW: 2936 },
+    { label: 'v1', pageW: 2936, viewportW: 2936 }])), null);
+
+  // viewportW wins when every capture has it, and the two fields are never
+  // mixed -- comparing one side's viewportW to another's pageW compares
+  // unrelated numbers.
+  var vp = vdCaptureWidthMismatch(caps([
+    { label: 'v0', viewportW: 1900, pageW: 1470 },
+    { label: 'v1', viewportW: 1470, pageW: 1470 }]));
+  eq('viewportW is preferred when both sides carry it', vp && vp.field, 'viewportW');
+  // Mixing is structurally impossible -- `field` is chosen once for every
+  // capture -- so when one side lacks viewportW the comparison drops to pageW
+  // on BOTH sides and still stands. I first asserted null here and the
+  // assertion was wrong, not the code: pageW-vs-pageW is a valid comparison.
+  var mixed = vdCaptureWidthMismatch(caps([
+    { label: 'v0', viewportW: 1900, pageW: 1900 },
+    { label: 'v1', viewportW: null, pageW: 1470 }]));
+  eq('one side missing viewportW drops BOTH sides to pageW', mixed && mixed.field, 'pageW');
+  eq('  and the mismatch is still caught', mixed && mixed.offenders.length, 1);
+  // Neither field available on every capture is the real no-comparison case.
+  eq('no width field common to all captures is not compared',
+     vdCaptureWidthMismatch(caps([
+       { label: 'v0', viewportW: 1900, pageW: 1900 },
+       { label: 'v1', viewportW: null, pageW: null }])), null);
+
+  // Tolerance: a vertical scrollbar appearing on one side and not the other
+  // moves clientWidth ~15-17px and is not a layout change.
+  eq('a 16px scrollbar-sized difference is tolerated', vdCaptureWidthMismatch(caps([
+    { label: 'v0', viewportW: 1486 }, { label: 'v1', viewportW: 1470 }])), null);
+  ok('a 25px difference is not', !!vdCaptureWidthMismatch(caps([
+    { label: 'v0', viewportW: 1495 }, { label: 'v1', viewportW: 1470 }])), 'past tolerance');
+
+  // Degenerate inputs: this runs inside vdCollectProblems, where a throw takes
+  // the whole report down.
+  eq('no captures', vdCaptureWidthMismatch([]), null);
+  eq('one capture cannot mismatch', vdCaptureWidthMismatch(caps([{ label: 'v0' }])), null);
+  // Must differ on the field the predicate actually uses. My first version of
+  // this case set pageW while both sides still carried an equal viewportW, so
+  // the comparison never reached pageW and the case proved nothing -- removing
+  // the skip filter altogether left the suite green.
+  eq('a skipped capture is not a party to it', vdCaptureWidthMismatch(
+     [capture('v0', { fullPage: fp({ viewportW: 1900, pageW: 1900 }) }),
+      Object.assign(capture('v1', { fullPage: fp({ viewportW: 1470 }) }), { skipped: true })]), null);
+  eq('a failed capture is excluded', vdCaptureWidthMismatch(
+     [capture('v0', { fullPage: fp({ pageW: 1693 }) }),
+      capture('v1', { fullPage: { error: 'capture failed' } })]), null);
+  ok('null is tolerated', vdCaptureWidthMismatch(null) === null);
+})();
+
+(function captureWidthParityIsReported() {
+  // End to end: the error, and the disclaimer that cross-references it. The
+  // comment in vdCollectProblems promised this check for two commits and it was
+  // never written -- so the redesign disclaimer said "most likely the
+  // capture-width mismatch above" with nothing above it.
+  var fpBad = function (w, h) { return { pageW: w, pageH: 9000, capturedH: 8000,
+    truncated: true, viewportH: h, viewportW: null, geometryPinned: false }; };
+  var probs = vdCollectProblems(abSections(
+    [capture('v0', { fullPage: fpBad(1693, 1281) }), capture('v1', { fullPage: fpBad(1470, 802) })],
+    [{ label: 'v1', diffMode: 'redesign', matchedFraction: 0.124, structuralStats: {} }]));
+  var hit = probs.filter(function (x) { return /Captured at different widths/.test(x.detail); });
+  eq('the width mismatch is reported, once', hit.length, 1);
+  eq('  at error severity, unlike its warn-level scale sibling', hit.length ? hit[0].severity : null, 'error');
+  ok('  naming both widths', hit.length && /1693px/.test(hit[0].detail) && /1470px/.test(hit[0].detail), hit[0]);
+  ok('  and saying the comparison is void, not that it is a redesign',
+     hit.length && /void/.test(hit[0].detail) && /not a redesign/.test(hit[0].detail), hit[0]);
+  ok('  and calling out the missing geometry pin',
+     hit.length && /not pinned/.test(hit[0].detail), hit[0]);
+  var dis = probs.filter(function (x) { return /wholesale redesign/.test(x.detail); });
+  eq('the redesign warning is still emitted', dis.length, 1);
+  ok('  but now caveated, and its cross-reference is satisfied',
+     dis.length && /capture-width mismatch above/.test(dis[0].detail), dis[0]);
+
+  // And the converse: equal widths leave the redesign verdict standing alone.
+  var clean = vdCollectProblems(abSections(
+    [capture('v0', { fullPage: fpBad(2936, 1281) }), capture('v1', { fullPage: fpBad(2936, 1225) })],
+    [{ label: 'v1', diffMode: 'redesign', matchedFraction: 0.243, structuralStats: {} }]));
+  eq('a real redesign reports no width mismatch',
+     clean.filter(function (x) { return /Captured at different widths/.test(x.detail); }).length, 0);
+  var cd = clean.filter(function (x) { return /wholesale redesign/.test(x.detail); });
+  eq('  and its redesign warning stands', cd.length, 1);
+  ok('  uncaveated', cd.length && !/capture-width mismatch above/.test(cd[0].detail), cd[0]);
+
+  // ONE predicate, two callers. The disclaimer used to derive the comparison
+  // inline; a hand-copied predicate two callers must agree on is how the badge
+  // ladder inverted.
+  var fn = _pu.slice(_pu.indexOf('function vdCollectProblems(sections)'),
+                     _pu.indexOf('function buildDebugLog(sections)'));
+  eq('the disclaimer reuses the predicate rather than re-deriving it',
+     /const geomBad = !!vpBad;/.test(fn), true);
+  ok('  and nothing compares viewportW inline any more',
+     !/c\.fullPage\.viewportW !== baseCap/.test(fn), 'inline comparison is back');
+})();
 
 (function designReferenceDiagnostics() {
   // Two real debugging rounds were spent on the WOW-1160 runs because the

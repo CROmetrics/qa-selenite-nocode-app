@@ -30,6 +30,10 @@ function slicePopup(from, to) {
   return _pu.slice(a, b);
 }
 eval(slicePopup('function vdUnmetRequirements(v) {', '\n// The pages this run actually tested'));
+// Capture parity. Sliced separately because it sits above that block, next
+// to vdScaleMismatch — its sibling on the other capture-parity axis.
+eval(slicePopup('function vdCaptureWidthMismatch(captures, tolPx) {',
+                'function vdScaleMismatch(sc) {'));
 
 var RUNS = JSON.parse(readFile('fixtures-real-runs.json'));
 
@@ -43,6 +47,9 @@ var RUNS = JSON.parse(readFile('fixtures-real-runs.json'));
 // to check the reordering rule against real pages is to feed the recorded
 // clusters back through the predicate, which is what this does.
 var CLUSTERS = JSON.parse(readFile('fixtures-real-clusters.json'));
+// Capture geometry per run — the only fixture that can exercise capture PARITY,
+// which is a property of the capture set and invisible in the verdict projection.
+var CAPTURES = JSON.parse(readFile('fixtures-real-captures.json'));
 
 var pass = 0, fail = 0, failures = [];
 function ok(name, cond, detail) {
@@ -376,6 +383,66 @@ section('fixture entries that the shipped code can no longer reproduce');
   print('    NOTE: 1788538681655.requirements is a PRE-FIX projection — the shipped');
   print('          extractor yields 1 requirement for that spec, not 0. Re-run TB-1078');
   print('          to replace it; do not hand-edit a number in.');
+})();
+
+section('capture width parity across every recorded run');
+(function captureParityOnRealRuns() {
+  // The guard is only worth anything if it fires on the real failure and stays
+  // silent on every real success. Both halves are asserted here from the
+  // recorded capture geometry, because a predicate validated on synthetic
+  // fixtures alone is how this project has shipped green bugs before.
+  if (typeof vdCaptureWidthMismatch !== 'function') {
+    ok('vdCaptureWidthMismatch is available to this suite', false); return;
+  }
+  var ids = Object.keys(CAPTURES).sort();
+  ok('there are recorded capture sets', ids.length > 20, ids.length);
+  var fired = [], subFloorQuiet = 0;
+  ids.forEach(function (rid) {
+    var run = CAPTURES[rid];
+    var m = vdCaptureWidthMismatch(run.captures);
+    if (m) {
+      fired.push(rid + ':' + m.field + ':' + m.base.fullPage[m.field]
+                 + '->' + m.offenders.map(function (c) { return c.fullPage[m.field]; }).join(','));
+    } else if (run.worstMatchedFraction != null && run.worstMatchedFraction < 0.5) {
+      subFloorQuiet++;
+    }
+  });
+  // Exactly one run on record was captured at two widths: Control 1693px and
+  // all three variants 1470px. Its comparisons collapsed to 12-14% matched and
+  // were reported as a wholesale redesign.
+  eq('exactly one recorded run has a width mismatch', fired.length, 1);
+  eq('  and it is the run with the known window change',
+     fired[0], '1787604099659:pageW:1693->1470,1470,1470');
+  // Specificity is the half that matters most: the ondeck runs sit at 24.3%
+  // matched because ENOC-97 genuinely is a "Full Rebuild", and their widths
+  // agree to the pixel. If the guard fired on those it would relabel every real
+  // redesign as a capture fault.
+  ok('  and every OTHER sub-floor run stays quiet', subFloorQuiet > 15, subFloorQuiet);
+  // The fixture carries viewportH precisely so this can be asserted from real
+  // data: heights vary benignly between captures (the 99.6%-matching zapier run
+  // records 1281/1225/1281/1225), so a predicate that measured height would
+  // void healthy runs. Counted from the corpus, not assumed.
+  var hSpread = [];
+  ids.forEach(function (rid) {
+    var hs = CAPTURES[rid].captures
+      .filter(function (c) { return c.fullPage && c.fullPage.viewportH != null; })
+      .map(function (c) { return c.fullPage.viewportH; });
+    if (hs.length > 1 && Math.max.apply(null, hs) - Math.min.apply(null, hs) > VD_VIEWPORT_TOL_PX) {
+      hSpread.push(rid + ':' + (Math.max.apply(null, hs) - Math.min.apply(null, hs)));
+    }
+  });
+  // Two runs on record vary in height beyond tolerance, and they are the whole
+  // argument for excluding the axis: one is the broken run (535px) and the other
+  // is the 99.6%-matching healthy run (56px). A predicate measuring height
+  // cannot tell them apart, so it would void a good run to catch a bad one.
+  eq('exactly two recorded runs vary in HEIGHT beyond tolerance',
+     hSpread.join(' '), '1787604099659:535 1787605375396:56');
+  eq('  and only ONE of them is a width mismatch — height cannot discriminate',
+     fired.length, 1);
+  print('    height varies beyond tolerance in ' + hSpread.length
+        + ' run(s) (one broken, one at 99.6% matched) and is correctly ignored');
+  print('    1 of ' + ids.length + ' recorded runs has a width mismatch; '
+        + subFloorQuiet + ' sub-floor run(s) correctly left alone');
 })();
 
 section('the badge is ONE implementation, not a copy per caller');

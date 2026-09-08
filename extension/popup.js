@@ -5253,6 +5253,45 @@ function vdIsMirrorVariant(v) {
 // anything outside [0.5, 4] to 1, so two genuinely divergent bitmaps can both
 // report a tidy 1. That subtlety is why a mismatched run 64 seconds after a
 // clean one produced a byte-identical `problems` list and went unnoticed.
+// Were these captures taken at the same width? A responsive page laid out at
+// two widths is two layouts, not two variants -- the diff still completes and
+// still reports a finding count, it is just measuring the wrong thing. Run
+// 1787604099659 did exactly this: Control 1693px wide, all three variants
+// 1470px, every comparison collapsed to ~13% matched, and all three were
+// reported as "a wholesale redesign". The same page 21 minutes later, one
+// window, matched 99.6%.
+//
+// WIDTH ONLY. Height is not a parity signal and measuring it would fire this
+// error on healthy runs: the 99.6% run above carries viewportH 1281/1225/1281/
+// 1225, a benign 56px spread from window chrome, while its widths are identical
+// to the pixel. Vertical extent is also the thing a variant is entitled to
+// change.
+//
+// viewportW is the authoritative field -- it is the harness's own quantity,
+// which nothing on the page may vary -- but it only exists in logs after the
+// geometry pin shipped, and the one recorded failure predates it. So fall back
+// to pageW, which every capture on record carries and which caught that run.
+// The two are never mixed: comparing one side's viewportW against the other's
+// pageW would compare unrelated numbers.
+//
+// One implementation, two callers -- the error and the redesign disclaimer.
+// Both used to derive this inline, and a hand-copied predicate that two callers
+// must agree on is how the badge ladder inverted.
+function vdCaptureWidthMismatch(captures, tolPx) {
+  const tol = tolPx == null ? VD_VIEWPORT_TOL_PX : tolPx;
+  const usable = (captures || []).filter(c =>
+    c && !c.skipped && c.fullPage && !c.fullPage.error);
+  if (usable.length < 2) return null;
+  const field = usable.every(c => c.fullPage.viewportW != null) ? 'viewportW'
+              : usable.every(c => c.fullPage.pageW != null) ? 'pageW'
+              : null;
+  if (!field) return null;
+  const base = usable[0];
+  const offenders = usable.slice(1).filter(c =>
+    Math.abs(c.fullPage[field] - base.fullPage[field]) > tol);
+  return offenders.length ? { base, offenders, field } : null;
+}
+
 function vdScaleMismatch(sc) {
   if (!sc) return false;
   const rawC = sc.controlImage?.w && sc.pageW?.control ? sc.controlImage.w / sc.pageW.control : null;
@@ -6381,7 +6420,30 @@ function vdCollectProblems(sections) {
     // completes and still reports a finding count, it is just measuring the
     // wrong thing. A real run did exactly this (Control 1693px, variants
     // 1470px) and read as a clean 2-finding result.
-    const baseCap = (entry.data.captures || []).find(c => c.fullPage && !c.fullPage.error);
+    // This is that check. It was described here for two commits and never
+    // written: a `baseCap` was computed and used only by the redesign
+    // disclaimer further down, which is a `warn` appended to a sentence about
+    // the experiment -- and that disclaimer cross-referenced "the capture-width
+    // mismatch above", a problem nothing emitted. A reader got "most likely the
+    // capture-width mismatch above" with nothing above it.
+    const vpBad = vdCaptureWidthMismatch(entry.data.captures);
+    if (vpBad) {
+      const wide = (c) => `${c.fullPage[vpBad.field]}px`;
+      // `error`, unlike its sibling vdScaleMismatch which is deliberately
+      // `warn`. That one costs one optional metric; this one invalidates every
+      // element-by-element result in the run -- 3 of 3 comparisons on
+      // 1787604099659 came back as wholesale redesigns that were not redesigns.
+      add('error', `capture/${vpBad.offenders.map(c => c.label).join(',')}`,
+        `Captured at different widths — "${vpBad.base.label}" at ${wide(vpBad.base)}, `
+        + vpBad.offenders.map(c => `"${c.label}" at ${wide(c)}`).join(', ')
+        + '. A responsive page laid out at two widths is two layouts, not two variants, so the'
+        + ' element-by-element comparison below is void however clean it looks — a low match rate'
+        + ' here is this mismatch, not a redesign. Usually a window resized or moved between'
+        + ' captures; re-run with the window left alone.'
+        + (vpBad.offenders.some(c => !c.fullPage.geometryPinned)
+            ? ' Note the offending capture(s) were not pinned to the baseline viewport, which is what would normally prevent this.'
+            : ''));
+    }
     for (const c of entry.data.captures || []) {
       if (c.skipped) add('warn', `capture/${c.label}`, `Not captured — ${c.reason || 'run stopped'}`);
       // Which variation the platform actually served. Reported per capture
@@ -6490,11 +6552,7 @@ function vdCollectProblems(sections) {
         // Viewport, not content width — same reason as the validator above.
         // A redesign verdict caused by comparing two different LAYOUTS is the
         // exact case this disclaimer exists for, and pageW cannot see it.
-        const geomBad = (entry.data.captures || []).some(c =>
-          baseCap && c.fullPage && !c.fullPage.error && c !== baseCap
-          && c.fullPage.viewportW != null && baseCap.fullPage.viewportW != null
-          && (c.fullPage.viewportW !== baseCap.fullPage.viewportW
-              || c.fullPage.viewportH !== baseCap.fullPage.viewportH));
+        const geomBad = !!vpBad;
         add('warn', at, `Only ${Math.round((v.matchedFraction || 0) * 100)}% of elements matched — treated as a wholesale redesign and rolled up per region, not compared element by element.`
           + (geomBad ? ' This is most likely the capture-width mismatch above rather than a real redesign — fix that and re-run before reading anything into it.' : ''));
       }

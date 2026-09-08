@@ -38,6 +38,17 @@
   // both full-page screenshots instead of an element-by-element list.
   const VD_REDESIGN_MATCH_FLOOR = 0.5;
 
+  // How far two captures' viewports may differ before the comparison is void.
+  // A responsive page laid out at two widths is two layouts, not two variants.
+  //
+  // NOT calibrated from the corpus, and saying so matters: of 52 recorded runs,
+  // 51 have every capture at an identical viewport and the one bad run differs
+  // by 223px, so any threshold between 1 and 222 scores the same. The value is
+  // reasoned instead -- a vertical scrollbar appearing on one side and not the
+  // other legitimately moves cssVisualViewport.clientWidth by ~15-17px, and 24
+  // clears that plus rounding without admitting a real layout change.
+  const VD_VIEWPORT_TOL_PX = 24;
+
   // ── Cascade / shift suppression (vd-diff.js) ──────────────────────────────
   // Real reflow is piecewise constant, not a single global shift — these
   // drive vdDeriveShiftSegments's run-length segmentation of Δy across
@@ -110,6 +121,7 @@
   g.VD_FUZZY_THRESHOLD = VD_FUZZY_THRESHOLD;
   g.VD_FUZZY_MAX_PAIRS = VD_FUZZY_MAX_PAIRS;
   g.VD_REDESIGN_MATCH_FLOOR = VD_REDESIGN_MATCH_FLOOR;
+  g.VD_VIEWPORT_TOL_PX = VD_VIEWPORT_TOL_PX;
   g.VD_SHIFT_TOL_PX = VD_SHIFT_TOL_PX;
   g.VD_SHIFT_MIN_RUN = VD_SHIFT_MIN_RUN;
   g.VD_MOVE_MIN_PX = VD_MOVE_MIN_PX;

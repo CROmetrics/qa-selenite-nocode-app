@@ -5467,16 +5467,51 @@ function vdVariantClean(v) {
 // `extraIssues` lets rptAbSection fold in its own totalDeltas without a second
 // ladder. `errCount` is its capture-level errors, which are separate from
 // vv.failed (a visual-diff throw) and outrank everything.
+// THE BADGE IS DETERMINISTIC. No rung reads a model grade.
+//
+// It used to: the ISSUES FOUND rung read `vv.issues`, which is
+// `unmetCopy + needsReview`, and needsReview is unexpected+unclear — the model's
+// opinion. Measured over the 52 recorded runs, that made the one sentence a
+// reader takes away depend on when the button was pressed:
+//
+//   13 runs of ONE ondeck comparison, deterministic half hash-identical
+//   (same finding ids, classes, texts, matchedFraction, suppressionAggregate):
+//       grade vectors  eeeeeee x3   eeueeee x7   eeueeue x1   eeeeeue x1
+//       badge          PASS x3      ISSUES FOUND x10
+//   Two of those intervals were 57s and 11min apart with no commit between.
+//
+// Corpus-wide, 34 of 49 comparable runs had a badge resting entirely on the
+// model, and 33 of 43 ISSUES FOUND runs had zero `unexpected` findings — the
+// badge was `unclear` alone. Grouping every recorded run by identical
+// DETERMINISTIC state gives 7 families of repeat runs: the old ladder is
+// irreproducible in 1 of them, this one in 0.
+//
+// So ISSUES FOUND now means a reproducible fact — a copy string the spec asked
+// for is not on the page, or the A/B section's own page-basics/metric deltas.
+// NEEDS REVIEW means differences exist and a human has to look; the count of
+// findings is deterministic even though every grade on them is not. PASS is now
+// reserved for a run with NO differences at all, which is why no recorded run
+// badges PASS: not one of them has zero findings. That is the honest reading.
+//
+// The grades still drive the report's grouping and ordering, and the expected
+// group already carries "both measured to move between runs on a byte-identical
+// prompt" — this stops the headline contradicting that sentence.
+//
+// ORDER: the deterministic-issues rung stays ABOVE `ungraded`. f35bd5d fixed the
+// inversion where one omitted finding out of 67 relabelled a variant NOT GRADED
+// and buried 4 copy misses; that lesson survives the change and is pinned.
 function vdBadgeLabel(vv, opts) {
   const o = opts || {};
   if (o.errCount) return 'FAIL';
   if (vv.failed) return 'FAILED';
   if (vv.notCompared || vv.notServed) return 'NOT COMPARED';
-  if (o.extraIssues || vv.issues) return 'ISSUES FOUND';
+  if (o.extraIssues || vv.unmetCopy) return 'ISSUES FOUND';
   if (vv.ungraded) return 'NOT GRADED';
   if (vv.notRun) return 'INCOMPLETE';
-  // PASS is EARNED, never fallen into. o.allowNotRan covers rptAbSection, whose
-  // badge must still resolve when no visual diff ran at all.
+  if (vv.findings) return 'NEEDS REVIEW';
+  // PASS is EARNED, never fallen into, and now also means "nothing differed".
+  // o.allowNotRan covers rptAbSection, whose badge must still resolve when no
+  // visual diff ran at all.
   if (vv.allClean || (o.allowNotRan && !vv.ran)) return 'PASS';
   return 'INCONCLUSIVE';
 }
@@ -5487,6 +5522,9 @@ function vdBadgeLabel(vv, opts) {
 function vdBadgeKind(label) {
   if (label === 'PASS') return 'pass';
   if (label === 'FAIL' || label === 'FAILED' || label === 'NOT COMPARED') return 'fail';
+  // NEEDS REVIEW lands here with ISSUES FOUND / NOT GRADED / INCOMPLETE /
+  // INCONCLUSIVE. Amber is right: something is outstanding but nothing has been
+  // established as wrong.
   return 'issues';
 }
 
@@ -5563,9 +5601,11 @@ function vdVerdict(vd) {
     failed,
     notRun,
     allClean,
-    // BADGE PREDICATE ONLY — never render this as a total. It is exactly the
-    // double-counted sum described above; it exists so a caller can ask "is
-    // either half non-zero?" in one place.
+    // NO LONGER THE BADGE PREDICATE, and never renderable as a total: it is
+    // exactly the double-counted sum described above. vdBadgeLabel deliberately
+    // does NOT read this any more, because needsReview is the model's opinion and
+    // the badge must not move on a re-run. Kept because it answers "is either
+    // half non-zero?" in one place for callers that legitimately want that.
     issues: unmetCopy + needsReview,
     findings: perVariant.reduce((n, v) =>
       n + (vdIsMirrorVariant(v) ? (v.findingCount || 0) : (v.findings || []).length), 0) + shared.length,

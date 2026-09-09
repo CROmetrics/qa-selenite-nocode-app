@@ -490,6 +490,48 @@ section('capture width parity across every recorded run');
         + subFloorQuiet + ' sub-floor run(s) correctly left alone');
 })();
 
+section('the badge cannot move with the model, on every recorded run');
+(function badgeIsDeterministicOnRealRuns() {
+  // The reproducibility guarantee, from real data rather than synthetic shapes.
+  // Two claims:
+  //   1. On every recorded run, re-badging with a different grade vector gives
+  //      the same badge. That is what makes a re-run trustworthy.
+  //   2. Runs sharing an identical DETERMINISTIC state share a badge. Before
+  //      this change one family of 12 recorded runs did not: the ondeck
+  //      7-finding comparison badged ISSUES FOUND x9 / PASS x3 on a
+  //      hash-identical deterministic half.
+  var fams = {}, moved = [];
+  ids.forEach(function (rid) {
+    var run = RUNS[rid];
+    var vv = vdVerdict(run);
+    var badge = vdBadgeLabel(vv, {});
+    // Perturb ONLY the model half. needsReview is unexpected+unclear and
+    // allClean falls the moment a finding is not 'expected', so they move
+    // together with the grades and nothing else here does.
+    [0, 1, 2, 99].forEach(function (nr) {
+      var alt = vdBadgeLabel(Object.assign({}, vv, {
+        needsReview: nr, issues: nr + vv.unmetCopy, allClean: nr === 0 && vv.allClean }), {});
+      if (alt !== badge) moved.push(rid + ': ' + badge + ' -> ' + alt + ' at needsReview=' + nr);
+    });
+    var key = [vv.findings, vv.unmetCopy, vv.ungraded, vv.notServed,
+               vv.notCompared, vv.failed, vv.notRun, vv.ran].join('|');
+    (fams[key] = fams[key] || { badges: {}, n: 0 });
+    fams[key].badges[badge] = true; fams[key].n++;
+  });
+  eq('no recorded run changes badge when the grade vector changes', moved.join('; '), '');
+
+  var repeats = 0, split = [];
+  Object.keys(fams).forEach(function (k) {
+    if (fams[k].n < 2) return;
+    repeats++;
+    var b = Object.keys(fams[k].badges);
+    if (b.length > 1) split.push(k + ' -> ' + b.join('/'));
+  });
+  ok('there are families of runs sharing a deterministic state', repeats > 0, repeats);
+  eq('  and every one of them badges identically', split.join('; '), '');
+  print('    ' + repeats + ' family(ies) of runs share a deterministic state; all badge identically');
+})();
+
 section('the badge is ONE implementation, not a copy per caller');
 // Both sections must call vdBadgeLabel. Every previous test and harness I wrote
 // hardcoded its own copy of the order and so validated my intent, not the code.

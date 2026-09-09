@@ -584,7 +584,11 @@ function item(status, required, opts) {
   // reason. A missing quoted requirement must badge regardless.
   var allExpected = [rollup('section', 'expected'), rollup('footer', 'expected')];
   var clean = withReq(reqSet([item('verbatim', 'All present')]), allExpected);
-  ok('all requirements met and nothing unexpected badges PASS', /PASS/.test(clean), clean.slice(0, 300));
+  // NEEDS REVIEW, not PASS. The badge no longer reads a grade, so "every finding
+  // graded expected" is not a clearance — two differences exist and a human has
+  // to look at them. PASS is now reserved for a run with no differences at all.
+  ok('all requirements met and every finding expected still NEEDS REVIEW',
+     /NEEDS REVIEW/.test(clean), clean.slice(0, 300));
   var unmetRun = withReq(reqSet([
     item('verbatim', 'All present'),
     item('absent', 'Repayment terms up to 24 months'),
@@ -595,7 +599,8 @@ function item(status, required, opts) {
     item('verbatim', 'All present'),
     item('near', 'A long specified sentence that continues', { fragment: true, foundText: 'A long specified sentence' }),
   ]), allExpected);
-  ok('a fragment alone does NOT badge', /PASS/.test(fragmentRun), fragmentRun.slice(0, 300));
+  ok('a fragment alone does NOT badge ISSUES FOUND',
+     !/ISSUES FOUND/.test(fragmentRun) && /NEEDS REVIEW/.test(fragmentRun), fragmentRun.slice(0, 300));
 })();
 
 (function noRequirementsIsSilent() {
@@ -605,7 +610,7 @@ function item(status, required, opts) {
   ok('no requirements renders no coverage line', !/Specified copy:/.test(none));
   var empty = withReq({ total: 0, verbatim: 0, near: 0, absent: 0, items: [] });
   ok('a zero-total requirement set renders no coverage line', !/Specified copy:/.test(empty));
-  ok('  and still badges PASS', /PASS/.test(empty), empty.slice(0, 300));
+  ok('  and does not raise ISSUES FOUND', !/ISSUES FOUND/.test(empty), empty.slice(0, 300));
 })();
 
 // ── 4b. redesign mode's two tiers must be distinguishable ──────────────────
@@ -1215,7 +1220,9 @@ section('a run that was not validly compared must never badge PASS');
   // A clean run is untouched.
   var clean = verdictOf({});
   eq('a served variant is not counted', clean.notServed, 0);
-  eq('  and still passes', vdBadgeLabel(clean, {}), 'PASS');
+  // Its findings are graded expected, so this reads NEEDS REVIEW now — the point
+  // here is only that notServed did not fire, which the count above asserts.
+  eq('  and is not marked not-compared', vdBadgeLabel(clean, {}), 'NEEDS REVIEW');
   eq('  with no not-served clause in the summary',
      /served no variation/.test(vdVerdictSummary(clean)), false);
 
@@ -1362,8 +1369,41 @@ section('a run that was not validly compared must never badge PASS');
   // Precedence, top to bottom.
   eq('an errored variant outranks everything', at({ failed: 1, notCompared: 1, issues: 9, ungraded: 9 }), 'FAILED');
   eq('a control duplicate outranks issues', at({ notCompared: 1, issues: 9, ungraded: 9 }), 'NOT COMPARED');
-  // THE REGRESSION: real issues must outrank a partial grading gap.
-  eq('real issues outrank a grading gap', at({ issues: 4, ungraded: 1, allClean: false }), 'ISSUES FOUND');
+  // THE REGRESSION: real issues must outrank a partial grading gap. Stated on
+  // `unmetCopy`, which is what the deterministic rung reads — `issues` mixes in
+  // the model's needsReview and the badge deliberately no longer touches it.
+  // f35bd5d's lesson is unchanged: one omitted finding out of 67 must not
+  // relabel a variant NOT GRADED and bury 4 real copy misses.
+  eq('real issues outrank a grading gap',
+     at({ unmetCopy: 4, ungraded: 1, findings: 67, allClean: false }), 'ISSUES FOUND');
+  eq('  and `issues` alone no longer badges anything — it is not read',
+     at({ issues: 9, findings: 0, allClean: false }), 'INCONCLUSIVE');
+
+  // ── the property the whole change exists for ──────────────────────────────
+  // With differences present, the badge must be independent of every grade on
+  // them. Measured on real data before this change: 13 runs of one ondeck
+  // comparison, deterministic half hash-identical, badge PASS x3 /
+  // ISSUES FOUND x10 — two of the intervals 57s and 11min apart.
+  var vectors = [0, 1, 2, 6, 7, 67];
+  var badges = {};
+  vectors.forEach(function (nr) {
+    // needsReview is unexpected+unclear; allClean goes false the moment any
+    // finding is not 'expected', so both move together with the grade vector.
+    badges[nr] = at({ findings: 7, needsReview: nr, issues: nr, allClean: nr === 0 });
+  });
+  eq('the badge does not move with the grade vector',
+     Object.keys(badges).map(function (k) { return badges[k]; }).join(','),
+     'NEEDS REVIEW,NEEDS REVIEW,NEEDS REVIEW,NEEDS REVIEW,NEEDS REVIEW,NEEDS REVIEW');
+
+  // ...while a DETERMINISTIC fact still moves it, or the badge would say nothing.
+  eq('a reproducible copy miss does move it',
+     at({ findings: 7, needsReview: 0, unmetCopy: 1, allClean: false }), 'ISSUES FOUND');
+  eq('an unjudged finding does move it',
+     at({ findings: 7, needsReview: 0, ungraded: 1, allClean: false }), 'NOT GRADED');
+
+  // PASS now means "nothing differed", not "the model blessed everything".
+  eq('findings with perfect grades are NOT a pass', at({ findings: 1, allClean: true }), 'NEEDS REVIEW');
+  eq('  only zero differences is', at({ findings: 0, allClean: true }), 'PASS');
   eq('a grading gap alone is NOT GRADED', at({ ungraded: 67, allClean: false }), 'NOT GRADED');
   eq('a stopped variant is INCOMPLETE', at({ notRun: 1, allClean: false }), 'INCOMPLETE');
   eq('a positively clean run is PASS', at({}), 'PASS');

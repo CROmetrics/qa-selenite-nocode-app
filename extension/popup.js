@@ -5442,12 +5442,39 @@ function vdVariantIssueCount(v) {
 // PASS. Adding a rung per state fixes the instance and leaves the class. Now an
 // unrecognised state cannot reach PASS, because PASS requires this to return
 // true rather than requiring the known counters to be zero.
+// Did a deterministic comparison actually COMPLETE for this variant?
+//
+// vdVariantClean below was a chain of NEGATIVE tests -- the absence of the known
+// failure flags -- so every result shape the main loop did not build was clean by
+// default. Measured: vdVariantClean({}) and vdVariantClean({label: 'v1'}) both
+// returned true, and the resume path pushes exactly such a shape (label,
+// resumed, findings, overallSummary, pixelDiff -- no diffMode, no
+// matchedFraction, and no `requirements`, so the one byte-reproducible half of
+// the verdict silently read zero).
+//
+// diffMode and matchedFraction are the token for three reasons: only the
+// deterministic pass produces them; they are already present on every completed
+// shape INCLUDING the Test-Agent mirror, which carries both deliberately; and
+// they are recorded in every debug log, so this is derivable on the historical
+// corpus rather than needing a stamp no old run can have.
+//
+// This inverts the default. A shape nobody anticipated is now NOT clean, which
+// is what the comment above the old ladder always claimed and the code did not
+// do.
+function vdVariantChecked(v) {
+  return !!v && typeof v.diffMode === 'string' && typeof v.matchedFraction === 'number';
+}
+
 function vdVariantClean(v) {
   if (!v) return false;
   if (v.skipped || v.error) return false;          // never compared
   if (v.controlDuplicate) return false;            // compared against itself
   if (v.notServed) return false;                   // the page served no variation
   if (v.gradingFailed) return false;               // compared, never judged
+  // Below the named failures on purpose: those give a better-specified answer
+  // when they apply. This one catches everything else -- no completed
+  // deterministic pass, nothing to call clean.
+  if (!vdVariantChecked(v)) return false;
   if (vdIsMirrorVariant(v)) {
     return (v.unexpectedCount || 0) === 0 && (v.unclearCount || 0) === 0
         && (v.noVerdictCount || 0) === 0 && (v.unmetCopyCount || 0) === 0;
@@ -5553,8 +5580,19 @@ function vdVerdict(vd) {
   // this comment block has always said neither section may show for a
   // comparison that did not happen.
   //
-  // So: bail only when there is genuinely nothing to account for.
-  if (!perVariant.length) return none;
+  // So: bail only when there is genuinely nothing to account for -- and
+  // "nothing to account for" means Visual Diff was never requested, NOT that it
+  // was requested and could not proceed. runVisualDiffPipeline's bail() returns
+  // `{ skipped: true, reason }` with no perVariant at all, which shared the
+  // `none` shape with "Visual Diff was off" and so was byte-identical to it for
+  // every caller -- landing rptAbSection's allowNotRan clause on a green PASS
+  // over, for instance, "Control failed to load or capture -- nothing to
+  // compare against."
+  if (!perVariant.length) {
+    return (vd.skipped || vd.reason)
+      ? Object.assign({}, none, { ran: true, notCompared: 1 })
+      : none;
+  }
   if (vd.skipped && !perVariant.some(v => v.controlDuplicate)) return none;
   const shared = vd.sharedFindings || [];
   // Shared changes were lifted out of every variant, so they must be counted

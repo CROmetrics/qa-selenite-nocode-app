@@ -490,6 +490,31 @@ section('capture width parity across every recorded run');
         + subFloorQuiet + ' sub-floor run(s) correctly left alone');
 })();
 
+section('every real comparison carries its completion token');
+(function completionTokenOnRealRuns() {
+  // The false-negative guard. vdVariantClean now requires POSITIVE evidence that
+  // a deterministic pass completed, so the risk this introduces is the opposite
+  // of the one it fixes: a real, validly-compared variant wrongly marked
+  // unclean. Measured here rather than argued — every LIVE variant on record
+  // must carry the token.
+  if (typeof vdVariantChecked !== 'function') { ok('vdVariantChecked is available', false); return; }
+  var live = 0, missing = [], notLive = 0;
+  ids.forEach(function (rid) {
+    (RUNS[rid].perVariant || []).forEach(function (v) {
+      if (v.skipped || v.error || v.controlDuplicate) { notLive++; return; }
+      live++;
+      if (!vdVariantChecked(v)) missing.push(rid + '/' + v.label);
+    });
+  });
+  ok('there are live comparisons on record', live > 20, live);
+  eq('every live comparison carries the completion token', missing.join(', '), '');
+  // And the converse, so the token is not vacuously true: the shapes that are
+  // NOT live are exactly the ones allowed to lack it.
+  ok('  while non-live variants exist to contrast against', notLive > 0, notLive);
+  print('    ' + live + ' live comparison(s) all carry diffMode+matchedFraction; '
+        + notLive + ' skipped/errored/duplicate variant(s) contrast');
+})();
+
 section('the badge cannot move with the model, on every recorded run');
 (function badgeIsDeterministicOnRealRuns() {
   // The reproducibility guarantee, from real data rather than synthetic shapes.

@@ -865,6 +865,11 @@ function vdOf(over) {
     perVariant: [Object.assign({
       label: 'v1', structuralStats: {}, noSpecText: false,
       findings: [], requirements: null,
+      // The completion token vdVariantChecked reads. A helper that stands for
+      // "a comparison happened" has to carry the evidence that one did, or
+      // every test built on it asserts against a shape production never makes.
+      // Its ABSENCE is covered on purpose in passRequiresPositiveEvidence.
+      diffMode: 'normal', matchedFraction: 0.99,
     }, (over || {}).variant || {})],
   }, (over || {}).vd || {});
 }
@@ -909,7 +914,15 @@ function vdOf(over) {
 
   // Not run / skipped / empty must be distinguishable from "ran and was clean".
   eq('no visual diff at all did not run', vdVerdict(undefined).ran, false);
-  eq('a skipped one did not run', vdVerdict({ skipped: true, perVariant: [] }).ran, false);
+  // A pipeline that bailed DID run — it just could not compare. Sharing the
+  // `none` shape with "Visual Diff was off" is what let allowNotRan badge PASS
+  // over "Control failed to load or capture".
+  eq('a skipped one with a reason RAN and is not compared',
+     vdVerdict({ skipped: true, reason: 'Control failed to capture', perVariant: [] }).ran, true);
+  eq('  and reports notCompared',
+     vdVerdict({ skipped: true, reason: 'x', perVariant: [] }).notCompared, 1);
+  eq('a bare skipped flag counts the same way',
+     vdVerdict({ skipped: true, perVariant: [] }).ran, true);
   eq('  and reports nothing', vdVerdict({ skipped: true }).issues, 0);
   eq('  on both halves', vdVerdict({ skipped: true }).needsReview + vdVerdict({ skipped: true }).unmetCopy, 0);
   eq('an empty perVariant did not run', vdVerdict({ perVariant: [] }).ran, false);
@@ -1097,9 +1110,13 @@ section('a run that was not validly compared must never badge PASS');
   eq('both duplicates are reported as not compared', v.notCompared, 2);
   eq('  and the verdict is NOT treated as "did not run"', v.ran, true);
 
-  // A genuinely skipped run with nothing to account for still returns none.
-  eq('a skipped run with an empty perVariant did not run',
-     vdVerdict({ skipped: true, perVariant: [] }).ran, false);
+  // "Nothing to account for" means Visual Diff was never requested — NOT that it
+  // was requested and stopped. Only an absent vd is the former.
+  eq('no visual diff object at all did not run', vdVerdict(undefined).ran, false);
+  eq('an empty perVariant with no skip/reason did not run',
+     vdVerdict({ perVariant: [] }).ran, false);
+  eq('a skipped run with an empty perVariant DID run and is not compared',
+     vdVerdict({ skipped: true, perVariant: [] }).notCompared, 1);
   eq('a skipped run with no duplicates did not run',
      vdVerdict({ skipped: true, perVariant: [{ label: 'v1', skipped: true }] }).ran, false);
 })();
@@ -1289,6 +1306,78 @@ section('a run that was not validly compared must never badge PASS');
   eq('  and the badge is not PASS', vdBadgeLabel(real, {}) === 'PASS', false);
 })();
 
+(function passRequiresPositiveEvidence() {
+  // THE INVERSION. vdVariantClean was a chain of NEGATIVE tests, so every result
+  // shape the main loop did not build was clean by default. Measured before this
+  // change: vdVariantClean({}) === true and vdVariantClean({label:'v1'}) === true.
+  //
+  // These cases matter more than usual because vdOf now supplies the completion
+  // token by default — correct for a helper standing in for a completed
+  // comparison, but it means the token's ABSENCE is covered here and nowhere
+  // else. If this block goes, the inversion is untested.
+  if (typeof vdVariantChecked !== 'function') { ok('vdVariantChecked is exported', false); return; }
+
+  eq('an empty object is not a checked comparison', vdVariantChecked({}), false);
+  eq('  nor is a bare label', vdVariantChecked({ label: 'v1' }), false);
+  eq('  nor is null', vdVariantChecked(null), false);
+  // The real resume shape, field for field (popup.js ~3984). It carries findings
+  // but none of the deterministic outputs — and no `requirements`, so the one
+  // byte-reproducible half of the verdict silently read zero on a resumed run.
+  var resumed = { label: 'v1', resumed: true, fullPageTruncated: false,
+                  findings: [{ classification: 'expected' }], overallSummary: '', pixelDiff: null };
+  eq('the resume shape is not a checked comparison', vdVariantChecked(resumed), false);
+  eq('  so it is not clean either', vdVariantClean(resumed), false);
+  eq('  even though every finding it carries is graded expected',
+     resumed.findings.every(function (f) { return f.classification === 'expected'; }), true);
+
+  // The guard has to reject the unrecognised without rejecting the real thing.
+  eq('a full completed variant is checked',
+     vdVariantChecked({ label: 'v1', diffMode: 'normal', matchedFraction: 0.99, findings: [] }), true);
+  eq('  including redesign mode',
+     vdVariantChecked({ label: 'v1', diffMode: 'redesign', matchedFraction: 0.24, findings: [] }), true);
+  eq('  and the Test-Agent mirror, which carries both fields deliberately',
+     vdVariantChecked({ label: 'v1', diffMode: 'normal', matchedFraction: 0.99, findingCount: 9 }), true);
+  eq('matchedFraction 0 is a real answer, not a missing one',
+     vdVariantChecked({ label: 'v1', diffMode: 'redesign', matchedFraction: 0 }), true);
+  // BOTH fields, not either. A projection that copies one and forgets the other
+  // must not pass — that is the exact class of bug this codebase has shipped six
+  // times (sharedFindingCount, shortDescription, engineNote, note, viewportH,
+  // and the mirror's notServed). Dropping the matchedFraction half of the
+  // conjunction was invisible until these two cases existed.
+  eq('diffMode without matchedFraction is not enough',
+     vdVariantChecked({ label: 'v1', diffMode: 'normal' }), false);
+  eq('  nor matchedFraction without diffMode',
+     vdVariantChecked({ label: 'v1', matchedFraction: 0.99 }), false);
+
+  eq('an unrecognised variant is NOT clean', vdVariantClean({}), false);
+  eq('  nor a bare label', vdVariantClean({ label: 'v1' }), false);
+
+  // End to end: the shapes that used to reach a green PASS.
+  function verdictFor(pv) {
+    return vdVerdict({ baselineLabel: 'v0', sharedFindings: [], perVariant: pv });
+  }
+  var bare = verdictFor([{ label: 'v1' }]);
+  eq('a bare variant is not clean', bare.allClean, false);
+  ok('  and cannot badge PASS', vdBadgeLabel(bare, {}) !== 'PASS', vdBadgeLabel(bare, {}));
+  var res = verdictFor([resumed]);
+  eq('a resumed variant is not clean', res.allClean, false);
+  ok('  and cannot badge PASS', vdBadgeLabel(res, {}) !== 'PASS', vdBadgeLabel(res, {}));
+
+  // bail(): `{ skipped: true, reason }` with NO perVariant. It shared the `none`
+  // shape with "Visual Diff was off", so rptAbSection's allowNotRan clause
+  // returned PASS over "Control failed to load or capture".
+  var bailed = vdVerdict({ skipped: true, reason: 'Control failed to load or capture — nothing to compare against.' });
+  eq('a bailed pipeline reports that it ran', bailed.ran, true);
+  eq('  and that nothing was compared', bailed.notCompared, 1);
+  eq('  so the Visual Diff section badges NOT COMPARED', vdBadgeLabel(bailed, {}), 'NOT COMPARED');
+  eq('  and the A/B section cannot fall through to PASS',
+     vdBadgeLabel(bailed, { allowNotRan: true }), 'NOT COMPARED');
+  // The one shape that legitimately "did not run": no visual diff object at all.
+  eq('Visual Diff switched off still resolves to PASS for the A/B section',
+     vdBadgeLabel(vdVerdict(undefined), { allowNotRan: true }), 'PASS');
+  eq('  and is still distinguishable from a bail', vdVerdict(undefined).ran, false);
+})();
+
 (function everyReasonAVariantIsNotCleanIsChecked() {
   // vdVariantClean is what makes PASS earned instead of fallen-into, so each of
   // its reasons needs its own case. SYNTHETIC on purpose: I regressed each line
@@ -1339,7 +1428,12 @@ section('a run that was not validly compared must never badge PASS');
   function mirrorClean(over) {
     return vdVerdict({ baselineLabel: 'v0', sharedFindings: [], perVariant: [Object.assign(
       { label: 'v1', findingCount: 9, unexpectedCount: 0, unclearCount: 0,
-        noVerdictCount: 0, unmetCopyCount: 0 }, over)] }).allClean;
+        noVerdictCount: 0, unmetCopyCount: 0,
+        // The real Test-Agent mirror carries these two deliberately (popup.js
+        // ~3313), so the mirror branch passes vdVariantChecked exactly as the
+        // full shape does. Without them here the test would assert against a
+        // mirror production does not build.
+        diffMode: 'normal', matchedFraction: 0.99 }, over)] }).allClean;
   }
   eq('a clean mirror is clean', mirrorClean({}), true);
   eq('  an unexpected count is not', mirrorClean({ unexpectedCount: 1 }), false);

@@ -6,6 +6,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [
 {
@@ -23,12 +24,14 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.9904030710172744,
 "noVerdictCount": null,
 "notServed": false,
 "skipped": false
 },
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [
 {
@@ -46,12 +49,14 @@
 ],
 "gradingFailed": null,
 "label": "v2",
+"matchedFraction": 0.9904030710172744,
 "noVerdictCount": null,
 "notServed": false,
 "skipped": false
 },
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [
 {
@@ -69,6 +74,7 @@
 ],
 "gradingFailed": null,
 "label": "v3",
+"matchedFraction": 0.9904030710172744,
 "noVerdictCount": null,
 "notServed": false,
 "skipped": false
@@ -106,6 +112,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [
 {
@@ -126,12 +133,14 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.9847328244274809,
 "noVerdictCount": null,
 "notServed": false,
 "skipped": false
 },
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [
 {
@@ -149,12 +158,14 @@
 ],
 "gradingFailed": null,
 "label": "v2",
+"matchedFraction": 0.9866412213740458,
 "noVerdictCount": null,
 "notServed": false,
 "skipped": false
 },
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [
 {
@@ -172,6 +183,7 @@
 ],
 "gradingFailed": null,
 "label": "v3",
+"matchedFraction": 0.9866412213740458,
 "noVerdictCount": null,
 "notServed": false,
 "skipped": false
@@ -212,6 +224,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [
 {
@@ -232,12 +245,14 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.9828571428571429,
 "noVerdictCount": null,
 "notServed": false,
 "skipped": false
 },
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [
 {
@@ -255,12 +270,14 @@
 ],
 "gradingFailed": null,
 "label": "v2",
+"matchedFraction": 0.9847619047619047,
 "noVerdictCount": null,
 "notServed": false,
 "skipped": false
 },
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [
 {
@@ -281,6 +298,7 @@
 ],
 "gradingFailed": null,
 "label": "v3",
+"matchedFraction": 0.9828571428571429,
 "noVerdictCount": null,
 "notServed": false,
 "skipped": false
@@ -318,6 +336,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [
 {
@@ -335,12 +354,14 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.9945454545454545,
 "noVerdictCount": null,
 "notServed": false,
 "skipped": false
 },
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [
 {
@@ -358,12 +379,14 @@
 ],
 "gradingFailed": null,
 "label": "v2",
+"matchedFraction": 0.9945454545454545,
 "noVerdictCount": null,
 "notServed": false,
 "skipped": false
 },
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [
 {
@@ -381,6 +404,7 @@
 ],
 "gradingFailed": null,
 "label": "v3",
+"matchedFraction": 0.9945454545454545,
 "noVerdictCount": null,
 "notServed": false,
 "skipped": false
@@ -412,6 +436,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "redesign",
 "error": null,
 "findings": [
 {
@@ -618,6 +643,7 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.24285714285714285,
 "noVerdictCount": null,
 "notServed": false,
 "requirements": null,
@@ -634,6 +660,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "redesign",
 "error": null,
 "findings": [
 {
@@ -840,6 +867,7 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.24285714285714285,
 "noVerdictCount": null,
 "notServed": false,
 "requirements": {
@@ -1215,10 +1243,12 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": null,
 "error": "Failed to fetch",
 "findings": [],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": null,
 "noVerdictCount": null,
 "notServed": false,
 "requirements": null,
@@ -1235,6 +1265,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "redesign",
 "error": null,
 "findings": [
 {
@@ -1441,6 +1472,7 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.24285714285714285,
 "noVerdictCount": null,
 "notServed": false,
 "requirements": {
@@ -1816,6 +1848,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "redesign",
 "error": null,
 "findings": [
 {
@@ -2022,6 +2055,7 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.24285714285714285,
 "noVerdictCount": null,
 "notServed": false,
 "requirements": {
@@ -2395,6 +2429,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "redesign",
 "error": null,
 "findings": [
 {
@@ -2601,6 +2636,7 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.24285714285714285,
 "noVerdictCount": 0,
 "notServed": false,
 "requirements": {
@@ -2974,6 +3010,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "redesign",
 "error": null,
 "findings": [
 {
@@ -3180,6 +3217,7 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.24285714285714285,
 "noVerdictCount": 0,
 "notServed": false,
 "requirements": {
@@ -3553,6 +3591,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "redesign",
 "error": null,
 "findings": [
 {
@@ -3759,6 +3798,7 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.24285714285714285,
 "noVerdictCount": 1,
 "notServed": false,
 "requirements": {
@@ -4132,6 +4172,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "redesign",
 "error": null,
 "findings": [
 {
@@ -4338,6 +4379,7 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.24285714285714285,
 "noVerdictCount": 0,
 "notServed": false,
 "requirements": {
@@ -4711,6 +4753,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "redesign",
 "error": null,
 "findings": [
 {
@@ -4917,6 +4960,7 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.24285714285714285,
 "noVerdictCount": 0,
 "notServed": false,
 "requirements": {
@@ -5292,6 +5336,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "redesign",
 "error": null,
 "findings": [
 {
@@ -5498,6 +5543,7 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.24285714285714285,
 "noVerdictCount": 0,
 "notServed": false,
 "requirements": {
@@ -5871,6 +5917,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "redesign",
 "error": null,
 "findings": [
 {
@@ -6077,6 +6124,7 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.24285714285714285,
 "noVerdictCount": 0,
 "notServed": false,
 "requirements": {
@@ -6450,6 +6498,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "redesign",
 "error": null,
 "findings": [
 {
@@ -6656,6 +6705,7 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.24285714285714285,
 "noVerdictCount": 0,
 "notServed": false,
 "requirements": {
@@ -7029,6 +7079,7 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "redesign",
 "error": null,
 "findings": [
 {
@@ -7235,6 +7286,7 @@
 ],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.24285714285714285,
 "noVerdictCount": 0,
 "notServed": false,
 "requirements": {
@@ -7612,10 +7664,12 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.9652406417112299,
 "noVerdictCount": 0,
 "notServed": true,
 "requirements": {
@@ -7629,10 +7683,12 @@
 },
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [],
 "gradingFailed": null,
 "label": "v2",
+"matchedFraction": 0.9652406417112299,
 "noVerdictCount": 0,
 "notServed": true,
 "requirements": {
@@ -7684,10 +7740,12 @@
 "perVariant": [
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [],
 "gradingFailed": null,
 "label": "v1",
+"matchedFraction": 0.9865229110512129,
 "noVerdictCount": 0,
 "notServed": true,
 "requirements": {
@@ -7707,10 +7765,12 @@
 },
 {
 "controlDuplicate": false,
+"diffMode": "normal",
 "error": null,
 "findings": [],
 "gradingFailed": null,
 "label": "v2",
+"matchedFraction": 0.9865229110512129,
 "noVerdictCount": 0,
 "notServed": true,
 "requirements": {

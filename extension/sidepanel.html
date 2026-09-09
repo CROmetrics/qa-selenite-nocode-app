@@ -56,6 +56,16 @@
   .panel{display:none;flex-direction:column;gap:10px;flex:1}
   .panel.active{display:flex}
 
+  /* Version footer. Sits outside #panels — a sibling of the header and tabs —
+     so the build stays visible from every tab and never scrolls away with a
+     panel. The number is stamped from the manifest at runtime (popup.js), so
+     this markup has no version string of its own to go stale. */
+  #ver{flex-shrink:0;background:var(--surface);border-top:1px solid var(--stroke);
+    padding:5px 12px;display:flex;align-items:center;justify-content:center;gap:6px;
+    font-size:10px;color:var(--fg3);user-select:none}
+  #ver-channel{font-size:9px;font-weight:700;letter-spacing:.4px;
+    background:var(--overlay);color:var(--fg2);border-radius:3px;padding:1px 5px}
+
   /* Cards */
   .card{background:var(--card);border-radius:var(--radius);border:1px solid var(--stroke);padding:12px 14px}
   .card-title{font-size:11px;font-weight:600;color:var(--fg2);text-transform:uppercase;
@@ -1191,6 +1201,15 @@
     </div>
   </div>
 
+</div>
+
+<!-- Version footer. The channel label is static because a Chrome manifest
+     version can only be dot-separated integers — "Alpha" has nowhere to live
+     there — while #ver-num is filled from the manifest by popup.js so the
+     number lives in exactly one place. Both UI files share this block. -->
+<div id="ver">
+  <span id="ver-num"></span>
+  <span id="ver-channel">ALPHA</span>
 </div>
 
 <!-- Settings overlay. Deliberately not a tab: these are credentials, not a

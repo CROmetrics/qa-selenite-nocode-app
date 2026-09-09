@@ -90,6 +90,12 @@ function connectPanelPort() {
 
 // ── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  // Stamp the footer version before the first await. Everything below is one
+  // chain, so a failure part-way through it would otherwise leave the number
+  // blank; reading the manifest keeps it from being a second copy of the
+  // version that can drift from manifest.json.
+  document.getElementById('ver-num').textContent = 'v' + chrome.runtime.getManifest().version;
+
   // Resolve this panel's window id first — every session read/write below is
   // namespaced by it, and the background worker is told the id so it writes run
   // logs / status / capture state into this window's namespace too.

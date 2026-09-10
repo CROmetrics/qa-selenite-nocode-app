@@ -1136,16 +1136,33 @@
   // so there is nothing to backtrack over: 234KB of real spec text extracts in
   // 5.3ms and 20k unmatched openers in 1.6ms. That matters because this runs in
   // the MV3 service worker.
+  // `Price copy: $30/mo - discrepancy with Figma` states the copy and then an
+  // author's aside about it. Only a dash-introduced tail that begins lowercase
+  // is treated as the aside -- real copy after a dash normally starts with a
+  // capital or a digit.
+  //
+  // Trimming is the safe direction under a containment matcher: a SHORTER
+  // requirement can only become easier to satisfy, so a wrong trim cannot
+  // manufacture a false "absent". `Save now - limited time` trimmed to
+  // `Save now` still matches the full string on the page.
+  function vdTrimSpecAside(value) {
+    return String(value == null ? '' : value).split(/\s+[-\u2013\u2014]\s+(?=[a-z])/)[0].trim();
+  }
+
   function vdSpecRequirements(specText) {
     var text = String(specText || '');
     var seen = new Set(), out = [];
 
-    function take(m) {
-      // Group 1 defensively: a pass added later with no capturing group, or as
-      // an alternation whose other branch owns the group, hands us undefined.
+    // Takes a STRING, not a match, because pass 3 is line-based rather than
+    // delimiter-based and must share this dedupe -- two passes with two dedupe
+    // sets would report the same requirement twice.
+    function take(input) {
+      // Defensive: a pass added later with no capturing group, or as an
+      // alternation whose other branch owns the group, hands us undefined.
       // Under-extracting is caught by the suite; throwing here would abort the
       // whole diff inside the service worker.
-      var raw = String(m[1] || '').trim();
+      var raw = String(input == null ? '' : input).trim();
+      if (raw.length > VD_REQ_MAX_CHARS) return;
       // A leading parenthetical annotates rather than specifies -- the
       // requirement in `"(Lock icon) Your information is encrypted and secure."`
       // is the sentence, not the icon note.
@@ -1166,10 +1183,40 @@
     // A requirement quoted inside another (`"the ‘See All’ CTA"`) is taken
     // twice, outer then inner. Both are genuinely quoted, and the matcher tests
     // containment, so the inner one is satisfied wherever the outer one is.
+    // Pass 3, LABEL:COPY lines -- `Eyebrow copy: WOW! INTERNET PLANS STARTING AT`.
+    // Quotation marks are not how specs state copy. Run 1789066188053 is the
+    // measured case: the WOW-1173 spec states five copy requirements in label
+    // form and quotes exactly one string -- a modal error message that appears
+    // only after an invalid address is entered, so it CANNOT be on the loaded
+    // page. The report therefore said "1 of 1 specified copy strings are not on
+    // the page as written", which reads as total failure, while the diff's own
+    // unmatchedVariantSample proved the page carried "WOW! INTERNET PLANS
+    // STARTING AT", "Price Lock for Life add-on $5/mo*" and "Get Started ->"
+    // verbatim. Four checkable requirements went unchecked and the one checked
+    // was uncheckable.
+    //
+    // The label must END in "copy" (`Eyebrow copy`, `Supporting copy`, `Copy`,
+    // `CTA microcopy`), which is the author explicitly saying the value IS copy.
+    // That is what keeps `CTA destination: goes straight to the Purchase flow`
+    // out -- a behaviour, not a string to find on the page.
+    //
+    // A value containing ANY quote character is skipped, because pass 1 owns
+    // it. Measured: both of ENOC-97's label lines quote their copy inline, so
+    // this rule is what keeps that spec byte-identical at 70 requirements
+    // instead of gaining a spurious one from
+    // `Microcopy: "Minimum requirements: ..." + FICO score disclaimer footnote`,
+    // where the label value is the quoted string PLUS an author note.
+    var LABEL_COPY = /^[ \t]*[^\n:]{0,40}?[Cc]opy[ \t]*:[ \t]*(.+?)[ \t]*$/gm;
+    var lm;
+    while ((lm = LABEL_COPY.exec(text))) {
+      if (/["“”‘’]/.test(lm[1])) continue;
+      take(vdTrimSpecAside(lm[1]));
+    }
+
     for (var i = 0; i < passes.length; i++) {
       var re = passes[i], m;
       while ((m = re.exec(text))) {
-        take(m);
+        take(m[1]);
         // A zero-length match leaves lastIndex untouched and exec spins on it
         // forever. Neither pass above can match empty -- both require a
         // delimiter pair around >= VD_REQ_MIN_CHARS -- but a pass added later
@@ -1365,6 +1412,7 @@
   g.vdComposeReportable = vdComposeReportable;
   g.vdVariantVerification = vdVariantVerification;
   g.vdSpecRequirements = vdSpecRequirements;
+  g.vdTrimSpecAside = vdTrimSpecAside;
   g.vdMatchRequirements = vdMatchRequirements;
   g.vdReportOrder = vdReportOrder;
   g.VD_MAX_DIFF_FINDINGS = VD_MAX_DIFF_FINDINGS;

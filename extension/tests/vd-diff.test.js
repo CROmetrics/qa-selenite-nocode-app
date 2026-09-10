@@ -675,6 +675,87 @@ function reqCand(text) {
   eq('  inner second', (nested[1] || {}).required, 'See All');
 })();
 
+(function labelledCopyIsARequirement() {
+  // Quotation marks are not how specs state copy. Run 1789066188053 measured
+  // the cost: the WOW-1173 spec states five copy requirements in label form and
+  // quotes exactly ONE string — a modal error shown only after an invalid
+  // address, so it cannot be on the loaded page. The report said "1 of 1
+  // specified copy strings are not on the page as written", which reads as
+  // total failure, while the diff's own unmatchedVariantSample proved the page
+  // carried three of the five verbatim. Measured after this pass: that spec
+  // goes 1 -> 6 requirements and the matcher reports 3 verbatim / 2 near /
+  // 1 absent instead of 1 of 1 absent.
+  if (typeof vdSpecRequirements !== 'function') return;
+  var reqs = function (t) { return vdSpecRequirements(t).map(function (r) { return r.required; }); };
+
+  var wow = reqs([
+    'v1: Get Started CTA Update',
+    'Eyebrow copy: WOW! INTERNET PLANS STARTING AT',
+    'Price copy: $30/mo - discrepancy with Figma',
+    'Supporting copy: Price Lock for Life add-on $5/mo*',
+    'Add an orange CTA.',
+    'Copy: Get Started ->',
+    'CTA destination: goes straight to the Purchase flow (Accordion store Step 1)',
+  ].join('\n'));
+  ok('labelled copy is extracted', wow.indexOf('WOW! INTERNET PLANS STARTING AT') !== -1, wow);
+  ok('  a bare "Copy:" label counts too', wow.indexOf('Get Started ->') !== -1, wow);
+  ok('  and a compound label ending in copy', wow.indexOf('Price Lock for Life add-on $5/mo*') !== -1, wow);
+  // The label must END in "copy" — that is the author saying the value IS copy.
+  // Without it, every `X: y` line in a spec becomes a string to hunt for.
+  ok('a behaviour line is NOT copy',
+     !wow.some(function (x) { return /Purchase flow/.test(x); }), wow);
+  eq('  exactly four requirements from that block', wow.length, 4);
+
+  // The author's aside after the copy, trimmed.
+  ok('a trailing dash-aside is trimmed off', wow.indexOf('$30/mo') !== -1, wow);
+  ok('  and the aside itself is not a requirement',
+     !wow.some(function (x) { return /discrepancy/.test(x); }), wow);
+
+  // THE ENOC-97 PROTECTION. Both of that spec's label lines quote their copy
+  // inline, and pass 1 already owns a quoted run. Skipping quote-carrying
+  // values is what keeps that spec byte-identical at 70 requirements instead of
+  // gaining a spurious entry from the label value, which is the quoted string
+  // PLUS an author note.
+  var enoc = reqs('CTA microcopy: "Checking eligibility will not affect your credit score."');
+  eq('a quoted label value yields ONE requirement, not two', enoc.length, 1);
+  eq('  and it is the quoted run, without the quotes',
+     enoc[0], 'Checking eligibility will not affect your credit score.');
+  var compound = reqs('Microcopy: "Minimum requirements: 1 year in business" + FICO score footnote');
+  eq('a quoted value plus an author note still yields one', compound.length, 1);
+  eq('  the quoted part only', compound[0], 'Minimum requirements: 1 year in business');
+
+  // One dedupe across all three passes, or a spec that both quotes and labels
+  // the same string reports it twice.
+  var both = reqs('Hero: "Get Started"\nCopy: Get Started');
+  eq('the same string quoted AND labelled is one requirement', both.length, 1);
+
+  // Bounds still apply.
+  eq('a two-character labelled value is not a requirement', reqs('Copy: ab').length, 0);
+  // 700 > VD_REQ_MAX_CHARS (600, a module-local in vd-diff.js — not exported,
+  // and not worth exporting for one assertion). A label line has no delimiter
+  // to bound it the way the quoted passes do, so take() bounds it instead.
+  eq('an over-long labelled value is rejected',
+     reqs('Copy: ' + new Array(701).join('x')).length, 0);
+  eq('  while a 599-character one is accepted',
+     reqs('Copy: ' + new Array(600).join('x')).length, 1);
+})();
+
+(function trimSpecAside() {
+  if (typeof vdTrimSpecAside !== 'function') { ok('vdTrimSpecAside is exported', false); return; }
+  eq('a lowercase dash-tail is an aside', vdTrimSpecAside('$30/mo - discrepancy with Figma'), '$30/mo');
+  eq('  en dash too', vdTrimSpecAside('$30/mo – discrepancy with Figma'), '$30/mo');
+  eq('  em dash too', vdTrimSpecAside('$30/mo — discrepancy with Figma'), '$30/mo');
+  eq('  and double spacing around it', vdTrimSpecAside('$30/mo  -  discrepancy'), '$30/mo');
+  // A capitalised or numeric tail is part of the copy, not commentary.
+  eq('a capitalised tail is kept', vdTrimSpecAside('Save Big - Limited Time'), 'Save Big - Limited Time');
+  eq('  a numeric tail is kept', vdTrimSpecAside('Plans - 30 days free'), 'Plans - 30 days free');
+  eq('a hyphenated word is untouched', vdTrimSpecAside('Price Lock for Life add-on $5/mo*'),
+     'Price Lock for Life add-on $5/mo*');
+  eq('no dash at all is untouched', vdTrimSpecAside('Get Started'), 'Get Started');
+  eq('empty is safe', vdTrimSpecAside(''), '');
+  eq('null is safe', vdTrimSpecAside(null), '');
+})();
+
 (function apostropheIsNotADelimiterEvenWhenItIsCurly() {
   // Pass 2's guards. Smart-quote autocorrect emits ‘ for a LEADING apostrophe
   // and ’ for every other one, so neither character is reliably a delimiter and

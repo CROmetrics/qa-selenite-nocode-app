@@ -8145,6 +8145,8 @@ function mxSyncFromState() {
   document.getElementById('mx-crawl-base').value  = c.baseUrl || '';
   document.getElementById('mx-crawl-max').value   = c.maxPages;
   document.getElementById('mx-crawl-depth').value = c.maxDepth;
+  document.getElementById('mx-crawl-method').value = c.method || 'both';
+  document.getElementById('mx-crawl-verify').checked = c.verify !== false;
   mxGroupFilter = null;
   mxSetLinkMode(mxState.linkMode || 'none');
   // Last, so the panes settle after everything they depend on is in the DOM.
@@ -8665,8 +8667,13 @@ function mxDefaultGlobalSettings() {
 function mxDefaultCrawl() {
   return {
     baseUrl: '',
-    maxPages: 50,   // cap on pages COLLECTED
+    // A sitemap is an authoritative list, not an open-ended walk, so the valve
+    // can be loose; 50 truncated the measured site's own 49-page sitemap the
+    // moment the link cross-check added anything to it.
+    maxPages: 200,  // cap on pages COLLECTED
     maxDepth: 1,    // link-hop levels SCANNED; 1 = the base page only
+    method: 'both', // 'both' | 'sitemap' | 'links' — 'links' is the pre-sitemap behaviour
+    verify: true,   // check each page resolves to itself before auditing it
   };
 }
 
@@ -8680,6 +8687,9 @@ function mxDefaultState() {
     crawl: mxDefaultCrawl(),
     crawlLinks: [],      // [{ url, group }] — CRAWL source, filled by discovery
     crawlRedirect: null, // { from, to, outsideBase } when the base landed elsewhere
+    crawlSources: null,  // { sitemapsUsed, fromSitemap, fromLinks, onlyCrawl, blocked }
+    crawlDropped: [],    // [{ url, verdict, finalUrl, status }] — verified NOT a page
+    groupExcluded: [],   // group labels held back from the run (e.g. 'modal')
     linkMode: 'none',    // 'none' | 'itw' | 'forced' — how link params are composed at run time
     variationId: '',     // optimizely_x value, used only in 'forced' mode
     advanceMode: 'auto', // 'auto' | 'pause' | 'manual' — how hands-on the run is
@@ -8695,6 +8705,18 @@ function mxDefaultState() {
 // not throw away a crawl that took two minutes to run.
 function mxActiveLinks() {
   return (mxState.linkSource === 'crawl' ? mxState.crawlLinks : mxState.links) || [];
+}
+
+// What will actually be audited. Group chips EXCLUDE, they do not merely filter
+// the view — a sitemap legitimately carries pages nobody wants in a matrix (the
+// measured site ships 8 /products/modal/ form popups alongside 41 real pages,
+// and they pass every scope test because they genuinely ARE under the base).
+// Rather than guess with a hard-coded junk list, they surface as their own group
+// and one click holds them back.
+function mxSelectedLinks() {
+  const ex = mxState.groupExcluded || [];
+  if (!ex.length) return mxActiveLinks();
+  return mxActiveLinks().filter(l => !ex.includes(l.group || 'ungrouped'));
 }
 
 // ── Crawl mode — discovering every subpage under a base URL ─────────────────
@@ -8829,6 +8851,256 @@ function mxCrawlAbsorb(hrefs, { baseUrl, depth, maxDepth, maxPages, visited, fou
   return found.length;
 }
 
+// ── Sitemap discovery ───────────────────────────────────────────────────────
+// Link-walking finds a section's top level, not its depth: a nav carries the
+// products, not the 17 pages under /products/data-security/. The sitemap is the
+// authoritative list, so it becomes the spine and the link walk becomes a
+// cross-check for what the sitemap omits (on the measured site, exactly 2 real
+// pages). Everything here is string work — jsc has no URL/URLSearchParams, and
+// these rules are precisely the ones worth testing.
+//
+// Fixtures for all of this are the REAL bytes in fixtures-real-sitemaps.json.
+
+const MX_SITEMAP_PROBE_BATCH = 4;        // concurrent fetches inside the one open tab
+const MX_SITEMAP_PROBE_PAUSE_MS = 300;   // between batches — measured against a live WAF
+const MX_SITEMAP_MAX_FETCH = 12;         // ranked sitemaps actually fetched per round
+// Verification drops URLs. Verifying only maxPages of them would then return
+// FEWER than maxPages even though more candidates were available, so a surplus
+// is verified and the cap applied once, at the end, to what survived.
+const MX_VERIFY_SURPLUS = 50;
+const MX_SITEMAP_JUNK_HINTS = /(modal|popup|form|attachment|image|video|news|author|tag|category|feed)/i;
+
+// A sitemap URL is not a "page", so it must bypass MX_CRAWL_SKIP_EXT, which
+// rejects .xml. Deliberately a SEPARATE function rather than a flag on
+// mxNormalizeCrawlUrl: that function's whole contract is "is this a page", ~20
+// assertions depend on it, and it must keep returning null for .xml.
+function mxNormalizeSitemapUrl(raw) {
+  const u = mxSplitUrl(raw);
+  if (!u) return null;
+  const kept = u.query.split('&').filter(Boolean)
+    .filter(p => !MX_CRAWL_STRIP_PARAMS.includes(p.split('=')[0].toLowerCase()))
+    .sort();
+  return u.origin + mxTrimPath(u.path) + (kept.length ? '?' + kept.join('&') : '');
+}
+
+// `Sitemap:` lines out of robots.txt. They may sit anywhere in the file, in any
+// case, across several User-agent blocks, wrapped in generator comments — the
+// real file this was written against has 21 of them inside a Yoast
+// "# START BLOCK" fence, alongside a bare `Disallow:` with no value.
+function mxParseRobotsSitemaps(text, originUrl) {
+  const origin = (mxSplitUrl(originUrl) || {}).origin || '';
+  const seen = new Set();
+  const out = [];
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const m = /^\s*sitemap\s*:\s*(\S+)/i.exec(line);
+    if (!m) continue;
+    let v = m[1].replace(/#.*$/, '').trim();
+    if (!v) continue;
+    if (v.startsWith('/') && origin) v = origin + v;   // relative is legal
+    const n = mxNormalizeSitemapUrl(v);
+    if (!n || seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+    if (out.length >= 100) break;
+  }
+  return out;
+}
+
+// Where to look when robots.txt declares nothing. Probed in the SAME round trip
+// as robots.txt, which is what collapses discovery to one fetch round on a site
+// that keeps a sitemap beside the section (the measured site does).
+function mxDefaultSitemapProbes(baseUrl) {
+  const u = mxSplitUrl(baseUrl);
+  if (!u) return [];
+  const out = [];
+  const push = p => { const n = mxNormalizeSitemapUrl(u.origin + p); if (n && !out.includes(n)) out.push(n); };
+  const basePath = mxTrimPath(u.path);
+  if (basePath !== '/') {
+    push(basePath + '/sitemap_index.xml');
+    push(basePath + '/sitemap.xml');
+  }
+  push('/sitemap_index.xml');
+  push('/sitemap.xml');
+  push('/sitemap-index.xml');
+  push('/wp-sitemap.xml');
+  return out;
+}
+
+// What a response actually IS, which is not the same question as what it
+// contains. A body that is HTML must never be reported as an empty sitemap:
+// bot interstitials answer 200 with an HTML challenge page, and "0 pages found"
+// instead of "that wasn't XML" is exactly the silent failure this feature
+// exists to remove.
+function mxSitemapKind(text) {
+  const s = String(text || '').replace(/^﻿/, '').trim();
+  if (!s) return 'empty';
+  if (/^\x1f\x8b/.test(s)) return 'binary';           // gzip; fetch will not gunzip a .gz body
+  if (/^(<!doctype\s+html|<html\b)/i.test(s)) return 'html';
+  if (/<sitemapindex\b/i.test(s)) return 'index';
+  if (/<urlset\b/i.test(s)) return 'urlset';
+  if (/^\s*</.test(s)) return 'unknown';
+  return 'unknown';
+}
+
+function mxDecodeXmlText(s) {
+  return String(s || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(+d))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&amp;/g, '&')    // last, or &amp;lt; double-decodes
+    .trim();
+}
+
+// <loc> entries, whether this is a <sitemapindex> or a <urlset>.
+//
+// Media subtrees are stripped FIRST. This is not defensive padding: in the real
+// modal-sitemap.xml the cds-demo-popup entry carries a nested
+// <image:image><image:loc>…Group-2554.svg</image:loc></image:image>, so a regex
+// that allows any namespace prefix returns 9 entries for 8 pages and hands an
+// SVG to the auditor as if it were a page. Eight is the true count.
+function mxParseSitemapXml(text) {
+  const kind = mxSitemapKind(text);
+  if (kind !== 'index' && kind !== 'urlset') return { kind, entries: [] };
+  const body = String(text)
+    .replace(/<(image|video|news|xhtml):[\s\S]*?<\/\1:[a-zA-Z_][\w.-]*>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '');
+  const entries = [];
+  const re = /<(?:[a-zA-Z_][\w.-]*:)?loc\b[^>]*>([\s\S]*?)<\/(?:[a-zA-Z_][\w.-]*:)?loc\s*>/gi;
+  let m;
+  while ((m = re.exec(body))) {
+    const v = mxDecodeXmlText(m[1]);
+    if (v) entries.push(v);
+  }
+  return { kind, entries };
+}
+
+// A response that is not the XML we asked for, and looks like a challenge.
+function mxLooksBlocked(prefix, status) {
+  if (status === 403 || status === 429) return true;
+  const s = String(prefix || '');
+  if (!s) return false;
+  return /pardon our interruption|request unsuccessful|incident_?id|_incapsula_|access denied|are you a robot|captcha|cf-browser-verification|just a moment/i.test(s);
+}
+
+// Order the declared sitemaps by how likely they are to describe THIS base.
+// Ranks, never drops: the measured site's real content is page-sitemap.xml and
+// its junk is modal-sitemap.xml, but another site's real content may well live
+// under /news/. The only hard scope drop stays mxIsUnderBase, already tested.
+function mxRankSitemaps(urls, baseUrl) {
+  const b = mxSplitUrl(baseUrl);
+  const basePath = b ? mxTrimPath(b.path) : '/';
+  const seg = basePath === '/' ? '' : basePath.split('/').filter(Boolean)[0] || '';
+  const score = (u) => {
+    const s = mxSplitUrl(u);
+    if (!s) return 99;
+    const p = mxTrimPath(s.path);
+    const name = p.split('/').pop() || '';
+    let n = 5;
+    if (basePath !== '/' && (p === basePath || p.startsWith(basePath + '/'))) n = 0;
+    else if (seg && name.toLowerCase().includes(seg.toLowerCase())) n = 1;
+    else if (/index/i.test(name)) n = 2;
+    else if (/^(wp-)?(page|pages|post|posts)[-_.]/i.test(name)) n = 3;
+    if (MX_SITEMAP_JUNK_HINTS.test(name)) n += 4;
+    if (b && s.origin !== b.origin) n += 10;     // cross-origin: CORS will likely block it
+    return n;
+  };
+  return urls.map((u, i) => ({ u, i, n: score(u) }))
+    .sort((a, z) => a.n - z.n || a.i - z.i)
+    .map(x => x.u);
+}
+
+// Sitemap <loc> entries -> auditable targets. Page entries go through
+// mxNormalizeCrawlUrl UNCHANGED, which is what drops the wp-json/feed/asset
+// noise a link crawl of the same site turns up.
+function mxSitemapCandidates(entries, baseUrl) {
+  const base = mxNormalizeCrawlUrl(baseUrl) || baseUrl;
+  const inScope = [], outOfScope = [], skipped = [];
+  const seen = new Set();
+  for (const raw of entries || []) {
+    const n = mxNormalizeCrawlUrl(raw);
+    if (!n) { skipped.push(raw); continue; }
+    if (!mxIsUnderBase(n, base)) { outOfScope.push(n); continue; }
+    if (seen.has(n)) continue;
+    seen.add(n);
+    inScope.push({ url: n, group: mxCrawlGroup(n, base) });
+  }
+  return { inScope, outOfScope, skipped };
+}
+
+// Sitemap ∪ link crawl. `onlyCrawl` is the diagnostic that matters — it is how
+// you learn the sitemap is incomplete, which on the measured site was true and
+// worth exactly 2 pages.
+function mxMergeDiscovery({ sitemap = [], crawl = [], baseUrl = '' }) {
+  const smSet = new Set(sitemap.map(l => l.url));
+  const crSet = new Set(crawl.map(l => l.url));
+  const merged = [];
+  const seen = new Set();
+  for (const l of [...sitemap, ...crawl]) {
+    if (seen.has(l.url)) continue;
+    seen.add(l.url);
+    merged.push({ url: l.url, group: l.group || mxCrawlGroup(l.url, baseUrl) });
+  }
+  return {
+    merged,
+    onlySitemap: [...smSet].filter(u => !crSet.has(u)),
+    onlyCrawl:   [...crSet].filter(u => !smSet.has(u)),
+    both:        [...smSet].filter(u => crSet.has(u)),
+  };
+}
+
+// What one probe says about one URL.
+//
+// The asymmetry between `blocked`/`error` and `gone`/`redirect-out` is the whole
+// point: "I could not check" KEEPS the URL, and only "I checked and it is not a
+// page" drops it. Dropping on a failed check would reinstate the original
+// under-counting bug in a new place.
+function mxResolveVerdict(url, probe, baseUrl) {
+  const out = { url, verdict: 'self', finalUrl: url, status: 0 };
+  if (!probe) return out;
+  out.status = probe.status || 0;
+  if (probe.error) { out.verdict = 'error'; return out; }
+  if (mxLooksBlocked(probe.prefix, probe.status)) { out.verdict = 'blocked'; return out; }
+  if (!probe.status || probe.status >= 400) { out.verdict = 'gone'; return out; }
+  const to = mxNormalizeCrawlUrl(probe.finalUrl);
+  if (!to) return out;
+  out.finalUrl = to;
+  if (to === mxNormalizeCrawlUrl(url)) return out;
+  out.verdict = mxIsUnderBase(to, baseUrl) ? 'redirect-in' : 'redirect-out';
+  return out;
+}
+
+// Apply the verdicts. `redirect-in` REPLACES the URL with where it actually
+// went and re-dedupes, or two spellings of one page both survive.
+function mxApplyResolutions(candidates, resolutions, baseUrl) {
+  const byUrl = new Map((resolutions || []).map(r => [r.url, r]));
+  const links = [], dropped = [];
+  const seen = new Set();
+  const summary = { self: 0, 'redirect-in': 0, 'redirect-out': 0, gone: 0, blocked: 0, error: 0 };
+  for (const c of candidates || []) {
+    const v = byUrl.get(c.url);
+    const verdict = v ? v.verdict : 'self';
+    summary[verdict] = (summary[verdict] || 0) + 1;
+    if (verdict === 'redirect-out' || verdict === 'gone') {
+      dropped.push({ url: c.url, verdict, finalUrl: v ? v.finalUrl : '', status: v ? v.status : 0 });
+      continue;
+    }
+    const url = verdict === 'redirect-in' ? v.finalUrl : c.url;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    links.push({ url, group: mxCrawlGroup(url, baseUrl) || c.group });
+  }
+  return { links, dropped, summary };
+}
+
+function mxBatchSlices(items, size) {
+  const n = Math.max(1, parseInt(size, 10) || 1);
+  const out = [];
+  for (let i = 0; i < (items || []).length; i += n) out.push(items.slice(i, i + n));
+  return out;
+}
+
 // ── Forced-variation ids ────────────────────────────────────────────────────
 // The Variation ID field takes a LIST, and Optimizely wants that list in one
 // optimizely_x param with the ids separated by literal commas. This normalizes
@@ -8905,8 +9177,8 @@ function mxComposeUrl(baseUrl, mode, variationId) {
 
 // The links actually audited: base URLs with the current link mode applied.
 // Group labels stay as parsed (from CSV/template) so the group chips still work.
-function mxCurrentTargets() {
-  return mxActiveLinks()
+function mxCurrentTargets(includeExcluded) {
+  return (includeExcluded ? mxActiveLinks() : mxSelectedLinks())
     .map(l => ({ baseUrl: l.url, url: mxComposeUrl(l.url, mxState.linkMode, mxState.variationId), group: l.group || 'ungrouped' }))
     .filter(t => t.url);
 }
@@ -8967,7 +9239,8 @@ async function persistMxState() {
   await sessionNS.set({ mxState: {
     id: mxState.id, name: mxState.name, linkSource: mxState.linkSource, linksRaw: mxState.linksRaw,
     links: mxState.links, crawl: mxState.crawl, crawlLinks: mxState.crawlLinks,
-    crawlRedirect: mxState.crawlRedirect,
+    crawlRedirect: mxState.crawlRedirect, crawlSources: mxState.crawlSources,
+    crawlDropped: mxState.crawlDropped, groupExcluded: mxState.groupExcluded,
     linkMode: mxState.linkMode, variationId: mxState.variationId,
     advanceMode: mxState.advanceMode, selectors: mxState.selectors, globalSettings: mxState.globalSettings,
   } });
@@ -8983,9 +9256,13 @@ function mxBumpSelectorCounter() {
 // ── Links panel ──────────────────────────────────────────────────────────────
 function mxUpdateLinkCount() {
   const n = mxCurrentTargets().length;
+  const all = mxActiveLinks().length;
+  const held = all - n;
   const modeNote = mxState.linkMode === 'forced' ? ' (forced)' : mxState.linkMode === 'itw' ? ' (ITW)' : '';
-  document.getElementById('mx-link-preview').textContent = `${n} URL${n === 1 ? '' : 's'} ready to audit${modeNote}`;
-  document.getElementById('mx-link-count').textContent = `${n} URL${n === 1 ? '' : 's'} ready`;
+  const of = held ? ` of ${all}` : '';
+  document.getElementById('mx-link-preview').textContent =
+    `${n}${of} URL${n === 1 ? '' : 's'} ready to audit${modeNote}` + (held ? ` · ${held} excluded` : '');
+  document.getElementById('mx-link-count').textContent = `${n}${of} URL${n === 1 ? '' : 's'} ready`;
 }
 
 // Forced Link and ITW are mutually exclusive — one, the other, or neither.
@@ -9009,26 +9286,41 @@ function mxRenderLinkGroups() {
   const all = mxActiveLinks();
   const groups = [...new Set(all.map(l => l.group || 'ungrouped'))];
   if (groups.length <= 1) { wrap.innerHTML = ''; return; }
-  const chip = (label, value, count) =>
-    `<button type="button" class="btn sm${mxGroupFilter === value ? ' primary' : ''}" data-mx-grp="${esc(value || '')}">${esc(label)} (${count})</button>`;
-  wrap.innerHTML = chip('All', '', all.length) +
-    groups.map(g => chip(g, g, all.filter(l => (l.group || 'ungrouped') === g).length)).join('');
+  const ex = mxState.groupExcluded || [];
+  // Lit = included and will be audited; dim = held back. A chip that only
+  // changed what the list DISPLAYED while the run went ahead with everything
+  // was the older, more surprising behaviour.
+  const chip = (g, count) =>
+    `<button type="button" class="btn sm${ex.includes(g) ? '' : ' primary'}" data-mx-grp="${esc(g)}" ` +
+    `title="${ex.includes(g) ? 'Excluded from the run — click to include' : 'Click to exclude from the run'}">` +
+    `${esc(g)} (${count})</button>`;
+  wrap.innerHTML = groups.map(g => chip(g, all.filter(l => (l.group || 'ungrouped') === g).length)).join('');
   wrap.querySelectorAll('[data-mx-grp]').forEach(btn => {
     btn.addEventListener('click', () => {
-      mxGroupFilter = btn.dataset.mxGrp || null;
+      const g = btn.dataset.mxGrp;
+      const cur = mxState.groupExcluded || (mxState.groupExcluded = []);
+      const i = cur.indexOf(g);
+      if (i === -1) cur.push(g); else cur.splice(i, 1);
       mxRenderLinkGroups();
       mxRenderLinkList();
+      mxUpdateLinkCount();
+      persistMxState();
     });
   });
 }
 
 function mxRenderLinkList() {
   const list = document.getElementById('mx-link-list');
-  const targets = mxCurrentTargets();
-  const filtered = mxGroupFilter ? targets.filter(t => (t.group || 'ungrouped') === mxGroupFilter) : targets;
-  list.innerHTML = filtered.map(t => `<div style="font-size:11px;color:var(--fg2);padding:2px 4px;
-    border-bottom:1px solid var(--stroke);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
-    title="${esc(t.url)}">${esc(t.url)} <span style="color:var(--fg3)">· ${esc(t.group || 'ungrouped')}</span></div>`).join('');
+  const ex = mxState.groupExcluded || [];
+  // Excluded rows stay visible but struck through, so what was held back is
+  // never a silent absence.
+  list.innerHTML = mxCurrentTargets(true).map(t => {
+    const out = ex.includes(t.group || 'ungrouped');
+    return `<div style="font-size:11px;color:var(--${out ? 'fg3' : 'fg2'});padding:2px 4px;
+      border-bottom:1px solid var(--stroke);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      ${out ? 'text-decoration:line-through' : ''}"
+      title="${esc(t.url)}">${esc(t.url)} <span style="color:var(--fg3)">· ${esc(t.group || 'ungrouped')}</span></div>`;
+  }).join('');
 }
 
 function mxOnLinksInput() {
@@ -9098,6 +9390,12 @@ function mxOnCrawlInput() {
   c.baseUrl  = document.getElementById('mx-crawl-base').value;
   c.maxPages = Math.min(500, Math.max(1, parseInt(document.getElementById('mx-crawl-max').value, 10) || 50));
   c.maxDepth = Math.min(4, Math.max(1, parseInt(document.getElementById('mx-crawl-depth').value, 10) || 1));
+  c.method   = document.getElementById('mx-crawl-method').value || 'both';
+  c.verify   = document.getElementById('mx-crawl-verify').checked;
+  // Scan depth only governs the link half; it means nothing in sitemap-only mode.
+  const depthRow = document.getElementById('mx-crawl-depth-row');
+  if (depthRow) depthRow.style.opacity = c.method === 'sitemap' ? '0.4' : '';
+  document.getElementById('mx-crawl-depth').disabled = c.method === 'sitemap';
   persistMxState();
 }
 
@@ -9115,78 +9413,258 @@ function mxStopCrawl() {
 // mxComposeUrl at run time, exactly as it is for a pasted list. That is also
 // why MX_CRAWL_STRIP_PARAMS drops any forcing param found on a crawled link:
 // inheriting one would fight the mode the user picked.
+// One background round trip: open a page on the target origin and fetch a list
+// of URLs from inside it. Returns a url -> result map, or null if the tab
+// itself would not load.
+async function mxFetchBatch(pageUrl, urls, mode) {
+  if (!urls.length) return {};
+  let res;
+  try {
+    res = await chrome.runtime.sendMessage({
+      action: 'runMatrixFetchBatch',
+      payload: {
+        pageUrl, urls, mode,
+        batchSize: MX_SITEMAP_PROBE_BATCH,
+        pauseMs: MX_SITEMAP_PROBE_PAUSE_MS,
+        waitTime: mxState.globalSettings.waitTime,
+        winId: WIN_ID,
+      },
+    });
+  } catch (e) {
+    res = { ok: false, error: e.message };
+  }
+  if (!res || !res.ok) return null;
+  const out = {};
+  for (const r of res.results || []) out[r.url] = r;
+  return out;
+}
+
+// robots.txt -> ranked sitemaps -> (index -> children) -> page entries.
+// Two or three fetch rounds, each one tab load. Probing the likely sitemap
+// locations in the SAME round as robots.txt is what collapses this to two on a
+// site that keeps a sitemap beside the section — which the measured site does.
+async function mxDiscoverFromSitemap(baseUrl, origin) {
+  const notes = { sitemapsUsed: [], blocked: 0, entries: 0 };
+  const robotsUrl = mxNormalizeSitemapUrl(origin + '/robots.txt');
+  const probes = mxDefaultSitemapProbes(baseUrl);
+
+  mxSetCrawlStatus('Reading robots.txt and probing for a sitemap…');
+  const round1 = await mxFetchBatch(origin + '/', [robotsUrl, ...probes], 'text');
+  if (round1 === null) return { candidates: [], notes, failed: 'could not open the site' };
+
+  // Anything the probe already returned is a sitemap we do not have to re-fetch.
+  const parsed = new Map();
+  const absorb = (url, r) => {
+    if (!r || r.error || r.status >= 400 || !r.text) return;
+    const p = mxParseSitemapXml(r.text);
+    if (p.kind === 'html' || p.kind === 'binary') { notes.blocked++; return; }
+    if (p.kind === 'index' || p.kind === 'urlset') parsed.set(url, p);
+  };
+  for (const u of probes) absorb(u, round1[u]);
+
+  const declared = mxParseRobotsSitemaps((round1[robotsUrl] || {}).text || '', origin + '/');
+  const ranked = mxRankSitemaps([...declared, ...parsed.keys()], baseUrl);
+  // Prefer sitemaps that live under the base. The measured site declares 21,
+  // twenty of which describe other sections (/blog/, /learn/, /fr/ …) whose
+  // entries mxSitemapCandidates would discard anyway — fetching them is a whole
+  // round trip spent to throw the answers away. Only when nothing sits under the
+  // base do we fall back to the top of the ranking, which is where a root
+  // sitemap index sorts.
+  const underBase = ranked.filter(u => mxIsUnderBase(u, baseUrl));
+  const pool = underBase.length ? underBase : ranked.slice(0, 4);
+  const toFetch = pool.filter(u => !parsed.has(u)).slice(0, MX_SITEMAP_MAX_FETCH);
+  if (toFetch.length) {
+    mxSetCrawlStatus(`Reading ${toFetch.length} sitemap${toFetch.length === 1 ? '' : 's'}…`);
+    const round2 = await mxFetchBatch(origin + '/', toFetch, 'text');
+    if (round2) for (const u of toFetch) absorb(u, round2[u]);
+  }
+
+  // A <sitemapindex> names more sitemaps; fetch its children once.
+  const children = [];
+  for (const [u, p] of parsed) {
+    if (p.kind !== 'index') continue;
+    notes.sitemapsUsed.push(u);
+    for (const c of p.entries) {
+      const n = mxNormalizeSitemapUrl(c);
+      if (n && !parsed.has(n) && !children.includes(n)) children.push(n);
+    }
+  }
+  const kids = mxRankSitemaps(children, baseUrl).slice(0, MX_SITEMAP_MAX_FETCH);
+  if (kids.length) {
+    mxSetCrawlStatus(`Reading ${kids.length} child sitemap${kids.length === 1 ? '' : 's'}…`);
+    const round3 = await mxFetchBatch(origin + '/', kids, 'text');
+    if (round3) for (const u of kids) absorb(u, round3[u]);
+  }
+
+  const entries = [];
+  for (const [u, p] of parsed) {
+    if (p.kind !== 'urlset') continue;
+    notes.sitemapsUsed.push(u);
+    entries.push(...p.entries);
+  }
+  notes.entries = entries.length;
+  const { inScope } = mxSitemapCandidates(entries, baseUrl);
+  return { candidates: inScope, notes, failed: null };
+}
+
+// The BFS link walk, extracted from mxRunCrawl so both it and the merged mode
+// can drive it. Returns what it found rather than committing — the caller owns
+// mxState, which is what lets 'sitemap + links' merge two sources before
+// touching the link list.
+async function mxCrawlWalk({ baseUrl, maxPages, maxDepth, onCommit }) {
+  const visited = new Set([baseUrl]);
+  const found   = [{ url: baseUrl, group: mxCrawlGroup(baseUrl, baseUrl) }];
+  const queue   = [{ url: baseUrl, depth: 0 }];
+  let scanned = 0, failed = 0, redirect = null;
+
+  while (queue.length && !_mxCrawlStop && found.length < maxPages) {
+    const { url, depth } = queue.shift();
+    scanned++;
+    mxSetCrawlStatus(`Scanning page ${scanned} (depth ${depth + 1})… ${found.length} found`);
+    let res;
+    try {
+      res = await chrome.runtime.sendMessage({
+        action: 'runMatrixCrawlStep',
+        payload: { url, waitTime: mxState.globalSettings.waitTime, winId: WIN_ID },
+      });
+    } catch (e) {
+      res = { ok: false, error: e.message };
+    }
+    if (!res || !res.ok || res.loadError) failed++;
+    else {
+      // Only the base is checked: a redirect deeper in the walk just means one
+      // page moved, but a redirect off the BASE invalidates the whole premise
+      // that this crawled the section the user named.
+      if (scanned === 1) redirect = mxCrawlBaseRedirect(baseUrl, res.finalUrl);
+      mxCrawlAbsorb(res.hrefs, { baseUrl, depth, maxDepth, maxPages, visited, found, queue });
+    }
+    // Commit after every page, not at the end: a Stop, a thrown message or a
+    // closed side panel then keeps everything discovered so far instead of
+    // throwing away a walk that may have taken minutes.
+    if (onCommit) await onCommit(found.slice());
+  }
+  return { found, scanned, failed, redirect, unscanned: queue.length };
+}
+
+// Verify each candidate resolves to itself, and apply the verdicts.
+async function mxVerifyCandidates(candidates, baseUrl, origin) {
+  const urls = candidates.map(c => c.url);
+  mxSetCrawlStatus(`Verifying ${urls.length} page${urls.length === 1 ? '' : 's'}…`);
+  const probes = await mxFetchBatch(origin + '/', urls, 'probe');
+  if (probes === null) return null;
+  const resolutions = candidates.map(c => mxResolveVerdict(c.url, probes[c.url], baseUrl));
+  return mxApplyResolutions(candidates, resolutions, baseUrl);
+}
+
+// The discovery driver. Sitemap as the spine, link walk as the cross-check,
+// then verification — the three stages the field method used to arrive at the
+// right page count where a link walk alone did not.
 async function mxRunCrawl() {
   if (_mxCrawling) return;
-  if (_mxRunning) { alert('An audit is running — stop it before crawling.'); return; }
+  if (_mxRunning) { alert('An audit is running — stop it before discovering pages.'); return; }
   const baseUrl = mxNormalizeCrawlUrl(mxState.crawl.baseUrl);
   if (!baseUrl) {
-    alert('Enter a base URL to crawl, e.g. https://example.com/learn/');
+    alert('Enter a base URL, e.g. https://example.com/products/');
     return;
   }
+  const origin = (mxSplitUrl(baseUrl) || {}).origin || '';
   const maxPages = Math.min(500, Math.max(1, parseInt(mxState.crawl.maxPages, 10) || 50));
   const maxDepth = Math.min(4, Math.max(1, parseInt(mxState.crawl.maxDepth, 10) || 1));
+  const method   = mxState.crawl.method || 'both';
+  const verify   = mxState.crawl.verify !== false;
 
   _mxCrawling = true;
   _mxCrawlStop = false;
   mxSetCrawlUiState('busy');
-
   mxState.crawlRedirect = null;
-  const visited = new Set([baseUrl]);
-  const found   = [{ url: baseUrl, group: mxCrawlGroup(baseUrl, baseUrl) }];
-  const queue   = [{ url: baseUrl, depth: 0 }];
-  let scanned = 0, failed = 0;
+  mxState.crawlDropped = [];
+  mxState.crawlSources = { sitemapsUsed: [], fromSitemap: 0, fromLinks: 0, onlyCrawl: [], blocked: 0 };
+  mxGroupFilter = null;
 
+  const commit = async (links) => {
+    mxState.crawlLinks = links;
+    mxRenderLinkGroups();
+    mxRenderLinkList();
+    mxUpdateLinkCount();
+    await persistMxState();
+  };
+
+  const parts = [];
   try {
-    while (queue.length && !_mxCrawlStop && found.length < maxPages) {
-      const { url, depth } = queue.shift();
-      scanned++;
-      mxSetCrawlStatus(`Scanning page ${scanned} (depth ${depth + 1})… ${found.length} found`);
-      let res;
-      try {
-        res = await chrome.runtime.sendMessage({
-          action: 'runMatrixCrawlStep',
-          payload: { url, waitTime: mxState.globalSettings.waitTime, winId: WIN_ID },
-        });
-      } catch (e) {
-        res = { ok: false, error: e.message };
-      }
-      if (!res || !res.ok || res.loadError) failed++;
-      else {
-        // Only the base is checked: a redirect deeper in the walk just means one
-        // page moved, but a redirect off the BASE invalidates the whole premise
-        // that this crawled the section the user named.
-        if (scanned === 1) mxState.crawlRedirect = mxCrawlBaseRedirect(baseUrl, res.finalUrl);
-        mxCrawlAbsorb(res.hrefs, { baseUrl, depth, maxDepth, maxPages, visited, found, queue });
-      }
+    let sitemap = [], walk = null;
 
-      // Commit after every page, not at the end: a Stop, a thrown message or a
-      // closed side panel then keeps everything discovered so far instead of
-      // throwing away a walk that may have taken minutes.
-      mxState.crawlLinks = found.slice();
-      mxRenderLinkGroups();
-      mxRenderLinkList();
-      mxUpdateLinkCount();
-      await persistMxState();
+    if (method !== 'links') {
+      const d = await mxDiscoverFromSitemap(baseUrl, origin);
+      sitemap = d.candidates;
+      mxState.crawlSources.sitemapsUsed = d.notes.sitemapsUsed;
+      mxState.crawlSources.blocked = d.notes.blocked;
+      if (d.notes.blocked) parts.push(`${d.notes.blocked} sitemap fetch${d.notes.blocked === 1 ? '' : 'es'} came back as a challenge page, not XML`);
+      if (sitemap.length) await commit(sitemap.slice(0, maxPages));
     }
+
+    if (method !== 'sitemap' && !_mxCrawlStop) {
+      walk = await mxCrawlWalk({
+        baseUrl, maxPages, maxDepth,
+        onCommit: async (found) => {
+          // While walking, show the union so the count never appears to shrink.
+          await commit(mxMergeDiscovery({ sitemap, crawl: found, baseUrl }).merged.slice(0, maxPages));
+        },
+      });
+      mxState.crawlRedirect = walk.redirect;
+    }
+
+    const mg = mxMergeDiscovery({ sitemap, crawl: walk ? walk.found : [], baseUrl });
+    mxState.crawlSources.fromSitemap = sitemap.length;
+    mxState.crawlSources.fromLinks = mg.onlyCrawl.length;
+    mxState.crawlSources.onlyCrawl = mg.onlyCrawl;
+
+    // Cap AFTER verification, not before. Capping first cut the link-only
+    // findings — which sit at the end of the merge and are the entire reason
+    // the cross-check runs — and then verification shrank the result further.
+    let links = mg.merged.slice(0, Math.min(500, maxPages + MX_VERIFY_SURPLUS));
+    if (verify && links.length && !_mxCrawlStop) {
+      const applied = await mxVerifyCandidates(links, baseUrl, origin);
+      if (applied) {
+        links = applied.links;
+        mxState.crawlDropped = applied.dropped;
+        const s = applied.summary;
+        if (s['redirect-out']) parts.push(`${s['redirect-out']} redirected away (dropped)`);
+        if (s.gone) parts.push(`${s.gone} returned an error (dropped)`);
+        if (s['redirect-in']) parts.push(`${s['redirect-in']} followed a redirect inside the base`);
+        if (s.blocked + s.error) parts.push(`${s.blocked + s.error} could not be verified (kept)`);
+      } else {
+        parts.push('verification could not run (kept everything)');
+      }
+    }
+
+    const overCap = links.length > maxPages;
+    links = links.slice(0, maxPages);
+    await commit(links);
+
+    const rd = mxState.crawlRedirect;
+    const head = [];
+    if (rd?.outsideBase) {
+      // Leads, because it changes what every other number on this line means.
+      head.push(`⚠ the base redirected to ${rd.to} — outside the base, so link results are only links that page happened to carry`);
+    } else if (rd) {
+      head.push(`base redirected to ${rd.to}`);
+    }
+    head.push(`${links.length} page${links.length === 1 ? '' : 's'} found`);
+    const src = [];
+    if (method !== 'links') src.push(`${sitemap.length} from ${mxState.crawlSources.sitemapsUsed.length || 'no'} sitemap${mxState.crawlSources.sitemapsUsed.length === 1 ? '' : 's'}`);
+    if (walk) src.push(`${mg.onlyCrawl.length} only from links`);
+    if (src.length) head.push(src.join(', '));
+    if (walk) head.push(`${walk.scanned} scanned`);
+    if (walk && walk.failed) head.push(`${walk.failed} could not be loaded`);
+    if (_mxCrawlStop) head.push('stopped');
+    else if (overCap) head.push(`cap of ${maxPages} reached`);
+    else if (walk && walk.unscanned) head.push(`${walk.unscanned} unscanned at depth ${maxDepth}`);
+    mxSetCrawlStatus(head.concat(parts).join(' · '));
   } finally {
     _mxCrawling = false;
     mxSetCrawlUiState('idle');
+    await persistMxState();
   }
-
-  const rd = mxState.crawlRedirect;
-  const parts = [];
-  if (rd?.outsideBase) {
-    // Leads, because it changes what every other number on this line means.
-    parts.push(`⚠ the base redirected to ${rd.to} — outside the base, so these are only links that page happened to carry`);
-  } else if (rd) {
-    parts.push(`base redirected to ${rd.to}`);
-  }
-  parts.push(`${found.length} page${found.length === 1 ? '' : 's'} found`, `${scanned} scanned`);
-  if (failed) parts.push(`${failed} could not be loaded`);
-  if (_mxCrawlStop) parts.push('stopped');
-  else if (found.length >= maxPages) parts.push(`cap of ${maxPages} reached`);
-  else if (queue.length) parts.push(`${queue.length} unscanned at depth ${maxDepth}`);
-  mxSetCrawlStatus(parts.join(' · '));
 }
 
 // ── Selectors panel ──────────────────────────────────────────────────────────
@@ -9369,6 +9847,8 @@ async function mxSaveAudit() {
       crawl: mxState.crawl,
       crawlLinks: mxState.crawlLinks,
       crawlRedirect: mxState.crawlRedirect,
+      crawlSources: mxState.crawlSources,
+      groupExcluded: mxState.groupExcluded,
       linkMode: mxState.linkMode,
       variationId: mxState.variationId,
       globalSettings: mxState.globalSettings,
@@ -9420,6 +9900,9 @@ async function mxLoadAudit(id) {
   mxState.crawl = { ...mxDefaultCrawl(), ...(audit.config.crawl || {}) };
   mxState.crawlLinks = JSON.parse(JSON.stringify(audit.config.crawlLinks || []));
   mxState.crawlRedirect = audit.config.crawlRedirect || null;
+  mxState.crawlSources = audit.config.crawlSources || null;
+  mxState.groupExcluded = audit.config.groupExcluded || [];
+  mxState.crawlDropped = [];
   mxState.linkMode = audit.config.linkMode || 'none';
   mxState.variationId = audit.config.variationId || '';
   mxState.globalSettings = { ...mxDefaultGlobalSettings(), ...(audit.config.globalSettings || {}) };
@@ -9432,6 +9915,8 @@ async function mxLoadAudit(id) {
   document.getElementById('mx-crawl-base').value  = mxState.crawl.baseUrl || '';
   document.getElementById('mx-crawl-max').value   = mxState.crawl.maxPages;
   document.getElementById('mx-crawl-depth').value = mxState.crawl.maxDepth;
+  document.getElementById('mx-crawl-method').value = mxState.crawl.method || 'both';
+  document.getElementById('mx-crawl-verify').checked = mxState.crawl.verify !== false;
   mxSetLinkMode(mxState.linkMode);
   mxSetLinkSource(mxState.linkSource);
   mxApplyGlobalSettingsToInputs();
@@ -9718,6 +10203,14 @@ function mxBuildReportBody() {
       // Naming the base is a claim about what was walked. If it redirected, the
       // claim is wrong unless the cover says where it actually went.
       + (rd ? ` — redirected to ${esc(rd.to)}${rd.outsideBase ? ', OUTSIDE the base: the pages below are links that page carried, not a walk of the section' : ''}` : '')
+      // A sitemap-derived audit is reproducible only if the report says WHICH
+      // sitemap — the same argument as the redirect note above.
+      + (mxState.crawlSources?.sitemapsUsed?.length
+          ? ` — from ${mxState.crawlSources.sitemapsUsed.map(u => esc(u)).join(', ')}` : '')
+      + (mxState.groupExcluded?.length
+          ? ` — excluding the ${mxState.groupExcluded.map(g => esc(g)).join(', ')} group${mxState.groupExcluded.length === 1 ? '' : 's'}` : '')
+      + (mxState.crawlDropped?.length
+          ? ` — ${mxState.crawlDropped.length} URL${mxState.crawlDropped.length === 1 ? ' that did not resolve to itself was' : 's that did not resolve to themselves were'} dropped` : '')
     : 'Pasted link list';
 
   const summaryRows = sels.map(s => {
@@ -9803,7 +10296,10 @@ async function initMatrixAuditor() {
   document.getElementById('mx-crawl-base').addEventListener('input', mxOnCrawlInput);
   document.getElementById('mx-crawl-max').addEventListener('input', mxOnCrawlInput);
   document.getElementById('mx-crawl-depth').addEventListener('change', mxOnCrawlInput);
+  document.getElementById('mx-crawl-method').addEventListener('change', mxOnCrawlInput);
+  document.getElementById('mx-crawl-verify').addEventListener('change', mxOnCrawlInput);
   document.getElementById('btn-mx-crawl').addEventListener('click', mxRunCrawl);
+  mxOnCrawlInput();   // settles the depth-row enable state from restored config
   document.getElementById('btn-mx-crawl-stop').addEventListener('click', mxStopCrawl);
   document.getElementById('mx-mode-forced').addEventListener('change', e => mxSetLinkMode(e.target.checked ? 'forced' : 'none'));
   document.getElementById('mx-mode-itw').addEventListener('change', e => mxSetLinkMode(e.target.checked ? 'itw' : 'none'));

@@ -32,10 +32,21 @@ function slicePopup(from, to) {
   return _pu.slice(a, b);
 }
 
+// Disjoint regions, in file order. Each ends at the next region's first line,
+// so a function landing between two markers cannot be silently evaluated twice
+// (or missed) — getting this wrong once already duplicated the whole sitemap
+// block across two evals.
 eval(slicePopup('const MX_CRAWL_STRIP_PARAMS', 'function mxCrawlBaseRedirect('));
-eval(slicePopup('function mxCrawlBaseRedirect(', 'function mxParseVariationIds('));
+eval(slicePopup('function mxCrawlBaseRedirect(', 'const MX_SITEMAP_PROBE_BATCH'));
+eval(slicePopup('const MX_SITEMAP_PROBE_BATCH', '// \u2500\u2500 Forced-variation ids'));
 eval(slicePopup('function mxParseVariationIds(', 'function mxComposeUrl('));
 eval(slicePopup('function mxComposeUrl(', 'function mxCurrentTargets('));
+
+// Real bytes, captured 2026-09-10 from www.imperva.com — see the fixture file's
+// own _source / _whyThisMatters keys. Hand-written sitemap fixtures agree with
+// whatever the parser already does; these did not. The modal image:loc
+// assertion below is one no invented fixture would ever have contained.
+var FX = JSON.parse(readFile('fixtures-real-sitemaps.json'));
 
 var passed = 0, failed = 0;
 function eq(actual, expected, label) {
@@ -284,6 +295,199 @@ eq(mxCrawlBaseRedirect('https://www.ex.com/learn', 'https://ex.com/learn'),
    'a www -> apex canonical redirect is a different origin, so it IS flagged');
 eq(mxCrawlBaseRedirect('https://ex.com/learn', ''), null, 'no final URL, nothing to report');
 eq(mxCrawlBaseRedirect('https://ex.com/learn', 'about:blank'), null, 'a non-page final URL is not reported');
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Sitemap discovery — driven by the REAL bytes in fixtures-real-sitemaps.json.
+//
+// The field case: a crawl of https://www.imperva.com/products/ found 33 pages
+// where a manual pass found 43. Link-walking a nav finds a section's top level,
+// never its depth — 17 of the sitemap's 41 pages are /products/data-security/*
+// subpages that appear in no nav.
+// ═══════════════════════════════════════════════════════════════════════════
+
+var IMP = 'https://www.imperva.com/products/';
+
+// ── robots.txt ──────────────────────────────────────────────────────────────
+var smaps = mxParseRobotsSitemaps(FX.robots, 'https://www.imperva.com/');
+eq(smaps.length, 21, 'all 21 Sitemap: lines parsed out of the real robots.txt');
+ok(smaps.indexOf('https://www.imperva.com/products/sitemap_index.xml') !== -1,
+   'the products sitemap is among them');
+
+// THE load-bearing assertion of the whole feature: 21 declared sitemaps, and the
+// one describing this base has to sort first or discovery fetches the wrong file.
+eq(mxRankSitemaps(smaps, IMP)[0], 'https://www.imperva.com/products/sitemap_index.xml',
+   'ranking puts the products sitemap first for a /products/ base');
+eq(mxRankSitemaps(smaps, 'https://www.imperva.com/blog/')[0],
+   'https://www.imperva.com/blog/sitemap_index.xml',
+   'and the blog sitemap first for a /blog/ base — the rule is the base, not a hard-coded name');
+
+eq(mxParseRobotsSitemaps('SITEMAP: https://e.com/a.xml', 'https://e.com/'),
+   ['https://e.com/a.xml'], 'the key is case-insensitive');
+eq(mxParseRobotsSitemaps('Sitemap: /rel.xml', 'https://e.com/'),
+   ['https://e.com/rel.xml'], 'a root-relative sitemap resolves against the origin');
+eq(mxParseRobotsSitemaps('Sitemap: https://e.com/a.xml # main', 'https://e.com/'),
+   ['https://e.com/a.xml'], 'a trailing comment is stripped');
+eq(mxParseRobotsSitemaps('Sitemap:\nDisallow:\nUser-agent: *', 'https://e.com/'), [],
+   'valueless lines, including a bare Disallow:, yield nothing');
+eq(mxParseRobotsSitemaps('Sitemap: https://e.com/a.xml\nSitemap: https://e.com/a.xml', 'https://e.com/'),
+   ['https://e.com/a.xml'], 'duplicates collapse');
+
+// ── kind detection ──────────────────────────────────────────────────────────
+eq(mxSitemapKind(FX.sitemapIndex), 'index', 'the real index is an index');
+eq(mxSitemapKind(FX.pageSitemap), 'urlset', 'the real page sitemap is a urlset');
+eq(mxSitemapKind(''), 'empty', 'an empty body is empty');
+
+// A 200 whose body is HTML must NOT read as an empty sitemap. Bot interstitials
+// are exactly this shape, and "0 pages found" instead of "that was not XML" is
+// the silent failure this feature exists to remove.
+eq(mxSitemapKind(FX.htmlWhereXmlExpected), 'html',
+   'a real HTML body where XML was expected is html, NOT empty');
+eq(mxSitemapKind('\x1f\x8bmore'), 'binary', 'a gzip body is binary, not empty');
+eq(mxParseSitemapXml(FX.htmlWhereXmlExpected).entries.length, 0,
+   'and it yields no entries rather than a partial list');
+
+// ── sitemap parsing ─────────────────────────────────────────────────────────
+var idx = mxParseSitemapXml(FX.sitemapIndex);
+eq(idx.kind, 'index', 'index kind');
+eq(idx.entries, ['https://www.imperva.com/products/page-sitemap.xml',
+                 'https://www.imperva.com/products/modal-sitemap.xml'],
+   'both child sitemaps, in order');
+
+var pg = mxParseSitemapXml(FX.pageSitemap);
+eq(pg.kind, 'urlset', 'page sitemap kind');
+eq(pg.entries.length, 41, '41 pages — the number the manual pass arrived at');
+
+// The catch that only real bytes produced. modal-sitemap.xml has EIGHT <url>
+// entries but NINE <loc> matches: cds-demo-popup carries a nested
+// <image:image><image:loc>…Group-2554.svg</image:loc></image:image>. A <loc>
+// regex that allows any namespace prefix hands that SVG to the auditor as a page.
+var md = mxParseSitemapXml(FX.modalSitemap);
+eq(md.entries.length, 8, 'modal sitemap yields 8 pages, not 9 — image:loc is not a page');
+ok(md.entries.every(function (u) { return u.indexOf('.svg') === -1; }),
+   'no asset URL survives from a media subtree');
+eq(FX.modalSitemap.indexOf('<image:loc>') !== -1, true,
+   'guard: the fixture really does contain the image:loc that makes this test mean something');
+
+eq(mxParseSitemapXml('<urlset><loc>https://e.com/a?x=1&amp;y=2</loc></urlset>').entries,
+   ['https://e.com/a?x=1&y=2'], '&amp; is decoded — sitemaps always escape it');
+eq(mxParseSitemapXml('<urlset><loc><![CDATA[https://e.com/a]]></loc></urlset>').entries,
+   ['https://e.com/a'], 'CDATA is unwrapped');
+eq(mxParseSitemapXml('<urlset xmlns:sm="x"><sm:loc>https://e.com/a</sm:loc></urlset>').entries,
+   ['https://e.com/a'], 'a namespaced loc on the sitemap itself still counts');
+eq(mxParseSitemapXml('<urlset></urlset>').entries, [], 'an empty urlset is empty, not an error');
+
+// ── scoping the entries ─────────────────────────────────────────────────────
+var cand = mxSitemapCandidates(pg.entries, IMP);
+eq(cand.inScope.length, 41, 'all 41 real pages are under the base');
+// 17 pages in the data-security group: the section index plus 16 pages beneath
+// it. The nav-only crawl saw 9 of these; the sitemap is where the rest live.
+eq(cand.inScope.filter(function (l) { return l.group === 'data-security'; }).length,
+   17, 'the data-security group holds 17 pages a nav crawl could not reach');
+eq(cand.inScope.filter(function (l) { return l.url.indexOf('/products/data-security/') !== -1; }).length,
+   16, '16 of those sit BENEATH the section index, which normalizes without its slash');
+
+var modalCand = mxSitemapCandidates(md.entries, IMP);
+eq(modalCand.inScope.length, 8, 'modal pages ARE under /products/ — ranking cannot exclude them');
+ok(modalCand.inScope.every(function (l) { return l.group === 'modal'; }),
+   'they all group as "modal", which is how a user excludes them in one click');
+
+eq(mxSitemapCandidates(['https://www.imperva.com/blog/x'], IMP).outOfScope.length, 1,
+   'an out-of-base entry is reported, not silently dropped');
+// Assets are rejected outright. /feed/ is NOT — it is a path, not an extension,
+// and a site may legitimately have a page there. It survives as its own `feed`
+// group instead, which is the same one-click exclusion the modal pages get.
+// Deliberately not hard-coded into mxNormalizeCrawlUrl: that function means "is
+// this a page", ~20 assertions rest on it, and guessing there is what this
+// feature is trying to stop doing.
+var noise = mxSitemapCandidates(['https://www.imperva.com/products/a.pdf',
+                                 'https://www.imperva.com/products/feed/'], IMP);
+eq(noise.inScope.map(function (l) { return l.group; }), ['feed'],
+   'the asset is dropped; /feed/ survives as an excludable group');
+
+// ── the sitemap URL bypass ──────────────────────────────────────────────────
+// Two halves of one invariant: sitemaps survive normalization, pages still do not.
+eq(mxNormalizeSitemapUrl('https://e.com/sitemap.xml'), 'https://e.com/sitemap.xml',
+   'a sitemap URL survives normalization');
+eq(mxNormalizeCrawlUrl('https://e.com/sitemap.xml'), null,
+   'while the PAGE rule still rejects .xml — the bypass is a separate path, not a loosening');
+
+// ── merge ───────────────────────────────────────────────────────────────────
+var mg = mxMergeDiscovery({
+  sitemap: [{ url: 'https://e.com/p/a', group: 'a' }, { url: 'https://e.com/p/b', group: 'b' }],
+  crawl:   [{ url: 'https://e.com/p/b', group: 'b' }, { url: 'https://e.com/p/c', group: 'c' }],
+  baseUrl: 'https://e.com/p',
+});
+eq(mg.merged.length, 3, 'union, deduped');
+eq(mg.onlyCrawl, ['https://e.com/p/c'],
+   'onlyCrawl is the diagnostic: it is how you learn the sitemap is incomplete');
+eq(mg.onlySitemap, ['https://e.com/p/a'], 'and onlySitemap the reverse');
+
+// ── verdicts ────────────────────────────────────────────────────────────────
+function verdict(probe) { return mxResolveVerdict('https://e.com/p/a', probe, 'https://e.com/p').verdict; }
+eq(verdict({ status: 200, finalUrl: 'https://e.com/p/a' }), 'self', '200 to itself');
+eq(verdict({ status: 200, finalUrl: 'https://e.com/p/a/' }), 'self', 'a trailing slash is still itself');
+eq(verdict({ status: 200, finalUrl: 'https://e.com/p/b' }), 'redirect-in', 'redirect inside the base');
+eq(verdict({ status: 200, finalUrl: 'https://e.com/other' }), 'redirect-out', 'redirect outside it');
+eq(verdict({ status: 404, finalUrl: 'https://e.com/p/a' }), 'gone', '404');
+eq(verdict({ status: 403, finalUrl: '' }), 'blocked', '403');
+eq(verdict({ status: 200, finalUrl: 'https://e.com/p/a', prefix: 'Pardon Our Interruption' }),
+   'blocked', 'a challenge body is blocked even on a 200');
+eq(verdict({ error: 'network' }), 'error', 'a network failure');
+
+// The asymmetry, stated as a test: an unverifiable URL is KEPT, and only a
+// positively-disproved one is dropped. Dropping on a failed check would be the
+// original under-counting bug in a new place.
+var applied = mxApplyResolutions(
+  [{ url: 'https://e.com/p/keep', group: 'p' }, { url: 'https://e.com/p/blocked', group: 'p' },
+   { url: 'https://e.com/p/err', group: 'p' },  { url: 'https://e.com/p/away', group: 'p' },
+   { url: 'https://e.com/p/dead', group: 'p' }],
+  [{ url: 'https://e.com/p/keep', verdict: 'self', finalUrl: 'https://e.com/p/keep' },
+   { url: 'https://e.com/p/blocked', verdict: 'blocked', finalUrl: '' },
+   { url: 'https://e.com/p/err', verdict: 'error', finalUrl: '' },
+   { url: 'https://e.com/p/away', verdict: 'redirect-out', finalUrl: 'https://e.com/gone' },
+   { url: 'https://e.com/p/dead', verdict: 'gone', finalUrl: '', status: 404 }],
+  'https://e.com/p');
+eq(applied.links.map(function (l) { return l.url; }),
+   ['https://e.com/p/keep', 'https://e.com/p/blocked', 'https://e.com/p/err'],
+   'blocked and error are KEPT; only redirect-out and gone are dropped');
+eq(applied.dropped.length, 2, 'and the dropped ones are listed by name, never silently');
+
+// redirect-in must replace and re-dedupe, or two spellings of one page survive.
+var collapsed = mxApplyResolutions(
+  [{ url: 'https://e.com/p/a', group: 'p' }, { url: 'https://e.com/p/old', group: 'p' }],
+  [{ url: 'https://e.com/p/a', verdict: 'self', finalUrl: 'https://e.com/p/a' },
+   { url: 'https://e.com/p/old', verdict: 'redirect-in', finalUrl: 'https://e.com/p/a' }],
+  'https://e.com/p');
+eq(collapsed.links.length, 1, 'a redirect onto an existing page collapses instead of duplicating');
+
+// Merge order is load-bearing for the page cap, which is why the driver caps
+// AFTER verification rather than before. Sitemap entries come first, so a cap
+// applied to the raw merge cuts precisely the link-only findings the
+// cross-check exists to contribute — measured in the browser as "4 only from
+// links" reported while none of the four survived into the list.
+var ordered = mxMergeDiscovery({
+  sitemap: [{ url: 'https://e.com/p/s1', group: 'p' }, { url: 'https://e.com/p/s2', group: 'p' }],
+  crawl:   [{ url: 'https://e.com/p/only-from-links', group: 'p' }],
+  baseUrl: 'https://e.com/p',
+}).merged;
+eq(ordered[ordered.length - 1].url, 'https://e.com/p/only-from-links',
+   'the cross-check findings sit LAST, so any cap applied before verification eats them first');
+
+eq(mxBatchSlices([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]], 'batching');
+eq(mxBatchSlices([], 4), [], 'batching nothing');
+
+// ── end to end, on the real bytes ───────────────────────────────────────────
+// robots -> rank -> index -> children -> candidates, exactly as the driver runs it.
+var chosen = mxRankSitemaps(mxParseRobotsSitemaps(FX.robots, 'https://www.imperva.com/'), IMP)[0];
+eq(chosen, 'https://www.imperva.com/products/sitemap_index.xml', 'step 1: pick the sitemap');
+var children = mxParseSitemapXml(FX.sitemapIndex).entries;
+eq(children.length, 2, 'step 2: two children');
+var all = [].concat(mxParseSitemapXml(FX.pageSitemap).entries,
+                    mxParseSitemapXml(FX.modalSitemap).entries);
+var final = mxSitemapCandidates(all, IMP);
+eq(final.inScope.length, 49, 'step 3: 41 pages + 8 modals, and the SVG is not among them');
+eq(final.inScope.filter(function (l) { return l.group !== 'modal'; }).length, 41,
+   'excluding the modal group leaves exactly the 41 the manual pass counted');
 
 print('=== ' + passed + ' passed, ' + failed + ' failed ===');
 if (failed) throw new Error(failed + ' assertion(s) failed');

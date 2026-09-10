@@ -3807,6 +3807,95 @@ async function runMatrixCrawlStep({ url, waitTime }) {
   return out;
 }
 
+// ── Matrix Auditor: same-origin batch fetch ─────────────────────────────────
+// The transport behind sitemap discovery and page verification. Injected into a
+// page on the TARGET origin and run from there — not from this worker.
+//
+// That is not a stylistic choice, it is the whole reason this works. A worker
+// fetch arrives with Origin: chrome-extension://…, Sec-Fetch-Site: cross-site,
+// no Referer, and none of the site's cookies — every one of those a bot signal,
+// and a WAF challenge cookie can never be among them because the worker never
+// solved the challenge. Run from inside a page on that origin the same request
+// carries Sec-Fetch-Site: same-origin, a real Referer, and the full first-party
+// jar. The user measured exactly this asymmetry: robots.txt through, every real
+// page returning an interstitial, and a same-origin fetch fine.
+//
+// DO NOT "simplify" this to a worker-side fetch. It looks obviously simpler and
+// it works on most sites — it fails precisely on the sites this exists for.
+//
+// Precedent for the technique: popup.js's initPageExtractorFn does the same
+// against Jira's REST API. Note also that batching requests inside ONE
+// already-open tab is not what the sequential rule above openSettledTab
+// forbids; that rule is about opening tabs in parallel.
+async function matrixFetchTexts(urls, batchSize, pauseMs, mode, prefixBytes, timeoutMs) {
+  const slices = [];
+  for (let i = 0; i < urls.length; i += batchSize) slices.push(urls.slice(i, i + batchSize));
+  const out = [];
+  for (let si = 0; si < slices.length; si++) {
+    const batch = await Promise.all(slices[si].map(async (u) => {
+      const r = { url: u, ok: false, status: 0, finalUrl: '', redirected: false, text: '', prefix: '', error: null };
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), timeoutMs);
+      try {
+        // redirect:'follow' (the default) and read res.url. NEVER 'manual' —
+        // that yields an opaqueredirect whose url is the empty string, which
+        // would make every redirect indistinguishable from a failure.
+        const res = await fetch(u, { credentials: 'same-origin', redirect: 'follow', signal: ctl.signal });
+        r.ok = res.ok;
+        r.status = res.status;
+        r.finalUrl = res.url || u;
+        r.redirected = !!res.redirected;
+        if (mode === 'text') {
+          r.text = await res.text();
+        } else {
+          // Verification only needs enough bytes to recognise a challenge page,
+          // so read the first chunk and drop the rest — a product page can be
+          // 270KB and there may be fifty of them.
+          const reader = res.body && res.body.getReader ? res.body.getReader() : null;
+          if (reader) {
+            const first = await reader.read();
+            if (first && first.value) r.prefix = new TextDecoder().decode(first.value).slice(0, prefixBytes);
+            try { await reader.cancel(); } catch (_) {}
+          } else {
+            r.prefix = (await res.text()).slice(0, prefixBytes);
+          }
+        }
+      } catch (e) {
+        r.error = String((e && e.message) || e);
+      } finally {
+        clearTimeout(timer);
+      }
+      return r;
+    }));
+    out.push(...batch);
+    if (si < slices.length - 1 && pauseMs > 0) await new Promise(r => setTimeout(r, pauseMs));
+  }
+  return out;
+}
+
+// Opens ONE page on the target origin, runs every fetch from inside it, closes
+// it. The popup decides what to fetch and what the answers mean; this only
+// carries bytes. No tab is held across message round trips, so an MV3 eviction
+// between calls cannot orphan one.
+async function runMatrixFetchBatch({ pageUrl, urls = [], batchSize = 4, pauseMs = 300,
+                                     mode = 'text', waitTime, prefixBytes = 2048, timeoutMs = 10000 }) {
+  const out = { opened: '', loadError: null, results: [] };
+  const settleMs = Math.max(0, parseInt(waitTime, 10) || 0);
+  let tabId = null;
+  try {
+    tabId = await openSettledTab(pageUrl, settleMs);
+    const tab = await chrome.tabs.get(tabId);
+    out.opened = tab.url || '';
+    out.results = (await exec(tabId, matrixFetchTexts,
+      [urls, batchSize, pauseMs, mode, prefixBytes, timeoutMs])) || [];
+  } catch (e) {
+    out.loadError = e.message;
+  } finally {
+    if (tabId) { try { await chrome.tabs.remove(tabId); } catch (_) {} }
+  }
+  return out;
+}
+
 // Agentic Testing: a plain viewport screenshot (no full-page stitching) for
 // vision commentary — short-lived attach/capture/detach.
 async function captureViewportScreenshot(tabId) {
@@ -5264,6 +5353,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       } finally {
+        await endTmRun();
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'runMatrixFetchBatch') {
+    (async () => {
+      await beginTmRun(msg.payload);
+      // A fifty-URL verification round is ~10s in which this worker is idle with
+      // only an in-flight executeScript — an in-flight request does NOT reset
+      // the MV3 idle timer. Same guard as the aiExtractInitFields handler below.
+      let heartbeat = null;
+      try {
+        heartbeat = setInterval(() => { chrome.runtime.getPlatformInfo(() => {}); }, 20000);
+        const result = await runMatrixFetchBatch(msg.payload || {});
+        sendResponse({ ok: true, ...result });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      } finally {
+        if (heartbeat) clearInterval(heartbeat);
         await endTmRun();
       }
     })();

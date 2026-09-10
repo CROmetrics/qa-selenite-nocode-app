@@ -547,17 +547,25 @@
 
         <!-- Source B — every subpage under a base URL, found by walking it -->
         <div id="mx-crawl-pane" style="display:none">
-          <div style="font-size:10px;color:var(--fg3)">Selenite opens the base URL, follows every link that sits underneath it, and audits each subpage it finds. Discovered pages appear in the list below before you run.</div>
+          <div style="font-size:10px;color:var(--fg3)">Selenite reads the site's sitemap, cross-checks it by following links under the base URL, and confirms each page resolves to itself. Discovered pages appear below, grouped by section — click a group to hold it back from the run.</div>
           <div class="arg-row" style="margin:6px 0">
             <span class="arg-lbl">Base URL</span>
             <input type="text" id="mx-crawl-base" placeholder="https://example.com/learn/">
+          </div>
+          <div class="arg-row" style="margin-bottom:6px">
+            <span class="arg-lbl">Discovery</span>
+            <select id="mx-crawl-method">
+              <option value="both">Sitemap + links (recommended)</option>
+              <option value="sitemap">Sitemap only</option>
+              <option value="links">Links only</option>
+            </select>
           </div>
           <div class="row" style="gap:8px;flex-wrap:wrap">
             <div class="arg-row" style="flex:1;min-width:130px">
               <span class="arg-lbl">Max pages</span>
               <input type="text" id="mx-crawl-max" value="50">
             </div>
-            <div class="arg-row" style="flex:2;min-width:170px">
+            <div class="arg-row" id="mx-crawl-depth-row" style="flex:2;min-width:170px">
               <span class="arg-lbl">Scan depth</span>
               <select id="mx-crawl-depth">
                 <option value="1">1 — base page only</option>
@@ -566,6 +574,7 @@
               </select>
             </div>
           </div>
+          <label class="suite-check" style="margin-top:6px"><input type="checkbox" id="mx-crawl-verify" checked> Verify each page resolves to itself</label>
           <div class="row-spread" style="margin-top:8px">
             <span id="mx-crawl-status" style="font-size:11px;color:var(--fg2)">Not crawled yet.</span>
             <div class="row" style="gap:6px">

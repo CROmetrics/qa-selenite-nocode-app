@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Selenite — No-Code QA Runner",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Build and run QA test scripts directly in your browser — no code required.",
   "incognito": "spanning",
   "permissions": [

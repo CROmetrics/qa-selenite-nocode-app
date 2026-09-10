@@ -8141,9 +8141,14 @@ function mxSyncFromState() {
   document.getElementById('mx-audit-name').value   = mxState.name || '';
   document.getElementById('mx-variation-id').value = mxState.variationId || '';
   document.getElementById('mx-advance-mode').value = mxState.advanceMode || 'auto';
+  const c = mxState.crawl || mxDefaultCrawl();
+  document.getElementById('mx-crawl-base').value  = c.baseUrl || '';
+  document.getElementById('mx-crawl-max').value   = c.maxPages;
+  document.getElementById('mx-crawl-depth').value = c.maxDepth;
   mxGroupFilter = null;
   mxSetLinkMode(mxState.linkMode || 'none');
-  mxRenderLinkGroups();
+  // Last, so the panes settle after everything they depend on is in the DOM.
+  mxSetLinkSource(mxState.linkSource || 'paste');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -8272,7 +8277,7 @@ const FILL_TARGETS = [
                    + (mxState?.name?.trim() ? '' : ` · audit name "${ctx.ticketKey}"`),
     snapshot: () => mxState ? {
       linksRaw: mxState.linksRaw, links: structuredClone(mxState.links),
-      linkMode: mxState.linkMode, name: mxState.name,
+      linkSource: mxState.linkSource, linkMode: mxState.linkMode, name: mxState.name,
     } : undefined,
     restore: snap => {
       if (!snap || !mxState) return;
@@ -8299,8 +8304,9 @@ const FILL_TARGETS = [
       mxState.linksRaw = ctx.previewLinks
         .map(l => `${csvEncode(l.url)},${l.id || 'ungrouped'}`)
         .join('\n');
-      mxState.links    = parseMatrixLinks(mxState.linksRaw);
-      mxState.linkMode = 'none';
+      mxState.links      = parseMatrixLinks(mxState.linksRaw);
+      mxState.linkSource = 'paste';   // ticket links are a pasted list, not a crawl
+      mxState.linkMode   = 'none';
       if (!mxState.name?.trim()) mxState.name = ctx.ticketKey;
       persistMxState();
       mxSyncFromState();
@@ -8656,18 +8662,194 @@ function mxDefaultGlobalSettings() {
   };
 }
 
+function mxDefaultCrawl() {
+  return {
+    baseUrl: '',
+    maxPages: 50,   // cap on pages COLLECTED
+    maxDepth: 1,    // link-hop levels SCANNED; 1 = the base page only
+  };
+}
+
 function mxDefaultState() {
   return {
     id: null,
     name: '',
+    linkSource: 'paste', // 'paste' | 'crawl' — which source fills the link list
     linksRaw: '',
-    links: [],           // [{ url, group }] — base URLs as parsed, before link-mode params
+    links: [],           // [{ url, group }] — PASTE source, parsed from linksRaw
+    crawl: mxDefaultCrawl(),
+    crawlLinks: [],      // [{ url, group }] — CRAWL source, filled by discovery
     linkMode: 'none',    // 'none' | 'itw' | 'forced' — how link params are composed at run time
     variationId: '',     // optimizely_x value, used only in 'forced' mode
     advanceMode: 'auto', // 'auto' | 'pause' | 'manual' — how hands-on the run is
     selectors: [],       // [{ id, selector, useGlobalSettings, overrides }]
     globalSettings: mxDefaultGlobalSettings(),
   };
+}
+
+// The links the ACTIVE source supplies — the one place anything downstream
+// asks "what are we auditing?". The two lists are kept apart rather than
+// sharing one array so flipping the source back and forth never destroys the
+// other one's work: a crawl does not eat a pasted list, and re-pasting does
+// not throw away a crawl that took two minutes to run.
+function mxActiveLinks() {
+  return (mxState.linkSource === 'crawl' ? mxState.crawlLinks : mxState.links) || [];
+}
+
+// ── Crawl mode — discovering every subpage under a base URL ─────────────────
+// The Links panel has two sources: PASTE (a list the user supplies) and CRAWL
+// (a base URL the tool walks). Both end up as the same [{url, group}] array,
+// so everything downstream — the preview, the group chips, the run loop, the
+// report, the CSV — is untouched by which one filled it.
+//
+// All of the scoping logic lives here as string operations rather than URL /
+// URLSearchParams, matching mxComposeUrl and parseMatrixLinks. That is not
+// stylistic: the jsc test environment has neither constructor, so anything
+// built on them cannot be tested, and these rules are exactly the ones worth
+// testing — an over-broad base match turns a section audit into a whole-site
+// crawl, and an over-narrow one silently finds nothing.
+
+// Params that identify a session or a campaign rather than a page. Dropped
+// before dedupe so twelve ?utm_source= variants of one page collapse into one
+// target instead of filling the matrix with the same page twelve times. The
+// last three are ours — a crawl must never inherit forcing params from a link
+// it found, since mxComposeUrl re-stamps those at run time.
+const MX_CRAWL_STRIP_PARAMS = [
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'utm_id',
+  'gclid', 'fbclid', 'msclkid', 'mc_cid', 'mc_eid', '_ga', '_gl', 'igshid',
+  'ref', 'referrer', 'source',
+  'cro_mode', 'optimizely_x', 'optimizely_force_tracking', 'optimizely_token',
+];
+
+// Things a crawl must not queue as pages. Assets and downloads, not documents.
+const MX_CRAWL_SKIP_EXT = /\.(pdf|zip|gz|tgz|dmg|exe|pkg|csv|tsv|xlsx?|docx?|pptx?|jpe?g|png|gif|webp|avif|svg|ico|bmp|tiff?|mp[34]|m4[av]|wav|ogg|webm|mov|avi|css|js|mjs|json|xml|rss|atom|txt|woff2?|ttf|eot)$/i;
+
+// http(s) URL → { origin, path, query }, hash already gone. Anything else —
+// mailto:, tel:, javascript:, a data: URI, a relative path that somehow got
+// through — returns null, which every caller reads as "not a page".
+function mxSplitUrl(raw) {
+  let s = String(raw || '').trim();
+  if (!s) return null;
+  const hi = s.indexOf('#');
+  if (hi !== -1) s = s.slice(0, hi);
+  const m = /^(https?):\/\/([^/?#]+)(\/[^?#]*)?(?:\?([^#]*))?$/i.exec(s);
+  if (!m) return null;
+  return {
+    origin: m[1].toLowerCase() + '://' + m[2].toLowerCase(),
+    path: m[3] || '/',
+    query: m[4] || '',
+  };
+}
+
+// Trailing slash collapsed so /learn and /learn/ are one page; root stays "/".
+function mxTrimPath(path) {
+  return path.length > 1 ? (path.replace(/\/+$/, '') || '/') : path;
+}
+
+// The identity a crawl dedupes on. Noise params dropped, survivors sorted so
+// ?a=1&b=2 and ?b=2&a=1 are recognised as the same page. Returns null for a
+// non-page URL or an asset, so callers filter and normalize in one step.
+function mxNormalizeCrawlUrl(raw) {
+  const u = mxSplitUrl(raw);
+  if (!u) return null;
+  const path = mxTrimPath(u.path);
+  if (MX_CRAWL_SKIP_EXT.test(path)) return null;
+  const kept = u.query.split('&').filter(Boolean)
+    .filter(p => !MX_CRAWL_STRIP_PARAMS.includes(p.split('=')[0].toLowerCase()))
+    .sort();
+  return u.origin + path + (kept.length ? '?' + kept.join('&') : '');
+}
+
+// In scope when the URL sits under the base's DIRECTORY on the same origin.
+// The "+ '/'" in the prefix test is what keeps a base of /learn from dragging
+// in /learning — a plain startsWith would, and that is the difference between
+// auditing a section and auditing the whole site by accident. A base with no
+// path (or just "/") admits its whole origin, which is the deliberate
+// whole-site case.
+function mxIsUnderBase(url, baseUrl) {
+  const u = mxSplitUrl(url), b = mxSplitUrl(baseUrl);
+  if (!u || !b || u.origin !== b.origin) return false;
+  const bp = mxTrimPath(b.path);
+  if (bp === '/') return true;
+  const up = mxTrimPath(u.path);
+  return up === bp || up.startsWith(bp + '/');
+}
+
+// Group label for a discovered page: the first path segment below the base, so
+// a crawl arrives pre-split into sections and the existing group chips filter
+// it. The base page itself is "root".
+function mxCrawlGroup(url, baseUrl) {
+  const u = mxSplitUrl(url), b = mxSplitUrl(baseUrl);
+  if (!u || !b) return 'ungrouped';
+  const bp = mxTrimPath(b.path);
+  const up = mxTrimPath(u.path);
+  const rest = (bp !== '/' && up.startsWith(bp) ? up.slice(bp.length) : up).replace(/^\/+/, '');
+  return rest.split('/')[0] || 'root';
+}
+
+// One crawl step's worth of bookkeeping, split out so it can be tested without
+// a browser: given the hrefs a page returned, decide what is in scope, what is
+// new, and what still needs scanning. `visited` and `found` are mutated —
+// this IS the crawl's state transition, not a pure view of it.
+//
+// The cap applies to what gets COLLECTED, not to what gets scanned, so a
+// maxPages of 50 returns 50 pages rather than stopping the walk at some
+// arbitrary earlier point.
+function mxCrawlAbsorb(hrefs, { baseUrl, depth, maxDepth, maxPages, visited, found, queue }) {
+  for (const href of hrefs || []) {
+    const url = mxNormalizeCrawlUrl(href);
+    if (!url || visited.has(url) || !mxIsUnderBase(url, baseUrl)) continue;
+    visited.add(url);
+    if (found.length < maxPages) found.push({ url, group: mxCrawlGroup(url, baseUrl) });
+    if (depth + 1 < maxDepth) queue.push({ url, depth: depth + 1 });
+  }
+  return found.length;
+}
+
+// ── Forced-variation ids ────────────────────────────────────────────────────
+// The Variation ID field takes a LIST, and Optimizely wants that list in one
+// optimizely_x param with the ids separated by literal commas. This normalizes
+// whatever the user actually pasted down to bare ids: it splits on every
+// separator a person plausibly types (comma, space, newline, semicolon, &, |),
+// then strips a leading ?/#/& and an `optimizely_x=` / `_conv_eforce=` key off
+// each piece, so pasting a whole preview URL works as well as typing numbers.
+//
+// This exists because the old code ran ONE encodeURIComponent over the raw
+// field, which turned every separator into an escape: "123, 456" reached the
+// address bar as optimizely_x=123%2C%20456 — one unmatchable id, not two.
+// Encoding is now per-id (see mxComposeUrl) so the comma between them stays
+// literal, which is the entire point.
+//
+// Pieces that carry some OTHER key (cro_mode=qa, a=1 — the rest of a pasted
+// URL's query string) are dropped rather than contributing their value as an
+// id, as is anything containing "://". Pure function, no DOM — testable.
+function mxParseVariationIds(raw) {
+  const seen = new Set();
+  const ids = [];
+  for (const piece of String(raw || '').split(/[\s,;&|]+/)) {
+    let v = piece.replace(/^[?#&]+/, '').trim();
+    if (!v) continue;
+    if (v.includes('=')) {
+      // Keep the value only when it belongs to a forcing key; the last
+      // key=value in the piece wins, which is where a pasted URL puts it.
+      // This runs BEFORE the "://" reject below, or a pasted preview URL —
+      // the most common thing in this box — would be thrown away whole.
+      const kv = /(?:^|[?&#])(?:optimizely_x|_conv_eforce)=([^&#]*)$/i.exec(v);
+      if (!kv) continue;
+      v = kv[1].trim();
+    } else if (v.includes('://')) {
+      continue;   // a bare URL carrying no forcing param is not an id
+    }
+    if (!v || seen.has(v)) continue;
+    seen.add(v);
+    ids.push(v);
+  }
+  return ids;
+}
+
+// Display form for the ids — what actually lands in the address bar.
+function mxVariationIdLabel(raw) {
+  return mxParseVariationIds(raw).join(',');
 }
 
 // ── Link-mode composition — the "Forced Link" / "ITW" switches decide what
@@ -8686,7 +8868,12 @@ function mxComposeUrl(baseUrl, mode, variationId) {
   if (mode === 'itw') {
     params.push('cro_mode=qa');
   } else if (mode === 'forced') {
-    params.push('optimizely_x=' + encodeURIComponent(String(variationId || '').trim()));
+    // ONE optimizely_x carrying every id, comma-separated. Each id is escaped
+    // on its own so a stray character inside an id is still safe while the
+    // separator stays a literal comma — an escaped "%2C" is not a separator to
+    // Optimizely, it is part of a single id that matches nothing.
+    const ids = mxParseVariationIds(variationId);
+    if (ids.length) params.push('optimizely_x=' + ids.map(id => encodeURIComponent(id)).join(','));
     params.push('optimizely_force_tracking=true');
     params.push('cro_mode=qa');
   }
@@ -8696,7 +8883,7 @@ function mxComposeUrl(baseUrl, mode, variationId) {
 // The links actually audited: base URLs with the current link mode applied.
 // Group labels stay as parsed (from CSV/template) so the group chips still work.
 function mxCurrentTargets() {
-  return mxState.links
+  return mxActiveLinks()
     .map(l => ({ baseUrl: l.url, url: mxComposeUrl(l.url, mxState.linkMode, mxState.variationId), group: l.group || 'ungrouped' }))
     .filter(t => t.url);
 }
@@ -8755,8 +8942,9 @@ function parseMatrixLinks(raw) {
 // ── Session persistence (live editing state, namespaced per window) ────────
 async function persistMxState() {
   await sessionNS.set({ mxState: {
-    id: mxState.id, name: mxState.name, linksRaw: mxState.linksRaw,
-    links: mxState.links, linkMode: mxState.linkMode, variationId: mxState.variationId,
+    id: mxState.id, name: mxState.name, linkSource: mxState.linkSource, linksRaw: mxState.linksRaw,
+    links: mxState.links, crawl: mxState.crawl, crawlLinks: mxState.crawlLinks,
+    linkMode: mxState.linkMode, variationId: mxState.variationId,
     advanceMode: mxState.advanceMode, selectors: mxState.selectors, globalSettings: mxState.globalSettings,
   } });
 }
@@ -8794,12 +8982,13 @@ function mxSetLinkMode(mode) {
 
 function mxRenderLinkGroups() {
   const wrap = document.getElementById('mx-link-groups');
-  const groups = [...new Set(mxState.links.map(l => l.group || 'ungrouped'))];
+  const all = mxActiveLinks();
+  const groups = [...new Set(all.map(l => l.group || 'ungrouped'))];
   if (groups.length <= 1) { wrap.innerHTML = ''; return; }
   const chip = (label, value, count) =>
     `<button type="button" class="btn sm${mxGroupFilter === value ? ' primary' : ''}" data-mx-grp="${esc(value || '')}">${esc(label)} (${count})</button>`;
-  wrap.innerHTML = chip('All', '', mxState.links.length) +
-    groups.map(g => chip(g, g, mxState.links.filter(l => (l.group || 'ungrouped') === g).length)).join('');
+  wrap.innerHTML = chip('All', '', all.length) +
+    groups.map(g => chip(g, g, all.filter(l => (l.group || 'ungrouped') === g).length)).join('');
   wrap.querySelectorAll('[data-mx-grp]').forEach(btn => {
     btn.addEventListener('click', () => {
       mxGroupFilter = btn.dataset.mxGrp || null;
@@ -8828,15 +9017,137 @@ function mxOnLinksInput() {
   persistMxState();
 }
 
+// Clears whichever source is showing — the paste box in paste mode, the
+// discovered list in crawl mode. Clearing one never touches the other.
 function mxClearLinks() {
-  document.getElementById('mx-links-input').value = '';
-  mxState.linksRaw = '';
-  mxState.links = [];
+  if (mxState.linkSource === 'crawl') {
+    mxState.crawlLinks = [];
+    mxSetCrawlStatus('Cleared.');
+  } else {
+    document.getElementById('mx-links-input').value = '';
+    mxState.linksRaw = '';
+    mxState.links = [];
+  }
   mxGroupFilter = null;
   mxRenderLinkGroups();
   mxRenderLinkList();
   mxUpdateLinkCount();
   persistMxState();
+}
+
+// ── Link source switch ───────────────────────────────────────────────────────
+function mxSetLinkSource(source) {
+  mxState.linkSource = source === 'crawl' ? 'crawl' : 'paste';
+  const paste = document.getElementById('mx-src-paste');
+  const crawl = document.getElementById('mx-src-crawl');
+  if (paste) paste.checked = mxState.linkSource === 'paste';
+  if (crawl) crawl.checked = mxState.linkSource === 'crawl';
+  const pastePane = document.getElementById('mx-paste-pane');
+  const crawlPane = document.getElementById('mx-crawl-pane');
+  if (pastePane) pastePane.style.display = mxState.linkSource === 'paste' ? '' : 'none';
+  if (crawlPane) crawlPane.style.display = mxState.linkSource === 'crawl' ? '' : 'none';
+  mxGroupFilter = null;
+  mxRenderLinkGroups();
+  mxRenderLinkList();
+  mxUpdateLinkCount();
+  persistMxState();
+}
+
+// ── Crawl panel ──────────────────────────────────────────────────────────────
+let _mxCrawling = false;
+let _mxCrawlStop = false;
+
+function mxSetCrawlStatus(text) {
+  const el = document.getElementById('mx-crawl-status');
+  if (el) el.textContent = text;
+}
+
+function mxSetCrawlUiState(state) {
+  const run  = document.getElementById('btn-mx-crawl');
+  const stop = document.getElementById('btn-mx-crawl-stop');
+  if (run)  run.style.display  = state === 'busy' ? 'none' : '';
+  if (stop) stop.style.display = state === 'busy' ? '' : 'none';
+}
+
+function mxOnCrawlInput() {
+  const c = mxState.crawl;
+  c.baseUrl  = document.getElementById('mx-crawl-base').value;
+  c.maxPages = Math.min(500, Math.max(1, parseInt(document.getElementById('mx-crawl-max').value, 10) || 50));
+  c.maxDepth = Math.min(4, Math.max(1, parseInt(document.getElementById('mx-crawl-depth').value, 10) || 1));
+  persistMxState();
+}
+
+function mxStopCrawl() {
+  _mxCrawlStop = true;
+  mxSetCrawlStatus('Stopping after the current page…');
+}
+
+// Breadth-first walk of everything under the base URL, one page per background
+// round trip. Fills mxState.crawlLinks with the same [{url, group}] shape the
+// paste box produces, so the preview, the group chips, the run loop, the
+// report and the CSV never learn that a crawl happened.
+//
+// The discovered URLs are BASE urls — link mode is applied later by
+// mxComposeUrl at run time, exactly as it is for a pasted list. That is also
+// why MX_CRAWL_STRIP_PARAMS drops any forcing param found on a crawled link:
+// inheriting one would fight the mode the user picked.
+async function mxRunCrawl() {
+  if (_mxCrawling) return;
+  if (_mxRunning) { alert('An audit is running — stop it before crawling.'); return; }
+  const baseUrl = mxNormalizeCrawlUrl(mxState.crawl.baseUrl);
+  if (!baseUrl) {
+    alert('Enter a base URL to crawl, e.g. https://example.com/learn/');
+    return;
+  }
+  const maxPages = Math.min(500, Math.max(1, parseInt(mxState.crawl.maxPages, 10) || 50));
+  const maxDepth = Math.min(4, Math.max(1, parseInt(mxState.crawl.maxDepth, 10) || 1));
+
+  _mxCrawling = true;
+  _mxCrawlStop = false;
+  mxSetCrawlUiState('busy');
+
+  const visited = new Set([baseUrl]);
+  const found   = [{ url: baseUrl, group: mxCrawlGroup(baseUrl, baseUrl) }];
+  const queue   = [{ url: baseUrl, depth: 0 }];
+  let scanned = 0, failed = 0;
+
+  try {
+    while (queue.length && !_mxCrawlStop && found.length < maxPages) {
+      const { url, depth } = queue.shift();
+      scanned++;
+      mxSetCrawlStatus(`Scanning page ${scanned} (depth ${depth + 1})… ${found.length} found`);
+      let res;
+      try {
+        res = await chrome.runtime.sendMessage({
+          action: 'runMatrixCrawlStep',
+          payload: { url, waitTime: mxState.globalSettings.waitTime, winId: WIN_ID },
+        });
+      } catch (e) {
+        res = { ok: false, error: e.message };
+      }
+      if (!res || !res.ok || res.loadError) failed++;
+      else mxCrawlAbsorb(res.hrefs, { baseUrl, depth, maxDepth, maxPages, visited, found, queue });
+
+      // Commit after every page, not at the end: a Stop, a thrown message or a
+      // closed side panel then keeps everything discovered so far instead of
+      // throwing away a walk that may have taken minutes.
+      mxState.crawlLinks = found.slice();
+      mxRenderLinkGroups();
+      mxRenderLinkList();
+      mxUpdateLinkCount();
+      await persistMxState();
+    }
+  } finally {
+    _mxCrawling = false;
+    mxSetCrawlUiState('idle');
+  }
+
+  const parts = [`${found.length} page${found.length === 1 ? '' : 's'} found`, `${scanned} scanned`];
+  if (failed) parts.push(`${failed} could not be loaded`);
+  if (_mxCrawlStop) parts.push('stopped');
+  else if (found.length >= maxPages) parts.push(`cap of ${maxPages} reached`);
+  else if (queue.length) parts.push(`${queue.length} unscanned at depth ${maxDepth}`);
+  mxSetCrawlStatus(parts.join(' · '));
 }
 
 // ── Selectors panel ──────────────────────────────────────────────────────────
@@ -9014,7 +9325,10 @@ async function mxSaveAudit() {
     lastModified: now,
     config: {
       selectors: mxState.selectors,
+      linkSource: mxState.linkSource,
       links: mxState.links,
+      crawl: mxState.crawl,
+      crawlLinks: mxState.crawlLinks,
       linkMode: mxState.linkMode,
       variationId: mxState.variationId,
       globalSettings: mxState.globalSettings,
@@ -9060,6 +9374,11 @@ async function mxLoadAudit(id) {
   mxState.name = audit.name;
   mxState.selectors = JSON.parse(JSON.stringify(audit.config.selectors || []));
   mxState.links = JSON.parse(JSON.stringify(audit.config.links || []));
+  // Audits saved before crawl mode existed have neither key — they load as a
+  // paste-source audit, which is what they were.
+  mxState.linkSource = audit.config.linkSource || 'paste';
+  mxState.crawl = { ...mxDefaultCrawl(), ...(audit.config.crawl || {}) };
+  mxState.crawlLinks = JSON.parse(JSON.stringify(audit.config.crawlLinks || []));
   mxState.linkMode = audit.config.linkMode || 'none';
   mxState.variationId = audit.config.variationId || '';
   mxState.globalSettings = { ...mxDefaultGlobalSettings(), ...(audit.config.globalSettings || {}) };
@@ -9069,7 +9388,11 @@ async function mxLoadAudit(id) {
   document.getElementById('mx-links-input').value = mxState.linksRaw;
   document.getElementById('mx-audit-name').value = mxState.name || '';
   document.getElementById('mx-variation-id').value = mxState.variationId || '';
+  document.getElementById('mx-crawl-base').value  = mxState.crawl.baseUrl || '';
+  document.getElementById('mx-crawl-max').value   = mxState.crawl.maxPages;
+  document.getElementById('mx-crawl-depth').value = mxState.crawl.maxDepth;
   mxSetLinkMode(mxState.linkMode);
+  mxSetLinkSource(mxState.linkSource);
   mxApplyGlobalSettingsToInputs();
   mxRenderSelectors();
   mxGroupFilter = null;
@@ -9195,8 +9518,8 @@ async function runMatrixAuditStart() {
   const targets = mxCurrentTargets();
   if (!targets.length) { alert('Add at least one URL first.'); return; }
   if (!validSelectors.length) { alert('Add at least one selector first.'); return; }
-  if (mxState.linkMode === 'forced' && !String(mxState.variationId).trim()) {
-    alert('Enter a Variation ID for Forced Link mode.'); return;
+  if (mxState.linkMode === 'forced' && !mxParseVariationIds(mxState.variationId).length) {
+    alert('Enter at least one Variation ID for Forced Link mode.'); return;
   }
   _mxStopRequested = false;
   mxRun = { runId: 'run_' + Date.now(), index: -1, total: targets.length, targets, results: {} };
@@ -9343,8 +9666,14 @@ function mxBuildReportBody() {
   const sels = mxState.selectors.filter(s => s.selector.trim());
   const targets = mxRun.targets.filter(t => mxRun.results[t.url]);
   const modeLabel = mxState.linkMode === 'forced'
-    ? `Forced Link — optimizely_x=${esc(String(mxState.variationId || ''))}`
+    ? `Forced Link — optimizely_x=${esc(mxVariationIdLabel(mxState.variationId))}`
     : mxState.linkMode === 'itw' ? 'ITW — cro_mode=qa' : 'None (links as pasted)';
+  // Where the URL list came from. A crawled report is reproducible only if it
+  // says what it crawled — the base and the depth ARE the input, the same way
+  // the pasted list is for the other source.
+  const sourceLabel = mxState.linkSource === 'crawl'
+    ? `Crawled from ${esc(mxState.crawl?.baseUrl || '')} (depth ${esc(String(mxState.crawl?.maxDepth ?? ''))})`
+    : 'Pasted link list';
 
   const summaryRows = sels.map(s => {
     const found = targets.filter(t => mxRun.results[t.url].findings?.[s.id]?.exists).length;
@@ -9378,7 +9707,7 @@ function mxBuildReportBody() {
   return `<header class="rpt-header">
       <h1>${esc(name)}</h1>
       <div class="rpt-meta">Matrix Audit Report · generated ${esc(new Date().toLocaleString())}</div>
-      <div class="rpt-meta" style="margin-top:6px">${targets.length} URL${targets.length === 1 ? '' : 's'} · ${sels.length} selector${sels.length === 1 ? '' : 's'} · Link mode: ${modeLabel}</div>
+      <div class="rpt-meta" style="margin-top:6px">${targets.length} URL${targets.length === 1 ? '' : 's'} · ${sels.length} selector${sels.length === 1 ? '' : 's'} · ${sourceLabel} · Link mode: ${modeLabel}</div>
     </header>
     <div class="rpt-section">
       <h2>Selector summary</h2>
@@ -9424,6 +9753,13 @@ async function initMatrixAuditor() {
 
   document.getElementById('mx-links-input').addEventListener('input', mxOnLinksInput);
   document.getElementById('btn-mx-clear-links').addEventListener('click', mxClearLinks);
+  document.getElementById('mx-src-paste').addEventListener('change', () => mxSetLinkSource('paste'));
+  document.getElementById('mx-src-crawl').addEventListener('change', () => mxSetLinkSource('crawl'));
+  document.getElementById('mx-crawl-base').addEventListener('input', mxOnCrawlInput);
+  document.getElementById('mx-crawl-max').addEventListener('input', mxOnCrawlInput);
+  document.getElementById('mx-crawl-depth').addEventListener('change', mxOnCrawlInput);
+  document.getElementById('btn-mx-crawl').addEventListener('click', mxRunCrawl);
+  document.getElementById('btn-mx-crawl-stop').addEventListener('click', mxStopCrawl);
   document.getElementById('mx-mode-forced').addEventListener('change', e => mxSetLinkMode(e.target.checked ? 'forced' : 'none'));
   document.getElementById('mx-mode-itw').addEventListener('change', e => mxSetLinkMode(e.target.checked ? 'itw' : 'none'));
   document.getElementById('mx-variation-id').addEventListener('input', e => {

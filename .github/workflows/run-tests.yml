@@ -1,6 +1,6 @@
 # .github/workflows/run-tests.yml
 #
-# Runs the extension's four JavaScriptCore suites. This replaced a step that
+# Runs the extension's six JavaScriptCore suites. This replaced a step that
 # invoked `pytest tests/ -v` against a `tests/` directory that does not exist in
 # this repo — so CI had been green-by-vacuity while ~500 assertions were only
 # ever run by hand. Every one of them protects the Visual Diff engine.
@@ -52,7 +52,7 @@ jobs:
         run: |
           set -o pipefail
           rc=0
-          for t in jira-extract figma vd-diff qa-report real-runs; do
+          for t in jira-extract figma vd-diff qa-report real-runs matrix; do
             echo "::group::$t"
             if "$JSC" "$t.test.js"; then
               echo "$t OK"

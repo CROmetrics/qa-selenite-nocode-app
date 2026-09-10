@@ -3642,7 +3642,16 @@ async function endTmRun() {
 // timers and skip paint, which would corrupt audits and performance metrics.
 async function openSettledTab(url, settleMs, timeoutMs = 30000) {
   const tab = await chrome.tabs.create({ url: normalizeUrl(url), active: true });
-  await waitForLoadTimeout(tab.id, timeoutMs);
+  try {
+    await waitForLoadTimeout(tab.id, timeoutMs);
+  } catch (e) {
+    // The caller never received the id, so it has nothing to clean up with —
+    // this has to close its own tab or a timed-out load orphans one for the
+    // rest of the session. Matters most to the Matrix crawl, which opens a tab
+    // per discovered page and so meets every slow page on a site.
+    try { await chrome.tabs.remove(tab.id); } catch (_) {}
+    throw e;
+  }
   if (settleMs > 0) await new Promise(r => setTimeout(r, settleMs));
   return tab.id;
 }
@@ -3747,6 +3756,49 @@ async function runMatrixAuditStep({ url, entries = [], waitTime }) {
     out.finalUrl = tab.url || '';
     const results = await exec(tabId, matrixInspectSelectors, [entries]);
     results.forEach(r => { out.findings[r.id] = r; });
+  } catch (e) {
+    out.loadError = e.message;
+  } finally {
+    if (tabId) { try { await chrome.tabs.remove(tabId); } catch (_) {} }
+  }
+  return out;
+}
+
+// ── Matrix Auditor: crawl-mode link discovery ───────────────────────────────
+// The Links panel's second source: instead of pasting a list, point at a base
+// URL and let the tool find its subpages. This is the executor for ONE page —
+// open it, read every anchor off it, close the tab. The popup owns the queue,
+// the depth budget, the same-base filter and the dedupe.
+//
+// Same split as runMatrixAuditStep above, for the same two reasons: one
+// bounded round trip per page means Stop and the progress line need no
+// session-storage polling, and every scoping rule stays in popup.js where jsc
+// can test it against real URL shapes.
+//
+// Reads `a.href` rather than getAttribute('href') so the browser resolves
+// relative paths, <base> and protocol-relative URLs — the popup only ever sees
+// absolute URLs and never has to reimplement resolution.
+function matrixCollectHrefs() {
+  const out = [];
+  for (const a of document.querySelectorAll('a[href]')) {
+    if (a.href) out.push(a.href);
+  }
+  return out;
+}
+
+// No retry, unlike runMatrixAuditStep: a page that won't load during discovery
+// contributes no links and the crawl moves on, where a page that won't load
+// during the AUDIT is a result the user is waiting for. The loadError still
+// comes back so the popup can count and report the skipped pages.
+async function runMatrixCrawlStep({ url, waitTime }) {
+  const out = { finalUrl: '', hrefs: [], loadError: null };
+  const settleMs = Math.max(0, parseInt(waitTime, 10) || 0);
+  let tabId = null;
+  try {
+    tabId = await openSettledTab(url, settleMs);
+    const tab = await chrome.tabs.get(tabId);
+    out.finalUrl = tab.url || '';
+    out.hrefs = (await exec(tabId, matrixCollectHrefs, [])) || [];
   } catch (e) {
     out.loadError = e.message;
   } finally {
@@ -5194,6 +5246,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       await beginTmRun(msg.payload);
       try {
         const result = await runMatrixAuditStep(msg.payload || {});
+        sendResponse({ ok: true, ...result });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      } finally {
+        await endTmRun();
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'runMatrixCrawlStep') {
+    (async () => {
+      await beginTmRun(msg.payload);
+      try {
+        const result = await runMatrixCrawlStep(msg.payload || {});
         sendResponse({ ok: true, ...result });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });

@@ -528,16 +528,56 @@
         <span class="acc-chevron">›</span>
       </div>
       <div class="acc-body">
-        <div style="font-size:10px;color:var(--fg3)">Paste full URLs (one per line), CSV rows (<code>url,group</code>), or a Base + Pages template — formats can be mixed in the same box.</div>
+        <div class="radio-group" style="margin-bottom:6px">
+          <input type="radio" name="mx-link-source" id="mx-src-paste" value="paste" checked>
+          <label for="mx-src-paste">Paste links</label>
+          <input type="radio" name="mx-link-source" id="mx-src-crawl" value="crawl">
+          <label for="mx-src-crawl">Crawl a base URL</label>
+        </div>
+
+        <!-- Source A — a list the user supplies -->
+        <div id="mx-paste-pane">
+        <div style="font-size:10px;color:var(--fg3)">Paste full URLs, one per line, or CSV rows (<code>url,group</code>).</div>
         <div class="row" style="gap:6px;margin:6px 0">
           <button class="btn" id="btn-mx-fill-ticket" type="button" disabled title="Paste each variant's full preview URL as one CSV row (url,variant id) from the active ticket context (Initialize tab)">Fill from ticket</button>
           <span id="mx-fill-hint" style="font-size:10px;color:var(--fg3)">No active ticket context — use the Initialize tab</span>
         </div>
-        <textarea id="mx-links-input" rows="6" placeholder="https://example.com/page&#10;Base: https://example.com/learn/&#10;Pages: cyber-attack, cyber-security-threats"></textarea>
+        <textarea id="mx-links-input" rows="6" placeholder="https://example.com/page&#10;https://example.com/pricing,variant-a"></textarea>
+        </div><!-- /mx-paste-pane -->
+
+        <!-- Source B — every subpage under a base URL, found by walking it -->
+        <div id="mx-crawl-pane" style="display:none">
+          <div style="font-size:10px;color:var(--fg3)">Selenite opens the base URL, follows every link that sits underneath it, and audits each subpage it finds. Discovered pages appear in the list below before you run.</div>
+          <div class="arg-row" style="margin:6px 0">
+            <span class="arg-lbl">Base URL</span>
+            <input type="text" id="mx-crawl-base" placeholder="https://example.com/learn/">
+          </div>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <div class="arg-row" style="flex:1;min-width:130px">
+              <span class="arg-lbl">Max pages</span>
+              <input type="text" id="mx-crawl-max" value="50">
+            </div>
+            <div class="arg-row" style="flex:2;min-width:170px">
+              <span class="arg-lbl">Scan depth</span>
+              <select id="mx-crawl-depth">
+                <option value="1">1 — base page only</option>
+                <option value="2">2 — follow one level</option>
+                <option value="3">3 — follow two levels</option>
+              </select>
+            </div>
+          </div>
+          <div class="row-spread" style="margin-top:8px">
+            <span id="mx-crawl-status" style="font-size:11px;color:var(--fg2)">Not crawled yet.</span>
+            <div class="row" style="gap:6px">
+              <button class="btn primary sm" id="btn-mx-crawl">Discover pages</button>
+              <button class="btn danger sm" id="btn-mx-crawl-stop" style="display:none">Stop</button>
+            </div>
+          </div>
+        </div><!-- /mx-crawl-pane -->
         <div>
           <label class="cap">Link Mode</label>
           <div class="row" style="gap:14px;flex-wrap:wrap;align-items:center">
-            <label class="toggle-wrap" title="Force a specific Optimizely variation on every link">
+            <label class="toggle-wrap" title="Force one or more Optimizely variations on every link (ids go into a single comma-separated optimizely_x)">
               <input type="checkbox" id="mx-mode-forced">
               <span class="toggle-track"><span class="toggle-thumb"></span></span>
             </label>
@@ -551,8 +591,8 @@
           <div style="font-size:10px;color:var(--fg3);margin-top:4px">Applied to every link when the audit runs. Pick one, or neither to use the links exactly as pasted.</div>
         </div>
         <div class="arg-row" id="mx-variation-row" style="display:none">
-          <span class="arg-lbl">Variation ID</span>
-          <input type="text" id="mx-variation-id" placeholder="optimizely_x value, e.g. 5291718573031424">
+          <span class="arg-lbl">Variation ID(s)</span>
+          <input type="text" id="mx-variation-id" placeholder="one or more ids, e.g. 5291718573031424, 5291718573031425">
         </div>
         <div class="row-spread">
           <span id="mx-link-preview" style="font-size:11px;color:var(--fg2)">0 URLs ready to audit</span>

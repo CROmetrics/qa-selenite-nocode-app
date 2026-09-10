@@ -1612,6 +1612,95 @@ function capture(label, o) {
              : o.fullPage };
 }
 
+(function requirementCoverageIsReportedNotGated() {
+  // Two defects in one block, both about requirement coverage being invisible.
+  //
+  // 1. A spec that produced NOTHING to check was silent everywhere — renderer,
+  //    diagnostics and badge — which reads as a clean copy check rather than an
+  //    absent one. Measured over the six commonest ticket shapes, FOUR yield
+  //    zero checkable strings, so this is the normal case on a new client.
+  // 2. The copy-miss problem sat inside `const d = v.diffDebug; if (d) {`, so a
+  //    variant with real copy misses and no debug blob reported none of them.
+  //    gradingFailed and requirementsUnsupported were already moved out of that
+  //    gate with the comment "Neither of these is about the debug blob, so
+  //    neither may be gated on it"; coverage is the third of that class and was
+  //    left behind.
+  var noFig = { urlUsed: null, urlFromTicket: null, nodeId: null,
+                tokenConfigured: false, comp: null, compCandidateCount: 0 };
+  function probsFor(variant, spec) {
+    var base = abSections([capture('v0', { fullPage: null }), capture('v1', { fullPage: null })],
+      [Object.assign({ label: 'v1', diffMode: 'normal', matchedFraction: 0.98,
+                       structuralStats: {} }, variant)]);
+    base.designReference = {
+      summaryOfChanges: spec === null
+        ? { present: false, length: 0, source: null }
+        : { present: true, length: spec, source: 'ticket' },
+      figma: noFig,
+    };
+    return vdCollectProblems(base);
+  }
+  var reqSetOf = function (o) {
+    return Object.assign({ total: 0, verbatim: 0, near: 0, absent: 0, items: [] }, o);
+  };
+  var find = function (ps, re) { return ps.filter(function (x) { return re.test(x.detail); }); };
+
+  // The zero case, with the character count that is the whole reason this lives
+  // in the diagnostics as well as the report — the renderer only receives `vd`
+  // and cannot reach sections.designReference.
+  var zero = probsFor({ requirements: reqSetOf({}) }, 1736);
+  var hit = find(zero, /produced no checkable copy strings/);
+  eq('a spec that produced nothing is reported, once', hit.length, 1);
+  eq('  at warn severity, so the section reads CAVEATS not DEGRADED',
+     hit.length ? hit[0].severity : null, 'warn');
+  ok('  citing the spec length', hit.length && /1736 characters/.test(hit[0].detail), hit[0]);
+  ok('  and naming what extraction reads, so the ticket can be fixed',
+     hit.length && /quoted runs/.test(hit[0].detail) && /Eyebrow copy/.test(hit[0].detail), hit[0]);
+  ok('  against the right variant', hit.length && hit[0].where === 'visual-diff/v1', hit[0]);
+
+  // No spec at all already has its own info; a second line would double-report.
+  var noSpec = probsFor({ requirements: null, noSpecText: true }, null);
+  eq('no spec at all does not also claim the spec produced nothing',
+     find(noSpec, /produced no checkable copy strings/).length, 0);
+  ok('  it keeps its own note instead',
+     find(noSpec, /No Summary of Changes was provided/).length === 1, noSpec);
+  // And the belt-and-braces guard: if both signals ever coexist, only one fires.
+  eq('noSpecText suppresses the produced-nothing line even with a zero-total set',
+     find(probsFor({ requirements: reqSetOf({}), noSpecText: true }, 530),
+          /produced no checkable copy strings/).length, 0);
+  // THE RESUME SHAPE: no requirements key and no noSpecText either (popup.js
+  // ~3985 pushes label/resumed/findings/overallSummary/pixelDiff and nothing
+  // else). The spec was never re-read on a resume, so claiming it produced
+  // nothing would be a statement about something that did not happen. The `rq &&`
+  // half of the condition is what stops that, and without this case dropping it
+  // left the suite green.
+  eq('a resumed variant does not claim the spec produced nothing',
+     find(probsFor({ resumed: true, findings: [] }, 900),
+          /produced no checkable copy strings/).length, 0);
+  ok('  it says it was restored from a checkpoint instead',
+     find(probsFor({ resumed: true, findings: [] }, 900), /Restored from a checkpoint/).length === 1);
+
+  // THE GATE. No diffDebug on this variant at all.
+  var missing = probsFor({ requirements: reqSetOf({
+    total: 3, verbatim: 1, near: 1, absent: 1,
+    items: [{ status: 'absent', required: 'Free shipping', fragment: false },
+            { status: 'near', required: 'Save big today', fragment: false, foundText: 'Save big' },
+            { status: 'verbatim', required: 'Get Started', fragment: false }] }) }, 900);
+  var miss = find(missing, /specified copy strings are not on the page/);
+  eq('copy misses are reported with NO debug blob present', miss.length, 1);
+  eq('  at warn severity', miss.length ? miss[0].severity : null, 'warn');
+  ok('  counting both the absent and the reworded one',
+     miss.length && /2 of 3 specified copy strings/.test(miss[0].detail), miss[0]);
+  // A fragment near-match is not a copy miss — same rule as vdUnmetRequirements.
+  var frag = probsFor({ requirements: reqSetOf({
+    total: 1, near: 1,
+    items: [{ status: 'near', required: 'A long specified sentence', fragment: true,
+              foundText: 'A long specified' }] }) }, 900);
+  eq('a fragment alone is not reported as a copy miss',
+     find(frag, /specified copy strings are not on the page/).length, 0);
+  eq('  nor as a spec that produced nothing',
+     find(frag, /produced no checkable copy strings/).length, 0);
+})();
+
 (function captureWidthParity() {
   // Run 1787604099659 is the whole reason this exists: Control captured 1693px
   // wide, all three variants at 1470px, every comparison collapsed to ~13%

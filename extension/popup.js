@@ -6726,6 +6726,42 @@ function vdCollectProblems(sections) {
         add('warn', at, 'Requirement coverage was not checked — this variant was diffed by an older background build.'
           + ' Reload the extension so the service worker picks up the current build, then re-run.');
       }
+      // The third member of that same class, and the one left behind: this
+      // block sat inside `if (d)` too, so a variant with real copy misses and no
+      // debug blob reported none of them. Requirement coverage is not about the
+      // debug blob any more than grading or the split-build check is.
+      //
+      // Deterministic either way, so unlike the model's verdicts these lines
+      // mean the same thing on every run of the same page.
+      const rq = v.requirements;
+      if (rq && rq.total) {
+        const bad = (rq.items || []).filter(x => x.status === 'absent' || (x.status === 'near' && !x.fragment));
+        if (bad.length) {
+          add('warn', at, `${bad.length} of ${rq.total} specified copy strings are not on the page as written`
+            + ` (${rq.absent} absent, ${bad.length - rq.absent} shipped with different wording).`
+            + ' This is a string comparison, not a model judgment, so it reads the same on every run —'
+            + ' but it ignores case and punctuation and matches a string found inside a longer one,'
+            + ' so a near miss can still count as found.');
+        }
+      } else if (rq && !v.noSpecText) {
+        // A spec was read and yielded nothing to check. Silent until now, which
+        // reads as a clean copy check rather than an absent one. `warn`, not
+        // `error`: severity drives the section badge (errors.length ? DEGRADED :
+        // CAVEATS) and nothing here invalidates the run — one check was
+        // unavailable, exactly the distinction the scale-mismatch note draws.
+        //
+        // The character count is the point of putting this here rather than only
+        // in the variant body: the renderer receives only `vd` and cannot reach
+        // sections.designReference, so "a 1,736-character spec produced nothing"
+        // can only be said from this side.
+        const specChars = dr && dr.summaryOfChanges ? dr.summaryOfChanges.length : null;
+        add('warn', at, `The spec was read${specChars ? ` (${specChars} characters)` : ''} but produced no checkable copy`
+          + ' strings, so the deterministic copy check did not run and every expected/unexpected verdict for this variant'
+          + ' is the model\'s alone. Extraction reads quoted runs and lines whose label ends in "copy"'
+          + ' ("Eyebrow copy: ..."); measured over the six commonest ticket shapes, four yield nothing — prose,'
+          + ' "Headline: ..." where the label is not "copy", markdown bold, and a bullet list. Quote the copy in the'
+          + ' ticket, or label it, to get it checked.');
+      }
       if (v.duplicateIndexCount) add('warn', at, `The model returned inconsistent finding references for ${v.duplicateIndexCount} item(s).`);
       if (v.diffMode === 'redesign') {
         // A geometry mismatch produces a low match rate all by itself, so
@@ -6769,19 +6805,6 @@ function vdCollectProblems(sections) {
           // normalisation — at 1x vs 2x that compares Control's full width
           // against the variant's left half.
           add('warn', at, `The two screenshots came back at different pixel scales — Control ${sc.controlImage?.w}px wide for a ${sc.pageW?.control}px page (${rawC != null ? rawC.toFixed(2) : '?'}x), Variant ${sc.variantImage?.w}px for ${sc.pageW?.variant}px (${rawV != null ? rawV.toFixed(2) : '?'}x), which usually means the two windows were on displays with different scaling. One figure is affected and has been withheld: the whole-page pixel percentage, which compares the two bitmaps directly. Everything else stands — findings, matching, requirement coverage and the crops are measured per side or from the page's own geometry. Re-run with both windows on the same display if you want that percentage.`);
-        }
-        // Unmet requirements are a deterministic result, so unlike the model's
-        // verdicts this line means the same thing on every run of the same page.
-        const rq = v.requirements;
-        if (rq && rq.total) {
-          const bad = (rq.items || []).filter(x => x.status === 'absent' || (x.status === 'near' && !x.fragment));
-          if (bad.length) {
-            add('warn', at, `${bad.length} of ${rq.total} specified copy strings are not on the page as written`
-              + ` (${rq.absent} absent, ${bad.length - rq.absent} shipped with different wording).`
-              + ' This is a string comparison, not a model judgment, so it reads the same on every run —'
-              + ' but it ignores case and punctuation and matches a string found inside a longer one,'
-              + ' so a near miss can still count as found.');
-          }
         }
         const fuzzy = d.matchTierCounts?.fuzzy || 0;
         if (fuzzy) add('warn', at, `${fuzzy} element(s) were paired by approximate similarity rather than an exact key — those pairings may be wrong.`);

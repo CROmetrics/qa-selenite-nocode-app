@@ -1081,8 +1081,19 @@
   // sets are {lump,sum,loan} and {lump,sum,funding} -- Jaccard exactly 0.5. Any
   // stricter and the one measured instance is missed.
   var VD_REQ_NEAR_MIN_SIM = 0.5;
-  // Jaccard over one or two tokens is noise, so short strings go straight to
-  // absent rather than reporting a spurious near-match.
+  // Jaccard over one token is noise, so a string that short goes straight to
+  // absent rather than reporting a spurious near-match. Applied to BOTH sides:
+  // the requirement AND the candidate. It guarded only the requirement for a
+  // while, which let `$40/mo` (`40 mo`, two tokens) score exactly 0.5 against a
+  // bare `/mo` span -- one token carrying the entire intersection -- and print
+  // `Spec says "$40/mo" - page has "/mo"` into a client-facing report.
+  //
+  // Note this is a floor of 2, so a TWO-token requirement is admitted. That is
+  // deliberate and the tempting tightening to 3 is wrong: two tokens can
+  // legitimately reach the threshold against a three-token candidate --
+  // {free,shipping} vs {free,fast,shipping} is 2/3 and is not a prefix, so it is
+  // real altered wording a reviewer needs. The degenerate side was always the
+  // candidate, not the requirement.
   var VD_REQ_NEAR_MIN_TOKENS = 2;
 
   // Every quoted run in the spec, collected in two passes.
@@ -1246,6 +1257,14 @@
     var pool = (variantList || []).filter(function (c) { return c && c.textNorm; });
     var controlPool = (opts.controlList || []).filter(function (c) { return c && c.textNorm; });
     var exact = new Set(pool.map(function (c) { return c.textNorm; }));
+    // Token counts for the near pass's candidate floor, computed ONCE per pool
+    // rather than per requirement: ENOC-97 carries 70 requirements against ~500
+    // candidates, so tokenising inside the scoring loop is 35,000 tokenisations
+    // per variant. vdNormalizeTokens, deliberately the same function the
+    // requirement side uses -- it is ASCII-only where vdNormText is
+    // Unicode-aware, and the two sides of one comparison must not disagree
+    // about what a token is.
+    var poolTokenSize = pool.map(function (c) { return vdNormalizeTokens(c.textNorm).size; });
 
     function containedIn(list, norm) {
       for (var i = 0; i < list.length; i++) {
@@ -1269,6 +1288,11 @@
       var best = null, bestScore = 0;
       if (tokens.size >= VD_REQ_NEAR_MIN_TOKENS) {
         for (var i = 0; i < pool.length; i++) {
+          // BOTH sides, not just the requirement. A one-token candidate carries
+          // the whole intersection, so `$40/mo` -> `40 mo` scored exactly 0.5
+          // against a bare `/mo` span and was reported to a client as
+          // `Spec says "$40/mo" - page has "/mo"`. Measured on run 1789071152802.
+          if (poolTokenSize[i] < VD_REQ_NEAR_MIN_TOKENS) continue;
           var sc = vdTokenSimilarity(r.norm, pool[i].textNorm);
           if (sc > bestScore) { bestScore = sc; best = pool[i]; }
         }

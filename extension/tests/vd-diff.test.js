@@ -842,13 +842,66 @@ function reqCand(text) {
 })();
 
 (function shortStringsSkipNearMatching() {
-  // Jaccard over one token is noise. A one-token requirement that is not
-  // present goes straight to absent rather than reporting a spurious near.
+  // Jaccard over one token is noise, on EITHER side of the comparison. This
+  // block used to test only the requirement side, with the weak assertion
+  // `status !== 'near'`, and that gap is exactly where the bug lived: a
+  // two-token requirement against a one-token candidate was never exercised,
+  // and neither was any near-match whose candidate is shorter than the
+  // requirement in a non-prefix way. Every other near fixture here is either a
+  // same-length reword or a clean prefix.
   if (typeof vdMatchRequirements !== 'function') return;
   var req = vdSpecRequirements('CTA: "Submit"');
   var r = vdMatchRequirements(req, [reqCand('Send'), reqCand('Submitting your application')], {});
   ok('a one-token requirement is absent or verbatim, never a coin-flip near',
      r.items[0].status !== 'near', r.items[0]);
+
+  // THE REAL PAIR, from run 1789071152802. `$40/mo` normalises to `40 mo`, two
+  // tokens, so it cleared the requirement-side floor; the page's bare `/mo`
+  // span is one token and carried the whole intersection, giving Jaccard
+  // 1/2 = 0.5, which passes a `>=` test on a 0.5 threshold. The report then
+  // printed `Spec says "$40/mo" - page has "/mo"` to a client.
+  var money = vdMatchRequirements(
+    [{ required: '$40/mo', norm: vdNormText('$40/mo') }],
+    [reqCand('/mo'), reqCand('Internet plans from our fastest network')], {});
+  eq('a one-token candidate cannot carry a near-match', money.items[0].status, 'absent');
+  eq('  so nothing is offered as the page wording', money.items[0].foundText, null);
+  ok('  and the score does not survive as a near-miss figure',
+     money.items[0].score < 0.5, money.items[0].score);
+
+  // THE ASSERTION THAT STOPS THE WRONG FIX. Raising VD_REQ_NEAR_MIN_SIM above
+  // 0.5 would also silence the pair above, and it would cost the one genuine
+  // defect this whole pass exists to catch: {lump,sum,loan} vs
+  // {lump,sum,funding} is Jaccard exactly 0.5. Measured over all 53 recorded
+  // logs, 856 requirement items carry 5 distinct near-matches; the candidate
+  // floor moves exactly one of them and leaves the other four untouched to the
+  // digit.
+  var lump = vdMatchRequirements(
+    [{ required: 'Lump Sum Loan', norm: vdNormText('Lump Sum Loan') }],
+    [reqCand('Lump-Sum Funding')], {});
+  eq('altered copy at exactly the threshold is still a near-match', lump.items[0].status, 'near');
+  ok('  at exactly 0.5', Math.abs(lump.items[0].score - 0.5) < 1e-9, lump.items[0].score);
+  eq('  reporting what the page says', lump.items[0].foundText, 'Lump-Sum Funding');
+
+  // A TWO-token requirement can legitimately reach the threshold against a
+  // THREE-token candidate, which is why the floor belongs on the candidate and
+  // not on the requirement: {free,shipping} vs {free,fast,shipping} is 2/3 and
+  // is not a prefix either way, so it is real altered wording. Raising
+  // VD_REQ_NEAR_MIN_TOKENS to 3 would throw this away to catch the `/mo` case.
+  var ship = vdMatchRequirements(
+    [{ required: 'Free Shipping', norm: vdNormText('Free Shipping') }],
+    [reqCand('Free Fast Shipping')], {});
+  eq('a two-token requirement still near-matches a three-token candidate',
+     ship.items[0].status, 'near');
+  eq('  flagged as altered wording, not a fragment', ship.items[0].fragment, false);
+
+  // The `>=` boundary itself, driven through the plumbed-but-unused option
+  // rather than by mutating the constant.
+  eq('a score exactly at the threshold passes',
+     vdMatchRequirements([{ required: 'Lump Sum Loan', norm: vdNormText('Lump Sum Loan') }],
+       [reqCand('Lump-Sum Funding')], { nearMinSim: 0.5 }).items[0].status, 'near');
+  eq('  and one just above it does not',
+     vdMatchRequirements([{ required: 'Lump Sum Loan', norm: vdNormText('Lump Sum Loan') }],
+       [reqCand('Lump-Sum Funding')], { nearMinSim: 0.51 }).items[0].status, 'absent');
 })();
 
 (function emptyInputsAreSafe() {

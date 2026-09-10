@@ -32,7 +32,8 @@ function slicePopup(from, to) {
   return _pu.slice(a, b);
 }
 
-eval(slicePopup('const MX_CRAWL_STRIP_PARAMS', 'function mxParseVariationIds('));
+eval(slicePopup('const MX_CRAWL_STRIP_PARAMS', 'function mxCrawlBaseRedirect('));
+eval(slicePopup('function mxCrawlBaseRedirect(', 'function mxParseVariationIds('));
 eval(slicePopup('function mxParseVariationIds(', 'function mxComposeUrl('));
 eval(slicePopup('function mxComposeUrl(', 'function mxCurrentTargets('));
 
@@ -252,6 +253,37 @@ eq(st.found.length, 1, 'a self-link does not re-add the base');
 eq(st.queue.length, 0, 'nor re-queue it');
 
 eq(absorb(null).found.length, 1, 'a page that returned no hrefs is survivable');
+
+// ── mxCrawlBaseRedirect — the imperva.com field failure ─────────────────────
+// Measured, not imagined. A crawl of https://www.imperva.com/products/ reported
+// 33 pages against a manual pass that found 43. Loading that base in a real
+// browser shows it 301s to /learn/application-security/cyber-security/, and
+// running the scoping rules over THAT page's 384 anchors yields exactly 32
+// in-scope /products/ links — 32 + the base = the 33 that were reported. The
+// crawl had scanned an unrelated article and harvested its global nav, and both
+// the status line and the report cover still said it had crawled the base.
+eq(mxCrawlBaseRedirect('https://www.imperva.com/products/',
+                       'https://www.imperva.com/learn/application-security/cyber-security/'),
+   { from: 'https://www.imperva.com/products',
+     to:   'https://www.imperva.com/learn/application-security/cyber-security',
+     outsideBase: true },
+   'the imperva field case is reported, and flagged as outside the base');
+
+eq(mxCrawlBaseRedirect('https://ex.com/learn/', 'https://ex.com/learn'), null,
+   'a trailing-slash-only difference is not a redirect worth reporting');
+eq(mxCrawlBaseRedirect('https://ex.com/learn', 'https://ex.com/learn?utm_source=x'), null,
+   'a campaign param added by the redirect is not a redirect worth reporting');
+eq(mxCrawlBaseRedirect('https://ex.com/learn', 'https://ex.com/learn/start'),
+   { from: 'https://ex.com/learn', to: 'https://ex.com/learn/start', outsideBase: false },
+   'a redirect that stays under the base is reported but NOT flagged');
+eq(mxCrawlBaseRedirect('https://ex.com/learn', 'https://ex.com/about'),
+   { from: 'https://ex.com/learn', to: 'https://ex.com/about', outsideBase: true },
+   'a redirect to a sibling section is flagged');
+eq(mxCrawlBaseRedirect('https://www.ex.com/learn', 'https://ex.com/learn'),
+   { from: 'https://www.ex.com/learn', to: 'https://ex.com/learn', outsideBase: true },
+   'a www -> apex canonical redirect is a different origin, so it IS flagged');
+eq(mxCrawlBaseRedirect('https://ex.com/learn', ''), null, 'no final URL, nothing to report');
+eq(mxCrawlBaseRedirect('https://ex.com/learn', 'about:blank'), null, 'a non-page final URL is not reported');
 
 print('=== ' + passed + ' passed, ' + failed + ' failed ===');
 if (failed) throw new Error(failed + ' assertion(s) failed');

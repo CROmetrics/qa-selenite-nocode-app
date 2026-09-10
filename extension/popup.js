@@ -8679,6 +8679,7 @@ function mxDefaultState() {
     links: [],           // [{ url, group }] — PASTE source, parsed from linksRaw
     crawl: mxDefaultCrawl(),
     crawlLinks: [],      // [{ url, group }] — CRAWL source, filled by discovery
+    crawlRedirect: null, // { from, to, outsideBase } when the base landed elsewhere
     linkMode: 'none',    // 'none' | 'itw' | 'forced' — how link params are composed at run time
     variationId: '',     // optimizely_x value, used only in 'forced' mode
     advanceMode: 'auto', // 'auto' | 'pause' | 'manual' — how hands-on the run is
@@ -8785,6 +8786,28 @@ function mxCrawlGroup(url, baseUrl) {
   const up = mxTrimPath(u.path);
   const rest = (bp !== '/' && up.startsWith(bp) ? up.slice(bp.length) : up).replace(/^\/+/, '');
   return rest.split('/')[0] || 'root';
+}
+
+// Did the base URL land somewhere else? Returns null when it didn't, otherwise
+// { from, to, outsideBase }.
+//
+// This exists because of a measured field failure. A crawl of
+// https://www.imperva.com/products/ reported 33 pages where a manual pass found
+// 43. The base 301s to /learn/application-security/cyber-security/ — an
+// unrelated article — so the crawl scanned THAT page and harvested the 32
+// /products/ links sitting in its global nav (32 + the base = the 33 reported).
+// Nothing anywhere said so: the status line and the report both claimed the
+// base had been crawled. A crawl that scans a different page than the one named
+// is not a smaller result, it is a wrong one, and it has to say which.
+//
+// `outsideBase` separates the harmless case (a trailing-slash or canonical-host
+// redirect that stays in scope) from the one above, where every page found is
+// only an incidental link rather than a walk of the section.
+function mxCrawlBaseRedirect(baseUrl, finalUrl) {
+  const from = mxNormalizeCrawlUrl(baseUrl);
+  const to   = mxNormalizeCrawlUrl(finalUrl);
+  if (!from || !to || from === to) return null;
+  return { from, to, outsideBase: !mxIsUnderBase(to, from) };
 }
 
 // One crawl step's worth of bookkeeping, split out so it can be tested without
@@ -8944,6 +8967,7 @@ async function persistMxState() {
   await sessionNS.set({ mxState: {
     id: mxState.id, name: mxState.name, linkSource: mxState.linkSource, linksRaw: mxState.linksRaw,
     links: mxState.links, crawl: mxState.crawl, crawlLinks: mxState.crawlLinks,
+    crawlRedirect: mxState.crawlRedirect,
     linkMode: mxState.linkMode, variationId: mxState.variationId,
     advanceMode: mxState.advanceMode, selectors: mxState.selectors, globalSettings: mxState.globalSettings,
   } });
@@ -9106,6 +9130,7 @@ async function mxRunCrawl() {
   _mxCrawlStop = false;
   mxSetCrawlUiState('busy');
 
+  mxState.crawlRedirect = null;
   const visited = new Set([baseUrl]);
   const found   = [{ url: baseUrl, group: mxCrawlGroup(baseUrl, baseUrl) }];
   const queue   = [{ url: baseUrl, depth: 0 }];
@@ -9126,7 +9151,13 @@ async function mxRunCrawl() {
         res = { ok: false, error: e.message };
       }
       if (!res || !res.ok || res.loadError) failed++;
-      else mxCrawlAbsorb(res.hrefs, { baseUrl, depth, maxDepth, maxPages, visited, found, queue });
+      else {
+        // Only the base is checked: a redirect deeper in the walk just means one
+        // page moved, but a redirect off the BASE invalidates the whole premise
+        // that this crawled the section the user named.
+        if (scanned === 1) mxState.crawlRedirect = mxCrawlBaseRedirect(baseUrl, res.finalUrl);
+        mxCrawlAbsorb(res.hrefs, { baseUrl, depth, maxDepth, maxPages, visited, found, queue });
+      }
 
       // Commit after every page, not at the end: a Stop, a thrown message or a
       // closed side panel then keeps everything discovered so far instead of
@@ -9142,7 +9173,15 @@ async function mxRunCrawl() {
     mxSetCrawlUiState('idle');
   }
 
-  const parts = [`${found.length} page${found.length === 1 ? '' : 's'} found`, `${scanned} scanned`];
+  const rd = mxState.crawlRedirect;
+  const parts = [];
+  if (rd?.outsideBase) {
+    // Leads, because it changes what every other number on this line means.
+    parts.push(`⚠ the base redirected to ${rd.to} — outside the base, so these are only links that page happened to carry`);
+  } else if (rd) {
+    parts.push(`base redirected to ${rd.to}`);
+  }
+  parts.push(`${found.length} page${found.length === 1 ? '' : 's'} found`, `${scanned} scanned`);
   if (failed) parts.push(`${failed} could not be loaded`);
   if (_mxCrawlStop) parts.push('stopped');
   else if (found.length >= maxPages) parts.push(`cap of ${maxPages} reached`);
@@ -9329,6 +9368,7 @@ async function mxSaveAudit() {
       links: mxState.links,
       crawl: mxState.crawl,
       crawlLinks: mxState.crawlLinks,
+      crawlRedirect: mxState.crawlRedirect,
       linkMode: mxState.linkMode,
       variationId: mxState.variationId,
       globalSettings: mxState.globalSettings,
@@ -9379,6 +9419,7 @@ async function mxLoadAudit(id) {
   mxState.linkSource = audit.config.linkSource || 'paste';
   mxState.crawl = { ...mxDefaultCrawl(), ...(audit.config.crawl || {}) };
   mxState.crawlLinks = JSON.parse(JSON.stringify(audit.config.crawlLinks || []));
+  mxState.crawlRedirect = audit.config.crawlRedirect || null;
   mxState.linkMode = audit.config.linkMode || 'none';
   mxState.variationId = audit.config.variationId || '';
   mxState.globalSettings = { ...mxDefaultGlobalSettings(), ...(audit.config.globalSettings || {}) };
@@ -9671,8 +9712,12 @@ function mxBuildReportBody() {
   // Where the URL list came from. A crawled report is reproducible only if it
   // says what it crawled — the base and the depth ARE the input, the same way
   // the pasted list is for the other source.
+  const rd = mxState.crawlRedirect;
   const sourceLabel = mxState.linkSource === 'crawl'
     ? `Crawled from ${esc(mxState.crawl?.baseUrl || '')} (depth ${esc(String(mxState.crawl?.maxDepth ?? ''))})`
+      // Naming the base is a claim about what was walked. If it redirected, the
+      // claim is wrong unless the cover says where it actually went.
+      + (rd ? ` — redirected to ${esc(rd.to)}${rd.outsideBase ? ', OUTSIDE the base: the pages below are links that page carried, not a walk of the section' : ''}` : '')
     : 'Pasted link list';
 
   const summaryRows = sels.map(s => {

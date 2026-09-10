@@ -2825,6 +2825,48 @@ function wf(cls, ctrl, vari) {
   eq('  v1 keeps both', pv[0].findings.length, 2);
 })();
 
+(function regionKeepsTextlessFindingsApart() {
+  // A SYNTHETIC finding has no text and sometimes no rect, so without region in
+  // the key every region rollup on a page is the same identity:
+  // ('region-rollup', '@-', '@-'). Measured on recorded data — five ondeck runs
+  // collapse 7 rollups to ONE identity, and on multi-variant run 1787604099659
+  // two genuinely distinct rollups (`main#main` and `section`, both rect-less)
+  // merge into one shared finding, so one of the two is silently dropped from
+  // the report.
+  var rollup = function (region) {
+    return { changeClass: 'region-rollup', region: region, controlBlock: null, variantBlock: null };
+  };
+  ok('two rect-less rollups in different regions are different findings',
+     vdFindingIdentity(rollup('main#main')) !== vdFindingIdentity(rollup('section')),
+     vdFindingIdentity(rollup('main#main')));
+  eq('  and the same region is still the same finding',
+     vdFindingIdentity(rollup('section')), vdFindingIdentity(rollup('section')));
+  // Seven rollups on one page, the recorded ondeck shape.
+  var regions = ['main#main', 'section', 'nav', 'footer', 'section#hero', '[role=navigation]', 'aside'];
+  var ids = {};
+  regions.forEach(function (r) { ids[vdFindingIdentity(rollup(r))] = 1; });
+  eq('seven rollups are seven identities, not one', Object.keys(ids).length, 7);
+
+  // Region must not OVER-discriminate: it is a DOM ancestor label, so the same
+  // element carries the same region in every variant. Two findings differing
+  // only in position stay one change — the property positionIndependent below
+  // exists for, restated here with region present so the two cannot drift.
+  var moved = function (y) {
+    return { changeClass: 'added', region: 'section#hero', controlBlock: null,
+             variantBlock: { text: 'Contact sales', rect: { x: 1497, y: y } } };
+  };
+  eq('region does not defeat position-independence',
+     vdFindingIdentity(moved(984)), vdFindingIdentity(moved(1034)));
+  // A missing region is a defined value, not a crash or a collision with ''.
+  ok('a region-less finding still has an identity',
+     typeof vdFindingIdentity({ changeClass: 'added', controlBlock: null,
+       variantBlock: { text: 'X' } }) === 'string');
+  ok('  and is distinct from the same finding inside a region',
+     vdFindingIdentity({ changeClass: 'added', controlBlock: null, variantBlock: { text: 'X' } })
+       !== vdFindingIdentity({ changeClass: 'added', region: 'nav', controlBlock: null,
+                               variantBlock: { text: 'X' } }));
+})();
+
 (function positionIndependent() {
   // The same change lands at a different y when a taller hero pushes it down —
   // including rect in the identity would defeat grouping exactly when it counts.

@@ -1177,7 +1177,12 @@ section('a run that was not validly compared must never badge PASS');
 
   // Every field the report and the diagnosis need, named here so dropping one
   // fails loudly rather than showing up as an unanswerable log six runs later.
-  ['findingId', 'changeClass', 'status', 'region', 'matchTier', 'dx', 'dy',
+  // `identity` is the cross-run key. findingId is `'f' + i`, a positional index
+  // that goes into the model prompt and comes back from it, so it cannot say
+  // WHICH finding it is — two logs could not be compared finding by finding at
+  // all, which is what blocks grade-churn detection and telling a capture
+  // artifact from a real style regression.
+  ['findingId', 'identity', 'changeClass', 'status', 'region', 'matchTier', 'dx', 'dy',
    'memberCount', 'signals', 'pixelRatio', 'classification', 'severity',
    'controlText', 'variantText', 'controlRect', 'variantRect',
    'hasControlCrop', 'hasVariantCrop', 'engineNote', 'shortDescription', 'note'

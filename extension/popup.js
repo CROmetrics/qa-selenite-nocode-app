@@ -3731,7 +3731,19 @@ function vdFindingIdentity(f) {
   // its SIZE participates.
   const cKey = c ? t(c.text) + '@' + (c.rect ? [c.rect.x, c.rect.y, c.rect.w, c.rect.h].join(',') : '-') : '-';
   const vKey = v ? t(v.text) + '@' + (v.rect ? v.rect.w + 'x' + v.rect.h : '-') : '-';
-  return [f.changeClass, cKey, vKey].join('\u0000');
+  // Region is in the key because a SYNTHETIC finding has neither text nor,
+  // sometimes, a rect. A region rollup is `('region-rollup', '@-', '@-')`
+  // without it, identical for every rollup on the page — measured: five
+  // recorded ondeck runs collapse 7 rollups to ONE identity, and on the
+  // multi-variant run 1787604099659 two genuinely distinct rollups
+  // (`main#main` and `section`, both rect-less) merge into one shared finding,
+  // so one of the two is silently dropped from the report.
+  //
+  // Safe for element-level findings: it is a DOM ancestor label, so it is as
+  // stable across variants as the control side is. Measured over the 11
+  // recorded multi-variant runs, adding it changes the shared-finding grouping
+  // on exactly one -- 1787604099659, from 1 group to the correct 2.
+  return [f.changeClass, f.region || '-', cKey, vKey].join('\u0000');
 }
 
 function vdExtractSharedFindings(perVariant) {
@@ -6895,6 +6907,26 @@ function vdExportFinding(f) {
     // "unseeded sampling" from "the prompt string actually changed".
     engineNote: f.engineNote || null,
     shortDescription: f.shortDescription || null,
+    // The canonical cross-run key, exported rather than left to be recomputed.
+    // findingId is `'f' + i`, a POSITIONAL index -- it goes into the model
+    // prompt and comes back from it, so it has to stay short and typo-proof,
+    // and it says nothing about which finding it is. Two logs therefore could
+    // not be compared finding by finding at all, which is what blocks both
+    // grade-churn detection and telling a capture artifact from a real style
+    // regression.
+    //
+    // Exported as the key itself, not a hash: the point of this log is that a
+    // human can see WHY two findings matched. It duplicates controlText and
+    // variantText on purpose -- one canonical key beats every consumer
+    // rebuilding it slightly differently, which is the drift class that has
+    // cost this file five misreads.
+    //
+    // Only comparable between captures at the SAME width. Thirteen recorded
+    // ondeck runs have matchedFraction identical to 17 digits across four page
+    // widths (2688/2687/1886/2686) and share NO geometry-based identity,
+    // because the rollup union boxes reflow. DOM matching is width-independent;
+    // geometry is not.
+    identity: vdFindingIdentity(f),
     // The model's OWN sentence for this finding. engineNote is what it
     // was GIVEN; this is what it concluded. Without it, 61 "unexpected"
     // verdicts had to be diagnosed by inferring from the spec instead of

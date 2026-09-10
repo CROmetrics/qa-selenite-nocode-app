@@ -6140,7 +6140,37 @@ function rptAbVisualDiffSection(vd) {
     const gradeFailHtml = v.gradingFailed ? `
       <div class="ab-cline ab-warn"><b>Not graded.</b> The model call failed (${q(v.gradingFailed)}), so nothing below is judged
       expected vs unexpected. The diff itself, the reflow suppression and the specified-copy check all completed without it.</div>` : '';
-    const reqHtml = !req || !req.total ? '' : `
+    // Three states, not one silence. A report with no coverage block reads as
+    // "every specified string was found", which is the opposite of what the
+    // absence means -- a misread this file already names twice and fixed in
+    // neither place (see :4025 and the mirror-only line further down).
+    //
+    //   requirements.total > 0     the coverage line, unchanged
+    //   requirements.total === 0   a spec was read and produced nothing to check
+    //   requirementsUnsupported    an older service worker has no such check
+    //
+    // The `total === 0` case is not hypothetical and will get commoner, not
+    // rarer: extraction reads quoted runs and `<label> copy:` lines, and of the
+    // six commonest ticket shapes measured -- prose, `label: value` where the
+    // label is not "copy", markdown bold, a bullet list, quoted text, and
+    // `... copy:` -- FOUR yield zero strings. Every one of those runs used to
+    // ship a report that looked like a clean copy check.
+    //
+    // noSpecText is guarded against explicitly even though it implies
+    // `requirements === null` today (specText is what produces the object at
+    // background.js:2579, and a blank spec sends null). Belt and braces: if the
+    // two ever coexist, "the spec produced no checkable strings" would sit
+    // directly above "No Summary of Changes provided" and contradict it.
+    const reqNothing = !!req && !req.total && !v.noSpecText;
+    const reqHtml = reqNothing ? `
+      <div class="ab-cline ab-warn"><b>Specified copy:</b> the spec was read and produced no checkable strings, so this
+      check did not run — every judgment below is the model's alone. It reads quoted text and lines whose label ends in
+      "copy" ("Eyebrow copy: ..."); a spec written as prose, as "Headline: ...", or in markdown bold gives it nothing to
+      check.</div>`
+      : v.requirementsUnsupported ? `
+      <div class="ab-cline ab-warn"><b>Specified copy:</b> not checked — this variant was diffed by an older background
+      build. Reload the extension so the service worker picks up the current build, then re-run.</div>`
+      : !req || !req.total ? '' : `
       <div class="ab-cline${unmet.length ? ' ab-warn' : ''}"><b>Specified copy:</b> ${req.verbatim} of ${req.total} found verbatim${
         unmet.length ? ` · <b>${unmet.length} unmet</b>` : ''}${
         fragments ? ` · ${fragments} partially present` : ''}. Checked by string comparison against every element on the page, not by the model — case and punctuation are ignored, and a string counts as found when it appears anywhere inside a longer one.</div>

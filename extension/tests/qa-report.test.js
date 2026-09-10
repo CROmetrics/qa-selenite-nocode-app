@@ -603,14 +603,54 @@ function item(status, required, opts) {
      !/ISSUES FOUND/.test(fragmentRun) && /NEEDS REVIEW/.test(fragmentRun), fragmentRun.slice(0, 300));
 })();
 
-(function noRequirementsIsSilent() {
-  // No spec, or a spec with no quoted copy, must not render an empty coverage
-  // line — and must leave the badge exactly as it was.
+(function theThreeCoverageStatesAreDistinguishable() {
+  // This block used to be `noRequirementsIsSilent` and asserted that BOTH "no
+  // spec" and "a spec with no quoted copy" render nothing. That conflated two
+  // different facts into one silence, and the second one is a false reassurance:
+  // a report with no coverage block reads as "every specified string was found",
+  // which is the opposite of what the absence means.
+  //
+  // Measured on the six commonest ticket shapes, FOUR yield zero checkable
+  // strings (prose, `label: value` where the label is not "copy", markdown bold,
+  // a bullet list), so this is the normal case on a new client's tickets rather
+  // than an edge.
+
+  // 1. No spec at all — still silent here. It has its own note in the variant
+  // body and its own info in Run Diagnostics; a second line would double-report.
   var none = render([rollup('section', 'expected')]);
-  ok('no requirements renders no coverage line', !/Specified copy:/.test(none));
+  ok('no requirements at all renders no coverage line', !/Specified copy:/.test(none));
+
+  // 2. A spec was read and produced nothing to check — now says so.
   var empty = withReq({ total: 0, verbatim: 0, near: 0, absent: 0, items: [] });
-  ok('a zero-total requirement set renders no coverage line', !/Specified copy:/.test(empty));
+  ok('a zero-total requirement set SAYS the check did not run',
+     /Specified copy:/.test(empty) && /produced no checkable strings/.test(empty),
+     empty.slice(0, 400));
+  ok('  and says whose judgment is left', /the model's alone/.test(empty), empty.slice(0, 400));
+  ok('  and tells the reader what extraction reads, so the ticket can be fixed',
+     /quoted text/.test(empty) && /Eyebrow copy/.test(empty), empty.slice(0, 400));
+  ok('  at warning weight, not as a neutral note', /ab-warn/.test(empty));
+  // The badge is deliberately untouched: nothing was established as wrong, one
+  // check was unavailable. Same reasoning as vdScaleMismatch being warn.
   ok('  and does not raise ISSUES FOUND', !/ISSUES FOUND/.test(empty), empty.slice(0, 300));
+  ok('  the badge still reads NEEDS REVIEW', /NEEDS REVIEW/.test(empty), empty.slice(0, 300));
+
+  // 3. An older service worker with no requirements code at all — a different
+  // fact with a different fix, and it used to appear ONLY in Run Diagnostics,
+  // never in the part of the report a reviewer reads.
+  var oldWorker = render([rollup('section', 'expected')], {
+    variant: { requirementsUnsupported: true } });
+  ok('an older background build says so in the variant body',
+     /Specified copy:/.test(oldWorker) && /older background/.test(oldWorker),
+     oldWorker.slice(0, 400));
+  ok('  and tells the reader to reload the extension', /Reload the extension/.test(oldWorker));
+  ok('  without claiming the spec produced nothing',
+     !/produced no checkable strings/.test(oldWorker), oldWorker.slice(0, 400));
+
+  // The three are mutually exclusive, so no run can show two of them.
+  var both = render([rollup('section', 'expected')], {
+    variant: { noSpecText: true, requirements: { total: 0, verbatim: 0, near: 0, absent: 0, items: [] } } });
+  ok('noSpecText suppresses the produced-nothing line rather than contradicting it',
+     !/produced no checkable strings/.test(both), both.slice(0, 400));
 })();
 
 // ── 4b. redesign mode's two tiers must be distinguishable ──────────────────

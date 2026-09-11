@@ -992,6 +992,37 @@
     return { kept: kept, truncatedCount: actionable.length - kept.length };
   }
 
+  // What the forcing parameter actually asks the platform for, reduced to the
+  // ids a bucketed experiment can be compared against.
+  //
+  // Two formats, neither of them a bare id in general. Optimizely's
+  // optimizely_x may carry a comma-separated LIST -- mxComposeUrl (popup.js)
+  // composes exactly that, deliberately, "ONE optimizely_x carrying every id".
+  // Convert's _conv_eforce prefixes each id with its experience:
+  // "<experienceId>.<variationId>". A bucketed variationId is bare on BOTH
+  // platforms, so the tail of each comma-separated segment is the thing to
+  // compare.
+  //
+  // Getting this wrong is not a near miss, it inverts the answer: a Convert
+  // page that served exactly the requested variation compared '123.9001'
+  // against '9001', missed, fell through to the bucketed branch and returned
+  // `contradicted` -- which vdServedNoVariation treats as authoritative
+  // evidence the comparison is void. Every Convert run, deterministically.
+  //
+  // background.js's Convert branch has always had the format right
+  // (`eforce.endsWith('.' + row.variationId)`), as do expExtractForcedVarId and
+  // the Experiments panel in popup.js. This is the same rule, finally applied
+  // where the comparison that matters happens.
+  function vdForcedVariationKeys(forcedId) {
+    return String(forcedId == null ? '' : forcedId).split(',')
+      .map(function (s) {
+        var t = s.trim();
+        var d = t.lastIndexOf('.');
+        return d > -1 ? t.slice(d + 1) : t;
+      })
+      .filter(Boolean);
+  }
+
   // -- Did we actually get the variant? --------------------------------------
   // Across 19 recorded ONDECK runs, every single one carried "it loaded the same
   // final URL as Control, so the forced-variant parameter may have been
@@ -1032,9 +1063,17 @@
     if (!forcedId) {
       return unknown('the configured URL did not force a variation, so there is nothing to verify against');
     }
+    // Compared against the NORMALIZED ids, reported as the raw parameter: the
+    // forcedId field says what the URL asked for, the reason says what was
+    // actually checked. On Optimizely's bare single id these are the same
+    // string, which is why every existing assertion holds unchanged.
+    var keys = vdForcedVariationKeys(forcedId);
+    if (!keys.length) {
+      return unknown('the forced-variation parameter carried no variation id');
+    }
     var exps = probe.experiments || [];
     var bucketed = exps.filter(function (e) { return e && e.bucketed && e.variationId; });
-    var hit = bucketed.filter(function (e) { return String(e.variationId) === String(forcedId); })[0];
+    var hit = bucketed.filter(function (e) { return keys.indexOf(String(e.variationId)) !== -1; })[0];
     if (hit) {
       return {
         state: 'confirmed', forcedId: String(forcedId),
@@ -1047,7 +1086,7 @@
         state: 'contradicted', forcedId: String(forcedId),
         variationId: String(bucketed[0].variationId), variationName: bucketed[0].variationName || null,
         experimentId: bucketed[0].id || null, experimentName: bucketed[0].name || null,
-        reason: 'the URL forced variation ' + forcedId + ' but the page bucketed into ' + bucketed[0].variationId,
+        reason: 'the URL forced variation ' + keys.join(', ') + ' but the page bucketed into ' + bucketed[0].variationId,
       };
     }
     // Nothing bucketed at all. That IS a contradiction of a forced URL -- but
@@ -1060,7 +1099,7 @@
     }
     return {
       state: 'contradicted', forcedId: String(forcedId), variationId: null, variationName: null,
-      reason: 'the URL forced variation ' + forcedId + ' and the page did not bucket into any variation',
+      reason: 'the URL forced variation ' + keys.join(', ') + ' and the page did not bucket into any variation',
     };
   }
 
@@ -1434,6 +1473,7 @@
   g.rankAndCapDiffFindings = rankAndCapDiffFindings;
   g.vdReorderContradiction = vdReorderContradiction;
   g.vdComposeReportable = vdComposeReportable;
+  g.vdForcedVariationKeys = vdForcedVariationKeys;
   g.vdVariantVerification = vdVariantVerification;
   g.vdSpecRequirements = vdSpecRequirements;
   g.vdTrimSpecAside = vdTrimSpecAside;

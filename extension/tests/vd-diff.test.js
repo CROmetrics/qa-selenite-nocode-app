@@ -342,6 +342,17 @@ function anchors(n) {
      vdForcedVariationId('http://ondeck.com/soc/b?optimizely_x=4749145360039936&optimizely_token=abc&cro_mode=qa'),
      '4749145360039936');
   eq('a Convert forced param', vdForcedVariationId('https://x.test/p?_conv_eforce=9001'), '9001');
+  // Deliberately WHOLE, composite and all. This function answers "what did the
+  // configured URL ask for", which is the thing worth displaying; reducing it to
+  // a comparable id is vdForcedVariationKeys' job, downstream in vd-diff.js.
+  // Splitting it here instead would have buried the fix in this function's
+  // `new URL(...).searchParams` branch, which no assertion reaches -- URL and
+  // location are both undefined under jsc, so every case in this block exercises
+  // the regex catch and nothing else.
+  eq('a Convert composite comes back whole, normalization is downstream',
+     vdForcedVariationId('https://x.test/p?_conv_eforce=123.9001'), '123.9001');
+  eq('  as does an Optimizely multi-id list',
+     vdForcedVariationId('https://x.test/p?optimizely_x=111,222'), '111,222');
   eq('the post-redirect url has nothing to give', vdForcedVariationId('https://www.ondeck.com/soc/b?cro_mode=qa'), null);
   eq('no url at all', vdForcedVariationId(null), null);
   eq('no query string', vdForcedVariationId('https://x.test/p'), null);
@@ -421,6 +432,49 @@ function anchors(n) {
   ok('a null probe is reported as unconfirmed, not as a stale build',
      !nullProbe.some(function (x) { return /older background build/.test(x.detail); }),
      nullProbe.map(function (x) { return x.detail.slice(0, 50); }));
+})();
+
+(function aConvertRunReachesTheReportAsConfirmed() {
+  // The consumer, not the change. vdVariantVerification returning 'confirmed' is
+  // only half the claim -- what matters is what a reader of the report sees, and
+  // that runs through vdCollectProblems (and, for the badge, vdServedNoVariation
+  // on the same state). Before the fix this capture produced an ERROR row
+  // reading "did not serve the variation" on a page that served exactly the
+  // variation it was asked for.
+  function convertCapture(label, variationId) {
+    var c = capture(label, { fullPage: null, expProbe: {
+      ok: true, detected: { optimizely: false, convert: true, convertScript: true },
+      catalogComplete: true,
+      // Stripped by the redirect, exactly as on Optimizely — the configured url
+      // below is what supplies the forced id.
+      forced: { conv_eforce: null, cro_mode: 'qa' },
+      experiments: [{ id: '123', name: 'Checkout eforce', active: true, bucketed: true,
+                      variationId: variationId, variationName: 'Single step' }],
+    } });
+    c.url = 'https://example.com/p?_conv_eforce=123.9001';
+    return c;
+  }
+  var served = vdCollectProblems(abSections(
+    [convertCapture('v0', '9001'), convertCapture('v1', '9001')],
+    [{ label: 'v1', diffMode: 'normal', matchedFraction: 0.9, structuralStats: {} }]));
+
+  eq('a correctly-served Convert run raises no did-not-serve error',
+     served.filter(function (x) { return /did not serve the variation/.test(x.detail); }).length, 0);
+  var gh = served.filter(function (x) { return /Variation confirmed by the platform/.test(x.detail); });
+  ok('  it is recorded as confirmed instead', gh.length > 0,
+     served.map(function (x) { return x.severity + ': ' + x.detail.slice(0, 70); }));
+  eq('  at info severity', gh.length ? gh[0].severity : null, 'info');
+  eq('  and nothing about it is an error',
+     served.filter(function (x) { return x.severity === 'error'; }).length, 0);
+
+  // And the badge predicate, which is what actually voids a run.
+  eq('so vdServedNoVariation does not void the pair',
+     vdServedNoVariation(vdCaptureVerification(convertCapture('v1', '9001')),
+                         vdCaptureVerification(convertCapture('v0', '9001'))), false);
+  // A Convert run that really did serve the wrong variation must still void it.
+  eq('  while a genuinely wrong Convert variation still does',
+     vdServedNoVariation(vdCaptureVerification(convertCapture('v1', '9002')),
+                         vdCaptureVerification(convertCapture('v0', '9001'))), true);
 })();
 
 // ── did we actually get the variant? ───────────────────────────────────────
@@ -509,12 +563,71 @@ section('variant verification');
        experiments: [exp('e', '222', true)],
      }), '222').state, 'confirmed');
 
-  // Convert, not just Optimizely.
+  // Convert, not just Optimizely. The parameter is a COMPOSITE --
+  // `_conv_eforce=<experienceId>.<variationId>` -- while the bucketed
+  // variationId the platform reports is bare. This assertion used to pass a
+  // bare '9001' as the forced param, a value Convert never emits, and so kept
+  // the suite green over a comparison that could not work: String('9001') ===
+  // String('123.9001') is false, every Convert run returned `contradicted`,
+  // and vdServedNoVariation treats that as authoritative. background.js's own
+  // Convert branch had the format right (`eforce.endsWith('.' + variationId)`)
+  // the whole time; only this path did not.
   eq('a Convert forced param is verified the same way',
      vdVariantVerification(probe({
        detected: { optimizely: false, convert: true, convertScript: true },
-       forced: { conv_eforce: '9001' }, experiments: [exp('c1', '9001', true)],
+       forced: { conv_eforce: '123.9001' }, experiments: [exp('c1', '9001', true)],
      })).state, 'confirmed');
+
+  // A Convert run that genuinely served the wrong thing must still contradict —
+  // the fix must not turn the check into a rubber stamp.
+  var convWrong = vdVariantVerification(probe({
+    detected: { optimizely: false, convert: true, convertScript: true },
+    forced: { conv_eforce: '123.9001' }, experiments: [exp('c1', '9002', true)],
+  }));
+  eq('a Convert run bucketed into another variation is CONTRADICTED', convWrong.state, 'contradicted');
+  ok('  and the reason names the variation asked for, not the composite',
+     / 9001 /.test(convWrong.reason) && !/123\.9001/.test(convWrong.reason), convWrong.reason);
+  eq('  while forcedId still reports what the URL literally carried',
+     convWrong.forcedId, '123.9001');
+
+  // How a Convert run will actually arrive: the redirect stripped the param, so
+  // the composite comes in via the configured-URL override instead of the probe.
+  eq('a composite supplied as the override is CONFIRMED',
+     vdVariantVerification(probe({
+       detected: { optimizely: false, convert: true, convertScript: true },
+       forced: {}, experiments: [exp('c1', '9001', true)],
+     }), '123.9001').state, 'confirmed');
+
+  // Optimizely's own multi-id case. mxComposeUrl composes exactly this shape --
+  // "ONE optimizely_x carrying every id, comma-separated" -- so the same
+  // comparison bug was reachable without Convert being involved at all.
+  eq('an Optimizely comma list matches the id the page bucketed into',
+     vdVariantVerification(probe({
+       forced: { optimizely_x: '111,222' }, experiments: [exp('e', '222', true)],
+     })).state, 'confirmed');
+  eq('  and still contradicts when the page bucketed outside the list',
+     vdVariantVerification(probe({
+       forced: { optimizely_x: '111,222' }, experiments: [exp('e', '333', true)],
+     })).state, 'contradicted');
+
+  // A parameter that survives the truthiness check but carries no id at all —
+  // without the guard this would compare against an empty key set and report a
+  // confident 'contradicted' on no evidence.
+  eq('a forcing param with no id in it is UNKNOWN, not contradicted',
+     vdVariantVerification(probe({
+       forced: { optimizely_x: ',' }, experiments: [exp('e', '222', true)],
+     })).state, 'unknown');
+
+  // The normalizer itself, pinned directly.
+  var K = vdForcedVariationKeys;
+  eq('a Convert composite reduces to the variation id', K('123.9001').join(','), '9001');
+  eq('a bare Optimizely id is untouched', K('4749145360039936').join(','), '4749145360039936');
+  eq('a comma list splits', K('111,222').join('|'), '111|222');
+  eq('a list of composites does both', K('123.678,124.679').join('|'), '678|679');
+  eq('whitespace around a segment is trimmed', K(' 111 , 222 ').join('|'), '111|222');
+  eq('an empty string yields nothing', K('').length, 0);
+  eq('null yields nothing', K(null).length, 0);
+  eq('a bare separator yields nothing', K(',').length, 0);
 })();
 
 // ── requirements, checked deterministically ────────────────────────────────

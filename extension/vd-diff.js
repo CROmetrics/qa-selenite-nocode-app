@@ -1219,7 +1219,17 @@
       raw = raw.replace(/^\([^)]{1,40}\)\s*/, '').trim();
       if (raw.length < VD_REQ_MIN_CHARS) return;
       var norm = vdNormText(raw);
-      if (!norm) return;                 // punctuation-only annotation
+      // The gate above reads `raw`; every match downstream reads `norm`. Gating
+      // the wrong string let a requirement that is long enough raw but
+      // degenerate once normalised through, where it substring-matches almost
+      // any page. Run 1789419453332 (unicefusa.org): the UUSAF-250 spec embeds
+      // its form code, pass 1 harvested `"></a>"` -- 5 raw chars, norm "a" --
+      // and it matched "Read Stories" at score 1.0, reported VERBATIM in a
+      // client report. Measured over every distinct spec on record, this gate
+      // drops exactly that one requirement out of 95; the shortest legitimate
+      // survivors are "$25B+"->"25b" and "$30/mo"->"30 mo", both at or above it.
+      // Subsumes the old `if (!norm)` punctuation-only check.
+      if (norm.length < VD_REQ_MIN_CHARS) return;
       if (seen.has(norm)) return;
       seen.add(norm);
       out.push({ required: raw, norm: norm });

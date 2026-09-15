@@ -732,6 +732,34 @@ function reqCand(text) {
      'a,a,n,v,v');
 })();
 
+(function theLengthGateMustRunOnWhatMatchingActuallyReads() {
+  // The gate was applied to the RAW string and matching runs on the NORMALISED
+  // one, so a requirement long enough raw but degenerate after normalisation
+  // survived and matched anything. Field case, run 1789419453332
+  // (unicefusa.org): the UUSAF-250 spec embeds its form code as
+  // `"<a href="#XSCEEUTK" style="display: none"></a>"`, and pass 1 harvested
+  // `"></a>"` -- 5 raw characters, which clears VD_REQ_MIN_CHARS, but
+  // vdNormText reduces it to "a". One character substring-matches almost any
+  // page, and it matched "Read Stories" at score 1.0 and was reported VERBATIM
+  // in a client report. `if (!norm) return` only rejects the empty case.
+  //
+  // Measured over every distinct spec on record before changing anything: the
+  // norm gate drops exactly ONE requirement, this one, out of 95. The shortest
+  // legitimate survivors are "$25B+"->"25b", "185K+"->"185k" and "$30/mo"->
+  // "30 mo", all at or above the gate, so this cannot be widened to eat prices.
+  if (typeof vdSpecRequirements !== 'function') return;
+  var got = vdSpecRequirements('Element: "<a href=\"#XSCEEUTK\" style=\"display: none\"></a>"')
+    .map(function (r) { return r.norm; });
+  eq('a requirement that normalises to one character is not extracted',
+     got.indexOf('a'), -1);
+  // The companion: raw length alone must not be what admits it.
+  eq('  and the raw string was long enough to pass the old gate', '></a>'.length >= 3, true);
+  // Guard the threshold from being read off `raw` again.
+  var money = vdSpecRequirements('Price: "$25B+"').map(function (r) { return r.required; });
+  eq('a short money requirement still survives', money.length, 1);
+  eq('  and is unchanged', money[0], '$25B+');
+})();
+
 (function curlySingleQuotesArePairedNotAClass() {
   // TB-1078's spec quotes its ONLY requirement in curly singles: a ‘See All’
   // CTA. Before pass 2 the whole spec yielded zero requirements, so the copy

@@ -7822,5 +7822,514 @@
 }
 ],
 "skipped": false
+},
+"1789066188053": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": 0.9675675675675676,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Looks like we're not in your area yet. But we're expanding every day."
+}
+],
+"near": 0,
+"total": 1,
+"verbatim": 0
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.9675675675675676,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Looks like we're not in your area yet. But we're expanding every day."
+}
+],
+"near": 0,
+"total": 1,
+"verbatim": 0
+},
+"skipped": false
+}
+],
+"sharedFindings": [
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+}
+],
+"skipped": false
+},
+"1789071152802": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": 0.9675675675675676,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Looks like we're not in your area yet. But we're expanding every day."
+},
+{
+"fragment": false,
+"status": "near",
+"text": "$40/mo"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "WOW! INTERNET PLANS STARTING AT"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "$30/mo"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Price Lock for Life add-on $5/mo*"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Get Started →"
+}
+],
+"near": 1,
+"total": 6,
+"verbatim": 4
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.9675675675675676,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Looks like we're not in your area yet. But we're expanding every day."
+},
+{
+"fragment": false,
+"status": "near",
+"text": "$40/mo"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "WOW! INTERNET PLANS STARTING AT"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "$30/mo"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Price Lock for Life add-on $5/mo*"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Get Started →"
+}
+],
+"near": 1,
+"total": 6,
+"verbatim": 4
+},
+"skipped": false
+}
+],
+"sharedFindings": [
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+}
+],
+"skipped": false
+},
+"1789072302096": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": 0.9675675675675676,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 2,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Looks like we're not in your area yet. But we're expanding every day."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "$40/mo"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "WOW! INTERNET PLANS STARTING AT"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "$30/mo"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Price Lock for Life add-on $5/mo*"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Get Started →"
+}
+],
+"near": 0,
+"total": 6,
+"verbatim": 4
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.9675675675675676,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 2,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Looks like we're not in your area yet. But we're expanding every day."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "$40/mo"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "WOW! INTERNET PLANS STARTING AT"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "$30/mo"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Price Lock for Life add-on $5/mo*"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Get Started →"
+}
+],
+"near": 0,
+"total": 6,
+"verbatim": 4
+},
+"skipped": false
+}
+],
+"sharedFindings": [
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+}
+],
+"skipped": false
+},
+"1789419453332": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [
+"Page load failed — Page load timed out after 30s"
+],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": null,
+"error": null,
+"findings": [],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": null,
+"noVerdictCount": null,
+"notServed": false,
+"requirements": null,
+"skipped": true
+},
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.9649122807017544,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 10,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Dedicate this donation"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Donate and Support"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Your most generous donation"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "UNICEF is on the ground across the globe, delivering help for the children who need it most."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "<a href="
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "input with"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "one-time"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "style="
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "#XSCEEUTK"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "display: none"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "CHILDREN IN CRISIS"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Donate"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Secure donation"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "></a>"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SAVE THE LIFE OF A CHILD TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Your gift delivers lifesaving nutrition, medicine, protection and education to children in crisis."
+}
+],
+"near": 0,
+"total": 17,
+"verbatim": 7
+},
+"skipped": false
+}
+],
+"sharedFindings": [],
+"skipped": false
 }
 }

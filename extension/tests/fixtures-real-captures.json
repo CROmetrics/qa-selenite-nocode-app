@@ -1437,5 +1437,175 @@
 }
 ],
 "worstMatchedFraction": 0.9652406417112299
+},
+"1788900763308": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2770,
+"viewportH": 1225,
+"viewportW": 2770
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2770,
+"viewportH": 1225,
+"viewportW": 2770
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2770,
+"viewportH": 1225,
+"viewportW": 2770
+},
+"label": "v2",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9865229110512129
+},
+"1789066188053": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2773,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2773,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2773,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"label": "v2",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9675675675675676
+},
+"1789071152802": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2773,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2773,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2773,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"label": "v2",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9675675675675676
+},
+"1789072302096": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2773,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2773,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2773,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"label": "v2",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9675675675675676
+},
+"1789419453332": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2773,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {},
+"label": "v1",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2773,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"label": "v2",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.9649122807017544
 }
 }

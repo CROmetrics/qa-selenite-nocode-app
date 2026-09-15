@@ -342,5 +342,13 @@
 "present": true,
 "source": "ticket",
 "specTicketKey": "WOW-1173"
+},
+"1789419453332": {
+"activeTicketKey": "UUSAF-250",
+"hasText": true,
+"length": 2132,
+"present": true,
+"source": "ticket",
+"specTicketKey": "UUSAF-250"
 }
 }

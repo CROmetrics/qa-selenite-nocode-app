@@ -1,0 +1,288 @@
+#!/usr/bin/env python3
+"""Regenerate fixtures-real-{captures,runs,clusters,specs}.json from the debug-log corpus.
+
+    python3 extension/tests/regen-fixtures.py            # verify only; exits 1 on drift
+    python3 extension/tests/regen-fixtures.py --write     # rewrite the four fixtures
+    SELENITE_LOGS=/path/to/logs python3 ... --write       # corpus somewhere else
+
+WHY THIS FILE EXISTS. The four fixtures were built ad hoc and for months there was
+no generator, so refreshing them meant re-deriving four different projections from
+scratch -- and two of their fields are not straight copies of anything in the log
+(see the TRAPS below). Both traps produce a fixture that still parses, still looks
+plausible, and quietly encodes a different answer than production gave. That is the
+exact failure mode the real-run suite exists to prevent, so the recovery procedure
+belongs next to the fixtures rather than in someone's head.
+
+THE CHECK THAT MAKES A REFRESH TRUSTWORTHY. Restricted to the keys already
+committed, this script must reproduce each file BYTE FOR BYTE. If it does, the
+projection was read correctly and the newly-added entries can be trusted on the
+same evidence. If it does not, the projection was misread and NOTHING is written --
+a mismatch is not something to paper over by loosening the comparison. Done right
+the resulting diff is pure insertions, with no existing line touched.
+
+THE CORPUS IS NOT IN THE REPO. It is the debug exports the extension writes,
+~/Downloads/selenite-debug-r_*.json. Runs are keyed by id except in the specs
+fixture, which is keyed by FILENAME STEM because two files on record share run id
+1787851821352 (one is a "(1)" re-download) and keying by id silently drops one and
+moves the spec census by one.
+"""
+import json
+import glob
+import os
+import sys
+
+LOGS = os.path.expanduser(os.environ.get('SELENITE_LOGS', '~/Downloads'))
+HERE = os.path.dirname(os.path.abspath(__file__))
+WRITE = '--write' in sys.argv[1:]
+
+# The verdict corpus (fixtures-real-runs and -clusters) is CURATED, and the
+# curation is deliberate rather than drift: it covers the era from 1788191807035
+# onward, PLUS four 3-variant runs backfilled later to give the reordering rule
+# multi-cluster geometry to be checked against. The Aug 24-28 single-variant runs
+# were never in it. Widening it is a real decision about what those suites claim,
+# not a refresh -- so it is spelled out here instead of being inferred from dates.
+BACKFILL = {'1787686041687', '1787687832083', '1787688438071', '1787689543404'}
+ERA_FLOOR = 1788191807035
+
+
+def logs():
+    """Every debug log on disk, as (filename stem, run id, parsed)."""
+    for p in sorted(glob.glob(os.path.join(LOGS, 'selenite-debug-r_*.json'))):
+        stem = os.path.basename(p)[len('selenite-debug-r_'):-len('.json')]
+        with open(p) as fh:
+            yield stem, stem.split(' ')[0], json.load(fh)
+
+
+def in_verdict_corpus(rid):
+    return rid in BACKFILL or int(rid) >= ERA_FLOOR
+
+
+# ── captures: every log that captured anything ────────────────────────────────
+# The only fixture that can exercise capture PARITY, which is a property of the
+# capture SET and invisible in the verdict projection. fullPage keys are copied
+# only when the log carries them: viewportW and geometryPinned postdate the
+# geometry pin, and inventing them for older runs would fabricate agreement
+# between captures that were never compared on that axis.
+def gen_captures():
+    out = {}
+    for _stem, rid, d in logs():
+        caps = d.get('captures') or []
+        if not caps:
+            continue
+        mfs = [v.get('matchedFraction') for v in ((d.get('visualDiff') or {}).get('perVariant') or [])]
+        mfs = [m for m in mfs if m is not None]
+        entry = {
+            "captures": [{
+                "fullPage": {k: (c.get('fullPage') or {})[k]
+                             for k in ('pageW', 'viewportH', 'geometryPinned', 'viewportW')
+                             if k in (c.get('fullPage') or {})},
+                "label": c.get('label'),
+                "skipped": c.get('skipped'),
+            } for c in caps],
+            "worstMatchedFraction": min(mfs) if mfs else None,
+        }
+        if rid in out and out[rid] != entry:
+            raise SystemExit('duplicate downloads of %s disagree -- resolve by hand' % rid)
+        out[rid] = entry
+    return out, dict(indent=0, sort_keys=True), True
+
+
+# ── specs: every log carrying a designReference ───────────────────────────────
+# Spec PROVENANCE only -- no spec text, just the fields the suppression decision
+# reads. Keyed by filename stem; see the module docstring.
+def gen_specs():
+    out = {}
+    for stem, _rid, d in logs():
+        dr = d.get('designReference')
+        if not isinstance(dr, dict):
+            continue
+        soc = dr.get('summaryOfChanges') or {}
+        out[stem] = {
+            "activeTicketKey": (dr.get('ticketContext') or {}).get('ticketKey'),
+            "hasText": bool(soc.get('text')),
+            "length": soc.get('length'),
+            "present": soc.get('present'),
+            "source": soc.get('source'),
+            "specTicketKey": soc.get('ticketKey'),
+        }
+    return out, dict(indent=0, sort_keys=True), False
+
+
+# ── runs: the verdict projection ──────────────────────────────────────────────
+PV_FIELDS = ['controlDuplicate', 'diffMode', 'error', 'findings', 'gradingFailed',
+             'label', 'matchedFraction', 'noVerdictCount', 'notServed', 'skipped']
+
+
+def not_served_map(d):
+    """TRAP 1. notServed is DERIVED and appears nowhere on the log's perVariant.
+
+    The pipeline computes it from the CAPTURE's `variantVerified`, so a projection
+    that copies perVariant fields straight across silently emits null for every
+    run -- and null is falsy, so the two recorded not-served runs would quietly
+    read as served and the fixture would assert the very false-PASS the notServed
+    rung was added to close. Mirrors vdServedNoVariation(own, baselineVer):
+    EITHER side being `contradicted` voids the pair, because a Control that did
+    not serve Control is no baseline whatever the variant did.
+    """
+    caps = d.get('captures') or []
+    vd = d.get('visualDiff') or {}
+    base = next((c for c in caps if c.get('label') == vd.get('baselineLabel')), None)
+    bver = (base or {}).get('variantVerified')
+    res = {}
+    for v in (vd.get('perVariant') or []):
+        if v.get('skipped'):
+            # The pipeline returns before assigning it, and vdVerdict's live()
+            # gate means it is never read for a skipped variant. False keeps the
+            # field's type uniform without asserting anything.
+            res[v.get('label')] = False
+            continue
+        cap = next((c for c in caps if c.get('label') == v.get('label')), None)
+        own = (cap or {}).get('variantVerified')
+        res[v.get('label')] = bool((own and own.get('state') == 'contradicted')
+                                   or (bver and bver.get('state') == 'contradicted'))
+    return res
+
+
+def gen_runs():
+    out = {}
+    for _stem, rid, d in logs():
+        if not in_verdict_corpus(rid):
+            continue
+        vd = d.get('visualDiff') or {}
+        ns = not_served_map(d)
+        pv = []
+        for v in (vd.get('perVariant') or []):
+            o = {}
+            for k in PV_FIELDS:
+                if k == 'findings':
+                    # Only the grade. The verdict never reads anything else, and
+                    # carrying rects would make the fixture a second copy of the log.
+                    o[k] = [{"classification": f.get('classification')}
+                            for f in (v.get('findings') or [])]
+                elif k == 'notServed':
+                    o[k] = ns.get(v.get('label'), False)
+                else:
+                    o[k] = v.get(k) if k in v else None
+            # TRAP 2. `requirements: null` is a RECORDED SHAPE, not an absent key --
+            # two runs carry it, meaning grading ran and produced no set. Emitting
+            # the key only for dicts drops it and is a byte mismatch.
+            if 'requirements' in v:
+                rq = v.get('requirements')
+                o['requirements'] = None if not isinstance(rq, dict) else {
+                    "absent": rq.get('absent'), "near": rq.get('near'),
+                    "total": rq.get('total'), "verbatim": rq.get('verbatim'),
+                    "items": [{"fragment": it.get('fragment'), "status": it.get('status'),
+                               "text": it.get('required')} for it in (rq.get('items') or [])],
+                }
+            pv.append(o)
+        out[rid] = {
+            "baselineLabel": vd.get('baselineLabel'),
+            "baselineWarning": vd.get('baselineWarning'),
+            # Sliced to 90 chars: enough to identify the problem, short enough that
+            # the fixture does not become a prose archive.
+            "errorProblems": [(p.get('detail') or '')[:90]
+                              for p in (d.get('problems') or []) if p.get('severity') == 'error'],
+            "perVariant": pv,
+            "sharedFindings": [{"classification": f.get('classification')}
+                               for f in (vd.get('sharedFindings') or [])],
+            "skipped": bool(vd.get('skipped')),
+        }
+    return out, dict(indent=0, sort_keys=True, ensure_ascii=False), True
+
+
+# ── clusters: recorded shift geometry, one entry per variant ──────────────────
+# Kept out of the verdict projection on purpose: you CANNOT re-run
+# vdSuppressFindings from a debug log (it carries no candidate lists, only capped
+# samples), so feeding the recorded clusters back through the predicate is the
+# only way to check the reordering rule against real pages. Clusters are copied
+# VERBATIM -- spanPx and contradictedBy included -- because the point is the
+# geometry production actually recorded.
+def gen_clusters():
+    out = {}
+    for _stem, rid, d in logs():
+        if not in_verdict_corpus(rid):
+            continue
+        pv = ((d.get('visualDiff') or {}).get('perVariant')) or []
+        for v in pv:
+            sc = (v.get('diagnostics') or {}).get('shiftClusters')
+            if not isinstance(sc, dict):
+                continue
+            vert = sc.get('vertical') or []
+            # Single-variant runs are keyed bare; anything else carries its label.
+            key = rid + ('#' + v['label'] if len(pv) > 1 else '')
+            out[key] = {
+                # Whether the log came from a build already running the rule, which
+                # is what makes the axis-scoping assertions meaningful: an annotated
+                # set must carry contradictedBy on every VERTICAL cluster and on no
+                # horizontal one.
+                "annotated": bool(vert) and all('contradictedBy' in c for c in vert),
+                "generatedAt": d.get('generatedAt'),
+                "shiftClusters": {"horizontal": sc.get('horizontal') or [], "vertical": vert},
+                "suppressionAggregate": v.get('suppressionAggregate'),
+            }
+    return out, dict(indent=0, sort_keys=True), True
+
+
+# Serialization differs per file and all three settings matter to byte-identity.
+# `indent=0` is newline-separated with NO indentation -- not JSON.stringify(o,
+# null, 0), which emits no newlines at all.
+FIXTURES = [
+    ('fixtures-real-captures.json', gen_captures),
+    ('fixtures-real-clusters.json', gen_clusters),
+    ('fixtures-real-runs.json', gen_runs),
+    ('fixtures-real-specs.json', gen_specs),
+]
+
+
+def main():
+    if not glob.glob(os.path.join(LOGS, 'selenite-debug-r_*.json')):
+        sys.exit('no debug logs under %s -- set SELENITE_LOGS to the corpus' % LOGS)
+    # A misread projection (`failed`) is an ERROR in both modes and must never
+    # exit 0 -- a --write run that silently skipped a file is exactly how a stale
+    # fixture survives a refresh. Pending additions (`stale`) are only a failure
+    # in verify mode, because --write is what resolves them.
+    failed = False
+    stale = False
+    for name, fn in FIXTURES:
+        path = os.path.join(HERE, name)
+        new, ser, nl = fn()
+        with open(path, 'rb') as fh:
+            raw = fh.read()
+        cur = json.loads(raw)
+
+        def blob(obj):
+            return json.dumps(obj, **ser).encode('utf-8') + (b'\n' if nl else b'')
+
+        kept = blob({k: v for k, v in new.items() if k in cur})
+        added = sorted(set(new) - set(cur))
+        dropped = sorted(set(cur) - set(new))
+        if kept != raw:
+            print('%-34s MISMATCH on existing keys -- projection misread, NOT written' % name)
+            failed = True
+            continue
+        if dropped:
+            print('%-34s would DROP %d entr(ies) -- refusing: %s' % (name, len(dropped), dropped))
+            failed = True
+            continue
+        print('%-34s reproduced  %d -> %d  (+%d)' % (name, len(cur), len(new), len(added)))
+        for a in added:
+            print('    + ' + a)
+        if added:
+            stale = True
+        if WRITE:
+            with open(path, 'wb') as fh:
+                fh.write(blob(new))
+    if failed:
+        print('\nA projection no longer reproduces what is committed. Fix the projection --')
+        print('do NOT edit the fixture by hand to match it.')
+        return 1
+    if stale and not WRITE:
+        print('\nFixtures are stale. Re-run with --write, then re-derive every pinned census')
+        print('in real-runs.test.js from the refreshed data -- do NOT loosen an assertion to')
+        print('make it pass.')
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

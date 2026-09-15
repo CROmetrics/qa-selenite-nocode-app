@@ -403,6 +403,47 @@ section('fixture entries that the shipped code can no longer reproduce');
   print('          to replace it; do not hand-edit a number in.');
 })();
 
+(function staleCrossVariantRequirementProjection() {
+  // The SECOND entry of this class, and the one that matters more, because the
+  // run carrying it is the corpus's only capture set from a fifth site.
+  //
+  // Run 1789419453332 (UUSAF-250, unicefusa.org) recorded 17 requirements for
+  // v2 and graded 10 of them absent. Ten is not a copy result. Six of the
+  // seventeen are HTML lifted out of a pasted form embed -- '<a href="',
+  // 'style="', 'display: none', '#XSCEEUTK', '></a>', 'input with' -- and most
+  // of the rest are v1's copy, because ONE flat requirement list was graded
+  // against every variant. Both defects are fixed above this commit (b177615
+  // stopped treating a pasted embed as copy the page must carry, fcd7104 grades
+  // a variant against what the ticket says about THAT variant), so the shipped
+  // extractor can no longer produce 17 for this spec.
+  //
+  // Unlike 1788538681655 the truth here IS derivable, and was measured rather
+  // than reasoned: driving HEAD's vdSpecRequirements over the spec bytes the
+  // log itself carries yields TWO requirements for v2 -- 'SAVE THE LIFE OF A
+  // CHILD TODAY' and 'Your gift delivers lifesaving nutrition...' -- and the
+  // log records BOTH of them verbatim. So this run's real copy result is 0 of
+  // 2, not 10 of 17, and the 10 unmetCopy the entry feeds into the verdict is
+  // an artifact of the build that captured it.
+  //
+  // The entry is kept anyway, because every OTHER field on the run is real and
+  // is the only fifth-site data on record: the skipped variant (the corpus's
+  // first), the served-variation check, the findings and the badge.
+  var bleed = RUNS['1789419453332'];
+  ok('the fifth-site run is on record', !!bleed);
+  if (!bleed) return;
+  var cmp = (bleed.perVariant || []).filter(function (v) { return !v.skipped; })[0];
+  ok('  its compared variant carries a requirement set', !!(cmp && cmp.requirements));
+  if (!cmp || !cmp.requirements) return;
+  // Pinned so a re-capture of UUSAF-250 FAILS here and forces this note to be
+  // revisited, rather than leaving a 10-copy-miss verdict to be read as real.
+  eq('  it still carries the pre-fix cross-variant totals',
+     JSON.stringify([cmp.requirements.total, cmp.requirements.absent]), '[17,10]');
+  print('    NOTE: 1789419453332.requirements is a PRE-FIX projection — HEAD scopes the');
+  print('          list per variant and drops the pasted form embed, leaving v2 TWO');
+  print('          requirements, both recorded verbatim. Its real copy result is 0 of 2,');
+  print('          not 10 of 17. Re-run UUSAF-250 to replace it; do not hand-edit it.');
+})();
+
 section('runs where the page served no variation');
 (function variantsThatServedNoVariation() {
   // Two runs on record have every capture `contradicted` -- the platform's own
@@ -637,9 +678,17 @@ section('spec suppression cause across every recorded run');
   // Compared over SORTED keys, never by stringifying the accumulator against a
   // typed literal: census is filled in corpus order, so JSON.stringify would
   // pin key insertion order and fail on correct counts.
+  //
+  // graded went 20 -> 21 when the corpus gained its fifth site. The single new
+  // log here is 1789419453332 (UUSAF-250, unicefusa.org): its spec was
+  // auto-filled from the active ticket, so summaryTicketKey is present AND
+  // equal to ticketKey, which clears both the withheld and the
+  // graded-unverified rungs. The other two buckets are unmoved -- the three
+  // WOW-1173 runs added to the verdict corpus in the same refresh were already
+  // carried here, and nothing new arrived without a spec.
   eq('every recorded run resolves to a cause',
      Object.keys(census).sort().map(function (k) { return k + '=' + census[k]; }).join(','),
-     'graded=20,graded-unverified=17,none=6');
+     'graded=21,graded-unverified=17,none=6');
   eq('  and every log carrying a designReference is accounted for',
      Object.keys(census).reduce(function (n, k) { return n + census[k]; }, 0),
      Object.keys(SPECS).length);

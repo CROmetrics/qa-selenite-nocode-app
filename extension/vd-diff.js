@@ -1199,6 +1199,30 @@
     return String(value == null ? '' : value).split(/\s+[-\u2013\u2014]\s+(?=[a-z])/)[0].trim();
   }
 
+  // Specs paste their form embed code. UUSAF-250 ends each variant with an
+  // `Element:` line, and pass 1 harvested the markup as if it were copy -- the
+  // report told the client that `<a href=`, `style=`, `#XSCEEUTK` and
+  // `display: none` were "specified copy strings not on the page as written".
+  // Four of that run's ten reported absences were this. They are not copy, they
+  // are not on the rendered page by construction, and no amount of matching can
+  // make them present.
+  //
+  // Shape, not context: a block detector would have to guess where the snippet
+  // starts and ends. These four rules reject 4 of the 94 requirements on record
+  // and touch none of the other 78.
+  //
+  // Deliberately narrow. The CSS rule requires an all-lowercase property AND a
+  // single-token value, so `Our promise: every gift is matched` survives on
+  // both counts; a lowercase `word: token` requirement would be rejected, which
+  // is the one accepted false positive and has no instance on record.
+  function vdLooksLikeMarkup(raw) {
+    if (/<\/?[A-Za-z]/.test(raw)) return true;             // an HTML tag opener
+    if (/[A-Za-z_-]=$/.test(raw)) return true;              // a dangling attribute, `style=`
+    if (/^[#.][A-Za-z0-9_-]+$/.test(raw)) return true;      // a bare CSS selector
+    if (/^[a-z-]{2,20}:\s*[^\s]+$/.test(raw)) return true;  // `display: none`
+    return false;
+  }
+
   function vdSpecRequirements(specText) {
     var text = String(specText || '');
     var seen = new Set(), out = [];
@@ -1230,6 +1254,7 @@
       // survivors are "$25B+"->"25b" and "$30/mo"->"30 mo", both at or above it.
       // Subsumes the old `if (!norm)` punctuation-only check.
       if (norm.length < VD_REQ_MIN_CHARS) return;
+      if (vdLooksLikeMarkup(raw)) return;
       if (seen.has(norm)) return;
       seen.add(norm);
       out.push({ required: raw, norm: norm });

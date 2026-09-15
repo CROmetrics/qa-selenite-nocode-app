@@ -732,6 +732,51 @@ function reqCand(text) {
      'a,a,n,v,v');
 })();
 
+(function embedCodeIsNotCopy() {
+  // A spec that pastes its form embed code makes pass 1 harvest the markup as
+  // if it were copy. Run 1789419453332 (unicefusa.org): UUSAF-250 ends each
+  // variant with
+  //
+  //     Element:
+  //     "<a href="#XSCEEUTK" style="display: none"></a>"
+  //
+  // and the report then told the client that `<a href=`, `style=`, `#XSCEEUTK`
+  // and `display: none` were "specified copy strings not on the page as
+  // written". They were never copy. Four of that run's ten reported absences
+  // were this.
+  //
+  // Measured over every distinct spec on record: these rules reject 4 of 94
+  // requirements, all four on this spec, and touch none of the other 78.
+  if (typeof vdSpecRequirements !== 'function') return;
+  // Both forms occur in the one real spec: v1 wraps its element in outer
+  // quotes, v2 does not, and they yield DIFFERENT fragments -- the wrapped one
+  // gives `<a href=` and `style=`, the bare one `#XSCEEUTK` and
+  // `display: none`. A test carrying only one form covers half the defect.
+  var got = vdSpecRequirements([
+    'Element:',
+    '"<a href="#XGWCPGJB" style="display: none"></a>"',
+    'Element:',
+    '<a href="#XSCEEUTK" style="display: none"></a>',
+  ].join('\n')).map(function (r) { return r.required; });
+  eq('an html tag opener is not a copy requirement', got.indexOf('<a href='), -1);
+  eq('a dangling attribute fragment is not a copy requirement', got.indexOf('style='), -1);
+  eq('a bare selector is not a copy requirement', got.indexOf('#XSCEEUTK'), -1);
+  eq('a css declaration is not a copy requirement', got.indexOf('display: none'), -1);
+
+  // The rules must not reach prose. A colon in a sentence, a comparison, and a
+  // price are all ordinary copy.
+  var keeps = vdSpecRequirements([
+    'A: "Our promise: every gift is matched"',
+    'B: "Save more than $50 on your first order"',
+    'C: "Plans from $30/mo"',
+    'D: "Get Started"',
+  ].join('\n')).map(function (r) { return r.required; });
+  eq('a sentence containing a colon survives', keeps.indexOf('Our promise: every gift is matched') >= 0, true);
+  eq('a sentence about a price survives', keeps.indexOf('Save more than $50 on your first order') >= 0, true);
+  eq('a short price requirement survives', keeps.indexOf('Plans from $30/mo') >= 0, true);
+  eq('  and all four are kept', keeps.length, 4);
+})();
+
 (function theLengthGateMustRunOnWhatMatchingActuallyReads() {
   // The gate was applied to the RAW string and matching runs on the NORMALISED
   // one, so a requirement long enough raw but degenerate after normalisation

@@ -50,6 +50,15 @@ var CLUSTERS = JSON.parse(readFile('fixtures-real-clusters.json'));
 // Capture geometry per run — the only fixture that can exercise capture PARITY,
 // which is a property of the capture set and invisible in the verdict projection.
 var CAPTURES = JSON.parse(readFile('fixtures-real-captures.json'));
+// The spec PROVENANCE of every run on record that carries a designReference —
+// no spec text, only the five fields the suppression decision reads. Keyed by
+// FILENAME STEM, not run id: two logs on record share run id 1787851821352
+// (one is a "(1)" copy), and keying by id silently drops one and moves the
+// census by one.
+var SPECS = JSON.parse(readFile('fixtures-real-specs.json'));
+eval(slicePopup('function vdSpecTicketMismatch(source, specKey, activeKey, hasText) {',
+                '\nasync function runVisualDiffPipeline'));
+eval(slicePopup('function buildDesignReferenceDebug(ctx, state, hasFigmaPat) {', '\nfunction '));
 
 var pass = 0, fail = 0, failures = [];
 function ok(name, cond, detail) {
@@ -574,6 +583,43 @@ eq('  an unrecognised state is INCONCLUSIVE, never PASS',
    vdBadgeLabel({ ran: true, allClean: false }, {}), 'INCONCLUSIVE');
 eq('  and a positively clean run is PASS',
    vdBadgeLabel({ ran: true, allClean: true }, {}), 'PASS');
+
+section('spec suppression cause across every recorded run');
+(function theGradingCauseOverTheWholeCorpus() {
+  // Run 1787945015802 graded 61 of 67 ENOC-97 findings 'unexpected' against a
+  // 1,808-char Zapier spec (1030c21). Its log records source 'ticket' and NO
+  // spec ticket key, because summaryTicketKey did not exist yet — so
+  // vdSpecTicketMismatch is silent and a boolean "stale" field would read
+  // false on it. So would the 19 correct ENOC-97 runs. This is the assertion
+  // that says the motivating run is not recorded as clean.
+  var census = {};
+  Object.keys(SPECS).forEach(function (stem) {
+    var s = SPECS[stem];
+    var d = buildDesignReferenceDebug(
+      s.activeTicketKey ? { ticketKey: s.activeTicketKey } : null,
+      { summaryOfChanges: s.present ? new Array(s.length + 1).join('x') : '',
+        summarySource: s.source, summaryTicketKey: s.specTicketKey }, false);
+    var g = d.summaryOfChanges.grading;
+    census[g] = (census[g] || 0) + 1;
+    if (stem === '1787945015802') {
+      eq('the run graded against another ticket is not recorded as clean', g, 'graded-unverified');
+    }
+  });
+  // Compared over SORTED keys, never by stringifying the accumulator against a
+  // typed literal: census is filled in corpus order, so JSON.stringify would
+  // pin key insertion order and fail on correct counts.
+  eq('every recorded run resolves to a cause',
+     Object.keys(census).sort().map(function (k) { return k + '=' + census[k]; }).join(','),
+     'graded=20,graded-unverified=17,none=6');
+  eq('  and every log carrying a designReference is accounted for',
+     Object.keys(census).reduce(function (n, k) { return n + census[k]; }, 0),
+     Object.keys(SPECS).length);
+  // Pinned so the first real ticket-mismatch run to land FAILS here and forces
+  // this note to be revisited. No log on record carries a spec ticket key that
+  // differs from its active one, so 'withheld' is covered synthetically only,
+  // in qa-report.test.js.
+  eq('no recorded run was ever withheld', census.withheld || 0, 0);
+})();
 
 print('');
 if (failures.length) { print('FAILURES:'); failures.forEach(function (f) { print('  - ' + f); }); }

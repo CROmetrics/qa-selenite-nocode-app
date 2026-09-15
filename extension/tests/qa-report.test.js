@@ -33,6 +33,15 @@
 // every rect assertion silently exercise the no-rect branch and pass for the
 // wrong reason.
 
+// buildDesignReferenceDebug now hashes the spec with vdHash32, which lives in
+// vd-diff.js and reaches popup.js as a bare global (popup.html and
+// sidepanel.html both load vd-diff.js at :1303, before popup.js at :1305).
+// This suite deliberately loaded nothing until now, so without these two the
+// sliced builder throws ReferenceError on its first call and aborts all 457
+// assertions with no failure list. Do not delete them as unused.
+load('../vd-config.js');
+load('../vd-diff.js');
+
 var _pu = readFile('../popup.js');
 function slicePopup(from, to) {
   var a = _pu.indexOf(from), b = _pu.indexOf(to, a + 1);
@@ -704,6 +713,12 @@ function element(status, region, label, opts) {
 // ── 5. the debug export must carry the spec, not just its size ─────────────
 section('debug export records the spec text');
 
+// The builder derives the suppression cause from the SAME predicate the
+// pipeline gates on, so the log and the decision cannot disagree. Sliced, not
+// restated — this one slice picks up vdSpecTicketMismatch and vdSpecIsStale,
+// which are adjacent in popup.js.
+eval(slicePopup('function vdSpecTicketMismatch(source, specKey, activeKey, hasText) {',
+                '\nasync function runVisualDiffPipeline'));
 eval(slicePopup('function buildDesignReferenceDebug(ctx, state, hasFigmaPat) {', '\nfunction '));
 
 (function specTextRecorded() {
@@ -747,6 +762,84 @@ eval(slicePopup('function buildDesignReferenceDebug(ctx, state, hasFigmaPat) {',
   eq('an empty spec records null rather than an empty string', d.summaryOfChanges.text, null);
   eq('and is not marked present', d.summaryOfChanges.present, false);
   eq('and reports zero length', d.summaryOfChanges.length, 0);
+})();
+
+(function specHashRecorded() {
+  // The four specs on record differ inside their first 40 characters AND in
+  // length, so no real-data assertion can tell a correct hash from a prefix
+  // hash or from String(length). Both are wrong in the way that matters — a
+  // spec edited in its fifth paragraph is exactly the case this field exists
+  // for — so they are pinned here instead.
+  var spec = 'Rebuild the hero. Update the \u2020/* disclaimer footnotes in the footer.';
+  var d = buildDesignReferenceDebug(null, { summaryOfChanges: spec, summarySource: 'ticket' }, false);
+  eq('the spec hash is recorded', d.summaryOfChanges.hash, vdHash32(spec));
+  eq('  and it hashes the TRIMMED text, which is what the grader receives',
+     buildDesignReferenceDebug(null, { summaryOfChanges: '  ' + spec + '\n', summarySource: 'ticket' }, false)
+       .summaryOfChanges.hash, d.summaryOfChanges.hash);
+  // vdHash32('') is the FNV offset basis 811c9dc5 — a real-looking value that
+  // would give every spec-less run the same fingerprint.
+  eq('no spec records no hash',
+     buildDesignReferenceDebug(null, { summaryOfChanges: '   ' }, false).summaryOfChanges.hash, null);
+  var head = new Array(401).join('a');
+  var A = head + ' the footnote reads "Rates from 9.99%".';
+  var B = head + ' the footnote reads "Rates from 8.99%".';
+  var hA = buildDesignReferenceDebug(null, { summaryOfChanges: A, summarySource: 'ticket' }, false).summaryOfChanges.hash;
+  var hB = buildDesignReferenceDebug(null, { summaryOfChanges: B, summarySource: 'ticket' }, false).summaryOfChanges.hash;
+  ok('equal-length specs differing only past character 300 hash differently', hA !== hB,
+     { a: hA, b: hB });
+  ok('  and they really are the same length, so length cannot separate them',
+     A.length === B.length);
+})();
+
+(function specGradingCauseRecorded() {
+  // Run 1787945015802 is the case a boolean would have missed: source
+  // 'ticket', an active ENOC-97 context, no summaryTicketKey, and a Zapier
+  // spec that graded 61 of 67 findings 'unexpected'. vdSpecTicketMismatch
+  // needs BOTH keys, so "stale" is false there.
+  var unverified = buildDesignReferenceDebug({ ticketKey: 'ENOC-97' }, {
+    summaryOfChanges: 'v1: Two-Step Form Progression', summarySource: 'ticket',
+  }, false);
+  eq('a ticket-sourced spec with no recorded key is unverified, never clean',
+     unverified.summaryOfChanges.grading, 'graded-unverified');
+  var stale = buildDesignReferenceDebug({ ticketKey: 'ENOC-97' }, {
+    summaryOfChanges: 'v1: Two-Step Form Progression', summarySource: 'ticket',
+    summaryTicketKey: 'ZAP-441',
+  }, false);
+  eq('a spec from another ticket records that the grader got nothing',
+     stale.summaryOfChanges.grading, 'withheld');
+  ok('  while still keeping the wrong text and its hash, so it stays identifiable',
+     stale.summaryOfChanges.text === 'v1: Two-Step Form Progression'
+     && stale.summaryOfChanges.hash === vdHash32('v1: Two-Step Form Progression'));
+  eq('a matching ticket records graded',
+     buildDesignReferenceDebug({ ticketKey: 'ENOC-97' }, { summaryOfChanges: 'Rebuild the hero.',
+       summarySource: 'ticket', summaryTicketKey: 'ENOC-97' }, false).summaryOfChanges.grading, 'graded');
+  // The three cases the pipeline deliberately does NOT suppress. Each is a
+  // 'graded' that must not be mistaken for an unverifiable one.
+  eq('hand-typed is graded even against another key',
+     buildDesignReferenceDebug({ ticketKey: 'ENOC-97' }, { summaryOfChanges: 'Typed by hand.',
+       summarySource: 'manual', summaryTicketKey: 'ZAP-441' }, false).summaryOfChanges.grading, 'graded');
+  // The ONLY shape that exercises the `!== 'manual'` guard: with a key set, the
+  // `!summaryTicketKey` clause short-circuits first and the guard is never
+  // reached. Dropping the guard left every other assertion here green.
+  // Hand-typed text legitimately has no ticket key — that is no provenance
+  // NEEDED, not provenance missing.
+  eq('hand-typed text with no key at all is graded, not unverifiable',
+     buildDesignReferenceDebug({ ticketKey: 'ENOC-97' }, { summaryOfChanges: 'Typed by hand.',
+       summarySource: 'manual' }, false).summaryOfChanges.grading, 'graded');
+  eq('no active ticket is graded, not unverifiable',
+     buildDesignReferenceDebug(null, { summaryOfChanges: 'Standalone run.',
+       summarySource: 'ticket' }, false).summaryOfChanges.grading, 'graded');
+  eq('an empty box is its own cause, told apart from a withheld one',
+     buildDesignReferenceDebug({ ticketKey: 'ENOC-97' }, { summaryOfChanges: '   ' }, false)
+       .summaryOfChanges.grading, 'none');
+  // vdCollectProblems re-derives staleness from the serialised blob. If the
+  // builder compared keys itself the two could drift, and the log would carry
+  // "grading was WITHHELD" beside grading:'graded'.
+  var src = slicePopup('function buildDesignReferenceDebug(ctx, state, hasFigmaPat) {', '\nfunction ');
+  ok('the builder uses the shared predicate, not its own comparison',
+     /vdSpecIsStale\(state, ctx\)/.test(src));
+  ok('  and does not re-implement the key comparison inline',
+     !/summaryTicketKey[^\n]*!==[^\n]*ticketKey/.test(src));
 })();
 
 // ── the Detailed Description column ───────────────────────────────────────
@@ -1201,6 +1294,21 @@ section('a run that was not validly compared must never badge PASS');
   // sharedAcross is the ONLY field that differs, and it belongs to the caller.
   ok('sharedAcross is added by the caller, not by the shared projection',
      /sharedAcross: f\.sharedAcross \|\| \[\]/.test(log) && !/sharedAcross/.test(fn));
+})();
+
+(function theSplitBuildSignalReachesTheLog() {
+  // requirementsUnsupported is computed at popup.js:4040 and read by BOTH the
+  // renderer and vdCollectProblems, but went unrecorded: a popup newer than its
+  // service worker sent a spec, got no requirements key back, and the log
+  // looked the same as a run whose spec simply produced fewer requirements.
+  // That is one of exactly three reasons a requirement count can move, and it
+  // was the only one invisible in the log — the other two are a changed spec
+  // (summaryOfChanges.hash) and a changed extractor.
+  var log = _pu.slice(_pu.indexOf('function buildDebugLog(sections) {'));
+  ok('the per-variant projection records requirementsUnsupported',
+     /requirementsUnsupported: v\.requirementsUnsupported \?\? null/.test(log));
+  ok('  and records it beside requirements, where the count it explains lives',
+     log.indexOf('requirementsUnsupported:') < log.indexOf('requirements: v.requirements'));
 })();
 
 (function whichVerificationStatesVoidThePair() {

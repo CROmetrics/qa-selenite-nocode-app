@@ -6483,6 +6483,12 @@ function buildDesignReferenceDebug(ctx, state, hasFigmaPat) {
   const variants = ctx?.variants || [];
   const previewLinks = ctx?.previewLinks || [];
   const summary = (state?.summaryOfChanges || '').trim();
+  // Derived from the SAME predicate runVisualDiffPipeline gates on (3904), not
+  // from a second key comparison written here. vdCollectProblems re-derives it a
+  // third way off the serialised blob (6570); a private copy that drifted would
+  // put an error line saying grading was WITHHELD next to a field saying the
+  // spec was graded.
+  const specWithheld = vdSpecIsStale(state, ctx);
   return {
     ticketContext: !ctx ? null : {
       ticketKey: ctx.ticketKey || null,
@@ -6514,6 +6520,57 @@ function buildDesignReferenceDebug(ctx, state, hasFigmaPat) {
       // to say which one had read the ticket correctly. Uncapped on purpose:
       // a truncated spec is exactly as unverifiable as an absent one.
       text: summary || null,
+      // A short identity key for the string above, so two logs can be compared
+      // on spec identity without diffing 11,716 characters by eye. `length` is
+      // already here and happens to separate all four specs on record, so this
+      // earns its place on same-length drift — one swapped figure inside a
+      // footnote reads as the same spec by length and as a different spec here.
+      // It does not replace `text`: a suspected collision is one diff away.
+      //
+      // This is what makes an extractor change legible. Three WOW-1173 runs on
+      // 2026-09-10 (18:49, 20:12, 20:31) share this hash byte for byte and
+      // recorded requirements.total 1, 6 and 6 — because 1a3b9af added the
+      // label:copy pass at 18:58, nine minutes after the first. Identical hash
+      // beside a changed count is the signal that the INPUT held still and the
+      // extractor moved; without it that diagnosis needs the git log and a
+      // source comment that happens to name the run id.
+      //
+      // vdHash32 is the matcher's own FNV-1a (vd-diff.js:68), which loads
+      // before popup.js in both shells. null — never a hash — when the box is
+      // empty: vdHash32('') returns the FNV offset basis 811c9dc5, an
+      // ordinary-looking value that would make all 31 spec-less runs on record
+      // compare EQUAL. Hex is unpadded, as every other hash in this log is.
+      hash: summary ? vdHash32(summary) : null,
+      // What the pipeline decided to hand the grader, and when it handed over
+      // nothing, WHY. `noSpecText` in the perVariant projection conflates two
+      // causes with two different fixes: the user typed nothing, and the text
+      // was withheld because it belongs to another ticket (1030c21).
+      //
+      // Four values, not a boolean, because a boolean would have recorded
+      // `false` on run 1787945015802 — the run this field exists for. That log
+      // has source 'ticket', an active ENOC-97 context and an 1,808-char Zapier
+      // spec that graded 61 of 67 findings 'unexpected', but summaryTicketKey
+      // did not exist yet, so vdSpecTicketMismatch is deliberately silent and
+      // "stale" is false. The 19 correct ENOC-97 runs record the same three
+      // provenance fields, so provenance alone cannot separate them — only
+      // `hash` can. 'graded-unverified' says that out loud instead of reading
+      // as a clean run.
+      //   none              — nothing in the box; nothing to grade
+      //   withheld          — text recorded, grader got ''; it is another ticket's
+      //   graded-unverified — grader got it, but which ticket it came from is unrecorded
+      //   graded            — grader got it, and provenance confirms it (or none was needed)
+      //
+      // This names the SUPPRESSION DECISION, not delivery: it is recomputed at
+      // report time and the builder is not told whether a diff ran at all, so a
+      // run that bailed before grading (3876) still records the cause its spec
+      // would have had. Read it beside visualDiff.skipped. It is recomputed
+      // from abState, which the textarea rewrites on every keystroke (2624), so
+      // a run edited mid-flight records the box as it ended.
+      grading: !summary ? 'none'
+        : specWithheld ? 'withheld'
+        : (state?.summarySource !== 'manual' && !state?.summaryTicketKey && ctx?.ticketKey)
+          ? 'graded-unverified'
+          : 'graded',
     },
     figma: {
       urlUsed: (state?.figmaUrl || '').trim() || null,
@@ -7008,6 +7065,14 @@ function buildDebugLog(sections) {
         noSpecText: v.noSpecText ?? null,
         // Deterministic and byte-reproducible, so two logs of the same page can
         // be compared on it directly — unlike the model's classifications.
+        // Computed at 4040 and read by both the renderer (6182) and
+        // vdCollectProblems (6737), but never recorded until now: it means the
+        // spec was sent and the worker answered WITHOUT a requirements key —
+        // the split-build hazard, a popup newer than its service worker. That
+        // is the one cause of a changed requirement count that is neither a
+        // changed spec (see summaryOfChanges.hash) nor a deliberate extractor
+        // change, and it was the only one of the three invisible in the log.
+        requirementsUnsupported: v.requirementsUnsupported ?? null,
         requirements: v.requirements || null,
         // The rendered report shows each finding's prose; this shows the
         // geometry and the identity tier behind it, which is what makes a

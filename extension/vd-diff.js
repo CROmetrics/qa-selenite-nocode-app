@@ -1231,8 +1231,44 @@
     return false;
   }
 
-  function vdSpecRequirements(specText) {
-    var text = String(specText || '');
+  // A Summary of Changes states every variant, and the requirement list was
+  // flattened across all of them and applied to each -- so a variant was graded
+  // against copy the ticket assigns to a DIFFERENT variant. Field case, run
+  // 1789419453332: UUSAF-250 describes v0, v1 and v2 with different hero copy,
+  // the run compared v0 against v2, and the report said "10 of 17 specified
+  // copy strings are not on the page as written" while v2's own two
+  // requirements both matched.
+  //
+  // The header shape is what buildSummaryFromTicketVariants emits and every
+  // spec on record carries it: `v0 (Control):`, `v1:`, `v2:` at line start. A
+  // label may appear MORE THAN ONCE -- TB-1078 states `v1: 2 Images` and
+  // `v1: 4 Images`, WOW-1173 states `v1:` twice -- so every section carrying
+  // the label belongs to it, not just the first.
+  var VD_SPEC_VARIANT_HEADER = /^(v\d+)\b[ \t]*(?:\([^)\n]*\))?[ \t]*:/;
+
+  // Text before the first header belongs to no variant and is given to all of
+  // them: a preamble is the author addressing the whole test.
+  function vdSpecScopeToVariant(text, label) {
+    if (!label) return text;
+    var lines = String(text || '').split('\n');
+    var pre = [], keep = [], cur = null, sawHeader = false, matched = false;
+    for (var i = 0; i < lines.length; i++) {
+      var m = VD_SPEC_VARIANT_HEADER.exec(lines[i]);
+      if (m) { sawHeader = true; cur = m[1]; if (cur === label) matched = true; }
+      if (!sawHeader) pre.push(lines[i]);
+      else if (cur === label) keep.push(lines[i]);
+    }
+    // Two fallbacks, both deliberate. A spec with no headers at all is a
+    // hand-typed one and every requirement in it applies. A label with no
+    // section is a variant the ticket never described -- grading it against
+    // nothing would report a silent, confident 0 of 0, so it falls back to the
+    // whole spec, which is exactly the pre-2026-09-15 behaviour.
+    if (!sawHeader || !matched) return text;
+    return pre.concat(keep).join('\n');
+  }
+
+  function vdSpecRequirements(specText, variantLabel) {
+    var text = vdSpecScopeToVariant(String(specText || ''), variantLabel);
     var seen = new Set(), out = [];
 
     // Takes a STRING, not a match, because pass 3 is line-based rather than

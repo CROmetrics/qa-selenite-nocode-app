@@ -732,6 +732,59 @@ function reqCand(text) {
      'a,a,n,v,v');
 })();
 
+(function requirementsBelongToTheVariantTheySpecify() {
+  // One flat requirement list was applied to EVERY variant. Field case, run
+  // 1789419453332: the UUSAF-250 spec describes v0, v1 and v2 with different
+  // hero copy, the run compared v0 against v2, and v2 was graded against v1's
+  // headline and subhead. The report said "10 of 17 specified copy strings are
+  // not on the page as written"; v2's own two requirements both matched.
+  //
+  // Structural and long-standing, not new: every spec on record carries
+  // `v0 (Control): / v1: / v2:` sections, which is what
+  // buildSummaryFromTicketVariants emits. It stayed invisible because all five
+  // multi-variant runs on record gave v1 and v2 an IDENTICAL requirement total
+  // -- the same flat list -- harmless only while those tickets' variants shared
+  // copy.
+  if (typeof vdSpecRequirements !== 'function') return;
+  var spec = [
+    'v0 (Control): Control',
+    'No Change',
+    '',
+    'v1: First Treatment',
+    'Headline: "ONE HEADLINE"',
+    'CTA: "Start Here"',
+    '',
+    'v2: Second Treatment',
+    'Headline: "TWO HEADLINE"',
+  ].join('\n');
+  var all = vdSpecRequirements(spec).map(function (r) { return r.required; });
+  eq('unscoped, every variant still sees the whole spec', all.length, 3);
+
+  var v2 = vdSpecRequirements(spec, 'v2').map(function (r) { return r.required; });
+  eq('v2 is graded on its own section only', v2.length, 1);
+  eq('  and it is v2 copy', v2[0], 'TWO HEADLINE');
+  var v1 = vdSpecRequirements(spec, 'v1').map(function (r) { return r.required; });
+  eq('v1 gets its own two', v1.length, 2);
+  eq('  and not v2 copy', v1.indexOf('TWO HEADLINE'), -1);
+
+  // A label appearing more than once is real: TB-1078 states `v1: 2 Images`
+  // AND `v1: 4 Images`, WOW-1173 states `v1:` twice. Every section carrying the
+  // label belongs to it.
+  var twice = vdSpecRequirements([
+    'v1: 2 Images', 'Label: "Alpha"',
+    'v1: 4 Images', 'Label: "Beta"',
+  ].join('\n'), 'v1').map(function (r) { return r.required; });
+  eq('a label stated twice contributes both sections', twice.length, 2);
+
+  // Backward compatibility, and the load-bearing one: a spec with no variant
+  // headers must still yield everything, whatever label is asked for --
+  // otherwise scoping silently empties every hand-typed spec.
+  var flat = 'Headline: "ONLY ONE"\nCTA: "Go Now"';
+  eq('a spec with no variant sections is unscoped', vdSpecRequirements(flat, 'v2').length, 2);
+  eq('  and an unknown label falls back rather than emptying',
+     vdSpecRequirements(spec, 'v9').length, 3);
+})();
+
 (function embedCodeIsNotCopy() {
   // A spec that pastes its form embed code makes pass 1 harvest the markup as
   // if it were copy. Run 1789419453332 (unicefusa.org): UUSAF-250 ends each
@@ -2024,6 +2077,26 @@ function capture(label, o) {
      find(frag, /specified copy strings are not on the page/).length, 0);
   eq('  nor as a spec that produced nothing',
      find(frag, /produced no checkable copy strings/).length, 0);
+
+  // Scoping must not be a silent reduction. Run 1789419453332 took v2 from 12
+  // requirements to 2 because the other 10 are stated under v1; a reader who
+  // cannot see that has no way to tell a correctly-scoped check from one that
+  // lost most of its input.
+  var scoped = probsFor({ requirements: reqSetOf({
+    total: 2, verbatim: 1, absent: 1, scopedTo: 'v2', outOfScope: 10,
+    items: [{ status: 'absent', required: 'Donate and Support', fragment: false },
+            { status: 'verbatim', required: 'Secure donation', fragment: false }] }) }, 900);
+  var sc = find(scoped, /specified copy strings are not on the page/);
+  eq('a scoped coverage line is still reported', sc.length, 1);
+  ok('  and names the section it counted against',
+     sc.length && /v2's own section of the spec/.test(sc[0].detail), sc.length && sc[0].detail);
+  ok('  and says how many were left to other variants',
+     sc.length && /10 further requirement\(s\) stated for other variants/.test(sc[0].detail),
+     sc.length && sc[0].detail);
+  // An unscoped run -- one variant, or a log recorded before scoping existed --
+  // must not grow a note about requirements that were never excluded.
+  ok('an unscoped coverage line says nothing about scope',
+     miss.length && !/own section of the spec/.test(miss[0].detail), miss.length && miss[0].detail);
 })();
 
 (function captureWidthParity() {

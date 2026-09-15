@@ -6810,7 +6810,17 @@ function vdCollectProblems(sections) {
             + ` (${rq.absent} absent, ${bad.length - rq.absent} shipped with different wording).`
             + ' This is a string comparison, not a model judgment, so it reads the same on every run —'
             + ' but it ignores case and punctuation and matches a string found inside a longer one,'
-            + ' so a near miss can still count as found.');
+            + ' so a near miss can still count as found.'
+            // A variant is graded on its OWN section of the spec. Saying so
+            // keeps the reduction from being silent: run 1789419453332 took v2
+            // from 12 requirements to 2, and a reader who cannot see that the
+            // other 10 belong to v1 has no way to tell a correctly-scoped check
+            // from a check that lost most of its input.
+            + (rq.outOfScope
+                ? ` Counted against ${rq.scopedTo || 'this variant'}'s own section of the spec;`
+                  + ` ${rq.outOfScope} further requirement(s) stated for other variants were not`
+                  + ' checked here.'
+                : ''));
         }
       } else if (rq && !v.noSpecText) {
         // A spec was read and yielded nothing to check. Silent until now, which

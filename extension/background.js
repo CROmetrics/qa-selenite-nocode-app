@@ -2555,7 +2555,7 @@ function vdFindingToWire(f, findingId) {
   };
 }
 
-async function diffVisualDiffVariant({ controlList, variantList, baseDataUrl, curDataUrl, watchedRects, basePageW, variantPageW, specText }) {
+async function diffVisualDiffVariant({ controlList, variantList, baseDataUrl, curDataUrl, watchedRects, basePageW, variantPageW, specText, variantLabel }) {
   const match = vdMatchCandidates(controlList, variantList);
   const { findings: paired, segments, aggregate, shiftClusters } = vdSuppressFindings(match.pairs);
 
@@ -2626,9 +2626,19 @@ async function diffVisualDiffVariant({ controlList, variantList, baseDataUrl, cu
   // reported findings would understate coverage badly, since a requirement
   // satisfied by an element the diff matched and suppressed is still satisfied.
   // No network call, no model, byte-reproducible across runs.
-  const requirements = specText
-    ? vdMatchRequirements(vdSpecRequirements(specText), variantList, { controlList })
-    : null;
+  // Scoped to THIS variant's own section of the spec. The whole list is still
+  // extracted, only to count what the scope excluded -- a variant dropping from
+  // 12 requirements to 2 must not be a silent reduction, and a spec that states
+  // shared copy under one variant's heading is a ticket-authoring shape the
+  // reviewer needs to see rather than a number that quietly shrinks.
+  let requirements = null;
+  if (specText) {
+    const scoped = vdSpecRequirements(specText, variantLabel);
+    const whole = vdSpecRequirements(specText);
+    requirements = vdMatchRequirements(scoped, variantList, { controlList });
+    requirements.scopedTo = variantLabel || null;
+    requirements.outOfScope = Math.max(0, whole.length - scoped.length);
+  }
 
   return {
     requirements,
@@ -5206,7 +5216,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       try {
-        sendResponse({ ok: true, ...(await diffVisualDiffVariant({ controlList, variantList, baseDataUrl, curDataUrl, watchedRects, basePageW, variantPageW, specText })) });
+        sendResponse({ ok: true, ...(await diffVisualDiffVariant({ controlList, variantList, baseDataUrl, curDataUrl, watchedRects, basePageW, variantPageW, specText, variantLabel })) });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }

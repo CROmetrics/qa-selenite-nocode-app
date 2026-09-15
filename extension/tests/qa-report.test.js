@@ -1621,8 +1621,12 @@ section('a run that was not validly compared must never badge PASS');
   // the model's needsReview and the badge deliberately no longer touches it.
   // f35bd5d's lesson is unchanged: one omitted finding out of 67 must not
   // relabel a variant NOT GRADED and bury 4 real copy misses.
+  // comparedUnmetCopy alongside unmetCopy: on a run with no void variant
+  // vdVerdict emits them equal, and the badge reads the compared one so that
+  // one variant's void comparison cannot hide another's confirmed miss.
   eq('real issues outrank a grading gap',
-     at({ unmetCopy: 4, ungraded: 1, findings: 67, allClean: false }), 'ISSUES FOUND');
+     at({ unmetCopy: 4, comparedUnmetCopy: 4, ungraded: 1, findings: 67, allClean: false }),
+     'ISSUES FOUND');
   eq('  and `issues` alone no longer badges anything — it is not read',
      at({ issues: 9, findings: 0, allClean: false }), 'INCONCLUSIVE');
 
@@ -1644,7 +1648,8 @@ section('a run that was not validly compared must never badge PASS');
 
   // ...while a DETERMINISTIC fact still moves it, or the badge would say nothing.
   eq('a reproducible copy miss does move it',
-     at({ findings: 7, needsReview: 0, unmetCopy: 1, allClean: false }), 'ISSUES FOUND');
+     at({ findings: 7, needsReview: 0, unmetCopy: 1, comparedUnmetCopy: 1, allClean: false }),
+     'ISSUES FOUND');
   eq('an unjudged finding does move it',
      at({ findings: 7, needsReview: 0, ungraded: 1, allClean: false }), 'NOT GRADED');
 

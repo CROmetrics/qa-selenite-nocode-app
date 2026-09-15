@@ -584,6 +584,32 @@ eq('  an unrecognised state is INCONCLUSIVE, never PASS',
 eq('  and a positively clean run is PASS',
    vdBadgeLabel({ ran: true, allClean: true }, {}), 'PASS');
 
+// A void comparison on ONE variant must not hide a confirmed copy miss on
+// ANOTHER. vdVerdict sums notCompared and unmetCopy across every variant
+// independently, and the ladder read the sums -- so v1 resolving to Control's
+// own URL outranked v2's properly-served, deterministic copy miss, and the
+// badge a client skims contradicted the prose beneath it.
+//
+// The ordering the comment at the ladder defends is preserved: notCompared
+// still sits above PASS, which is the f529775 false-PASS hole. What changed is
+// that the issues rung now asks whether a VALIDLY COMPARED variant produced
+// them, which is a question the summed counter could not express.
+eq('a served variant\'s copy miss outranks another variant\'s void comparison',
+   vdBadgeLabel({ ran: true, notCompared: 1, unmetCopy: 2, comparedUnmetCopy: 2 }, {}),
+   'ISSUES FOUND');
+eq('  but copy misses from the void variant itself do not',
+   vdBadgeLabel({ ran: true, notServed: 1, unmetCopy: 2, comparedUnmetCopy: 0 }, {}),
+   'NOT COMPARED');
+eq('  and a wholly not-compared run is unchanged',
+   vdBadgeLabel({ ran: true, notCompared: 2, unmetCopy: 0, comparedUnmetCopy: 0 }, {}),
+   'NOT COMPARED');
+eq('  the single-variant served case is unchanged',
+   vdBadgeLabel({ ran: true, notCompared: 0, unmetCopy: 1, comparedUnmetCopy: 1 }, {}),
+   'ISSUES FOUND');
+eq('  and notCompared still outranks PASS, which is the f529775 hole',
+   vdBadgeLabel({ ran: true, notCompared: 1, allClean: true, comparedUnmetCopy: 0 }, {}),
+   'NOT COMPARED');
+
 section('spec suppression cause across every recorded run');
 (function theGradingCauseOverTheWholeCorpus() {
   // Run 1787945015802 graded 61 of 67 ENOC-97 findings 'unexpected' against a

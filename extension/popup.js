@@ -5549,8 +5549,22 @@ function vdBadgeLabel(vv, opts) {
   const o = opts || {};
   if (o.errCount) return 'FAIL';
   if (vv.failed) return 'FAILED';
+  // ABOVE notCompared, and only this rung. vdVerdict sums notCompared and
+  // unmetCopy across every variant independently, so on a multi-variant run
+  // v1 resolving to Control's own URL outranked v2's properly-served,
+  // deterministic copy miss and the badge contradicted the prose beneath it.
+  // `comparedUnmetCopy` excludes void variants, so a run whose ONLY copy misses
+  // come from a not-served variant still falls through to NOT COMPARED.
+  //
+  // This does not reopen f529775: that hole was notCompared sitting below PASS,
+  // and it still sits above it. A wholly not-compared run has
+  // comparedUnmetCopy 0 and reaches the rung below unchanged.
+  if (vv.comparedUnmetCopy) return 'ISSUES FOUND';
   if (vv.notCompared || vv.notServed) return 'NOT COMPARED';
-  if (o.extraIssues || vv.unmetCopy) return 'ISSUES FOUND';
+  // extraIssues deliberately stays BELOW notCompared: page-basics and metric
+  // deltas are real, but "we could not compare the variants" is the more
+  // important thing to put on a badge.
+  if (o.extraIssues) return 'ISSUES FOUND';
   if (vv.ungraded) return 'NOT GRADED';
   if (vv.notRun) return 'INCOMPLETE';
   if (vv.findings) return 'NEEDS REVIEW';
@@ -5583,6 +5597,7 @@ function vdVerdict(vd) {
   // legitimately resolves a run that had no visual diff at all.
   const none = {
     ran: false, issues: 0, findings: 0, notCompared: 0, notServed: 0, unmetCopy: 0,
+    comparedUnmetCopy: 0,
     needsReview: 0, ungraded: 0, failed: 0, notRun: 0,
     detailUnavailable: false, allClean: false,
   };
@@ -5620,6 +5635,14 @@ function vdVerdict(vd) {
     f.classification === 'unexpected' || f.classification === 'unclear').length;
   const live = (v) => !v.skipped && !v.error;
   const unmetCopy = perVariant.reduce((n, v) => n + (!live(v) ? 0
+    : vdIsMirrorVariant(v) ? (v.unmetCopyCount || 0) : vdUnmetRequirements(v)), 0);
+  // The same count restricted to variants whose comparison was VALID. live()
+  // already excludes controlDuplicate, which carries an error, but NOT
+  // notServed -- a page that bucketed into no variation at all still reports
+  // copy misses, and those say nothing about the experiment. Without this split
+  // the badge can only see one summed number and cannot tell a served variant's
+  // confirmed miss from a void one's.
+  const comparedUnmetCopy = perVariant.reduce((n, v) => n + (!live(v) || v.notServed ? 0
     : vdIsMirrorVariant(v) ? (v.unmetCopyCount || 0) : vdUnmetRequirements(v)), 0);
   const needsReview = perVariant.reduce((n, v) => n + (!live(v) ? 0
     : vdIsMirrorVariant(v) ? ((v.unexpectedCount || 0) + (v.unclearCount || 0))
@@ -5663,6 +5686,10 @@ function vdVerdict(vd) {
     // the badge must not move on a re-run. Kept because it answers "is either
     // half non-zero?" in one place for callers that legitimately want that.
     issues: unmetCopy + needsReview,
+    // Only from variants that were validly compared. The badge reads this, not
+    // `unmetCopy`, so one variant's void comparison cannot hide another's
+    // confirmed copy miss.
+    comparedUnmetCopy,
     findings: perVariant.reduce((n, v) =>
       n + (vdIsMirrorVariant(v) ? (v.findingCount || 0) : (v.findings || []).length), 0) + shared.length,
     // A Control-vs-Control variant contributes no findings, and the counters

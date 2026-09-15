@@ -55,7 +55,7 @@ eval(slicePopup('function rptBadge(kind, label) {', 'function rptAgenticNoteHtml
 // The run's ONE visual-diff verdict, shared by rptAbSection and
 // rptAbVisualDiffSection so their badges cannot disagree.
 eval(slicePopup('function vdUnmetRequirements(v) {', '\n// The pages this run actually tested'));
-eval(slicePopup('function abPageUrls(modes) {', '\n// Which configured metrics'));
+eval(slicePopup('function abCaptureWidths(modes) {', '\n// Which configured metrics'));
 eval(slicePopup('function rptAbVisualDiffSection(vd) {', '\nfunction rptWcagSection('));
 eval(slicePopup('function abFiredMetricRows(metricRows) {', '\nfunction rptAbSection('));
 var abState = { qaMode: false };
@@ -1328,13 +1328,43 @@ section('a run that was not validly compared must never badge PASS');
   eq('both confirmed is fine', vdServedNoVariation(S('confirmed'), S('confirmed')), false);
   // Absent evidence is not evidence of absence. 96 of 126 recorded captures
   // predate the field; counting these would declare most of the corpus void.
-  eq("'unknown' is not a contradiction", vdServedNoVariation(S('unknown'), S('unknown')), false);
+  eq("'unchecked' is not a contradiction", vdServedNoVariation(S('unchecked'), S('unchecked')), false);
+  eq("'unverifiable' is not a contradiction",
+     vdServedNoVariation(S('unverifiable'), S('unverifiable')), false);
   eq("'unsupported' is not a contradiction",
      vdServedNoVariation(S('unsupported'), S('unsupported')), false);
   eq('a missing verification is not a contradiction', vdServedNoVariation(null, null), false);
   eq('  nor is a missing baseline alone', vdServedNoVariation(S('confirmed'), null), false);
   eq('  and a missing variant with a contradicted baseline still voids it',
      vdServedNoVariation(null, S('contradicted')), true);
+
+  // ── the sibling predicate, on the other axis ─────────────────────────────
+  // vdServedNoVariation is "the platform answered NO". This is "the platform
+  // did not answer". The pair has to stay disjoint: every state belongs to at
+  // most one of them, or one run reports both "served no variation" and "could
+  // not be confirmed", which are different claims about the same capture.
+  eq('an unchecked variant voids identification',
+     vdVerificationUnchecked(S('unchecked'), S('confirmed')), true);
+  eq('an unchecked BASELINE does too — same reason a contradicted one does',
+     vdVerificationUnchecked(S('confirmed'), S('unchecked')), true);
+  eq('both confirmed is fine', vdVerificationUnchecked(S('confirmed'), S('confirmed')), false);
+  // The benign half of the old `unknown`. A Control URL forces nothing, so
+  // there is nothing to confirm — gating on this would void a normal run, which
+  // is precisely why the single `unknown` could never be gated at all.
+  eq("'unverifiable' is NOT a gap",
+     vdVerificationUnchecked(S('unverifiable'), S('unverifiable')), false);
+  // Left out on purpose: it means the worker is a build behind and already
+  // carries its own remediation, and 96 of 126 recorded captures predate the
+  // probe — counting it would declare most of the corpus unverified.
+  eq("'unsupported' is NOT a gap either",
+     vdVerificationUnchecked(S('unsupported'), S('unsupported')), false);
+  eq('a contradicted capture belongs to the OTHER predicate, not this one',
+     vdVerificationUnchecked(S('contradicted'), S('contradicted')), false);
+  eq('a missing verification is not a gap', vdVerificationUnchecked(null, null), false);
+  ['confirmed', 'contradicted', 'unchecked', 'unverifiable', 'unsupported'].forEach(function (st) {
+    ok('  the two predicates never both fire on ' + st,
+       !(vdServedNoVariation(S(st), S(st)) && vdVerificationUnchecked(S(st), S(st))));
+  });
 })();
 
 (function theMirrorCarriesNotServed() {
@@ -1344,6 +1374,7 @@ section('a run that was not validly compared must never badge PASS');
   var mirror = _pu.slice(_pu.indexOf('perVariant: (visualDiffResult.perVariant || []).map(v => ({'));
   mirror = mirror.slice(0, mirror.indexOf('})),'));
   ok('the mirror carries notServed', /notServed: v\.notServed/.test(mirror), mirror.slice(0, 400));
+  ok('  and notVerified, for the same reason', /notVerified: v\.notVerified/.test(mirror), mirror.slice(0, 400));
   ok('  and the verification it derives from', /variantVerified: v\.variantVerified/.test(mirror));
 
   // And the pipeline must actually CALL the predicate. Structural because
@@ -1356,6 +1387,9 @@ section('a run that was not validly compared must never badge PASS');
      'the pipeline no longer derives notServed from vdServedNoVariation');
   ok('  from the baseline capture, not a hardcoded state',
      /const baselineVer = vdCaptureVerification\(base\);/.test(pipe));
+  ok('the pipeline stamps notVerified from ITS predicate',
+     /v\.notVerified = vdVerificationUnchecked\(own, baselineVer\);/.test(pipe),
+     'the pipeline no longer derives notVerified from vdVerificationUnchecked');
 })();
 
 (function servedNoVariationIsNotAVerdict() {
@@ -1616,6 +1650,31 @@ section('a run that was not validly compared must never badge PASS');
   // Precedence, top to bottom.
   eq('an errored variant outranks everything', at({ failed: 1, notCompared: 1, issues: 9, ungraded: 9 }), 'FAILED');
   eq('a control duplicate outranks issues', at({ notCompared: 1, issues: 9, ungraded: 9 }), 'NOT COMPARED');
+
+  // ── NOT VERIFIED, pinned on BOTH sides ───────────────────────────────────
+  // The rung added 2026-09-15 for the `unchecked` half of the old `unknown`.
+  // Its position is the whole design: one step too high and a deterministic
+  // copy miss — wrong on any page, identified or not — gets hidden behind
+  // "we could not tell what we compared"; one step too low and a page nobody
+  // could identify reports its differences as if they were about the
+  // experiment. Both neighbours are asserted so a future reorder cannot move it
+  // silently, which is exactly how f529775 and f35bd5d each shipped.
+  eq('NOT VERIFIED outranks a page-basics delta',
+     vdBadgeLabel(Object.assign({}, base, { notVerified: 1, allClean: false }), { extraIssues: 3 }),
+     'NOT VERIFIED');
+  eq('  and outranks a grading gap and findings',
+     at({ notVerified: 1, ungraded: 9, findings: 67, allClean: false }), 'NOT VERIFIED');
+  eq('  but a deterministic copy miss still outranks IT',
+     at({ notVerified: 1, unmetCopy: 4, comparedUnmetCopy: 4, allClean: false }), 'ISSUES FOUND');
+  eq('  and so does a positively void comparison — the platform ANSWERED there',
+     at({ notVerified: 1, notServed: 1, allClean: false }), 'NOT COMPARED');
+  eq('  and a control duplicate',
+     at({ notVerified: 1, notCompared: 1, allClean: false }), 'NOT COMPARED');
+  // The benign half must never reach the rung: `unverifiable` sets no counter,
+  // so a Control that forces nothing leaves the badge exactly where it was.
+  eq('an unverifiable capture does not badge NOT VERIFIED',
+     at({ findings: 0, allClean: true }), 'PASS');
+  eq('NOT VERIFIED is amber, not red', vdBadgeKind('NOT VERIFIED'), 'issues');
   // THE REGRESSION: real issues must outrank a partial grading gap. Stated on
   // `unmetCopy`, which is what the deterministic rung reads — `issues` mixes in
   // the model's needsReview and the badge deliberately no longer touches it.
@@ -1986,6 +2045,49 @@ section('the copy check must not call itself an exact string comparison');
      _pu.indexOf('exact string comparison') === -1, 'still present');
   ok('  and the true half of the claim survives',
      /reads the same on every run/.test(_pu), 'lost the reproducibility claim');
+})();
+
+// ── Capture width on the report cover ────────────────────────────────────
+// Two reports are only comparable if they were captured at the same width, and
+// that number lived only in the debug log. This is the line that makes the
+// question answerable from the report itself.
+(function theCoverStatesTheCaptureWidth() {
+  var cap = function (w, f) {
+    var fp = {}; if (w != null) fp[f || 'viewportW'] = w;
+    return { label: 'v', skipped: false, fullPage: fp };
+  };
+  var M = function (caps) { return [{ mode: 2, data: { captures: caps } }]; };
+
+  eq('one width reads plainly', abCaptureWidths(M([cap(2936), cap(2936)])), '2936 px');
+  ok('differing widths say so, and say what it costs',
+     /^1693 \/ 2936 px — widths differ/.test(abCaptureWidths(M([cap(2936), cap(1693)]))),
+     abCaptureWidths(M([cap(2936), cap(1693)])));
+  // viewportW is the harness's own quantity; pageW is the page's, so a run that
+  // only has pageW must not pass it off as the same measurement.
+  eq('a pre-pin run falls back to pageW and says so',
+     abCaptureWidths(M([cap(1693, 'pageW'), cap(1693, 'pageW')])),
+     '1693 px (page width — this run predates viewport recording)');
+  // Never mixed: one side's viewport against the other's content width is two
+  // unrelated numbers, which is the exact bug that broke the geometry pin.
+  eq('viewportW and pageW are never mixed',
+     abCaptureWidths(M([cap(2936), cap(1693, 'pageW')])), '');
+  eq('no geometry at all renders no line', abCaptureWidths(M([cap(null)])), '');
+  eq('no captures at all renders no line', abCaptureWidths([]), '');
+  eq('and an undefined mode list does not throw', abCaptureWidths(undefined), '');
+  // Skipped and errored captures were never photographed, so their geometry is
+  // not this run's geometry — counting them would invent a width difference.
+  eq('a skipped capture does not contribute a width',
+     abCaptureWidths(M([cap(2936), { skipped: true, fullPage: { viewportW: 800 } }])), '2936 px');
+  eq('nor does an errored one',
+     abCaptureWidths(M([cap(2936), { fullPage: { viewportW: 800, error: 'boom' } }])), '2936 px');
+
+  // Structural: the cover must actually render it, and derive it rather than
+  // take it from `sections` — the mistake that left pageUrls hardcoded to [] in
+  // every report ever produced.
+  var body = slicePopup('function buildReportBody(sections) {', '\n// ── Debug log');
+  ok('the cover derives the width itself', /abCaptureWidths\(modes\)/.test(body), body.slice(0, 300));
+  ok('  and renders it', /\$\{widthHtml\}/.test(body));
+  ok('  labelled, so a bare number cannot be misread', /Captured at \$\{esc\(widths\)\}/.test(body));
 })();
 
 // ── report ─────────────────────────────────────────────────────────────────

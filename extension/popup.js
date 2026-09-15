@@ -3304,7 +3304,8 @@ async function runAbComparison(opts = {}) {
               controlDuplicate: v.controlDuplicate,
               // Without this the new notServed rung is vacuously false on the
               // queued path, which is how sharedFindingCount already went wrong.
-              notServed: v.notServed, variantVerified: v.variantVerified,
+              notServed: v.notServed, notVerified: v.notVerified,
+              variantVerified: v.variantVerified,
               overallSummary: v.overallSummary, structuralStats: v.structuralStats,
               truncatedFindingCount: v.truncatedFindingCount, noVerdictCount: v.noVerdictCount,
               duplicateIndexCount: v.duplicateIndexCount, truncated: v.truncated, pixelDiff: v.pixelDiff,
@@ -3808,7 +3809,9 @@ function vdExtractSharedFindings(perVariant) {
 // Key presence is what separates them: the current worker always emits
 // `expProbe` (null or otherwise); an older one has no such field at all.
 function vdCaptureVerification(cap) {
-  if (!cap) return { state: 'unknown', reason: 'there is no capture record to check' };
+  // `unchecked`, not `unverifiable`: a missing capture record is us failing to
+  // look, not a page with nothing to look at. Same for a missing vd-diff below.
+  if (!cap) return { state: 'unchecked', reason: 'there is no capture record to check' };
   if (!('expProbe' in cap)) {
     return {
       state: 'unsupported',
@@ -3817,7 +3820,7 @@ function vdCaptureVerification(cap) {
     };
   }
   if (typeof vdVariantVerification !== 'function') {
-    return { state: 'unknown', reason: 'vd-diff.js is not loaded in this context' };
+    return { state: 'unchecked', reason: 'vd-diff.js is not loaded in this context' };
   }
   return vdVariantVerification(cap.expProbe, vdForcedVariationId(cap.url));
 }
@@ -3829,7 +3832,8 @@ function vdCaptureVerification(cap) {
 // inline version left both suites green on all 20 recorded runs.
 //
 // Only 'contradicted' counts. That is the platform positively answering "this
-// page bucketed into NO variation"; 'unknown' and 'unsupported' are absent
+// page bucketed into NO variation"; 'unchecked', 'unverifiable' and
+// 'unsupported' are absent
 // evidence, not evidence of absence, and 96 of the 126 captures on record
 // predate the field entirely. Counting those would declare most of the corpus
 // uncompared.
@@ -3840,6 +3844,25 @@ function vdCaptureVerification(cap) {
 function vdServedNoVariation(variantVer, baselineVer) {
   return (!!variantVer && variantVer.state === 'contradicted')
       || (!!baselineVer && baselineVer.state === 'contradicted');
+}
+
+// Did this pair fail to ESTABLISH which variation it photographed? The sibling
+// of vdServedNoVariation on the other axis: that one is the platform answering
+// "no", this one is the platform not answering at all.
+//
+// Only `unchecked`. `unverifiable` is the benign half of the old `unknown` --
+// a Control URL forces nothing, so there is nothing to confirm and nothing
+// wrong -- and gating on it would void a normal run. `unsupported` is left out
+// on purpose too: it means the service worker is a build behind, it already
+// carries its own remediation ("reload the extension"), and 96 of 126 recorded
+// captures predate the probe entirely, so counting it would declare most of the
+// corpus unverified for a reason that has nothing to do with the page.
+//
+// EITHER side voids the pair, for the same reason it does there: a baseline
+// nobody could identify is no baseline whatever the variant did.
+function vdVerificationUnchecked(variantVer, baselineVer) {
+  return (!!variantVer && variantVer.state === 'unchecked')
+      || (!!baselineVer && baselineVer.state === 'unchecked');
 }
 
 // The variation the CONFIGURED url asked for. Must come from cap.url and never
@@ -4178,6 +4201,7 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
     const own = cap ? vdCaptureVerification(cap) : null;
     v.variantVerified = own;
     v.notServed = vdServedNoVariation(own, baselineVer);
+    v.notVerified = vdVerificationUnchecked(own, baselineVer);
   });
 
   const analysed = perVariant.filter(v => !v.skipped);
@@ -5488,6 +5512,7 @@ function vdVariantClean(v) {
   if (v.skipped || v.error) return false;          // never compared
   if (v.controlDuplicate) return false;            // compared against itself
   if (v.notServed) return false;                   // the page served no variation
+  if (v.notVerified) return false;                 // nobody established WHICH page this was
   if (v.gradingFailed) return false;               // compared, never judged
   // Below the named failures on purpose: those give a better-specified answer
   // when they apply. This one catches everything else -- no completed
@@ -5561,6 +5586,25 @@ function vdBadgeLabel(vv, opts) {
   // comparedUnmetCopy 0 and reaches the rung below unchanged.
   if (vv.comparedUnmetCopy) return 'ISSUES FOUND';
   if (vv.notCompared || vv.notServed) return 'NOT COMPARED';
+  // Directly below NOT COMPARED and above extraIssues, for the reason stated
+  // there: "we could not establish what we compared" outranks a page-basics
+  // delta. Distinct from NOT COMPARED because the remedy differs -- that one
+  // means the forced-variant link is broken or the flag never activated, this
+  // one means the probe never answered, which is usually a stale service
+  // worker. Measured over the 20 recorded runs carrying a probe result, exactly
+  // one moves: 1788191807035 (both captures unchecked) NEEDS REVIEW -> here.
+  // It stays below comparedUnmetCopy on purpose: a copy string the spec asked
+  // for and the page does not carry is wrong on any page, identified or not.
+  // That placement is what keeps 9dcb231 intact -- comparedUnmetCopy already
+  // excludes void variants, so one unchecked variant cannot hide another's
+  // confirmed copy miss.
+  //
+  // KNOWN, and inherited rather than introduced: like notCompared and notServed
+  // above it, this is a whole-run rung fed by a per-variant count, so on a
+  // multi-variant run an unchecked v1 still outranks v2's ungraded findings.
+  // Same open shape as the notCompared case; the fix for all three is per-
+  // variant badging, not reordering, which would re-open f529775.
+  if (vv.notVerified) return 'NOT VERIFIED';
   // extraIssues deliberately stays BELOW notCompared: page-basics and metric
   // deltas are real, but "we could not compare the variants" is the more
   // important thing to put on a badge.
@@ -5580,6 +5624,11 @@ function vdBadgeLabel(vv, opts) {
 // already cost two tests (VIS_REPORT_RETRIES, VD_GRADES).
 function vdBadgeKind(label) {
   if (label === 'PASS') return 'pass';
+  // NOT VERIFIED is amber, not red, and deliberately not grouped with NOT
+  // COMPARED: there, the platform positively said the comparison was void.
+  // Here nobody answered, which leaves something outstanding rather than
+  // something established as wrong -- the same distinction the comment below
+  // draws for NEEDS REVIEW.
   if (label === 'FAIL' || label === 'FAILED' || label === 'NOT COMPARED') return 'fail';
   // NEEDS REVIEW lands here with ISSUES FOUND / NOT GRADED / INCOMPLETE /
   // INCONCLUSIVE. Amber is right: something is outstanding but nothing has been
@@ -5596,8 +5645,8 @@ function vdVerdict(vd) {
   // positively say a comparison was clean. rptAbSection's `allowNotRan` is what
   // legitimately resolves a run that had no visual diff at all.
   const none = {
-    ran: false, issues: 0, findings: 0, notCompared: 0, notServed: 0, unmetCopy: 0,
-    comparedUnmetCopy: 0,
+    ran: false, issues: 0, findings: 0, notCompared: 0, notServed: 0, notVerified: 0,
+    unmetCopy: 0, comparedUnmetCopy: 0,
     needsReview: 0, ungraded: 0, failed: 0, notRun: 0,
     detailUnavailable: false, allClean: false,
   };
@@ -5704,6 +5753,12 @@ function vdVerdict(vd) {
     // a dropped forced-variant parameter, the other is a flag that never
     // activated — so they are counted separately and worded separately.
     notServed: perVariant.filter(v => !v.skipped && v.notServed).length,
+    // Third member of the same class: notCompared is "it resolved to Control's
+    // own URL", notServed is "the platform says it bucketed into nothing", and
+    // this is "the platform never answered". Counted separately because the fix
+    // is different for each — a duplicated URL, a flag that never activated, and
+    // a probe that did not run.
+    notVerified: perVariant.filter(v => !v.skipped && v.notVerified).length,
   };
 }
 
@@ -5721,6 +5776,13 @@ function vdVerdictSummary(vv) {
   // experiment, and the reader has to be told that before being told how many.
   if (vv.notServed) {
     parts.push(`${vv.notServed} variant(s) served no variation at all — nothing below is evidence about the experiment`);
+  }
+  // Same position and the same job as notServed above — it changes what every
+  // number after it means — but a weaker claim, so it only speaks when
+  // notServed is silent. Both firing would say "the platform said no" and "the
+  // platform said nothing" about one run, which cannot both be the headline.
+  if (vv.notVerified && !vv.notServed) {
+    parts.push(`${vv.notVerified} variant(s) could not be confirmed as the variation they asked for — the differences below are real, but nothing ties them to the experiment`);
   }
   parts.push(`${vv.findings} visual difference${vv.findings !== 1 ? 's' : ''}`);
   if (vv.unmetCopy) {
@@ -5758,6 +5820,43 @@ function vdVerdictSummary(vv) {
 //
 // Reads captures off whichever modes carry them rather than assuming mode 2; the
 // other modes have different data shapes.
+// The width every capture in this report was taken at, for the cover.
+//
+// Two reports of the same ticket are only comparable if they were captured at
+// the same width -- a responsive page laid out at 877px and at 2847px is two
+// layouts, and the zapier corpus spans exactly that range across reruns. The
+// number was recorded in every debug log and appeared nowhere a reader could
+// see it, so "are these two reports comparable?" could not be answered from the
+// reports themselves. It is one line; it does not pin anything, it makes the
+// question answerable.
+//
+// Same field convention as vdCaptureWidthMismatch, and for the same reason:
+// viewportW is authoritative but only exists after the geometry pin shipped, so
+// fall back to pageW -- never mixing the two, which would print unrelated
+// numbers side by side. Returns '' when neither is available, so an old run
+// renders no line at all rather than "unknown".
+function abCaptureWidths(modes) {
+  const caps = [];
+  for (const m of (modes || [])) {
+    for (const c of (m?.data?.captures || [])) {
+      if (!c.skipped && c.fullPage && !c.fullPage.error) caps.push(c);
+    }
+  }
+  if (!caps.length) return '';
+  const field = caps.every(c => c.fullPage.viewportW != null) ? 'viewportW'
+              : caps.every(c => c.fullPage.pageW != null) ? 'pageW'
+              : null;
+  if (!field) return '';
+  const widths = [...new Set(caps.map(c => c.fullPage[field]))].sort((a, b) => a - b);
+  // The plural case is already an error in Run Diagnostics. Saying it here too
+  // is deliberate: the cover is the part that gets read.
+  if (widths.length > 1) {
+    return `${widths.join(' / ')} px — widths differ, so this comparison is between two layouts`;
+  }
+  return `${widths[0]} px`
+    + (field === 'pageW' ? ' (page width — this run predates viewport recording)' : '');
+}
+
 function abPageUrls(modes) {
   const seen = new Set(), out = [];
   for (const m of (modes || [])) {
@@ -6471,6 +6570,14 @@ function buildReportBody(sections) {
   const urlsHtml = pageUrls.length
     ? pageUrls.map(u => `<li>${esc(u)}</li>`).join('')
     : '<li>No page URLs recorded.</li>';
+  // Derived here rather than passed in `sections`: both openReportTab call
+  // sites would have to add it, and one of them forgetting is exactly how
+  // `pageUrls: []` stayed hardcoded in every report ever produced.
+  let widths = '';
+  try { widths = abCaptureWidths(modes); } catch (_) {}
+  const widthHtml = widths
+    ? `<div class="rpt-meta" style="margin-top:4px">Captured at ${esc(widths)}</div>`
+    : '';
 
   // Just the inner markup that qa-report.html drops into its .rpt-wrap
   // container. Deliberately NOT a full HTML document opened via a blob: URL —
@@ -6483,6 +6590,7 @@ function buildReportBody(sections) {
       <div class="rpt-meta">Generated ${esc(new Date(ts).toLocaleString())}</div>
       <div class="rpt-meta" style="margin-top:8px">Page(s) tested:</div>
       <ul>${urlsHtml}</ul>
+      ${widthHtml}
     </header>
     ${body}`;
 }
@@ -6738,10 +6846,20 @@ function vdCollectProblems(sections) {
           `The page did not serve the variation this run asked for — ${ver.reason}.`
           + ' The diff below is a real comparison of two real pages, but it is not a comparison of Control against this variant,'
           + ' so no verdict from it applies to the experiment. Re-run once the forced-variant link is working.');
-      } else if (ver && ver.state === 'unknown' && !c.skipped) {
+      } else if (ver && ver.state === 'unchecked' && !c.skipped) {
+        // `warn`, and it is what the NOT VERIFIED badge rung reads. The ground
+        // truth existed and the run did not read it.
         add('warn', `capture/${c.label}`,
           `Could not confirm which variation this page served — ${ver.reason}.`
           + ' Findings below still describe real differences, but nothing here attributes them to the intended variant.');
+      } else if (ver && ver.state === 'unverifiable' && !c.skipped) {
+        // `info`, not `warn`: there was never anything to confirm. A Control URL
+        // forces no variation, and neither does a variant served by audience
+        // targeting — so this is the normal state for those captures, and
+        // warning on it trained the reader to ignore the warning that matters.
+        add('info', `capture/${c.label}`,
+          `No variation to verify for this capture — ${ver.reason}.`
+          + ' This is expected for a Control, or for a variant the platform serves by audience rather than by a forced link.');
       } else if (ver && ver.state === 'confirmed') {
         add('info', `capture/${c.label}`,
           `Variation confirmed by the platform: ${ver.variationName || ver.variationId}`

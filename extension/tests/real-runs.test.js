@@ -34,6 +34,9 @@ eval(slicePopup('function vdUnmetRequirements(v) {', '\n// The pages this run ac
 // to vdScaleMismatch — its sibling on the other capture-parity axis.
 eval(slicePopup('function vdCaptureWidthMismatch(captures, tolPx) {',
                 'function vdScaleMismatch(sc) {'));
+// The cover line that reports the same quantity to the reader. Sliced here too
+// so it is driven by the same real capture sets the parity guard is.
+eval(slicePopup('function abCaptureWidths(modes) {', '\nfunction abPageUrls(modes) {'));
 
 var RUNS = JSON.parse(readFile('fixtures-real-runs.json'));
 
@@ -646,6 +649,143 @@ section('spec suppression cause across every recorded run');
   // in qa-report.test.js.
   eq('no recorded run was ever withheld', census.withheld || 0, 0);
 })();
+
+
+// ── The identity split, against every recorded verification on the corpus ──
+// The old single `unknown` became `unchecked` (the platform could have answered
+// and we failed to read it) and `unverifiable` (there was never anything to
+// read). Only the first reaches the NOT VERIFIED badge rung.
+//
+// The logs record the PROJECTION, not the raw expProbe, so these states cannot
+// be re-derived from source the way notServed can. What CAN be checked on real
+// data — and is the thing that actually matters — is that the split covers the
+// corpus: every reason string production ever emitted is still emitted by the
+// current source, and lands on a definite side. A reason that no current exit
+// produces is an exit that was deleted or reworded out from under real data.
+//
+// Deliberately NOT a copy of the classification rule. The test enumerates what
+// the SOURCE emits and checks the recorded strings against that; it never says
+// which side a reason belongs on.
+(function theIdentitySplitCoversTheCorpus() {
+  var VERIF = JSON.parse(readFile('fixtures-real-verification.json'));
+  var RUNS_V = VERIF.runs, INDEX = VERIF.reasonIndex;
+
+  // Every exit of vdVariantVerification that yields an unresolved state, driven
+  // through the real function. The shapes are the minimum each exit needs.
+  var probes = [
+    null,                                                             // no probe at all
+    { ok: false },                                                    // probe failed
+    { ok: true, detected: {}, forced: { optimizely_x: '474' } },      // no platform
+    { ok: true, detected: { optimizely: true }, forced: {} },         // nothing forced
+    { ok: true, detected: { optimizely: true }, forced: { optimizely_x: ',' } },
+    { ok: true, detected: { optimizely: true }, catalogComplete: false,
+      forced: { optimizely_x: '474' }, experiments: [] },
+  ];
+  var emitted = {};
+  probes.forEach(function (p) { emitted[vdVariantVerification(p).reason] = vdVariantVerification(p).state; });
+  var states = {};
+  Object.keys(emitted).forEach(function (k) { states[emitted[k]] = true; });
+  eq('the source emits exactly two unresolved states',
+     Object.keys(states).sort().join(','), 'unchecked,unverifiable');
+  ok('and "unknown" is not one of them', !states.unknown);
+
+  // Recorded reason -> the state the CURRENT source gives that exit. Matched on
+  // the fixture's own key, never on the full sentence: the wording drifted once
+  // already ("the URL" -> "the configured URL" on the nothing-forced exit), and
+  // a rewording is not a deleted exit. The key lives in the fixture so this test
+  // holds no rule about which side anything belongs on.
+  function currentStateFor(reason) {
+    var key = INDEX[reason];
+    if (!key) return null;
+    var hits = Object.keys(emitted).filter(function (r) { return r.indexOf(key) !== -1; });
+    return hits.length === 1 ? emitted[hits[0]] : null;
+  }
+
+  var recorded = {}, capCount = 0;
+  Object.keys(RUNS_V).forEach(function (stem) {
+    RUNS_V[stem].captures.forEach(function (c) {
+      capCount++;
+      if (c.state === 'unknown' || c.state === 'unchecked' || c.state === 'unverifiable') {
+        recorded[c.reason] = (recorded[c.reason] || 0) + 1;
+      }
+    });
+  });
+  var orphans = Object.keys(recorded).filter(function (r) { return !currentStateFor(r); });
+  eq('every unresolved reason on record still resolves to exactly one current exit',
+     orphans.join(' | '), '');
+  // The split is TOTAL over real data, and both sides are actually represented —
+  // a partition that put everything on one side would pass the check above.
+  var census = { unchecked: 0, unverifiable: 0 };
+  Object.keys(recorded).forEach(function (r) { census[currentStateFor(r)] += recorded[r]; });
+  eq('the recorded unresolved captures partition 3 unchecked / 2 unverifiable',
+     'unchecked=' + census.unchecked + ',unverifiable=' + census.unverifiable,
+     'unchecked=3,unverifiable=2');
+  eq('  over every capture carrying a verification result', capCount, 46);
+
+  // The Control case that makes the split necessary. This is the most common
+  // unresolved reason on record, it is emitted by a NORMAL run, and gating the
+  // old `unknown` would have voided it.
+  eq('a Control that forces nothing is unverifiable, not a gap',
+     currentStateFor('the URL did not force a variation, so there is nothing to verify against'),
+     'unverifiable');
+  eq('a probe that never ran IS a gap',
+     currentStateFor('the experiment-platform probe did not run'), 'unchecked');
+
+  // Badge impact, on the real corpus rather than a synthetic verdict. Exactly
+  // one run of the 20 moves, and it is the one where BOTH captures are
+  // unchecked. Measured before the rung was written; if a future change makes
+  // this number grow, the rung got louder than the evidence supports.
+  var moved = Object.keys(RUNS_V).filter(function (stem) {
+    var anyUnchecked = RUNS_V[stem].captures.some(function (c) {
+      return currentStateFor(c.reason) === 'unchecked';
+    });
+    if (!anyUnchecked) return false;
+    var run = RUNS[stem.replace('selenite-debug-r_', '')];
+    if (!run) return false;
+    var vv = vdVerdict(run);
+    return vdBadgeLabel(vv, { allowNotRan: true })
+        !== vdBadgeLabel(Object.assign({}, vv, { notVerified: 1 }), { allowNotRan: true });
+  });
+  eq('exactly one recorded run changes badge under the new rung', moved.length, 1);
+  eq('  and it is the run whose every capture went unchecked',
+     moved.join(','), 'selenite-debug-r_1788191807035');
+  print('    ' + Object.keys(recorded).length + ' distinct unresolved reasons on record, 0 orphaned');
+})();
+
+// ── The cover's width line, over every recorded capture set ───────────────
+// The synthetic cases live in qa-report.test.js. This one checks the property
+// that only real data can: the line resolves on the whole corpus, and it agrees
+// with the parity guard on every run — two readings of one quantity that must
+// never contradict each other, which is how the badge ladder inverted.
+(function theCoverWidthAgreesWithTheParityGuard() {
+  var ids = Object.keys(CAPTURES).sort();
+  var rendered = 0, blank = 0, plural = 0, disagreements = [];
+  ids.forEach(function (rid) {
+    var caps = CAPTURES[rid].captures || [];
+    var line = abCaptureWidths([{ mode: 2, data: { captures: caps } }]);
+    if (!line) { blank++; return; }
+    rendered++;
+    var saysDiffer = /widths differ/.test(line);
+    if (saysDiffer) plural++;
+    // vdCaptureWidthMismatch allows VD_VIEWPORT_TOL_PX of slack; the cover
+    // reports distinct values exactly. So the guard firing MUST imply the cover
+    // saying widths differ, but not the reverse -- a sub-tolerance spread is a
+    // real difference worth printing and not worth erroring on.
+    var guard = vdCaptureWidthMismatch(caps);
+    if (guard && !saysDiffer) disagreements.push(rid + ' guard fired, cover silent: ' + line);
+  });
+  eq('the cover width resolves on every recorded run', blank, 0);
+  eq('  all of them', rendered, ids.length);
+  eq('no run has the parity guard firing while the cover stays silent',
+     disagreements.join(' | '), '');
+  // The one recorded mismatch, named. If this ever reads 0 the fixture lost it,
+  // and the cover line stopped being tested against the case it exists for.
+  eq('exactly one recorded run prints differing widths', plural, 1);
+  ok('  and it is the zapier redesign-misread run',
+     /widths differ/.test(abCaptureWidths([{ mode: 2, data: { captures: CAPTURES['1787604099659'].captures } }])));
+  print('    cover width rendered on ' + rendered + ' of ' + ids.length + ' recorded runs, 1 flagged');
+})();
+
 
 print('');
 if (failures.length) { print('FAILURES:'); failures.forEach(function (f) { print('  - ' + f); }); }

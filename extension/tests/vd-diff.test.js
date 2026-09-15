@@ -382,6 +382,10 @@ function anchors(n) {
                forced: { optimizely_x: null },
                experiments: [{ id: 'e1', name: 'E', active: true, bucketed: true, variationId: '554', variationName: 'Other' }] };
     }
+    // The probe never answered — the real gap, and the one the NOT VERIFIED
+    // rung reads. Distinct from the fall-through below, where the probe
+    // answered and there was simply nothing to verify.
+    if (state === 'unchecked') return { ok: false };
     return { ok: true, detected: { optimizely: false, convert: false, convertScript: false },
              catalogComplete: true, forced: {}, experiments: [] };
   }
@@ -403,11 +407,22 @@ function anchors(n) {
   ok('  and says the diff is real but does not apply to the experiment',
      hit.length > 0 && /not a comparison of Control against this variant/.test(hit[0].detail));
 
-  var unk = probs(probeFor('unknown'));
+  // The two halves of the old `unknown` report at DIFFERENT severities, which
+  // is the whole point of splitting them. Warning on a Control that forces
+  // nothing — the normal case — trained the reader to ignore the warning that
+  // matters.
+  var unk = probs(probeFor('unchecked'));
   var uh = unk.filter(function (x) { return /Could not confirm which variation/.test(x.detail); });
-  eq('UNKNOWN is a warn, not an error', uh.length ? uh[0].severity : null, 'warn');
+  eq('UNCHECKED is a warn, not an error', uh.length ? uh[0].severity : null, 'warn');
   ok('  and does not claim the variant is wrong',
      uh.length > 0 && !/did not serve/.test(uh[0].detail));
+
+  var unv = probs(probeFor('unverifiable'));
+  var uv = unv.filter(function (x) { return /No variation to verify/.test(x.detail); });
+  eq('UNVERIFIABLE is info — there was never anything to confirm',
+     uv.length ? uv[0].severity : null, 'info');
+  eq('  and it does NOT emit the unchecked warning',
+     unv.filter(function (x) { return /Could not confirm which variation/.test(x.detail); }).length, 0);
 
   var good = probs(probeFor('confirmed'));
   var gh = good.filter(function (x) { return /Variation confirmed by the platform/.test(x.detail); });
@@ -524,20 +539,34 @@ section('variant verification');
 
   // "I could not check" must never be reported as "it is wrong" — that is the
   // unfalsifiable-warning problem in the other direction.
-  eq('an incomplete catalogue is UNKNOWN, not contradicted',
+  // The old single `unknown` split in two on 2026-09-15, and every one of these
+  // pins WHICH side an exit lands on. The dividing question is not "how sure are
+  // we" but "does ground truth exist at all": UNCHECKED means the platform could
+  // have answered and we failed to read it, UNVERIFIABLE means there was never
+  // anything to read. Only the first is a gap, and only the first reaches the
+  // NOT VERIFIED badge rung — so an exit landing on the wrong side either voids
+  // a legitimate run or silently passes a real one.
+  eq('an incomplete catalogue is UNCHECKED, not contradicted',
      vdVariantVerification(probe({
        catalogComplete: false, forced: { optimizely_x: '4749145360039936' }, experiments: [],
-     })).state, 'unknown');
-  eq('no platform detected is UNKNOWN',
+     })).state, 'unchecked');
+  eq('no platform detected is UNVERIFIABLE — nothing could have answered',
      vdVariantVerification(probe({
        detected: { optimizely: false, convert: false, convertScript: false },
        forced: { optimizely_x: '474' },
-     })).state, 'unknown');
-  eq('nothing forced in the URL is UNKNOWN',
-     vdVariantVerification(probe({ forced: {}, experiments: [exp('1', '2', true)] })).state, 'unknown');
-  eq('a probe that failed is UNKNOWN', vdVariantVerification(probe({ ok: false })).state, 'unknown');
-  eq('no probe at all is UNKNOWN', vdVariantVerification(null).state, 'unknown');
-  ok('every unknown explains itself',
+     })).state, 'unverifiable');
+  // The Control case, and the reason gating the old `unknown` wholesale would
+  // have been wrong: a Control URL forces nothing by design.
+  eq('nothing forced in the URL is UNVERIFIABLE',
+     vdVariantVerification(probe({ forced: {}, experiments: [exp('1', '2', true)] })).state, 'unverifiable');
+  eq('a probe that failed is UNCHECKED', vdVariantVerification(probe({ ok: false })).state, 'unchecked');
+  eq('no probe at all is UNCHECKED', vdVariantVerification(null).state, 'unchecked');
+  ok('neither half is ever still called "unknown"',
+     [null, probe({ ok: false }), probe({ forced: {} }),
+      probe({ detected: {}, forced: { optimizely_x: '474' } }),
+      probe({ catalogComplete: false, forced: { optimizely_x: '4' }, experiments: [] })]
+       .every(function (p) { return vdVariantVerification(p).state !== 'unknown'; }));
+  ok('every unresolved state explains itself',
      [vdVariantVerification(null), vdVariantVerification(probe({ forced: {} }))]
        .every(function (x) { return typeof x.reason === 'string' && x.reason.length > 10; }));
 
@@ -550,8 +579,8 @@ section('variant verification');
     forced: { optimizely_x: null, cro_mode: 'qa' },     // as the probe sees it post-redirect
     experiments: [exp('5112630724001792', '4749145360039936', true)],
   });
-  eq('a stripped param with no override is UNKNOWN',
-     vdVariantVerification(stripped).state, 'unknown');
+  eq('a stripped param with no override is UNVERIFIABLE',
+     vdVariantVerification(stripped).state, 'unverifiable');
   var withOverride = vdVariantVerification(stripped, '4749145360039936');
   eq('  but CONFIRMED once the configured URL supplies the forced id', withOverride.state, 'confirmed');
   eq('  naming the variation the platform actually served', withOverride.variationId, '4749145360039936');
@@ -613,10 +642,10 @@ section('variant verification');
   // A parameter that survives the truthiness check but carries no id at all —
   // without the guard this would compare against an empty key set and report a
   // confident 'contradicted' on no evidence.
-  eq('a forcing param with no id in it is UNKNOWN, not contradicted',
+  eq('a forcing param with no id in it is UNVERIFIABLE, not contradicted',
      vdVariantVerification(probe({
        forced: { optimizely_x: ',' }, experiments: [exp('e', '222', true)],
-     })).state, 'unknown');
+     })).state, 'unverifiable');
 
   // The normalizer itself, pinned directly.
   var K = vdForcedVariationKeys;

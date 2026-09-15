@@ -1060,16 +1060,28 @@
   // tokens do this)". With the configured id in hand that hedge becomes a
   // positive answer.
   function vdVariantVerification(probe, forcedIdOverride) {
-    var unknown = function (reason) { return { state: 'unknown', reason: reason }; };
-    if (!probe || probe.ok === false) return unknown('the experiment-platform probe did not run');
+    // `unknown` used to carry both of these and they are not the same answer.
+    // UNVERIFIABLE means no ground truth exists to check against -- a Control
+    // URL forces nothing, and neither does a variant served by audience
+    // targeting, so there is nothing the platform could confirm and nothing is
+    // wrong. UNCHECKED means the ground truth exists and we failed to read it.
+    // Only the second is a gap, and collapsing them into one state meant either
+    // gating on both (which blocks legitimate runs) or gating on neither (which
+    // is what shipped). Measured over every recorded `unknown` on 2026-09-15:
+    // the split is total -- 3 unchecked, 2 unverifiable, no reason unaccounted
+    // for -- and exactly one run of 20 changes badge (1788191807035, both
+    // captures unchecked, NEEDS REVIEW -> NOT VERIFIED).
+    var unverifiable = function (reason) { return { state: 'unverifiable', reason: reason }; };
+    var unchecked = function (reason) { return { state: 'unchecked', reason: reason }; };
+    if (!probe || probe.ok === false) return unchecked('the experiment-platform probe did not run');
     var det = probe.detected || {};
     if (!det.optimizely && !det.convert && !det.convertScript) {
-      return unknown('no experimentation platform was detected on the page');
+      return unverifiable('no experimentation platform was detected on the page');
     }
     var forced = probe.forced || {};
     var forcedId = forcedIdOverride || forced.optimizely_x || forced.conv_eforce || null;
     if (!forcedId) {
-      return unknown('the configured URL did not force a variation, so there is nothing to verify against');
+      return unverifiable('the configured URL did not force a variation, so there is nothing to verify against');
     }
     // Compared against the NORMALIZED ids, reported as the raw parameter: the
     // forcedId field says what the URL asked for, the reason says what was
@@ -1077,7 +1089,7 @@
     // string, which is why every existing assertion holds unchanged.
     var keys = vdForcedVariationKeys(forcedId);
     if (!keys.length) {
-      return unknown('the forced-variation parameter carried no variation id');
+      return unverifiable('the forced-variation parameter carried no variation id');
     }
     var exps = probe.experiments || [];
     var bucketed = exps.filter(function (e) { return e && e.bucketed && e.variationId; });
@@ -1103,7 +1115,7 @@
     // reproduce exactly the unfalsifiable-warning problem in the other
     // direction.
     if (!probe.catalogComplete) {
-      return unknown('the platform catalogue could not be read in full, so bucketing could not be confirmed either way');
+      return unchecked('the platform catalogue could not be read in full, so bucketing could not be confirmed either way');
     }
     return {
       state: 'contradicted', forcedId: String(forcedId), variationId: null, variationName: null,

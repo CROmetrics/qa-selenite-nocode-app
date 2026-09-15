@@ -1,0 +1,338 @@
+{
+ "reasonIndex": {
+  "the URL did not force a variation, so there is nothing to verify against": "force a variation, so there is nothing to verify against",
+  "the experiment-platform probe did not run": "experiment-platform probe did not run"
+ },
+ "runs": {
+  "selenite-debug-r_1788191807035": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": "the experiment-platform probe did not run",
+     "state": "unknown"
+    },
+    {
+     "label": "v1",
+     "reason": "the experiment-platform probe did not run",
+     "state": "unknown"
+    }
+   ],
+   "host": "www.ondeck.com"
+  },
+  "selenite-debug-r_1788192904924": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": "the URL did not force a variation, so there is nothing to verify against",
+     "state": "unknown"
+    },
+    {
+     "label": "v1",
+     "reason": "the URL did not force a variation, so there is nothing to verify against",
+     "state": "unknown"
+    }
+   ],
+   "host": "www.ondeck.com"
+  },
+  "selenite-debug-r_1788193353815": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.ondeck.com"
+  },
+  "selenite-debug-r_1788194537067": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.ondeck.com"
+  },
+  "selenite-debug-r_1788360614883": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.ondeck.com"
+  },
+  "selenite-debug-r_1788362945211": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.ondeck.com"
+  },
+  "selenite-debug-r_1788370328207": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.ondeck.com"
+  },
+  "selenite-debug-r_1788372126965": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.ondeck.com"
+  },
+  "selenite-debug-r_1788373948616": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.ondeck.com"
+  },
+  "selenite-debug-r_1788374677434": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.ondeck.com"
+  },
+  "selenite-debug-r_1788375660723": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.ondeck.com"
+  },
+  "selenite-debug-r_1788460269499": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.ondeck.com"
+  },
+  "selenite-debug-r_1788534558502": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.ondeck.com"
+  },
+  "selenite-debug-r_1788537251896": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.ondeck.com"
+  },
+  "selenite-debug-r_1788538681655": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": "the URL forced variation 6343432153595904 and the page did not bucket into any variation",
+     "state": "contradicted"
+    },
+    {
+     "label": "v1",
+     "reason": "the URL forced variation 4998657357905920 and the page did not bucket into any variation",
+     "state": "contradicted"
+    },
+    {
+     "label": "v2",
+     "reason": "the URL forced variation 6639557129535488 and the page did not bucket into any variation",
+     "state": "contradicted"
+    }
+   ],
+   "host": "www.toryburch.com"
+  },
+  "selenite-debug-r_1788900763308": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": "the URL forced variation 6343432153595904 and the page did not bucket into any variation",
+     "state": "contradicted"
+    },
+    {
+     "label": "v1",
+     "reason": "the URL forced variation 4998657357905920 and the page did not bucket into any variation",
+     "state": "contradicted"
+    },
+    {
+     "label": "v2",
+     "reason": "the URL forced variation 6639557129535488 and the page did not bucket into any variation",
+     "state": "contradicted"
+    }
+   ],
+   "host": "www.toryburch.com"
+  },
+  "selenite-debug-r_1789066188053": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v2",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.wowway.com"
+  },
+  "selenite-debug-r_1789071152802": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v2",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.wowway.com"
+  },
+  "selenite-debug-r_1789072302096": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v2",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.wowway.com"
+  },
+  "selenite-debug-r_1789419453332": {
+   "captures": [
+    {
+     "label": "v0",
+     "reason": null,
+     "state": "confirmed"
+    },
+    {
+     "label": "v1",
+     "reason": "the experiment-platform probe did not run",
+     "state": "unknown"
+    },
+    {
+     "label": "v2",
+     "reason": null,
+     "state": "confirmed"
+    }
+   ],
+   "host": "www.unicefusa.org"
+  }
+ }
+}

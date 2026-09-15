@@ -22,6 +22,29 @@
   // page past this count.
   const VD_MAX_CANDIDATES = 3000;
 
+  // ── The kill switch for extended capture ──────────────────────────────────
+  // Set to false to make the candidate walk record exactly the fields it
+  // recorded before 2026-09-15, restoring pre-unfreeze diff behaviour without
+  // a revert. Reload the extension after changing it -- the walk is serialised
+  // into the page from the SERVICE WORKER, which Chrome only reloads on
+  // extension reload, so a popup reload alone will not pick this up.
+  //
+  // What it gates: `src`, `filter`, `cursor`, `outline`, `gap`, `padding` and
+  // ::before/::after content+transform. Each closes a measured silent false
+  // negative -- an <img> swap produced two byte-identical candidate records and
+  // classified `unchanged`; a checkbox glyph or chevron living entirely in a
+  // `content:` declaration produced zero differing bytes; a deliberate spacing
+  // change read as uniform reflow and was suppressed whole.
+  //
+  // It is ON by default because those are false negatives in a client
+  // document, which is the worst thing this tool can produce. But it is the one
+  // change whose noise cost could NOT be measured against the corpus: the debug
+  // logs record candidate COUNTS and samples, never the candidate lists, so
+  // there is no way to replay a real pair through the wider field set offline.
+  // If a run starts reporting spacing or filter churn that is not the
+  // experiment, this is the first thing to turn off.
+  const VD_CAPTURE_EXTENDED = true;
+
   // ── Matching (vd-diff.js) ──────────────────────────────────────────────────
   // P9's narrow fuzzy fallback — only pairs P1-P8's exact passes leave
   // unmatched. Reuses vdTokenSimilarity for the text term; see vd-diff.js's
@@ -118,6 +141,7 @@
   g.VD_SUPPRESS_PUNCTUATION_ONLY = VD_SUPPRESS_PUNCTUATION_ONLY;
   g.VD_SUPPRESS_NUMERIC_ONLY = VD_SUPPRESS_NUMERIC_ONLY;
   g.VD_MAX_CANDIDATES = VD_MAX_CANDIDATES;
+  g.VD_CAPTURE_EXTENDED = VD_CAPTURE_EXTENDED;
   g.VD_FUZZY_THRESHOLD = VD_FUZZY_THRESHOLD;
   g.VD_FUZZY_MAX_PAIRS = VD_FUZZY_MAX_PAIRS;
   g.VD_REDESIGN_MATCH_FLOOR = VD_REDESIGN_MATCH_FLOOR;

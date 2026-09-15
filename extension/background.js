@@ -1862,7 +1862,7 @@ async function withVariantDebugger(tabId, fn) {
 // page as window globals immediately before this function runs — see the
 // exec() call site below, which mirrors srInjectRecorder's own
 // window.__seleniteRecMove seeding pattern.
-function domCandidateWalkFn(maxCandidates, pageW, capturedH) {
+function domCandidateWalkFn(maxCandidates, pageW, capturedH, extendedCapture) {
   const ATOMIC_TAGS = new Set(['IMG', 'INPUT', 'BUTTON', 'SELECT', 'TEXTAREA', 'SVG', 'VIDEO', 'CANVAS', 'IFRAME']);
   const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'HEAD']);
   const REGION_TAGS = new Set(['HEADER', 'NAV', 'MAIN', 'FOOTER', 'ASIDE', 'SECTION', 'FORM']);
@@ -1907,6 +1907,16 @@ function domCandidateWalkFn(maxCandidates, pageW, capturedH) {
   const hash32 = window.vdHash32 || (s => s);
   const isStableId = window.vdIsStableId || (() => false);
   const normalizeHref = window.vdNormalizeHref || (h => h || null);
+  // Two extra getComputedStyle reads per candidate, so it is only called when
+  // extended capture is on. There is no cheap way to ask whether a pseudo
+  // exists -- querying it IS the test.
+  const PSEUDO_UNSET = new Set(['none', 'normal', 'auto', '']);
+  function pseudoVal(el, pseudo, prop) {
+    try {
+      const v = getComputedStyle(el, pseudo)[prop];
+      return v && !PSEUDO_UNSET.has(v) ? String(v).slice(0, 200) : null;
+    } catch (_) { return null; }
+  }
   const isLiveRegionSignal = window.vdIsLiveRegionSignal || (() => false);
 
   function hasDirectText(el) {
@@ -1963,6 +1973,46 @@ function domCandidateWalkFn(maxCandidates, pageW, capturedH) {
         textAlign: cs.textAlign, textDecorationLine: cs.textDecorationLine,
         borderRadius: cs.borderRadius && cs.borderRadius !== '0px' ? cs.borderRadius : null,
         visibility: cs.visibility,
+        // ── extended capture, gated by VD_CAPTURE_EXTENDED (vd-config.js) ──
+        // Each of these closed a measured SILENT false negative: the pair
+        // classified `unchanged` and was never reported, which is the worst
+        // output this tool can produce. Everything here is null when the flag
+        // is off, and vdStyleDelta treats absent and null alike, so flipping
+        // the flag restores pre-2026-09-15 classification exactly.
+        //
+        // `src` sits in `styles` rather than `attrs` because `attrs` is never
+        // compared -- vdClassifyPair reads textHash, shapeHash, styles and
+        // rect, nothing else. backgroundImage, already here, is the exact
+        // analogue: a URL compared as a style. Without this an <img> swap
+        // produces two byte-identical records. currentSrc first, because it is
+        // what the browser actually loaded and is already absolute -- a raw
+        // srcset or lazy-load placeholder would otherwise differ between two
+        // captures of the same page for reasons that are not the experiment.
+        ...(extendedCapture ? {
+          src: (el.currentSrc || (el.getAttribute('src')
+            ? normalizeHref(el.getAttribute('src'), location.origin) : null)) || null,
+          filter: cs.filter && cs.filter !== 'none' ? cs.filter.slice(0, 200) : null,
+          cursor: cs.cursor && cs.cursor !== 'auto' ? cs.cursor : null,
+          outline: cs.outlineStyle && cs.outlineStyle !== 'none'
+            ? (cs.outlineWidth + ' ' + cs.outlineStyle + ' ' + cs.outlineColor) : null,
+          // Spacing. A deliberate row-gap or padding change across siblings
+          // currently reads as one uniform shift and is suppressed as reflow,
+          // so the whole experiment vanishes. Recorded only when non-trivial,
+          // to keep the default page from carrying a value on every element.
+          gap: cs.gap && cs.gap !== 'normal' && cs.gap !== '0px' ? cs.gap : null,
+          padding: cs.padding && cs.padding !== '0px' ? cs.padding : null,
+          // Pseudo-elements are invisible to everything else here: neither
+          // getComputedStyle call passed a pseudo argument, and walk() only
+          // iterates real child nodes, which by spec never contain them. A
+          // checkbox glyph flipping, a chevron rotating, a badge whose text is
+          // entirely a `content:` declaration -- all produced zero differing
+          // bytes. `none` and `normal` are the unset values and are dropped so
+          // the common case stays null.
+          beforeContent: pseudoVal(el, '::before', 'content'),
+          afterContent: pseudoVal(el, '::after', 'content'),
+          beforeTransform: pseudoVal(el, '::before', 'transform'),
+          afterTransform: pseudoVal(el, '::after', 'transform'),
+        } : {}),
       },
     });
   }
@@ -2166,7 +2216,7 @@ async function captureFullPageAndViewport(tabId, { captureForVision, extractDomC
           // duplicating that logic inline (which would risk it drifting out
           // of sync with the jsc-tested version).
           await chrome.scripting.executeScript({ target: { tabId }, files: ['vd-diff.js'] });
-          out.domCandidates = (await exec(tabId, domCandidateWalkFn, [VD_MAX_CANDIDATES, pageW, capturedH])) || [];
+          out.domCandidates = (await exec(tabId, domCandidateWalkFn, [VD_MAX_CANDIDATES, pageW, capturedH, VD_CAPTURE_EXTENDED])) || [];
         } catch (_) { out.domCandidates = []; }
       }
       return out;
@@ -5106,7 +5156,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!tabId) { sendResponse({ ok: false, error: 'No active tab' }); return; }
       try {
         await chrome.scripting.executeScript({ target: { tabId }, files: ['vd-diff.js'] });
-        const candidates = (await exec(tabId, domCandidateWalkFn, [VD_MAX_CANDIDATES])) || [];
+        const candidates = (await exec(tabId, domCandidateWalkFn, [VD_MAX_CANDIDATES, undefined, undefined, VD_CAPTURE_EXTENDED])) || [];
         await exec(tabId, (list) => { window.__seleniteVdCandidates = list; }, [candidates]);
         await chrome.scripting.executeScript({ target: { tabId }, files: ['vd-overlay.js'] });
         sendResponse({ ok: true, count: candidates.length });

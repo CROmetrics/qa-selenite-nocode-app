@@ -382,6 +382,14 @@
     'color', 'backgroundColor', 'backgroundImage', 'border', 'boxShadow', 'opacity',
     'fontSize', 'fontWeight', 'fontFamily', 'textAlign', 'textDecorationLine',
     'borderRadius', 'visibility',
+    // Extended capture (VD_CAPTURE_EXTENDED). Absent on every candidate when
+    // the flag is off and on every capture recorded before 2026-09-15, and the
+    // loop below reads absent and null alike -- so both sides come back null,
+    // no delta is produced, and classification is bit-for-bit what it was.
+    // That equivalence is what makes the flag a real fallback rather than a
+    // half-measure, and it is asserted in vd-diff.test.js.
+    'src', 'filter', 'cursor', 'outline', 'gap', 'padding',
+    'beforeContent', 'afterContent', 'beforeTransform', 'afterTransform',
   ];
   function vdStyleDelta(a, b) {
     var sa = a.styles || {}, sb = b.styles || {};

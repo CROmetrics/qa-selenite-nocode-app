@@ -1457,6 +1457,92 @@ section('suppression');
      s.findings[0].signals.indexOf('style:fontWeight') !== -1, s.findings[0].signals);
 })();
 
+(function anImageSwapIsNoLongerInvisible() {
+  // The headline silent false negative. `src` was never captured, so swapping
+  // a hero image produced two BYTE-IDENTICAL candidate records: the pair
+  // classified `unchanged` and was never reported at all. The only thing that
+  // could catch it was the pixel backstop, which requires dx and dy to be
+  // exactly 0 -- so any layout shift above the image, which is most real
+  // variants, meant it was never checked. Swapping a hero image is the most
+  // ordinary creative change an A/B test makes.
+  //
+  // `src` lives in `styles` because `attrs` is never compared; backgroundImage,
+  // already compared, is the exact analogue.
+  var a = [cand({ text: '', tag: 'img', y: 0, path: '/img[1]',
+                  styles: { src: 'https://x.test/hero-a.jpg' } })];
+  var b = [cand({ text: '', tag: 'img', y: 0, path: '/img[1]',
+                  styles: { src: 'https://x.test/hero-b.jpg' } })];
+  var s = vdSuppressFindings(vdMatchCandidates(a, b).pairs);
+  eq('an image swap is reported', s.findings.length, 1);
+  eq('  classified style-changed', s.findings[0].changeClass, 'style-changed');
+  ok('  and names src as what changed',
+     s.findings[0].signals.indexOf('style:src') !== -1, s.findings[0].signals);
+
+  // Same image, same everything: the pair must still classify `unchanged`, the
+  // class the reporting layer drops. The fix must not make every image a
+  // finding. Asserted on the CLASS, not on findings.length -- vdSuppressFindings
+  // returns unchanged pairs in its list and the drop happens downstream.
+  var same = vdSuppressFindings(vdMatchCandidates(a, [cand({ text: '', tag: 'img', y: 0,
+    path: '/img[1]', styles: { src: 'https://x.test/hero-a.jpg' } })]).pairs);
+  eq('an unchanged image still classifies unchanged', same.findings[0].changeClass, 'unchanged');
+  eq('  and carries no style signal', same.findings[0].signals.length, 0);
+})();
+
+(function aPseudoElementStateFlipIsVisible() {
+  // Neither getComputedStyle call passed a pseudo argument and walk() only
+  // iterates real child nodes, which by spec never contain pseudo-elements. A
+  // checkbox glyph flipping, a chevron rotating open, a badge whose text is
+  // entirely a `content:` declaration -- the standard technique in Tailwind
+  // Forms, Bootstrap 5 custom controls and most Material/Chakra checkboxes --
+  // produced zero differing bytes anywhere in the candidate on either side.
+  var a = [cand({ text: 'Remember me', tag: 'label', y: 0, path: '/label[1]',
+                  styles: { beforeContent: '"\\2610"' } })];
+  var b = [cand({ text: 'Remember me', tag: 'label', y: 0, path: '/label[1]',
+                  styles: { beforeContent: '"\\2611"' } })];
+  var s = vdSuppressFindings(vdMatchCandidates(a, b).pairs);
+  eq('a ::before content flip is reported', s.findings.length, 1);
+  ok('  and names it', s.findings[0].signals.indexOf('style:beforeContent') !== -1,
+     s.findings[0].signals);
+
+  // A chevron rotating is a transform on the pseudo, not its content.
+  var ra = [cand({ text: 'Details', tag: 'summary', y: 0, path: '/summary[1]',
+                   styles: { afterTransform: 'matrix(1, 0, 0, 1, 0, 0)' } })];
+  var rb = [cand({ text: 'Details', tag: 'summary', y: 0, path: '/summary[1]',
+                   styles: { afterTransform: 'matrix(0, 1, -1, 0, 0, 0)' } })];
+  eq('a ::after transform change is reported',
+     vdSuppressFindings(vdMatchCandidates(ra, rb).pairs).findings.length, 1);
+})();
+
+(function theKillSwitchIsAnExactFallback() {
+  // VD_CAPTURE_EXTENDED off makes the walk record none of these fields, and
+  // every capture taken before 2026-09-15 lacks them too. This asserts what
+  // makes that a real fallback rather than a half-measure: with the fields
+  // absent on BOTH sides, vdStyleDelta reads absent and null alike, so
+  // classification is bit-for-bit what it was before the flag existed.
+  var EXT = ['src', 'filter', 'cursor', 'outline', 'gap', 'padding',
+             'beforeContent', 'afterContent', 'beforeTransform', 'afterTransform'];
+  var bare = [cand({ text: 'Claude', tag: 'button', y: 0, path: '/button[1]',
+                     styles: { color: 'rgb(0, 0, 0)' } })];
+  var bare2 = [cand({ text: 'Claude', tag: 'button', y: 0, path: '/button[1]',
+                      styles: { color: 'rgb(255, 0, 0)' } })];
+  var off = vdSuppressFindings(vdMatchCandidates(bare, bare2).pairs);
+  eq('with the extended fields absent, the old delta is unchanged', off.findings.length, 1);
+  ok('  and names only the old property', off.findings[0].signals.indexOf('style:color') !== -1);
+  EXT.forEach(function (k) {
+    ok('  no extended key leaks into the delta: ' + k,
+       off.findings[0].signals.indexOf('style:' + k) === -1, off.findings[0].signals);
+  });
+  // Explicit null on one side and absent on the other must also not differ --
+  // this is the shape a mid-flag-flip comparison would produce.
+  var nulled = [cand({ text: 'Same', tag: 'p', y: 0, path: '/p[1]',
+                       styles: { color: 'rgb(0, 0, 0)', src: null, padding: null } })];
+  var absent = [cand({ text: 'Same', tag: 'p', y: 0, path: '/p[1]',
+                       styles: { color: 'rgb(0, 0, 0)' } })];
+  var mixed = vdSuppressFindings(vdMatchCandidates(nulled, absent).pairs);
+  eq('null and absent are the same to the comparer', mixed.findings[0].changeClass, 'unchanged');
+  eq('  producing no delta at all', mixed.findings[0].signals.length, 0);
+})();
+
 (function rogueMoveSurvives() {
   // A trusted reflow band exists, and one element moves against it.
   var a = [], b = [];

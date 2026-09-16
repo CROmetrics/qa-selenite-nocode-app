@@ -679,16 +679,18 @@ section('spec suppression cause across every recorded run');
   // typed literal: census is filled in corpus order, so JSON.stringify would
   // pin key insertion order and fail on correct counts.
   //
-  // graded went 20 -> 21 when the corpus gained its fifth site. The single new
-  // log here is 1789419453332 (UUSAF-250, unicefusa.org): its spec was
-  // auto-filled from the active ticket, so summaryTicketKey is present AND
-  // equal to ticketKey, which clears both the withheld and the
-  // graded-unverified rungs. The other two buckets are unmoved -- the three
-  // WOW-1173 runs added to the verdict corpus in the same refresh were already
-  // carried here, and nothing new arrived without a spec.
+  // graded went 20 -> 21 when the corpus gained its fifth site, then 21 -> 22
+  // when 1789567065599 (ENOC-97, ondeck.com) arrived, then 22 -> 23 when
+  // 1789569031354 (also ENOC-97, ondeck.com, ~30 min later) arrived, then
+  // 23 -> 24 when 1789570575661 (also ENOC-97, ondeck.com, ~26 min after
+  // that) arrived: same pattern every time -- derived, not bumped. The spec
+  // was auto-filled from the active ticket, so summaryTicketKey is present
+  // AND equal to ticketKey, which clears both the withheld and the
+  // graded-unverified rungs. The other two buckets are unmoved -- nothing new
+  // arrived without a spec, and no ticket mismatch.
   eq('every recorded run resolves to a cause',
      Object.keys(census).sort().map(function (k) { return k + '=' + census[k]; }).join(','),
-     'graded=21,graded-unverified=17,none=6');
+     'graded=24,graded-unverified=17,none=6');
   eq('  and every log carrying a designReference is accounted for',
      Object.keys(census).reduce(function (n, k) { return n + census[k]; }, 0),
      Object.keys(SPECS).length);

@@ -2298,5 +2298,107 @@
 "reflowHorizontal": 0,
 "reflowPxMax": 85
 }
+},
+"1789567065599": {
+"annotated": true,
+"generatedAt": "2026-09-16T13:57:45.599Z",
+"shiftClusters": {
+"horizontal": [
+{
+"count": 23,
+"delta": 0,
+"p0": 727,
+"p1": 1905,
+"spanPx": 0,
+"trusted": true
+}
+],
+"vertical": [
+{
+"contradictedBy": null,
+"count": 23,
+"delta": 2100,
+"p0": 3420,
+"p1": 4508,
+"spanPx": 0,
+"trusted": true
+}
+]
+},
+"suppressionAggregate": {
+"numericOnly": 0,
+"punctuationOnly": 0,
+"reflow": 23,
+"reflowHorizontal": 0,
+"reflowPxMax": 2100
+}
+},
+"1789569031354": {
+"annotated": true,
+"generatedAt": "2026-09-16T14:30:31.354Z",
+"shiftClusters": {
+"horizontal": [
+{
+"count": 23,
+"delta": 0,
+"p0": 727,
+"p1": 1905,
+"spanPx": 0,
+"trusted": true
+}
+],
+"vertical": [
+{
+"contradictedBy": null,
+"count": 23,
+"delta": 2100,
+"p0": 3420,
+"p1": 4508,
+"spanPx": 0,
+"trusted": true
+}
+]
+},
+"suppressionAggregate": {
+"numericOnly": 0,
+"punctuationOnly": 0,
+"reflow": 23,
+"reflowHorizontal": 0,
+"reflowPxMax": 2100
+}
+},
+"1789570575661": {
+"annotated": true,
+"generatedAt": "2026-09-16T14:56:15.660Z",
+"shiftClusters": {
+"horizontal": [
+{
+"count": 23,
+"delta": 0,
+"p0": 727,
+"p1": 1905,
+"spanPx": 0,
+"trusted": true
+}
+],
+"vertical": [
+{
+"contradictedBy": null,
+"count": 23,
+"delta": 2100,
+"p0": 3420,
+"p1": 4508,
+"spanPx": 0,
+"trusted": true
+}
+]
+},
+"suppressionAggregate": {
+"numericOnly": 0,
+"punctuationOnly": 0,
+"reflow": 23,
+"reflowHorizontal": 0,
+"reflowPxMax": 2100
+}
 }
 }

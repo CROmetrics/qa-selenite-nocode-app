@@ -18,7 +18,16 @@ committed, this script must reproduce each file BYTE FOR BYTE. If it does, the
 projection was read correctly and the newly-added entries can be trusted on the
 same evidence. If it does not, the projection was misread and NOTHING is written --
 a mismatch is not something to paper over by loosening the comparison. Done right
-the resulting diff is pure insertions, with no existing line touched.
+the resulting diff is pure insertions, with no existing line touched. A MISMATCH
+on any one file blocks --write for ALL of them, so a refresh never leaves the
+four fixtures at different vintages of the projection rules.
+
+This guard is for catching a misread, not for freezing the projection rules
+themselves. A DELIBERATE rule change (like TRAP 3 below) is applied by hand to
+the committed fixture as the minimal delta the new rule implies, and then
+verify-only must reproduce that hand edit byte for byte before --write runs --
+that reproduction is what confirms the hand edit was exactly the declared
+change and nothing else.
 
 THE CORPUS IS NOT IN THE REPO. It is the debug exports the extension writes,
 ~/Downloads/selenite-debug-r_*.json. Runs are keyed by id except in the specs
@@ -26,6 +35,7 @@ fixture, which is keyed by FILENAME STEM because two files on record share run i
 1787851821352 (one is a "(1)" re-download) and keying by id silently drops one and
 moves the spec census by one.
 """
+import difflib
 import json
 import glob
 import os
@@ -63,6 +73,17 @@ def in_verdict_corpus(rid):
 # only when the log carries them: viewportW and geometryPinned postdate the
 # geometry pin, and inventing them for older runs would fabricate agreement
 # between captures that were never compared on that axis.
+#
+# TRAP 3. A capture whose page load timed out records fullPage: null, not an
+# absent key -- same shape distinction as TRAP 2 below. `(c.get('fullPage')
+# or {})` collapses null to {}, and the width consumers (vdCaptureWidthMismatch,
+# abCaptureWidths) treat {} as a normal-but-fieldless capture that PASSES their
+# `c.fullPage &&` guard, while they treat null as absent and skip it -- so the
+# fixture would blank out a run's whole width comparison where production
+# reports one side's width cleanly. `error` is projected for the same reason
+# even though no capture on record carries it yet: the consumers also gate on
+# `!c.fullPage.error`, and a captured-but-errored fullPage that still carried
+# dimensions would otherwise project as healthy.
 def gen_captures():
     out = {}
     for _stem, rid, d in logs():
@@ -73,9 +94,10 @@ def gen_captures():
         mfs = [m for m in mfs if m is not None]
         entry = {
             "captures": [{
-                "fullPage": {k: (c.get('fullPage') or {})[k]
-                             for k in ('pageW', 'viewportH', 'geometryPinned', 'viewportW')
-                             if k in (c.get('fullPage') or {})},
+                "fullPage": None if c.get('fullPage') is None else
+                            {k: c['fullPage'][k]
+                             for k in ('pageW', 'viewportH', 'geometryPinned', 'viewportW', 'error')
+                             if k in c['fullPage']},
                 "label": c.get('label'),
                 "skipped": c.get('skipped'),
             } for c in caps],
@@ -241,8 +263,14 @@ def main():
     # exit 0 -- a --write run that silently skipped a file is exactly how a stale
     # fixture survives a refresh. Pending additions (`stale`) are only a failure
     # in verify mode, because --write is what resolves them.
+    #
+    # Two passes on purpose: nothing is written until every file has been
+    # checked, so a MISMATCH on the last file cannot leave the earlier ones
+    # written and the rest not -- a refresh is all four fixtures or none of
+    # them, never a mix of vintages.
     failed = False
     stale = False
+    to_write = []
     for name, fn in FIXTURES:
         path = os.path.join(HERE, name)
         new, ser, nl = fn()
@@ -258,6 +286,10 @@ def main():
         dropped = sorted(set(cur) - set(new))
         if kept != raw:
             print('%-34s MISMATCH on existing keys -- projection misread, NOT written' % name)
+            for line in difflib.unified_diff(
+                    raw.decode('utf-8').splitlines(), kept.decode('utf-8').splitlines(),
+                    fromfile='committed', tofile='reproduced', lineterm=''):
+                print('    ' + line)
             failed = True
             continue
         if dropped:
@@ -269,13 +301,17 @@ def main():
             print('    + ' + a)
         if added:
             stale = True
-        if WRITE:
-            with open(path, 'wb') as fh:
-                fh.write(blob(new))
+        to_write.append((path, blob(new)))
     if failed:
         print('\nA projection no longer reproduces what is committed. Fix the projection --')
-        print('do NOT edit the fixture by hand to match it.')
+        print('do NOT edit the fixture by hand to match it, unless the fix itself is a')
+        print('deliberate projection-rule change: then hand-apply the minimal delta the')
+        print('new rule implies and let this check confirm it reproduces exactly that.')
         return 1
+    if WRITE:
+        for path, data in to_write:
+            with open(path, 'wb') as fh:
+                fh.write(data)
     if stale and not WRITE:
         print('\nFixtures are stale. Re-run with --write, then re-derive every pinned census')
         print('in real-runs.test.js from the refreshed data -- do NOT loosen an assertion to')

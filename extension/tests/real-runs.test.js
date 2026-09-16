@@ -683,14 +683,15 @@ section('spec suppression cause across every recorded run');
   // when 1789567065599 (ENOC-97, ondeck.com) arrived, then 22 -> 23 when
   // 1789569031354 (also ENOC-97, ondeck.com, ~30 min later) arrived, then
   // 23 -> 24 when 1789570575661 (also ENOC-97, ondeck.com, ~26 min after
-  // that) arrived: same pattern every time -- derived, not bumped. The spec
-  // was auto-filled from the active ticket, so summaryTicketKey is present
-  // AND equal to ticketKey, which clears both the withheld and the
-  // graded-unverified rungs. The other two buckets are unmoved -- nothing new
-  // arrived without a spec, and no ticket mismatch.
+  // that) arrived, then 24 -> 25 when 1789577773154 (the fourth ENOC-97
+  // rerun of the day, two hours on) arrived: same pattern every time --
+  // derived, not bumped. The spec was auto-filled from the active ticket, so
+  // summaryTicketKey is present AND equal to ticketKey, which clears both the
+  // withheld and the graded-unverified rungs. The other two buckets are
+  // unmoved -- nothing new arrived without a spec, and no ticket mismatch.
   eq('every recorded run resolves to a cause',
      Object.keys(census).sort().map(function (k) { return k + '=' + census[k]; }).join(','),
-     'graded=24,graded-unverified=17,none=6');
+     'graded=25,graded-unverified=17,none=6');
   eq('  and every log carrying a designReference is accounted for',
      Object.keys(census).reduce(function (n, k) { return n + census[k]; }, 0),
      Object.keys(SPECS).length);

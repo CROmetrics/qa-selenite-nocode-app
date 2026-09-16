@@ -1682,5 +1682,30 @@
 }
 ],
 "worstMatchedFraction": 0.24285714285714285
+},
+"1789577773154": {
+"captures": [
+{
+"fullPage": {
+"geometryPinned": false,
+"pageW": 2773,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"label": "v0",
+"skipped": false
+},
+{
+"fullPage": {
+"geometryPinned": true,
+"pageW": 2773,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"label": "v1",
+"skipped": false
+}
+],
+"worstMatchedFraction": 0.24285714285714285
 }
 }

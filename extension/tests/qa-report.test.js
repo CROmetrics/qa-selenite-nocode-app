@@ -662,6 +662,50 @@ function item(status, required, opts) {
      !/produced no checkable strings/.test(both), both.slice(0, 400));
 })();
 
+(function coverageOfCoverageRendersCollapsed() {
+  // Two more silences the coverage block used to have: a spec line no
+  // extraction pass could turn into a string (ENOC-97's unquoted footer
+  // footnotes), and a heading naming a page region where nothing was found on
+  // either page (its "Header / Nav — new" section on 33 of 33 recorded ondeck
+  // runs). Both are collapsed by default -- most reports have nothing here,
+  // and an expanded list of skipped lines would bury the findings above it.
+  // regionCounts is PER WORD (fixed 2026-09-16): 'nav' carries real matches
+  // (footer navs, unrelated to the spec's header) while 'header' carries none
+  // — the combined heading must still surface the header gap.
+  var withGaps = withReq(Object.assign(reqSet([item('verbatim', 'Apply Now')]), {
+    coverage: {
+      uncheckedCount: 2,
+      unchecked: [{ line: 1, heading: 'Footer', text: 'Change: unquoted footnote one' },
+                  { line: 2, heading: 'Footer', text: 'Change: unquoted footnote two' }],
+      unattributedUnchecked: 0,
+      headings: [{ heading: 'Header / Nav — new', region: ['header', 'nav'], lines: 3, extracted: 1, unchecked: 0,
+                   regionCounts: { header: 0, nav: 3 } }],
+    },
+  }));
+  ok('the not-checked-as-written block is present and collapsed',
+     /<details[^>]*><summary>.*Not checked as written \(2\)/.test(withGaps), withGaps.slice(0, 600));
+  ok('  naming the heading and the line text of each',
+     /Footer.*unquoted footnote one/.test(withGaps) && /unquoted footnote two/.test(withGaps),
+     withGaps.slice(0, 800));
+  ok('a region word with zero matches is called out even though its sibling word has real matches',
+     /Header \/ Nav — new" section describes a header region, but no header elements were found on either page/
+       .test(withGaps.replace(/\s+/g, ' ')),
+     withGaps.slice(0, 900));
+
+  var clean = withReq(Object.assign(reqSet([item('verbatim', 'Apply Now')]), {
+    coverage: { uncheckedCount: 0, unchecked: [], unattributedUnchecked: 0,
+                headings: [{ heading: 'Hero', region: [], lines: 1, extracted: 1, unchecked: 0 }] },
+  }));
+  ok('full coverage with a region heading that DID find elements renders neither block',
+     !/Not checked as written/.test(clean) && !/describes a .* region, but no/.test(clean), clean.slice(0, 400));
+
+  // Backward compatible: a log recorded before coverage existed has no such
+  // key at all, and must render exactly as it always did.
+  var noCoverage = withReq(reqSet([item('verbatim', 'Apply Now')]));
+  ok('a requirement set with no coverage key renders neither block',
+     !/Not checked as written/.test(noCoverage) && !/describes a .* region, but no/.test(noCoverage), noCoverage.slice(0, 400));
+})();
+
 // ── 4b. redesign mode's two tiers must be distinguishable ──────────────────
 section('region rollups vs itemised findings');
 
@@ -1877,12 +1921,21 @@ section('a run that was not validly compared must never badge PASS');
      vdVerdict(deadMirror).ungraded, 67);
   ok('  and does not badge PASS', vdVerdict(deadMirror).ungraded > 0);
 
-  // And the mirror must carry the fields the verdict now depends on.
-  var proj = _pu.slice(_pu.indexOf('perVariant: (visualDiffResult.perVariant || []).map'),
-                       _pu.indexOf('findingCount: v.findings'));
-  var full = _pu.slice(_pu.indexOf('perVariant: (visualDiffResult.perVariant || []).map'));
-  ok('the mirror carries gradingFailed', /gradingFailed: v\.gradingFailed/.test(full.slice(0, 2200)), 'missing');
-  ok('  and a precomputed unmetCopyCount', /unmetCopyCount: vdUnmetRequirements\(v\)/.test(full.slice(0, 2200)), 'missing');
+  // And the mirror must carry the fields the verdict now depends on. Bounded by
+  // the literal's own end marker, NOT by a byte count: a fixed window silently
+  // stops covering the tail of the object as soon as a field or a comment is
+  // added above it, which is a test that decays into passing by accident.
+  var mirrorStart = _pu.indexOf('perVariant: (visualDiffResult.perVariant || []).map');
+  var proj = _pu.slice(mirrorStart, _pu.indexOf('findingCount: v.findings'));
+  var mirror = _pu.slice(mirrorStart, _pu.indexOf('if (fromTestAgent) {', mirrorStart));
+  ok('the mirror literal end marker was found', mirror.length > 0 && mirror.length < 6000, mirror.length);
+  ok('the mirror carries gradingFailed', /gradingFailed: v\.gradingFailed/.test(mirror), 'missing');
+  ok('  and a precomputed unmetCopyCount', /unmetCopyCount: vdUnmetRequirements\(v\)/.test(mirror), 'missing');
+  // The walk's own not-walked counters ride the mirror too, for exactly the
+  // reason diffDebug does: a Test-Agent-queued run never sees visualDiffFull,
+  // so leaving them off made the iframe/shadow/fixed-sticky disclosures dead
+  // on that path while droppedByCap kept working.
+  ok('  and the notWalked counters', /notWalked: v\.notWalked/.test(mirror), 'missing');
 })();
 
 // ── the Metrics section ────────────────────────────────────────────────────

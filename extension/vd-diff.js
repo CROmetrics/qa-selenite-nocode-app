@@ -979,10 +979,17 @@
     'numeric-only': 1, 'style-changed': 1, 'reflow-alert': 1,
     'punctuation-only': 0,
   };
+  // Describes a dropped group well enough to name it in the log and the
+  // `problems` line without carrying the group itself -- the reader needs to
+  // know WHICH six were cut, not re-render them.
+  function vdSummarizeDropped(f) {
+    var text = ((f.a && f.a.text) || (f.b && f.b.text) || f.note || '').slice(0, 60);
+    return { changeClass: f.changeClass, region: vdFindingRegion(f), memberCount: (f.members || []).length || 1, text: text };
+  }
   function rankAndCapDiffFindings(findings, opts) {
     opts = Object.assign({ watchedRects: [], maxTotal: VD_MAX_DIFF_FINDINGS }, opts || {});
     var actionable = findings.filter(function (f) { return f.changeClass !== 'unchanged'; });
-    if (actionable.length <= opts.maxTotal) return { kept: actionable, truncatedCount: 0 };
+    if (actionable.length <= opts.maxTotal) return { kept: actionable, truncatedCount: 0, dropped: [] };
     var scored = actionable.map(function (f) {
       var rect = (f.a && f.a.rect) || (f.b && f.b.rect);
       var overlapsWatched = rect ? opts.watchedRects.some(function (r) { return vdBoxesOverlap(rect, r); }) : false;
@@ -997,7 +1004,8 @@
       return y.textLen - x.textLen;
     });
     var kept = scored.slice(0, opts.maxTotal).map(function (s) { return s.f; });
-    return { kept: kept, truncatedCount: actionable.length - kept.length };
+    var dropped = scored.slice(opts.maxTotal).map(function (s) { return vdSummarizeDropped(s.f); });
+    return { kept: kept, truncatedCount: actionable.length - kept.length, dropped: dropped };
   }
 
   // What the forcing parameter actually asks the platform for, reduced to the
@@ -1286,7 +1294,11 @@
     // Takes a STRING, not a match, because pass 3 is line-based rather than
     // delimiter-based and must share this dedupe -- two passes with two dedupe
     // sets would report the same requirement twice.
-    function take(input) {
+    // `pass` and `offset` are provenance only -- which extraction rule found
+    // this requirement, and where in the scoped text -- so a run can be
+    // audited (and so vdSpecCoverage, below, can tell a covered line from one
+    // no pass ever reads) without changing what counts as a requirement.
+    function take(input, pass, offset) {
       // Defensive: a pass added later with no capturing group, or as an
       // alternation whose other branch owns the group, hands us undefined.
       // Under-extracting is caught by the suite; throwing here would abort the
@@ -1313,7 +1325,8 @@
       if (vdLooksLikeMarkup(raw)) return;
       if (seen.has(norm)) return;
       seen.add(norm);
-      out.push({ required: raw, norm: norm });
+      var line = offset == null ? null : text.slice(0, offset).split('\n').length - 1;
+      out.push({ required: raw, norm: norm, line: line, pass: pass || null });
     }
 
     var span = '{' + VD_REQ_MIN_CHARS + ',' + VD_REQ_MAX_CHARS + '}';
@@ -1351,13 +1364,14 @@
     var lm;
     while ((lm = LABEL_COPY.exec(text))) {
       if (/["“”‘’]/.test(lm[1])) continue;
-      take(vdTrimSpecAside(lm[1]));
+      take(vdTrimSpecAside(lm[1]), 'label', lm.index);
     }
 
+    var PASS_NAMES = ['quote', 'curly'];
     for (var i = 0; i < passes.length; i++) {
       var re = passes[i], m;
       while ((m = re.exec(text))) {
-        take(m[1]);
+        take(m[1], PASS_NAMES[i], m.index);
         // A zero-length match leaves lastIndex untouched and exec spins on it
         // forever. Neither pass above can match empty -- both require a
         // delimiter pair around >= VD_REQ_MIN_CHARS -- but a pass added later
@@ -1369,6 +1383,133 @@
       }
     }
     return out;
+  }
+
+  // A heading names the page region the lines under it describe. Matched by
+  // WORD, not substring -- "Header / Nav — new" must not also match a spec
+  // line that happens to contain "header" mid-sentence -- and a heading can
+  // name more than one region ("Header / Nav") because that is how the specs
+  // on record actually write it. Returns [] for a heading with no recognized
+  // region word (most of them: "Hero", "FAQ", "Testimonials", ...), which is
+  // not a failure -- those sections have no region-count signal to attach.
+  function vdSpecHeadingRegions(heading) {
+    var h = ' ' + String(heading || '').toLowerCase() + ' ';
+    var out = [];
+    if (/[^a-z]header[^a-z]/.test(h)) out.push('header');
+    if (/[^a-z]nav(igation)?[^a-z]/.test(h)) out.push('nav');
+    if (/[^a-z]footer[^a-z]/.test(h)) out.push('footer');
+    if (/[^a-z]form[^a-z]/.test(h)) out.push('form');
+    return out;
+  }
+
+  // Does a candidate's region string (background.js: el.tagName.toLowerCase()
+  // + optional '#id', or '[role=x]' for a landmark carried by ARIA role alone)
+  // belong to the word a heading named? Anchored so `nav` cannot match
+  // `nav#menu-footer`'s SIBLING tag by accident the way a bare substring test
+  // would -- measured case: ENOC-97's "Header / Nav — new" heading, matched
+  // against 'nav#menu-footer' / 'nav#menu-awards' / 'nav#menu-social', three
+  // real but unrelated FOOTER navs, because both are simply <nav> elements and
+  // the region string carries no parent/child relationship to disambiguate
+  // "the site's primary nav" from "a footer nav". This function does not
+  // solve that ambiguity -- it cannot, from a region label alone -- but it
+  // does keep `header` correctly matching NOTHING when the page has no
+  // <header> and no [role=banner], which is what the disclosure needs: the
+  // caller reports per WORD (see requirements.coverage caller in
+  // background.js), so "header: 0 matches" surfaces even while "nav: 3
+  // matches" is also true for the same heading.
+  var VD_REGION_ROLE_ALIAS = { header: 'banner', nav: 'navigation', footer: 'contentinfo' };
+  function vdRegionMatchesHeadingWord(region, word) {
+    if (!region) return false;
+    if (region === word || region.indexOf(word + '#') === 0 || region.indexOf(word + '[') === 0) return true;
+    var role = VD_REGION_ROLE_ALIAS[word];
+    return !!role && region === '[role=' + role + ']';
+  }
+
+  // Did the spec describe something no requirement pass could turn into a
+  // checkable string? Two real, measured shapes, both silent until now:
+  //
+  //   - a section written as PROSE rather than quoted copy or a `... copy:`
+  //     line -- ENOC-97's "Footer / Change:" block rewrites six disclaimer
+  //     footnotes as long unquoted sentences, so vdSpecRequirements extracts
+  //     none of them and the footer diffs as unchanged. The model noticed
+  //     ("the ticket lists substantial rewrites ... the comparison reports no
+  //     footer changes at all") on the run this was built from.
+  //   - a section that names a page REGION (header, nav, footer, form) whose
+  //     element count on either page is worth stating even when every one of
+  //     its requirements DID extract -- ENOC-97's "Header / Nav — new" section
+  //     is fully quoted, but the diff produced zero header/nav findings on
+  //     32 of 32 recorded ondeck runs, because the walked DOM had no header at
+  //     scroll position 0. `regionFindings` is attached by the caller, which
+  //     has the finding list this function does not.
+  //
+  // Line-based, over the SCOPED text (this variant's own section plus the
+  // preamble) so headings and lines are attributed to the right variant.
+  // Deliberately NOT a copy of vdMatchRequirements: this only asks "was this
+  // line's normalised text a substring of (or a superset of) some extracted
+  // requirement's norm", never re-scores it, so it cannot disagree with the
+  // real matcher about what counts as covered.
+  function vdSpecCoverage(scopedText, items) {
+    var norms = (items || []).map(function (it) { return it.norm; }).filter(Boolean);
+    function covered(norm) {
+      for (var i = 0; i < norms.length; i++) {
+        if (norm.indexOf(norms[i]) !== -1 || norms[i].indexOf(norm) !== -1) return true;
+      }
+      return false;
+    }
+    // A short, colon-free, unquoted line is a section heading ("Hero",
+    // "Header / Nav — new", "Footer") in every spec on record; a variant
+    // header (`v1: ...`) is excluded explicitly since VD_SPEC_VARIANT_HEADER
+    // already owns that shape and it marks a variant boundary, not a section.
+    // Two further exclusions, both aimed at the same failure: a heading is a
+    // noun phrase, never a sentence, so a line ending in terminal punctuation
+    // or OPENING with a footnote marker is content that happens to lack a
+    // colon (an unlabeled footnote, an instruction), not a heading -- without
+    // this a bare `† See terms.` line would swallow itself as its own heading
+    // and never reach the unchecked check below.
+    var FOOTNOTE_MARK = /[†‡§◇●]|\*\*?(?!\w)/;
+    function isHeading(trimmed) {
+      return trimmed.length <= 50 && trimmed.indexOf(':') === -1 &&
+        !/["“”‘’]/.test(trimmed) && !VD_SPEC_VARIANT_HEADER.test(trimmed) &&
+        !/[.!?]$/.test(trimmed) && !/^[†‡§◇●*]/.test(trimmed);
+    }
+    var lines = String(scopedText || '').split('\n');
+    var headings = [], unchecked = [], cur = null;
+    for (var li = 0; li < lines.length; li++) {
+      var trimmed = lines[li].trim();
+      if (!trimmed) continue;
+      if (VD_SPEC_VARIANT_HEADER.test(trimmed)) { cur = null; continue; }
+      if (isHeading(trimmed)) {
+        cur = { heading: trimmed, region: vdSpecHeadingRegions(trimmed), lines: 0, extracted: 0, unchecked: 0 };
+        headings.push(cur);
+        continue;
+      }
+      if (cur) cur.lines++;
+      var norm = vdNormText(trimmed);
+      if (!norm) continue;
+      if (covered(norm)) { if (cur) cur.extracted++; continue; }
+      // Not covered. Worth flagging only if it reads as content rather than a
+      // one- or two-word field label with nothing after it (`Logo:` alone) --
+      // four content words is the same floor the near-match check already
+      // uses for "enough signal to say something about a string" (see
+      // VD_REQ_NEAR_MIN_TOKENS's neighbour, VD_REQ_NEAR_MIN_SIM, above) -- or
+      // it carries a footnote marker, which is what the footer case looks
+      // like even on a short line ("† Same-Day Funding is only available...").
+      var wordCount = (trimmed.match(/[\p{L}]+/gu) || []).length;
+      if (wordCount >= 4 || FOOTNOTE_MARK.test(trimmed)) {
+        unchecked.push({ line: li, heading: cur ? cur.heading : null,
+          text: trimmed.length > 160 ? trimmed.slice(0, 160) : trimmed });
+        if (cur) cur.unchecked++;
+      }
+    }
+    // Computed from the FULL array, before the display slice below -- the
+    // capped `unchecked` sample must never be the source of a count. A line
+    // this classifier meets before any heading (a preamble, or a spec with no
+    // headings at all) has no heading object to add itself to, so the sum of
+    // every heading's own `.unchecked` undercounts by exactly this many; the
+    // caller adds it back as its own bucket rather than silently dropping it.
+    var unattributedUnchecked = unchecked.filter(function (u) { return !u.heading; }).length;
+    return { unchecked: unchecked.slice(0, 12), uncheckedCount: unchecked.length, headings: headings,
+             unattributedUnchecked: unattributedUnchecked };
   }
 
   // Checked against EVERY candidate, not just the ones that became findings --
@@ -1531,6 +1672,7 @@
     return {
       findings: rollups.concat(capped.kept.sort(vdReportOrder)),
       truncatedCount: capped.truncatedCount,
+      droppedByCap: capped.dropped,
       rollupCount: rollups.length,
       itemizedCount: capped.kept.length,
     };
@@ -1567,6 +1709,10 @@
   g.vdForcedVariationKeys = vdForcedVariationKeys;
   g.vdVariantVerification = vdVariantVerification;
   g.vdSpecRequirements = vdSpecRequirements;
+  g.vdSpecScopeToVariant = vdSpecScopeToVariant;
+  g.vdSpecCoverage = vdSpecCoverage;
+  g.vdSpecHeadingRegions = vdSpecHeadingRegions;
+  g.vdRegionMatchesHeadingWord = vdRegionMatchesHeadingWord;
   g.vdTrimSpecAside = vdTrimSpecAside;
   g.vdMatchRequirements = vdMatchRequirements;
   g.vdReportOrder = vdReportOrder;

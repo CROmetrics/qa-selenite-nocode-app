@@ -1731,7 +1731,7 @@ function vdState(winId) {
   const key = winId == null ? '_' : winId;
   let s = _visualDiffState.get(key);
   if (!s) {
-    s = { captures: new Map(), domCandidates: new Map(), captureGeometry: null };
+    s = { captures: new Map(), domCandidates: new Map(), notWalked: new Map(), captureGeometry: null };
     _visualDiffState.set(key, s);
   }
   return s;
@@ -1898,6 +1898,32 @@ function domCandidateWalkFn(maxCandidates, pageW, capturedH, extendedCapture) {
   const captureLimitH = capturedH ?? Infinity;
   const candidates = [];
   let counter = 0;
+  // What this walk cannot see, counted rather than silently absent.
+  //
+  // shadowHosts / iframes are counted in emit(), not here, and ONLY for a host
+  // that actually reaches it -- past the display/visibility/position gates and
+  // the MIN_AREA_PX2 floor below. A hidden analytics iframe or an invisible
+  // tracking pixel is not "not walked", it is correctly excluded the same way
+  // any other invisible element is; counting it anyway (as an earlier version
+  // of this code did) turned a real page's handful of visible chrome into an
+  // inflated double-digit warning dominated by ad tags nobody would ever look
+  // at. A shadow host with an OPEN root still reads as one leaf candidate with
+  // no children and no text once it clears those gates -- Control and Variant
+  // both look "unchanged" no matter what the elements inside actually do. A
+  // closed root (`attachShadow({mode:'closed'})`) cannot even be detected this
+  // way; `shadowHosts` is a floor, not an exact count. An iframe that DOES
+  // clear the gates is still walked as a single ATOMIC_TAGS leaf (its rect and
+  // tag, nothing from inside it, same-origin or not), so its content is
+  // equally invisible either way.
+  //
+  // fixedOrSticky IS counted here, at the position check below, because that
+  // rejection fires before emit() ever runs -- and because it is the one most
+  // likely to explain a real gap: a sticky site header is exactly this shape,
+  // and its exclusion is the actual, measured cause of "the spec's new header
+  // never produced a single finding" on every recorded run of one real page.
+  // Counted once per subtree root, not per descendant, since walk() returns
+  // before visiting children -- this is a count of dropped SUBTREES.
+  const notWalked = { shadowHosts: 0, iframes: 0, fixedOrSticky: 0 };
 
   // Falls back to a plain, DOM-independent implementation if vd-diff.js
   // somehow wasn't injected first (e.g. a future ad-hoc caller) — degrades
@@ -1933,6 +1959,15 @@ function domCandidateWalkFn(maxCandidates, pageW, capturedH, extendedCapture) {
     // Entirely above the document origin — content that genuinely never renders.
     // Horizontal position is deliberately NOT a rejection; see the header.
     if (rect.y + rect.h <= 0) return;
+    // Past EVERY gate now, including the one directly above: an off-screen-above
+    // tracking iframe (`position:absolute; top:-10000px`) clears display,
+    // visibility, fixed/sticky and the area floor, so counting before this
+    // return would report it as "cannot be compared" when it is not in the
+    // candidate set at all -- the same over-count that made a real page read
+    // 14 iframes when 1 was visible. See the notWalked comment at its
+    // declaration for why counting is deferred out of walk() into emit().
+    if (el.shadowRoot) notWalked.shadowHosts++;
+    if (el.tagName === 'IFRAME') notWalked.iframes++;
     const belowCapture = rect.y >= captureLimitH;
     // Outside or straddling the page's horizontal bounds. Superset of the old
     // `clipped` flag, which only caught straddlers and so could never see an
@@ -2033,8 +2068,10 @@ function domCandidateWalkFn(maxCandidates, pageW, capturedH, extendedCapture) {
     // their normal viewport position, not repeated down the page) — same
     // problem for any descendant, so the whole subtree is dropped rather
     // than just the element itself. v1 scope: exclude, don't try to record
-    // a viewportRelative flag + scroll position yet.
-    if (cs.position === 'fixed' || cs.position === 'sticky') return;
+    // a viewportRelative flag + scroll position yet. Counted once per subtree
+    // root (see notWalked's declaration) — this is the actual, measured cause
+    // of a spec'd new header producing zero findings on a real page.
+    if (cs.position === 'fixed' || cs.position === 'sticky') { notWalked.fixedOrSticky++; return; }
 
     const role = el.getAttribute('role');
     const liveHere = inLiveRegion || isLiveRegionSignal(el.getAttribute('aria-live'), role);
@@ -2086,7 +2123,7 @@ function domCandidateWalkFn(maxCandidates, pageW, capturedH, extendedCapture) {
     const ax = a.rect ? a.rect.x : Infinity, cx = c.rect ? c.rect.x : Infinity;
     return ax - cx;
   });
-  return candidates;
+  return { candidates, notWalked };
 }
 
 // Visual Diff: full-page screenshot for AI comparison, plus (when
@@ -2216,8 +2253,10 @@ async function captureFullPageAndViewport(tabId, { captureForVision, extractDomC
           // duplicating that logic inline (which would risk it drifting out
           // of sync with the jsc-tested version).
           await chrome.scripting.executeScript({ target: { tabId }, files: ['vd-diff.js'] });
-          out.domCandidates = (await exec(tabId, domCandidateWalkFn, [VD_MAX_CANDIDATES, pageW, capturedH, VD_CAPTURE_EXTENDED])) || [];
-        } catch (_) { out.domCandidates = []; }
+          const walked = await exec(tabId, domCandidateWalkFn, [VD_MAX_CANDIDATES, pageW, capturedH, VD_CAPTURE_EXTENDED]);
+          out.domCandidates = walked?.candidates || [];
+          out.notWalked = walked?.notWalked || null;
+        } catch (_) { out.domCandidates = []; out.notWalked = null; }
       }
       return out;
     } finally {
@@ -2618,6 +2657,7 @@ async function diffVisualDiffVariant({ controlList, variantList, baseDataUrl, cu
   });
   const kept = composed.findings;
   const truncatedCount = composed.truncatedCount;
+  const droppedByCap = composed.droppedByCap;
 
   const matchTierCounts = match.pairs.reduce((acc, p) => { acc[p.tier] = (acc[p.tier] || 0) + 1; return acc; }, {});
 
@@ -2638,6 +2678,45 @@ async function diffVisualDiffVariant({ controlList, variantList, baseDataUrl, cu
     requirements = vdMatchRequirements(scoped, variantList, { controlList });
     requirements.scopedTo = variantLabel || null;
     requirements.outOfScope = Math.max(0, whole.length - scoped.length);
+    // What the spec described that no extraction pass could turn into a
+    // checkable string, plus — for a heading naming a page region (header,
+    // nav, footer, form) — how many findings landed in EACH named region,
+    // counted separately per word rather than OR'd into one number. Both are
+    // silent otherwise: a section written as prose reads as "nothing to check"
+    // exactly like a section that was never written, and a region with zero
+    // findings reads as "unchanged" exactly like one that renders fine.
+    // `kept` carries the findings this variant will actually report,
+    // INCLUDING synthetic region-rollups — a rollup existing for a region
+    // means elements were matched there on both pages, which is real evidence
+    // the region exists, not noise to filter out.
+    //
+    // Per-word, not summed: a combined heading like "Header / Nav — new"
+    // matched against a page with footer navs but no header used to read
+    // regionFindings=3 (the footer navs) and mask the header having zero —
+    // measured on ENOC-97, 33 of 33 recorded runs. Region strings carry no
+    // parent/child relationship (a `nav` is a `nav` whether it sits in the
+    // page header or the footer), so this cannot disambiguate WHICH nav a
+    // heading means; what it can do is stop one word's real matches from
+    // hiding another word's real zero.
+    requirements.coverage = vdSpecCoverage(vdSpecScopeToVariant(specText, variantLabel), requirements.items);
+    requirements.coverage.headings.forEach(h => {
+      if (!h.region.length) return;
+      h.regionCounts = {};
+      h.region.forEach(word => {
+        // CANDIDATES, not findings. The disclosure this feeds claims "no
+        // <word> elements were found on either page" -- a statement about page
+        // STRUCTURE -- so it has to be counted from the element lists, not
+        // from the findings, which only exist where something CHANGED. In
+        // redesign mode a per-region rollup happens to exist for every
+        // populated region and hid this, but in normal mode an unchanged
+        // region produces no finding at all: run 1789419453332 v2 (normal
+        // mode) has a spec heading naming a form and zero form-region
+        // findings, on a page whose entire experiment is an embedded form.
+        // Counting findings there would have called the form absent.
+        h.regionCounts[word] = controlList.filter(c => vdRegionMatchesHeadingWord(c && c.region, word)).length
+                             + variantList.filter(c => vdRegionMatchesHeadingWord(c && c.region, word)).length;
+      });
+    });
   }
 
   return {
@@ -2646,7 +2725,7 @@ async function diffVisualDiffVariant({ controlList, variantList, baseDataUrl, cu
     structuralStats, truncatedCount, pixelDiff, aggregate,
     mode: match.mode, matchedFraction: match.matchedFraction, matchTierCounts,
     controlCount: controlList.length, variantCount: variantList.length,
-    debug: Object.assign(buildVisualDiffDebug({ match, matchTierCounts, all, shiftClusters, aggregate, truncatedCount }), { imageScale }),
+    debug: Object.assign(buildVisualDiffDebug({ match, matchTierCounts, all, shiftClusters, aggregate, truncatedCount, droppedByCap }), { imageScale }),
   };
 }
 
@@ -2664,7 +2743,7 @@ async function diffVisualDiffVariant({ controlList, variantList, baseDataUrl, cu
 // reported moves while having no trusted cluster is the signature.
 const VD_DEBUG_SAMPLE_CAP = 40;   // per list — a debug log nobody can open helps nobody
 
-function buildVisualDiffDebug({ match, matchTierCounts, all, shiftClusters, aggregate, truncatedCount }) {
+function buildVisualDiffDebug({ match, matchTierCounts, all, shiftClusters, aggregate, truncatedCount, droppedByCap }) {
   const moved = all.filter(f => f.changeClass === 'moved');
   const movesByDelta = {};
   for (const f of moved) {
@@ -2733,6 +2812,10 @@ function buildVisualDiffDebug({ match, matchTierCounts, all, shiftClusters, aggr
     suppression: aggregate,
     shiftClusters,
     movesByDelta,
+    // Which groups the cap actually cut, named rather than just counted --
+    // `counts.cappedFindings` said "6" for every ENOC-97 run and never which
+    // six. Empty on every run that never hit the cap.
+    droppedByCap: droppedByCap || [],
     // Elements reported as moved despite unchanged content — cross-reference
     // their deltas against shiftClusters above.
     unsuppressedMoves: moved.slice(0, VD_DEBUG_SAMPLE_CAP).map(f => ({
@@ -3098,6 +3181,7 @@ async function captureVariant(target, { settleMs, selectors, keepTabs, captureFo
         }
         vd.captures.set(target.label, cap.dataUrl);
         vd.domCandidates.set(target.label, cap.domCandidates || []);
+        vd.notWalked.set(target.label, cap.notWalked || null);
         out.fullPage = cap.meta;
         // Ask the experimentation platform which variation it actually served,
         // on the settled page, in the same tab we just photographed. Until now
@@ -5166,7 +5250,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!tabId) { sendResponse({ ok: false, error: 'No active tab' }); return; }
       try {
         await chrome.scripting.executeScript({ target: { tabId }, files: ['vd-diff.js'] });
-        const candidates = (await exec(tabId, domCandidateWalkFn, [VD_MAX_CANDIDATES, undefined, undefined, VD_CAPTURE_EXTENDED])) || [];
+        const walked = await exec(tabId, domCandidateWalkFn, [VD_MAX_CANDIDATES, undefined, undefined, VD_CAPTURE_EXTENDED]);
+        const candidates = walked?.candidates || [];
         await exec(tabId, (list) => { window.__seleniteVdCandidates = list; }, [candidates]);
         await chrome.scripting.executeScript({ target: { tabId }, files: ['vd-overlay.js'] });
         sendResponse({ ok: true, count: candidates.length });
@@ -5215,8 +5300,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
 
+      // Kept per side, not pre-summed: either page can carry a different count
+      // of shadow hosts/iframes/dropped subtrees, and a combined total earlier
+      // read as "on this page" when it was actually two pages' worth — the
+      // reader needs to know it is Control-and-Variant, and which side had how
+      // many, not just one opaque number.
+      const baseNW = vd.notWalked.get(baselineLabel), varNW = vd.notWalked.get(variantLabel);
+      const notWalked = (baseNW || varNW) ? { control: baseNW || null, variant: varNW || null } : null;
+
       try {
-        sendResponse({ ok: true, ...(await diffVisualDiffVariant({ controlList, variantList, baseDataUrl, curDataUrl, watchedRects, basePageW, variantPageW, specText, variantLabel })) });
+        sendResponse({ ok: true, notWalked, ...(await diffVisualDiffVariant({ controlList, variantList, baseDataUrl, curDataUrl, watchedRects, basePageW, variantPageW, specText, variantLabel })) });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }

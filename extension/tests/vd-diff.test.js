@@ -1922,9 +1922,15 @@ function composeFor(a, b, over) {
   ok('a watched-selector overlap ranks first',
      r.kept[0].a && r.kept[0].a.text === 'watched thing', r.kept[0].a && r.kept[0].a.text);
   ok('reports what it dropped', r.truncatedCount > 0);
+  // Named, not just counted -- the log used to say only "6 finding(s)
+  // exceeded the cap", never which six.
+  eq('every dropped group is named', r.dropped.length, r.truncatedCount);
+  ok('a dropped summary carries its class and a text snippet',
+     r.dropped.every(function (d) { return d.changeClass === 'style-changed' && typeof d.text === 'string'; }), r.dropped[0]);
 
   var unchangedOnly = rankAndCapDiffFindings([{ changeClass: 'unchanged', a: cand({}), b: cand({}) }]);
   eq('unchanged findings never surface', unchangedOnly.kept.length, 0);
+  eq('  and nothing is reported dropped when nothing was capped', unchangedOnly.dropped.length, 0);
 })();
 
 // ── 7. end-to-end, built from the real page's measured shape ────────────────
@@ -2126,6 +2132,266 @@ function capture(label, o) {
   // must not grow a note about requirements that were never excluded.
   ok('an unscoped coverage line says nothing about scope',
      miss.length && !/own section of the spec/.test(miss[0].detail), miss.length && miss[0].detail);
+
+  // The two coverage-of-coverage lines: a spec line no pass could extract, and
+  // a heading naming a region with zero findings on either page. Both silent
+  // until 2026-09-16 -- a section written as prose read exactly like one that
+  // was never written, and a header that never rendered read exactly like one
+  // that matched perfectly.
+  //
+  // regionCounts is PER WORD (fixed 2026-09-16, same day it shipped): a real
+  // run against a page with footer navs but no header scored the combined
+  // 'header'/'nav' region a single non-zero count (from the unrelated footer
+  // navs), which hid the header having zero. Header / Nav's fixture below
+  // reproduces exactly that shape -- nav real matches, header none -- and
+  // Footer's is unambiguous (one word, real matches) as the contrast case.
+  var withCoverage = probsFor({ requirements: reqSetOf({
+    total: 2, verbatim: 2,
+    items: [{ status: 'verbatim', required: 'Questions? (888) 269-4246', fragment: false },
+            { status: 'verbatim', required: 'Apply Now', fragment: false }],
+    coverage: {
+      uncheckedCount: 2,
+      unchecked: [{ line: 1, heading: 'Footer', text: 'Change: long unquoted disclaimer text one' },
+                  { line: 2, heading: 'Footer', text: 'Change: long unquoted disclaimer text two' }],
+      unattributedUnchecked: 0,
+      headings: [{ heading: 'Header / Nav — new', region: ['header', 'nav'], lines: 3, extracted: 2, unchecked: 0,
+                   regionCounts: { header: 0, nav: 3 } },
+                 { heading: 'Footer', region: ['footer'], lines: 2, extracted: 0, unchecked: 2,
+                   regionCounts: { footer: 1 } }],
+    } }) }, 900);
+  var uncheckedLine = find(withCoverage, /could not extract as a quoted string/);
+  eq('an unchecked-coverage line is reported once', uncheckedLine.length, 1);
+  ok('  naming the count and the heading breakdown',
+     uncheckedLine.length && /2 spec line/.test(uncheckedLine[0].detail) && /Footer: 2/.test(uncheckedLine[0].detail),
+     uncheckedLine[0]);
+  var regionLine = find(withCoverage, /describes a .* region, but no .* elements were found/);
+  eq('a zero-count region word is reported once even though its sibling word has real matches', regionLine.length, 1);
+  ok('  naming ONLY the empty word ("header"), not "nav" which has 3 real matches',
+     regionLine.length && /describes a header region, but no header elements/.test(regionLine[0].detail),
+     regionLine[0]);
+  ok('  and not the Footer heading, whose one word has real matches',
+     regionLine.length && !/"Footer"/.test(regionLine[0].detail), regionLine[0]);
+
+  var clean = probsFor({ requirements: reqSetOf({
+    total: 1, verbatim: 1, items: [{ status: 'verbatim', required: 'Apply Now', fragment: false }],
+    coverage: { uncheckedCount: 0, unchecked: [], unattributedUnchecked: 0,
+                headings: [{ heading: 'Hero', region: [], lines: 1, extracted: 1, unchecked: 0 }] },
+  }) }, 900);
+  eq('full coverage reports neither line', find(clean, /could not extract as a quoted string/).length
+     + find(clean, /describes a .* region, but no .* elements were found/).length, 0);
+
+  // A word with real matches on BOTH sides of a combined heading reports
+  // nothing at all -- the fix must not turn every combined heading into a
+  // permanent warning.
+  var bothPresent = probsFor({ requirements: reqSetOf({
+    total: 1, verbatim: 1, items: [{ status: 'verbatim', required: 'Apply Now', fragment: false }],
+    coverage: { uncheckedCount: 0, unchecked: [], unattributedUnchecked: 0,
+      headings: [{ heading: 'Header / Nav', region: ['header', 'nav'], lines: 1, extracted: 1, unchecked: 0,
+                   regionCounts: { header: 2, nav: 3 } }] },
+  }) }, 900);
+  eq('both region words present reports nothing',
+     find(bothPresent, /describes a .* region, but no .* elements were found/).length, 0);
+
+  // The uncounted-word case (a heading with NO recognised region word) must
+  // never be treated as a gap -- regionCounts is absent entirely, not zeroed.
+  var noRegionWord = probsFor({ requirements: reqSetOf({
+    total: 1, verbatim: 1, items: [{ status: 'verbatim', required: 'x', fragment: false }],
+    coverage: { uncheckedCount: 0, unchecked: [], unattributedUnchecked: 0,
+      headings: [{ heading: 'Hero', region: [], lines: 1, extracted: 1, unchecked: 0 }] },
+  }) }, 900);
+  eq('a heading with no region word is never reported as a region gap',
+     find(noRegionWord, /describes a .* region, but no .* elements were found/).length, 0);
+
+  // The uncapped breakdown (fixed 2026-09-16): a run with more than 12
+  // unchecked lines must report the REAL per-heading counts, not the counts
+  // implied by the 12-item display sample -- a real run printed "17 ... (...,
+  // Footer: 6)" when Footer's true count was 10, because the breakdown was
+  // built from the capped `unchecked` array instead of the uncapped
+  // `headings[].unchecked`.
+  var manyUnchecked = probsFor({ requirements: reqSetOf({
+    total: 1, verbatim: 1, items: [{ status: 'verbatim', required: 'x', fragment: false }],
+    coverage: {
+      uncheckedCount: 17,
+      // Only 12 of 17 are ever listed -- the breakdown must not be built from this.
+      unchecked: Array.from({ length: 12 }, function (_, i) { return { line: i, heading: 'Footer', text: 'x'.repeat(5) }; }),
+      unattributedUnchecked: 0,
+      headings: [{ heading: 'Footer', region: ['footer'], lines: 20, extracted: 1, unchecked: 17, regionCounts: { footer: 1 } }],
+    } }) }, 900);
+  var manyLine = find(manyUnchecked, /could not extract as a quoted string/);
+  ok('the breakdown uses the full uncapped per-heading count, not the 12-item sample',
+     manyLine.length && /Footer: 17/.test(manyLine[0].detail), manyLine[0]);
+
+  // A line before any heading (or a spec with no headings at all) has no
+  // heading to tally into; unattributedUnchecked must still be counted.
+  var noHeadingLines = probsFor({ requirements: reqSetOf({
+    total: 1, verbatim: 1, items: [{ status: 'verbatim', required: 'x', fragment: false }],
+    coverage: { uncheckedCount: 3, unchecked: [{ line: 0, heading: null, text: 'a preamble line' }],
+                unattributedUnchecked: 3, headings: [] } }) }, 900);
+  var noHeadingLine = find(noHeadingLines, /could not extract as a quoted string/);
+  ok('lines with no heading are tallied under "(no heading)", not dropped',
+     noHeadingLine.length && /\(no heading\): 3/.test(noHeadingLine[0].detail), noHeadingLine[0]);
+
+  // vdSpecCoverage emits one entry per heading OCCURRENCE, so a spec repeating
+  // a section title must ACCUMULATE, not overwrite -- assigning kept only the
+  // last occurrence and re-opened the sums-to-less-than-the-count defect.
+  var dupHeadings = probsFor({ requirements: reqSetOf({
+    total: 1, verbatim: 1, items: [{ status: 'verbatim', required: 'x', fragment: false }],
+    coverage: { uncheckedCount: 14, unchecked: [], unattributedUnchecked: 0,
+      headings: [{ heading: 'Footer', region: [], lines: 5, extracted: 0, unchecked: 4 },
+                 { heading: 'Footer', region: [], lines: 12, extracted: 1, unchecked: 10 }] } }) }, 900);
+  var dupLine = find(dupHeadings, /could not extract as a quoted string/);
+  ok('two sections sharing a heading title accumulate instead of overwriting',
+     dupLine.length && /Footer: 14/.test(dupLine[0].detail), dupLine[0]);
+  ok('  so the breakdown sums to the stated total',
+     dupLine.length && /14 spec line\(s\)/.test(dupLine[0].detail) && !/Footer: 10\b/.test(dupLine[0].detail),
+     dupLine[0]);
+
+  // notWalked: kept per side (fixed 2026-09-16), never pre-summed into one
+  // opaque "on this page" number that was actually two pages' worth.
+  var bothSides = probsFor({ notWalked: { control: { iframes: 8, shadowHosts: 0, fixedOrSticky: 0 },
+                                           variant: { iframes: 6, shadowHosts: 1, fixedOrSticky: 1 } } });
+  var iframeLine = find(bothSides, /iframe\(s\).*cannot be compared/);
+  ok('the iframe line sums both sides and names each',
+     iframeLine.length && /14 iframe\(s\)/.test(iframeLine[0].detail) && /8 in Control, 6 in Variant/.test(iframeLine[0].detail),
+     iframeLine[0]);
+  var shadowLine = find(bothSides, /shadow root\(s\).*cannot be compared/);
+  ok('the shadow-root line is reported alongside it, not instead of it',
+     shadowLine.length && /1 shadow root\(s\)/.test(shadowLine[0].detail), shadowLine[0]);
+  var stickyLine = find(bothSides, /fixed or sticky element/);
+  eq('a dropped fixed/sticky subtree gets its own line, not folded into the iframe/shadow one', stickyLine.length, 1);
+  ok('  naming the count and per-side split, and why it matters',
+     stickyLine.length && /1 fixed or sticky element/.test(stickyLine[0].detail)
+       && /0 in Control, 1 in Variant/.test(stickyLine[0].detail)
+       && /sticky header/.test(stickyLine[0].detail),
+     stickyLine[0]);
+
+  var onlyShadow = probsFor({ notWalked: { control: { iframes: 0, shadowHosts: 2, fixedOrSticky: 0 }, variant: null } });
+  eq('a category present on only one side, with the other absent entirely, still reports',
+     find(onlyShadow, /shadow root\(s\).*cannot be compared/).length, 1);
+  ok('  attributed to the correct side', find(onlyShadow, /2 in Control, 0 in Variant/).length === 1);
+
+  eq('no notWalked object at all reports nothing',
+     find(probsFor({}), /cannot be compared|fixed or sticky element/).length, 0);
+  eq('an all-zero notWalked object reports nothing',
+     find(probsFor({ notWalked: { control: { iframes: 0, shadowHosts: 0, fixedOrSticky: 0 }, variant: null } }),
+          /cannot be compared|fixed or sticky element/).length, 0);
+})();
+
+(function requirementProvenanceIsRecorded() {
+  // `line`/`pass` are provenance only, added for the debug log and for
+  // vdSpecCoverage below -- they must not change WHICH strings are extracted
+  // or their order, only annotate them.
+  if (typeof vdSpecRequirements !== 'function') return;
+  var spec = [
+    'Header:',
+    'CTA copy: Apply Now',
+    '',
+    'Line: "See My Funding Options"',
+  ].join('\n');
+  var req = vdSpecRequirements(spec);
+  var byRequired = {};
+  req.forEach(function (r) { byRequired[r.required] = r; });
+  eq('a label-copy match records its pass', byRequired['Apply Now'].pass, 'label');
+  eq('a quoted match records its pass', byRequired['See My Funding Options'].pass, 'quote');
+  eq('  and the line it was found on', byRequired['See My Funding Options'].line, 3);
+  eq('  the label line is on its own line too', byRequired['Apply Now'].line, 1);
+})();
+
+(function specCoverageClassifiesLines() {
+  var HAVE = typeof vdSpecCoverage === 'function' && typeof vdSpecScopeToVariant === 'function';
+  ok('vdSpecCoverage and vdSpecScopeToVariant are exported', HAVE);
+  if (!HAVE) return;
+
+  // THE MEASURED CASE, ENOC-97's own shape: a section written as unquoted
+  // prose extracts nothing, and the disclosure must attribute each line to
+  // ITS heading, not the last one seen, or a mix of sections reads as one.
+  var spec = [
+    'Header / Nav — new',
+    'Logo: OnDeck logo (left)',
+    'Phone link: "Questions? (888) 269-4246"',
+    '',
+    'Hero',
+    'Headline: "Move forward with fast business funding."',
+    '',
+    'Footer',
+    'Change: † Same-Day Funding is only available Monday through Friday before 10:30 a.m. ET.',
+    'Change: ** There are some industries we cannot serve.',
+  ].join('\n');
+  var items = vdSpecRequirements(spec);
+  var cov = vdSpecCoverage(spec, items);
+  var byHeading = {};
+  cov.headings.forEach(function (h) { byHeading[h.heading] = h; });
+
+  ok('the quoted phone link is extracted', items.some(function (i) { return i.required === 'Questions? (888) 269-4246'; }), items);
+  eq('the unquoted logo line is unchecked, attributed to its own heading',
+     cov.unchecked.filter(function (u) { return u.heading === 'Header / Nav — new'; }).length, 1);
+  eq('the quoted headline is covered, not unchecked',
+     cov.unchecked.filter(function (u) { return u.heading === 'Hero'; }).length, 0);
+  eq('both unquoted footnote lines are unchecked under Footer', byHeading['Footer'].unchecked, 2);
+  eq('  and neither was extracted', byHeading['Footer'].extracted, 0);
+  eq('the header heading is region-tagged header AND nav',
+     JSON.stringify(byHeading['Header / Nav — new'].region), JSON.stringify(['header', 'nav']));
+  eq('a heading with no region word carries an empty region list',
+     JSON.stringify(byHeading['Hero'].region), '[]');
+  eq('a footnote marker alone is enough to flag a short line, even under the word floor',
+     vdSpecCoverage('Footer\n† See terms.', []).uncheckedCount, 1);
+
+  // The WOW-1173 shape: short, terse, behavior-describing lines. Real and
+  // already measured not to flood (project note 2026-09-16) -- confirmed here
+  // as a regression guard, not re-measured.
+  var wow = [
+    'Add an orange CTA.',
+    'CTA copy: "Get Your Price"',
+    'CTA destination: goes straight to the Purchase flow',
+    '',
+    'Everything else remains the same',
+  ].join('\n');
+  var wowCov = vdSpecCoverage(wow, vdSpecRequirements(wow));
+  ok('a terse instructional spec does not flood — two real unchecked lines, not a dozen',
+     wowCov.uncheckedCount === 2, wowCov);
+
+  // A fully-quoted spec has nothing left over to flag.
+  var clean = 'Section\nLabel: "Exactly this copy"';
+  eq('a fully-quoted spec has zero unchecked lines',
+     vdSpecCoverage(clean, vdSpecRequirements(clean)).uncheckedCount, 0);
+
+  // Scoping must reach coverage too: a heading and its unquoted line that
+  // belong to a DIFFERENT variant must not appear once scoped away.
+  var multi = [
+    'v1:', 'Footer', 'Change: † only for v1, unquoted and long enough to count as content.',
+    'v2:', 'Hero', 'Headline: "v2 headline"',
+  ].join('\n');
+  var v2Scoped = vdSpecScopeToVariant(multi, 'v2');
+  var v2Cov = vdSpecCoverage(v2Scoped, vdSpecRequirements(multi, 'v2'));
+  eq('a variant sees only its own section’s coverage', v2Cov.headings.length, 1);
+  eq('  by name', v2Cov.headings[0].heading, 'Hero');
+})();
+
+(function specHeadingRegionsMatchWholeWords() {
+  if (typeof vdSpecHeadingRegions !== 'function') { ok('vdSpecHeadingRegions is exported', false); return; }
+  eq('a combined heading names both regions', JSON.stringify(vdSpecHeadingRegions('Header / Nav — new')), '["header","nav"]');
+  eq('footer alone', JSON.stringify(vdSpecHeadingRegions('Footer')), '["footer"]');
+  eq('no region word at all', JSON.stringify(vdSpecHeadingRegions('Testimonials Section — new')), '[]');
+  // Word-boundary, not substring: "Navigate" contains "nav" and a heading
+  // called "Preheader" contains "header" -- neither may match.
+  eq('a word merely containing "nav" does not match', JSON.stringify(vdSpecHeadingRegions('Navigate to checkout')), '[]');
+  eq('a word merely containing "header" does not match', JSON.stringify(vdSpecHeadingRegions('Preheader banner')), '[]');
+})();
+
+(function regionWordMatchingIsAnchoredAndRoleAware() {
+  if (typeof vdRegionMatchesHeadingWord !== 'function') { ok('vdRegionMatchesHeadingWord is exported', false); return; }
+  // The exact shapes background.js's walk actually produces.
+  ok('a bare tag matches its own word', vdRegionMatchesHeadingWord('header', 'header'));
+  ok('tag#id matches the tag word', vdRegionMatchesHeadingWord('nav#menu-footer', 'nav'));
+  ok('a role landmark matches its aliased word', vdRegionMatchesHeadingWord('[role=banner]', 'header'));
+  ok('a role landmark for nav', vdRegionMatchesHeadingWord('[role=navigation]', 'nav'));
+  // The false-positive class this exists to prevent: a word must not match a
+  // DIFFERENT tag that merely starts with the same letters.
+  ok('"nav" does not match "navigation-wrapper" (not a real region string, but the anchor must still hold)',
+     !vdRegionMatchesHeadingWord('navigationwrapper', 'nav'));
+  ok('null/undefined region never matches', !vdRegionMatchesHeadingWord(null, 'header') && !vdRegionMatchesHeadingWord(undefined, 'nav'));
+  ok('an unrelated region does not match', !vdRegionMatchesHeadingWord('footer', 'header'));
+  ok('a role landmark does not match an unrelated word', !vdRegionMatchesHeadingWord('[role=banner]', 'footer'));
 })();
 
 (function captureWidthParity() {

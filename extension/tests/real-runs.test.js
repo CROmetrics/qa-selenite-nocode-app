@@ -679,19 +679,19 @@ section('spec suppression cause across every recorded run');
   // typed literal: census is filled in corpus order, so JSON.stringify would
   // pin key insertion order and fail on correct counts.
   //
-  // graded went 20 -> 21 when the corpus gained its fifth site, then 21 -> 22
-  // when 1789567065599 (ENOC-97, ondeck.com) arrived, then 22 -> 23 when
-  // 1789569031354 (also ENOC-97, ondeck.com, ~30 min later) arrived, then
-  // 23 -> 24 when 1789570575661 (also ENOC-97, ondeck.com, ~26 min after
-  // that) arrived, then 24 -> 25 when 1789577773154 (the fourth ENOC-97
-  // rerun of the day, two hours on) arrived: same pattern every time --
-  // derived, not bumped. The spec was auto-filled from the active ticket, so
-  // summaryTicketKey is present AND equal to ticketKey, which clears both the
-  // withheld and the graded-unverified rungs. The other two buckets are
-  // unmoved -- nothing new arrived without a spec, and no ticket mismatch.
+  // graded went 20 -> 21 when the corpus gained its fifth site, then +1 for
+  // each of the seven ENOC-97 reruns recorded on 2026-09-16 (1789567065599,
+  // 1789569031354, 1789570575661, 1789577773154, 1789582254335 -- the first
+  // 0.6.5 log -- 1789585563500 and 1789590772186, the first carrying the
+  // region/coverage/notWalked fixes). Every one is DERIVED, not bumped: each
+  // spec was auto-filled from the active ticket, so summaryTicketKey is
+  // present AND equal to ticketKey, which clears both the withheld and the
+  // graded-unverified rungs. The other two buckets are unmoved throughout --
+  // nothing new arrived without a spec, and no ticket mismatch. A new run
+  // that does NOT follow that pattern must fail here rather than be absorbed.
   eq('every recorded run resolves to a cause',
      Object.keys(census).sort().map(function (k) { return k + '=' + census[k]; }).join(','),
-     'graded=25,graded-unverified=17,none=6');
+     'graded=28,graded-unverified=17,none=6');
   eq('  and every log carrying a designReference is accounted for',
      Object.keys(census).reduce(function (n, k) { return n + census[k]; }, 0),
      Object.keys(SPECS).length);

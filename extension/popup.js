@@ -3318,6 +3318,13 @@ async function runAbComparison(opts = {}) {
               // which is the run most likely to need them.
               aggregate: v.aggregate, diffMode: v.diffMode, matchedFraction: v.matchedFraction,
               matchTierCounts: v.matchTierCounts, diffDebug: v.diffDebug,
+              // Same reasoning, same class: three small integers per side. Left
+              // off at first, which made the "N iframe(s) / shadow root(s)
+              // cannot be compared" and "N fixed or sticky element(s) were
+              // excluded" lines silently dead on the queued path while
+              // droppedByCap (riding on diffDebug) kept working — two Phase-A
+              // disclosures disagreeing about whether that path supports them.
+              notWalked: v.notWalked || null,
               findingCount: v.findings ? v.findings.length : 0,
               // A dead model call and the deterministic copy count both have to
               // survive onto this mirror, or the queued report's badge cannot
@@ -4055,7 +4062,7 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
       perVariant.push({ label: c.label, error: diffRes?.error || 'Diff failed' });
       continue;
     }
-    const { structuralStats, truncatedCount, pixelDiff, aggregate, mode, matchedFraction, matchTierCounts, requirements } = diffRes;
+    const { structuralStats, truncatedCount, pixelDiff, aggregate, mode, matchedFraction, matchTierCounts, requirements, notWalked } = diffRes;
     // Same split-build hazard as the probe, same detection: the current worker
     // always returns the `requirements` key (null when there is no spec), an
     // older one returns no such key. Without this the coverage line simply does
@@ -4093,7 +4100,7 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
         label: c.label, sameUrlNote, findings: [], overallSummary: 'Differences were detected but none ranked high enough to report.',
         noSpecText: !gradedSpec, requirements, requirementsUnsupported, structuralStats, truncatedFindingCount: truncatedCount,
         noVerdictCount: 0, duplicateIndexCount: 0, truncated: false, pixelDiff,
-        aggregate, diffMode: mode, matchedFraction, matchTierCounts, diffDebug,
+        aggregate, diffMode: mode, matchedFraction, matchTierCounts, diffDebug, notWalked,
         fullPageTruncated: !!c.fullPage.truncated,
       });
       continue;
@@ -4148,7 +4155,7 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
         noSpecText: !gradedSpec, requirements, requirementsUnsupported,
         structuralStats, truncatedFindingCount: truncatedCount,
         noVerdictCount: 0, duplicateIndexCount: 0, truncated: false, pixelDiff,
-        aggregate, diffMode: mode, matchedFraction, matchTierCounts, diffDebug,
+        aggregate, diffMode: mode, matchedFraction, matchTierCounts, diffDebug, notWalked,
         fullPageTruncated: !!c.fullPage.truncated,
       });
       continue;
@@ -4165,7 +4172,7 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
       noSpecText: !gradedSpec, requirements, requirementsUnsupported, structuralStats, truncatedFindingCount: truncatedCount,
       noVerdictCount: reportRes.noVerdictCount, duplicateIndexCount: reportRes.duplicateIndexCount,
       truncated: reportRes.truncated, pixelDiff: reportRes.pixelDiff,
-      aggregate, diffMode: mode, matchedFraction, matchTierCounts, diffDebug,
+      aggregate, diffMode: mode, matchedFraction, matchTierCounts, diffDebug, notWalked,
       fullPageTruncated: !!c.fullPage.truncated,
     });
   }
@@ -6318,7 +6325,33 @@ function rptAbVisualDiffSection(vd) {
           : `Not found on the page: ${q(JSON.stringify(x.required))}.${x.inControl ? ' Still present in Control, so the old copy did not change.' : ''}`
       }</div>`).join('')}`;
 
-    const summaryHtml = gradeFailHtml + reqHtml + (v.overallSummary ? `<p>${q(v.overallSummary)}</p>` : '');
+    // Same three-state gating as reqHtml above: only worth showing once a
+    // real coverage check ran (req.total > 0), collapsed because most reports
+    // have nothing here and an expanded list of skipped lines would bury the
+    // findings that DID run above it.
+    const cov = req?.coverage;
+    // Per named region word, not per heading — see the matching block in
+    // vdCollectProblems for why "nav" having matches must not hide "header"
+    // having none on the same combined heading.
+    const regionGaps = (cov?.headings || []).map(h => ({
+      heading: h.heading,
+      words: Object.keys(h.regionCounts || {}).filter(w => h.regionCounts[w] === 0).join('/'),
+    })).filter(x => x.words);
+    const coverageHtml = !req || !req.total || !cov ? '' : `
+      ${cov.uncheckedCount ? `
+      <details class="ab-cline"><summary><b>Not checked as written (${cov.uncheckedCount})</b> — described in the spec but not a quoted string or a "... copy:" line</summary>
+      ${cov.unchecked.map(u => `<div>${q(u.heading || '(no heading)')}: ${q(u.text)}</div>`).join('')}
+      ${cov.uncheckedCount > cov.unchecked.length
+        // The heading states the real total; the list is capped for size. Saying
+        // so is the difference between a sample and a silent truncation.
+        ? `<div><i>… and ${cov.uncheckedCount - cov.unchecked.length} more not listed here — see requirements.coverage in the debug log.</i></div>`
+        : ''}
+      </details>` : ''}
+      ${regionGaps.map(x => `<div class="ab-cline ab-warn">The spec's "${q(x.heading)}" section describes a ${q(x.words)} region, but no
+        ${q(x.words)} elements were found on either page — fixed/sticky elements are excluded from this comparison, so a
+        sticky header can read this way even when it renders correctly.</div>`).join('')}`;
+
+    const summaryHtml = gradeFailHtml + reqHtml + coverageHtml + (v.overallSummary ? `<p>${q(v.overallSummary)}</p>` : '');
 
     // MANDATORY, not cosmetic. Every entry here is a filter that removed a
     // real difference from the findings above, and an invisible filter is
@@ -6926,8 +6959,33 @@ function vdCollectProblems(sections) {
       if (v.noSpecText) add('info', at, 'No Summary of Changes was provided, so nothing was judged expected vs unexpected — every finding is "unclear" by construction.');
       if (v.resumed) add('info', at, 'Restored from a checkpoint rather than freshly analyzed — crops unavailable.');
       if (v.truncated) add('error', at, 'The model\'s response was cut off — some findings are incomplete.');
-      if (v.truncatedFindingCount) add('warn', at, `${v.truncatedFindingCount} finding(s) exceeded the cap and were never analyzed.`);
+      if (v.truncatedFindingCount) {
+        const dropped = v.diffDebug?.droppedByCap || [];
+        const byClass = {};
+        dropped.forEach(d => { byClass[d.changeClass] = (byClass[d.changeClass] || 0) + 1; });
+        const named = Object.keys(byClass).map(c => `${byClass[c]} ${c}`).join(', ');
+        add('warn', at, `${v.truncatedFindingCount} finding(s) exceeded the cap and were never analyzed`
+          + (named ? ` (${named})` : '') + '.');
+      }
       if (v.noVerdictCount) add('warn', at, `${v.noVerdictCount} finding(s) came back without a grade.`);
+      if (v.notWalked) {
+        const ctl = v.notWalked.control || {}, vnt = v.notWalked.variant || {};
+        const side = (k) => (ctl[k] || 0) + (vnt[k] || 0);
+        const detail = (k) => ` (${ctl[k] || 0} in Control, ${vnt[k] || 0} in Variant)`;
+        const parts = [
+          side('iframes') ? `${side('iframes')} iframe(s)${detail('iframes')}` : '',
+          side('shadowHosts') ? `${side('shadowHosts')} shadow root(s)${detail('shadowHosts')}` : '',
+        ].filter(Boolean);
+        if (parts.length) {
+          add('warn', at, `${parts.join(' and ')} cannot be compared — their contents are invisible to this walk, `
+            + 'whatever changed inside them will not be reported.');
+        }
+        if (side('fixedOrSticky')) {
+          add('warn', at, `${side('fixedOrSticky')} fixed or sticky element(s)${detail('fixedOrSticky')} were excluded from`
+            + ' this comparison — a sticky header is exactly this shape, so a spec\'d change inside one will produce no'
+            + ' findings even when it renders correctly.');
+        }
+      }
       // Neither of these is about the debug blob, so neither may be gated on it
       // — they were, and both went silent whenever diffDebug was absent.
       if (v.gradingFailed) {
@@ -6967,6 +7025,48 @@ function vdCollectProblems(sections) {
                   + ' checked here.'
                 : ''));
         }
+        // Two more silences this same block used to have. Both are
+        // deterministic and both mean "the checker had nothing to compare",
+        // which reads exactly like "compared and found nothing wrong" unless
+        // it is said out loud.
+        const cov = rq.coverage;
+        if (cov && cov.uncheckedCount) {
+          // From `cov.headings` — complete and uncapped — never from
+          // `cov.unchecked`, which is capped at 12 for display. Building the
+          // breakdown from the capped list used to print a parenthetical that
+          // summed to less than the count right in front of it ("17 … Footer:
+          // 6" when Footer's real count was 10). A line before any heading has
+          // no heading object to tally into; `unattributedUnchecked` is that
+          // remainder, computed uncapped by the same function.
+          // ACCUMULATE. vdSpecCoverage pushes one entry per heading OCCURRENCE,
+          // so a spec that repeats a section title (a preamble "Footer" plus a
+          // second "Footer" under the variant, repeated "Desktop"/"Mobile"
+          // sub-heads) produces two entries; assigning would keep only the last
+          // and re-open the very "parenthetical sums to less than the count"
+          // defect this breakdown was rebuilt to close.
+          const byHeading = {};
+          (cov.headings || []).forEach(h => {
+            if (h.unchecked) byHeading[h.heading] = (byHeading[h.heading] || 0) + h.unchecked;
+          });
+          if (cov.unattributedUnchecked) {
+            byHeading['(no heading)'] = (byHeading['(no heading)'] || 0) + cov.unattributedUnchecked;
+          }
+          const breakdown = Object.keys(byHeading).map(h => `${h}: ${byHeading[h]}`).join(', ');
+          add('warn', at, `${cov.uncheckedCount} spec line(s) describe copy the checker could not extract as a`
+            + ` quoted string or a "... copy:" line (${breakdown}) — verify these by hand.`);
+        }
+        // Per named region word, not per heading: a heading can name more than
+        // one region ("Header / Nav"), and one word having real matches must
+        // not hide another word having none — see the comment where
+        // regionCounts is computed (background.js).
+        (cov?.headings || []).forEach(h => {
+          const empty = Object.keys(h.regionCounts || {}).filter(w => h.regionCounts[w] === 0);
+          if (!empty.length) return;
+          const words = empty.join('/');
+          add('warn', at, `The spec's "${h.heading}" section describes a ${words} region, but no ${words} elements were`
+            + ' found on either page — note that fixed/sticky elements are excluded from this comparison, so a sticky'
+            + ' header can read this way even when it renders correctly.');
+        });
       } else if (rq && !v.noSpecText) {
         // A spec was read and yielded nothing to check. Silent until now, which
         // reads as a clean copy check rather than an absent one. `warn`, not
@@ -7229,6 +7329,11 @@ function buildDebugLog(sections) {
         // change, and it was the only one of the three invisible in the log.
         requirementsUnsupported: v.requirementsUnsupported ?? null,
         requirements: v.requirements || null,
+        // What the walk could not see, PER SIDE: {control, variant}, each
+        // {shadowHosts, iframes, fixedOrSticky}. null when the walk carried no
+        // such count at all (an older worker build), which is distinct from a
+        // present-but-all-zero count.
+        notWalked: v.notWalked || null,
         // The rendered report shows each finding's prose; this shows the
         // geometry and the identity tier behind it, which is what makes a
         // wrong finding traceable to the pass that produced it.

@@ -1133,6 +1133,41 @@ section('funnel crawl coordinate space (real runs)');
   print('    dropdown: ' + onSelect.length + ' of ' + dd.steps + ' steps on #petBirthYear, '
         + 'streak 0 as recorded / ' + fnNoProgressRun(withSplit) + ' with the split');
 
+  // ---- and the same dropdown once the crawl could choose ----
+  // r_1789751164165 is the same funnel on the build that intercepts a native
+  // select. One click, one choice, no repeat.
+  var ch = FUNNEL['1789751164165'].segments[0];
+  var picked = (ch.actions || []).filter(function (a) { return a.choice; });
+  eq('the dropdown now takes exactly one action', picked.length, 1);
+  var c = picked[0].choice;
+  eq('  on the control that cost five steps before', c.id, 'petBirthYear');
+  ok('  and the value stuck, read back rather than assumed', c.applied === true, c);
+  ok('  it is a real option, not the placeholder', c.chosenIndex > 0 && c.chosenText, c);
+  eq('  which is what was there before', c.previousText, "Pet's Age");
+  eq('  chosen from the same list the probe counted', c.optionCount, 15);
+  eq('  minus the empty-valued placeholder', c.usableCount, 14);
+  ok('  first time, so no re-roll', c.repeat === false);
+  // The probe now names the control, which is the thing brief() had discarded.
+  eq('the probe reports it as a select', picked[0].hit.control.kind, 'select');
+  eq('  and agrees with the chooser on what was choosable', picked[0].hit.control.usable, c.usableCount);
+  // The select2-wrapped dropdown on the same form is NOT intercepted — its
+  // options are real DOM and clicking already worked.
+  var s2 = (ch.actions || []).filter(function (a) {
+    return a.deliveredTo && a.deliveredTo.indexOf('select2') !== -1;
+  });
+  ok('the wrapped dropdown is still clicked, never intercepted',
+     s2.length > 0 && s2.every(function (a) { return a.choice === null && (!a.hit || a.hit.control === null); }));
+
+  // THE BUG THIS RUN EXPOSED. hit.control landed; structuralMutations did not,
+  // because nothing copied it from the probe onto the record. Pinned as the
+  // recorded past, so the shape of that failure stays legible.
+  ok('the same run carries hit.control on the select',
+     picked[0].hit.control !== null);
+  ok('  while structuralMutations was null on every action — the wire was missing',
+     (ch.actions || []).every(function (a) { return a.structuralMutations === null; }));
+  print('    chose: "' + c.chosenText + '" (' + (c.chosenIndex + 1) + ' of ' + c.optionCount
+        + ', ' + c.usableCount + ' usable) in 1 action, applied=' + c.applied);
+
   // ---- and what the log's own "start here" list says about it ----
   // vdCollectProblems is 500+ lines with its own dependencies, so only its
   // funnel branch is sliced. It is self-contained: `sections` and `add` in,

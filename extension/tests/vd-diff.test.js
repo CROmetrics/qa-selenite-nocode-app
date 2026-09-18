@@ -4154,6 +4154,22 @@ eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
   ok('  including when that total is zero', !fnDidSomething({ mutations: 0 }));
   ok('  and null is the tell, not zero', fnDidSomething({ mutations: 3, structuralMutations: null }));
 
+  // THE WIRE, not the ends of it. structuralMutations shipped with the observer
+  // counting it and the export exporting it, and nothing in between putting it
+  // on the action record — so fnDidSomething fell back to the total on every
+  // real run while every assertion above stayed green, because they all feed it
+  // hand-built objects. r_1789751164165 is the log that shows it: hit.control
+  // populated, structuralMutations null on all ten actions. Assert the middle.
+  (function postProbeFieldsReachTheRecord() {
+    var body = _bg.slice(_bg.indexOf('function fnPostActionProbeFn'));
+    var lit = body.slice(body.indexOf('var out = {'), body.indexOf('};'));
+    var keys = (lit.match(/(\w+):/g) || []).map(function (k) { return k.slice(0, -1); });
+    ok('the post-action probe declares its fields', keys.length >= 5, keys);
+    ok('  including the split mutation count', keys.indexOf('structuralMutations') !== -1, keys);
+    var missing = keys.filter(function (k) { return _bg.indexOf('rec.' + k + ' = post.' + k) === -1; });
+    eq('every field it returns is copied onto the action record', missing.join(','), '');
+  })();
+
   // The r_1789750056464 signature, replayed through the streak counter.
   var ringOnly = function () {
     return { action: 'left_click', error: null, outOfRange: false,
@@ -4194,6 +4210,16 @@ eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
   eq('a value passes straight through', passed, 42);
   ok('a real failure passes through unchanged', threw && threw.message === 'boom', threw);
   eq('  and keeps its own name, never SeleniteTimeout', threw && threw.name, 'TypeError');
+
+  // The step budget is gone — the clock is the budget — so a loop that ends
+  // with no cause of its own is a broken guard, not an exhausted allowance.
+  var runaway = fnStopSentence(seg({ stopReason: 'runaway', steps: 500 }));
+  ok('hitting the runaway guard says a guard failed', /internal safety limit/.test(runaway), runaway);
+  ok('  and that it is ours', /not a finding about the site/.test(runaway), runaway);
+  ok('  and does NOT tell anyone to raise a budget', runaway.indexOf('budget') === -1, runaway);
+  // Old logs still say what they meant when they were written.
+  var oldBudget = fnStopSentence(seg({ stopReason: 'budget', steps: 10 }));
+  ok('a pre-clock log still reads as a step budget', /raising the step budget/.test(oldBudget), oldBudget);
 
   var modelOut = fnStopSentence(seg({ stopReason: 'model-timeout', steps: 3 }));
   ok('a model that never answered is named', /did not answer within the time allowed/.test(modelOut), modelOut);
@@ -4238,6 +4264,9 @@ eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
     modelOut,
     actOut,
     slowSeg,
+    runaway,
+    // oldBudget is deliberately absent: seg() already defaults to steps:10, so
+    // it is the same input as the `budget` entry above, not a distinct cause.
   ];
   eq('every distinct cause produces a distinct sentence', new Set(sentences).size, sentences.length);
 })();

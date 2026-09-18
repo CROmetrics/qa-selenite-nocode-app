@@ -1467,5 +1467,495 @@
 }
 ],
 "status": "ran"
+},
+"1789751164165": {
+"error": null,
+"reachedEnd": false,
+"segments": [
+{
+"actions": [
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1226,
+836
+],
+"delivered": true,
+"deliveredTo": "#pet-name-1",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#pet-name-1"
+},
+"modelCoord": [
+1025,
+699
+],
+"modelMs": 3598,
+"ms": 1248,
+"mutations": 6,
+"outOfRange": false,
+"page": {
+"textLen": 6005,
+"url": "https://www.healthypawspetinsurance.com/"
+},
+"step": 1,
+"structuralMutations": null
+},
+{
+"action": "type",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"position": null,
+"top": null
+},
+"modelCoord": null,
+"modelMs": 2328,
+"ms": 15,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 6005,
+"url": "https://www.healthypawspetinsurance.com/"
+},
+"step": 2,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1984,
+837
+],
+"delivered": null,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "span.cta-title"
+},
+"modelCoord": [
+1659,
+700
+],
+"modelMs": 2840,
+"ms": 4889,
+"mutations": null,
+"outOfRange": false,
+"page": {
+"textLen": 12102,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 3,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1399,
+626
+],
+"delivered": true,
+"deliveredTo": "#select2-petBreed-container",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#select2-petBreed-container"
+},
+"modelCoord": [
+1170,
+523
+],
+"modelMs": 2582,
+"ms": 1242,
+"mutations": 1224,
+"outOfRange": false,
+"page": {
+"textLen": 21951,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 4,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1313,
+904
+],
+"delivered": false,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#select2-petBreed-result-0jc5-103"
+},
+"modelCoord": [
+1098,
+756
+],
+"modelMs": 2453,
+"ms": 1232,
+"mutations": 26,
+"outOfRange": false,
+"page": {
+"textLen": 12179,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 5,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": {
+"applied": true,
+"chosenIndex": 9,
+"chosenText": "8 years",
+"chosenValue": "8",
+"error": null,
+"id": "petBirthYear",
+"name": null,
+"optionCount": 15,
+"previousText": "Pet's Age",
+"repeat": false,
+"sampleOptions": [
+"Pet's Age",
+"Under 1 year",
+"1 year",
+"2 years",
+"3 years",
+"4 years",
+"5 years",
+"6 years"
+],
+"usableCount": 14
+},
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1825,
+626
+],
+"delivered": false,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": {
+"id": "petBirthYear",
+"kind": "select",
+"multiple": false,
+"name": null,
+"optionCount": 15,
+"selectedIndex": 0,
+"usable": 14
+},
+"coversPct": 0,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#petBirthYear"
+},
+"modelCoord": [
+1526,
+523
+],
+"modelMs": 2207,
+"ms": 444,
+"mutations": 8,
+"outOfRange": false,
+"page": {
+"textLen": 12179,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 6,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1399,
+751
+],
+"delivered": true,
+"deliveredTo": "#email",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#email"
+},
+"modelCoord": [
+1170,
+628
+],
+"modelMs": 2223,
+"ms": 1242,
+"mutations": 14,
+"outOfRange": false,
+"page": {
+"textLen": 12179,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 7,
+"structuralMutations": null
+},
+{
+"action": "type",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"position": null,
+"top": null
+},
+"modelCoord": null,
+"modelMs": 2365,
+"ms": 57,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 12179,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 8,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1825,
+751
+],
+"delivered": true,
+"deliveredTo": "#zipCode",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#zipCode"
+},
+"modelCoord": [
+1526,
+628
+],
+"modelMs": 2213,
+"ms": 1234,
+"mutations": 17,
+"outOfRange": false,
+"page": {
+"textLen": 12179,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 9,
+"structuralMutations": null
+},
+{
+"action": "type",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"position": null,
+"top": null
+},
+"modelCoord": null,
+"modelMs": 2524,
+"ms": 33,
+"mutations": 1,
+"outOfRange": false,
+"page": {
+"textLen": 12179,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 10,
+"structuralMutations": null
+}
+],
+"apiStopReason": null,
+"elapsedMs": 38691,
+"finalText": "",
+"from": "https://www.healthypawspetinsurance.com",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"reached": false,
+"steps": 10,
+"stopReason": "budget",
+"summary": "Ran out of budget after 10 step(s) without reaching https://www.healthypawspetinsurance.com/quote/step3; the page was still changing, so raising the step budget may get further.",
+"to": "https://www.healthypawspetinsurance.com/quote/step3"
+}
+],
+"status": "ran"
 }
 }

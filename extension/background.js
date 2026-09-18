@@ -4394,6 +4394,21 @@ const FN_MODEL_TIMEOUT_MS = 90000;     // one vision call, image in and tool cal
 const FN_ACTION_TIMEOUT_MS = 15000;    // one CDP send, probe injection or capture
 const FN_SEGMENT_BUDGET_MS = 300000;   // one waypoint → waypoint hop, end to end
 
+// There is no step budget any more — the clock is the budget. A funnel is as
+// long as it is: r_1789751164165 filled a name, a breed, an age, an email and a
+// ZIP on a quote form and ran out at ten steps with the form complete and
+// unsubmitted, reported as "the page was still changing, so raising the step
+// budget may get further". A fixed step count cannot tell a long-but-healthy
+// funnel from a stuck one, and everything that CAN tell them apart now exists:
+// the wall clock above, the no-progress detector, an unconvertible coordinate,
+// a wedged tab, a model that stops, or arrival.
+//
+// This is NOT a budget, it is a runaway guard. At the ~4s per step these runs
+// actually take, FN_SEGMENT_BUDGET_MS lands somewhere near 75 steps — so
+// reaching this means one of the guards above is broken and the loop has to
+// stop regardless of what it thinks it is doing.
+const FN_MAX_STEPS = 500;
+
 // Bound a promise that has no bound of its own. Neither chrome.scripting nor
 // chrome.debugger.sendCommand can be cancelled, so the underlying work is not
 // stopped — it is merely no longer awaited, which is the difference between a
@@ -4748,6 +4763,13 @@ function fnStopSentence(seg) {
     return `The agent stopped on its own after ${steps} step(s) without reaching ${s.to} and without naming anything `
       + `that blocked it${quote ? `. Its last words: "${quote}"` : '.'}`;
   }
+  if (s.stopReason === 'runaway') {
+    return `Stopped after ${steps} agent step(s) without reaching ${s.to}, on an internal safety limit. Nothing `
+      + 'ended the segment on its own first — not the clock, not the no-progress check, not arrival — so a guard '
+      + 'that should have caught this did not. This is a Selenite failure, not a finding about the site.';
+  }
+  // Only reachable in logs from builds that HAD a step budget. Kept so those
+  // keep reading the way they did; nothing sets it any more.
   if (s.stopReason === 'budget') {
     return `Ran out of budget after ${steps} step(s) without reaching ${s.to}; the page was still changing, `
       + 'so raising the step budget may get further.';
@@ -5595,7 +5617,7 @@ function funnelUrlKey(url) {
 }
 
 // One waypoint→next-waypoint hop. Returns { from, to, reached, steps, note, error }.
-async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalPrompt = '') {
+async function crawlSegment(tabId, fromUrl, target, supplementalPrompt = '') {
   const out = {
     from: fromUrl, to: target, reached: false, steps: 0, note: '', error: null,
     // What the agent actually DID, not just what it said about it. The prose in
@@ -5721,7 +5743,7 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
     // Dropdowns already set in this segment, so a second click on one says "it
     // is set, move on" instead of silently re-rolling the value.
     const chosenControls = new Set();
-    for (let step = 0; step < stepBudget; step++) {
+    for (let step = 0; step < FN_MAX_STEPS; step++) {
       if (_funnelStopRequested) { out.error = 'Stopped'; out.stopReason = 'user-stopped'; break; }
       // Checked BEFORE spending another vision call, so an over-budget segment
       // ends on the clock rather than on the next thing that happens to fail.
@@ -5837,7 +5859,7 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
           urlAfter: null, error: null,
           // Evidence, filled by the probes below: what was at the point, whether
           // the click reached an element, and whether the page reacted at all.
-          hit: null, delivered: null, deliveredTo: null, mutations: null, page: null,
+          hit: null, delivered: null, deliveredTo: null, mutations: null, structuralMutations: null, page: null,
         };
         const actionStarted = Date.now();
         // Neither chrome.scripting nor chrome.debugger.sendCommand can hang
@@ -5950,6 +5972,7 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
             rec.delivered = post.delivered;
             rec.deliveredTo = post.deliveredTo;
             rec.mutations = post.mutations;
+            rec.structuralMutations = post.structuralMutations;
             rec.page = post.page;
           }
         } catch (_) { /* navigated out from under the probe — stays unknown, which breaks the streak */ }
@@ -6048,7 +6071,9 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
   // Loop ran to completion without any exit setting a cause: the budget is what
   // ended it. Distinguishable from 'agent-stopped' only because this is set
   // here and nowhere else — previously both were {reached:false, error:null}.
-  if (!out.stopReason) out.stopReason = 'budget';
+  // Reaching the runaway guard is not "ran out of budget" — there is no budget.
+  // It means nothing above stopped the segment, which should be impossible.
+  if (!out.stopReason) out.stopReason = 'runaway';
   out.note = fnTrimNote(notes.join(' '), 1500);
   // Computed once, here, so the sentence travels with the segment into session
   // storage, the rendered report and the debug log without popup.js
@@ -6057,7 +6082,7 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
   return out;
 }
 
-async function runFunnelCrawl({ waypoints = [], supplementalPrompt = '', stepBudget = 10 }) {
+async function runFunnelCrawl({ waypoints = [], supplementalPrompt = '' }) {
   _funnelStopRequested = false;
   const clean = waypoints.map(w => String(w || '').trim()).filter(Boolean);
   if (clean.length < 2) return { segments: [], reachedEnd: false, error: 'Need at least a Start and End waypoint.' };
@@ -6078,7 +6103,7 @@ async function runFunnelCrawl({ waypoints = [], supplementalPrompt = '', stepBud
         continue;
       }
       await setTmProgress('funnelProgress', { running: true, index: i, total: clean.length - 1, label: clean[i] });
-      const seg = await crawlSegment(tab.id, fromUrl, clean[i], stepBudget, supplementalPrompt);
+      const seg = await crawlSegment(tab.id, fromUrl, clean[i], supplementalPrompt);
       segments.push(seg);
       fromUrl = clean[i];
       if (!seg.reached) {

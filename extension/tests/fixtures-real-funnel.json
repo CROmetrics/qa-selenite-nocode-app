@@ -3854,5 +3854,550 @@
 }
 ],
 "status": "ran"
+},
+"1789760144515": {
+"error": null,
+"reachedEnd": true,
+"segments": [
+{
+"actions": [
+{
+"action": "scroll",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1387,
+646
+],
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 91,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "absolute",
+"stack": [
+"a.link-sZR.link--default-outline-rJR",
+"div.jsx-2721316805.banner__properties-container-Uhf",
+"video.video__player-qFP",
+"div.video-wYN"
+],
+"top": "a.link-sZR.link--default-outline-rJR"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1288,
+600
+],
+"modelMs": 5236,
+"modelTransient": null,
+"ms": 411,
+"mutations": 33,
+"outOfRange": false,
+"page": {
+"textLen": 1337,
+"url": "https://www.toryburch.com/en-us/"
+},
+"step": 1,
+"structuralMutations": 7
+},
+{
+"action": "scroll",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1387,
+646
+],
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 91,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "absolute",
+"stack": [
+"a.link-sZR.link--default-outline-rJR",
+"div.jsx-2721316805.banner__properties-container-Uhf",
+"video.video__player-qFP",
+"div.video-wYN"
+],
+"top": "a.link-sZR.link--default-outline-rJR"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1288,
+600
+],
+"modelMs": 3626,
+"modelTransient": null,
+"ms": 405,
+"mutations": 16,
+"outOfRange": false,
+"page": {
+"textLen": 1295,
+"url": "https://www.toryburch.com/en-us/"
+},
+"step": 2,
+"structuralMutations": 7
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+760,
+597
+],
+"delivered": true,
+"deliveredTo": "span.shipping-label__country-zhB.shipping-label__country--footer-ZQg",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"span.shipping-label__country-zhB.shipping-label__country--footer-ZQg",
+"div.shipping-label-GvF",
+"button.footer-menu__link-XJx.cs-button-cYy",
+"li"
+],
+"top": "span.shipping-label__country-zhB.shipping-label__country--footer-ZQg"
+},
+"modelAttempts": 1,
+"modelCoord": [
+706,
+555
+],
+"modelMs": 3097,
+"modelTransient": null,
+"ms": 1250,
+"mutations": 39,
+"outOfRange": false,
+"page": {
+"textLen": 2214,
+"url": "https://www.toryburch.com/en-us/"
+},
+"step": 3,
+"structuralMutations": 11
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1387,
+1101
+],
+"delivered": true,
+"deliveredTo": "button.caption-JuI",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#locale-popup",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"button.caption-JuI",
+"div.dropdown__current-value-xbJ.dropdown__current-value--tb-nBt",
+"div.dropdown__custom-wrap-wBt",
+"select.dropdown__native-pww"
+],
+"top": "button.caption-JuI"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1288,
+1023
+],
+"modelMs": 3667,
+"modelTransient": null,
+"ms": 1247,
+"mutations": 16,
+"outOfRange": false,
+"page": {
+"textLen": 2242,
+"url": "https://www.toryburch.com/en-us/"
+},
+"step": 4,
+"structuralMutations": 1
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1387,
+1045
+],
+"delivered": true,
+"deliveredTo": "#localePopupLanguage_/es-us/",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#locale-popup",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"#localePopupLanguage_/es-us/",
+"#id-locale-popup-language-custom-dropdown",
+"div.dropdown__list-wrap-zFV.dropdown__list-wrap--opened-Bu5",
+"button.caption-JuI"
+],
+"top": "#localePopupLanguage_/es-us/"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1288,
+971
+],
+"modelMs": 3057,
+"modelTransient": null,
+"ms": 1243,
+"mutations": 29,
+"outOfRange": false,
+"page": {
+"textLen": 2214,
+"url": "https://www.toryburch.com/en-us/"
+},
+"step": 5,
+"structuralMutations": 4
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1387,
+1170
+],
+"delivered": null,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#locale-popup",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"span.button__content-nae",
+"button.button-ee4.button--dark-SRv",
+"form.locale-popup__form-hLy",
+"div.locale-popup__form-wrap-OMh"
+],
+"top": "span.button__content-nae"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1288,
+1087
+],
+"modelMs": 3156,
+"modelTransient": null,
+"ms": 4248,
+"mutations": null,
+"outOfRange": false,
+"page": {
+"textLen": 1599,
+"url": "https://www.toryburch.com/es-us/?fromCountry=US&toCountry=US"
+},
+"step": 6,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+51,
+75
+],
+"delivered": true,
+"deliveredTo": "use",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"use",
+"svg.icon-Dvc",
+"button.element-io5.element--icon-button-OIa",
+"div.left-menu__hamburger-enR.left-menu__hamburger--visible-xVT"
+],
+"top": "use"
+},
+"modelAttempts": 1,
+"modelCoord": [
+47,
+70
+],
+"modelMs": 3988,
+"modelTransient": null,
+"ms": 1257,
+"mutations": 13,
+"outOfRange": false,
+"page": {
+"textLen": 1862,
+"url": "https://www.toryburch.com/es-us/?fromCountry=US&toCountry=US"
+},
+"step": 7,
+"structuralMutations": 2
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+88,
+636
+],
+"delivered": true,
+"deliveredTo": "a.link-sZR.link--default-outline-rJR",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.portal__content-Kto.portal__content--large-Psc",
+"coversPct": 18,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"a.link-sZR.link--default-outline-rJR",
+"div.menu-item-bkq",
+"nav.menu-layer__nav-Rd2.menu-layer__nav--padded-pqD",
+"div.menu-layer-U2O.menu-layer--main-RGU"
+],
+"top": "a.link-sZR.link--default-outline-rJR"
+},
+"modelAttempts": 1,
+"modelCoord": [
+82,
+591
+],
+"modelMs": 3435,
+"modelTransient": null,
+"ms": 1254,
+"mutations": 27,
+"outOfRange": false,
+"page": {
+"textLen": 1932,
+"url": "https://www.toryburch.com/es-us/?fromCountry=US&toCountry=US"
+},
+"step": 8,
+"structuralMutations": 1
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+585,
+312
+],
+"delivered": true,
+"deliveredTo": "a.link-sZR.link--default-outline-rJR",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.portal__content-Kto.portal__content--large-Psc",
+"coversPct": 36,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"a.link-sZR.link--default-outline-rJR",
+"div.menu-item-bkq",
+"nav.menu-layer__nav-Rd2",
+"#id-submenu"
+],
+"top": "a.link-sZR.link--default-outline-rJR"
+},
+"modelAttempts": 1,
+"modelCoord": [
+543,
+290
+],
+"modelMs": 3332,
+"modelTransient": null,
+"ms": 1291,
+"mutations": 693,
+"outOfRange": false,
+"page": {
+"textLen": 3760,
+"url": "https://www.toryburch.com/es-us/sale/categories/sport-sale/"
+},
+"step": 9,
+"structuralMutations": 393
+}
+],
+"apiStopReason": null,
+"blockedBy": null,
+"elapsedMs": 48620,
+"error": null,
+"finalText": "",
+"from": "https://www.toryburch.com/en-us/",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"reached": true,
+"steps": 9,
+"stopReason": "arrived",
+"summary": "Reached https://www.toryburch.com/es-us/sale/categories/sport-sale/ in 9 agent step(s).",
+"to": "https://www.toryburch.com/es-us/sale/categories/sport-sale/"
+}
+],
+"status": "ran"
 }
 }

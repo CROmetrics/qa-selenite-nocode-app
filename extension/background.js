@@ -4518,6 +4518,12 @@ const FN_MAX_STEPS = 500;
 // alternative and fires on 30% of the same clicks, which is noise.
 const FN_BIG_TARGET_PCT = 50;
 
+// The actions that address an ELEMENT. A scroll carries a coordinate too, but
+// uses it as a wheel origin rather than a target, so anything reasoning about
+// "what did this action hit" must exclude it. Stated once because it was
+// written out three times and the fourth copy got it wrong.
+const FN_CLICK_ACTIONS = ['left_click', 'right_click', 'middle_click'];
+
 // The crawl's vision call had no retry at all, so ONE transient failure threw
 // away the whole segment: r_1789754996870 lost four good steps and 25 seconds
 // to a single "Failed to fetch" on the fifth call. The report path has had a
@@ -4571,7 +4577,7 @@ const FN_KEY_CODES = {
 // would hand the classifier a false "the page never responded".
 function fnCountsForProgress(a) {
   return !!a && !a.error && !a.outOfRange
-    && (a.action === 'left_click' || a.action === 'right_click' || a.action === 'middle_click');
+    && FN_CLICK_ACTIONS.indexOf(a.action) !== -1;
 }
 
 // Identity of an action for no-progress comparison. Deliberately includes the
@@ -6081,7 +6087,7 @@ async function crawlSegment(tabId, fromUrl, target, supplementalPrompt = '') {
             rec.error = `The screenshot (${imgW}x${imgH}) and the viewport (${dispW}x${dispH}) imply different `
               + `horizontal and vertical scales (${(dispW / imgW).toFixed(3)} vs ${(dispH / imgH).toFixed(3)}), `
               + `so (${x}, ${y}) cannot be converted to a click point — not dispatched. A fresh screenshot follows.`;
-          } else if ((action === 'left_click' || action === 'right_click' || action === 'middle_click')
+          } else if (FN_CLICK_ACTIONS.indexOf(action) !== -1
                      && rec.hit && rec.hit.control && rec.hit.control.kind === 'select'
                      // A multi-select would have its whole selection collapsed to
                      // one random option by the native value setter, and a
@@ -6100,7 +6106,7 @@ async function crawlSegment(tabId, fromUrl, target, supplementalPrompt = '') {
             rec.choice = chosen ? Object.assign({ repeat }, chosen) : { repeat, error: 'The page did not answer.' };
             if (rec.choice.error) rec.error = rec.choice.error;
             await new Promise(r => setTimeout(r, 400));
-          } else if (action === 'left_click' || action === 'right_click' || action === 'middle_click') {
+          } else if (FN_CLICK_ACTIONS.indexOf(action) !== -1) {
             await bounded(dispatchTrustedClick(tabId, css.x, css.y), `The ${action.replace('_', ' ')}`);
             await new Promise(r => setTimeout(r, 1200)); // let any navigation/settle happen
           } else if (action === 'scroll') {
@@ -6191,7 +6197,12 @@ async function crawlSegment(tabId, fromUrl, target, supplementalPrompt = '') {
         // model is told what its click DID and never what it was about to land
         // on, though the probe measures exactly that immediately before
         // dispatch and writes it to the log.
-        if (!rec.error && rec.hit && rec.hit.coversPct >= FN_BIG_TARGET_PCT && rec.hit.top) {
+        // Clicks only. A scroll uses its coordinate as a wheel ORIGIN, not a
+        // target — r_1789760144515 opened with two scrolls over a 91% hero link
+        // and this told the model about the link both times, which is noise
+        // about an element the action never addressed.
+        if (!rec.error && FN_CLICK_ACTIONS.indexOf(action) !== -1
+            && rec.hit && rec.hit.coversPct >= FN_BIG_TARGET_PCT && rec.hit.top) {
           resultContent.push({ type: 'text', text:
             `For information: that point was on ${rec.hit.top}, which covers ${rec.hit.coversPct}% of the viewport. `
             + 'Controls are usually small — something that large is often a banner or hero link wrapping the area '

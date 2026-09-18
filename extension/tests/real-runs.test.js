@@ -1226,6 +1226,44 @@ section('funnel crawl coordinate space (real runs)');
   print('    reached: 12 steps, step 10 at ' + at10.page.url.slice(-28)
         + ' -> old cap would have missed it by 2');
 
+  // ---- the first run written by the audit-fix build ----
+  // r_1789760144515 is what 1fc7d1e produces. It is the only run that can show
+  // the new probe fields at all, and the only proof the observability is WIRED
+  // rather than merely computed -- the failure mode that shipped
+  // structuralMutations inert for a whole commit.
+  var fixed = FUNNEL['1789760144515'].segments[0];
+  eq('every action reports its attempt count',
+     (fixed.actions || []).filter(function (a) { return a.modelAttempts === 1; }).length, fixed.actions.length);
+  ok('  and none of them faltered',
+     (fixed.actions || []).every(function (a) { return a.modelTransient === null; }));
+
+  // THE OVERLAY PROBE, on real data. Five clicks sit inside a fixed ancestor,
+  // and the LEAF is static/absolute at 0-1% on every one -- which is exactly
+  // why the old fixed-and-large fallback could never fire on a real popup.
+  var inOverlay = (fixed.actions || []).filter(function (a) { return a.hit && a.hit.overlay; });
+  ok('clicks land inside fixed overlays', inOverlay.length >= 4, inOverlay.length);
+  ok('  while the leaf itself is never fixed',
+     inOverlay.every(function (a) { return a.hit.position !== 'fixed' && a.hit.position !== 'sticky'; }));
+  ok('  and never large',
+     inOverlay.every(function (a) { return a.hit.coversPct <= 1; }),
+     inOverlay.map(function (a) { return a.hit.coversPct; }));
+  ok('  so the pre-fix fallback could not have fired once',
+     inOverlay.every(function (a) {
+       return !((a.hit.position === 'fixed' || a.hit.position === 'sticky') && a.hit.coversPct >= 25);
+     }));
+
+  // THE RISK THAT CREATES. Four of those overlays are >= 25%, so fnNameBlocker
+  // will now name them -- including #locale-popup at 100%, the modal the crawl
+  // was successfully OPERATING. Only the deliveredTo !== hit.top gate stops a
+  // fabricated "blocked by an overlay" claim about it. Do not remove that gate.
+  var nameable = inOverlay.filter(function (a) { return a.hit.overlay.coversPct >= 25; });
+  ok('several are large enough to be named a blocker', nameable.length >= 3, nameable.length);
+  ok('  and the intercept gate blocks every one of them',
+     nameable.every(function (a) { return !a.deliveredTo || a.deliveredTo === a.hit.top; }),
+     nameable.map(function (a) { return a.deliveredTo + ' vs ' + a.hit.top; }));
+  print('    audit-fix build: 9/9 attempts recorded, ' + inOverlay.length + ' clicks inside fixed overlays ('
+        + nameable.length + ' nameable), gate held on all');
+
   // ---- and what the log's own "start here" list says about it ----
   // vdCollectProblems is 500+ lines with its own dependencies, so only its
   // funnel branch is sliced. It is self-contained: `sections` and `add` in,

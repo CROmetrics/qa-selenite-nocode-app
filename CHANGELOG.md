@@ -84,6 +84,10 @@ The two outcomes that must never be retried are still stated in one place: a **S
 
 **And the closing quote printed twice.** `fnStopSentence` already embeds the agent's last words via *"In its own words:"*, and the problems builder appended them again — the same text twice in one 837-character entry. It is appended only when the summary does not already carry it.
 
+**A scroll is not a click.** The big-target notice added above fired on `scroll` actions, whose coordinate is a wheel *origin* rather than a target — so the first run written by that build opened with two scrolls over a 91% hero link and was told about the link twice, about an element the action never addressed. The click-action list had been written out three times and the fourth copy simply omitted it; it is `FN_CLICK_ACTIONS` now, used by the notice, `fnCountsForProgress`, the select interception and the click dispatch alike.
+
+That run settled three things the audit fixes shipped unproven. The attempt counters are **wired**, not merely computed — `modelAttempts: 1` on 9 of 9 actions, which is the check that matters, because a field the probe computes and nothing copies is exactly how `structuralMutations` stayed inert for a commit. The overlay probe was fixing something real: five of nine clicks sit inside a fixed ancestor and the leaf is `static`/`absolute` at 0–1% on every one, so the old fixed-and-large fallback could not have fired once; `#locale-popup` reads at 100%. And the intercept gate is load-bearing exactly as the audit warned — four of those overlays are large enough to be named a blocker, including the modal the crawl was successfully *operating*, and `deliveredTo !== hit.top` is the only thing that stops the claim.
+
 ### Found by auditing a run that succeeded
 
 Four independent lenses over `r_1789755806034` (toryburch, reached in 12 steps), each finding adversarially verified by three refuters on separate angles. Twenty findings, eleven survived. The five below were re-measured against the real functions before being acted on.

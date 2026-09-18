@@ -4199,6 +4199,19 @@ eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
   ok('a very large target is reported to the model',
      _bg.indexOf('rec.hit.coversPct >= FN_BIG_TARGET_PCT') !== -1);
   ok('  as an observation, not an instruction', _bg.indexOf('Controls are usually small') !== -1);
+  // …but only for an action that ADDRESSES an element. r_1789760144515 opened
+  // with two scrolls over a 91% hero link and was told about the link twice.
+  ok('  and only for a click',
+     _bg.indexOf("FN_CLICK_ACTIONS.indexOf(action) !== -1\n            && rec.hit") !== -1
+     || /FN_CLICK_ACTIONS\.indexOf\(action\) !== -1[\s\S]{0,80}coversPct >= FN_BIG_TARGET_PCT/.test(_bg));
+  // The click list is stated once now; it had been written out three times.
+  ok('a scroll never counts as a click action',
+     !fnCountsForProgress({ action: 'scroll', error: null, outOfRange: false }));
+  ok('  nor does a type', !fnCountsForProgress({ action: 'type', error: null, outOfRange: false }));
+  ok('  while a left_click does',
+     fnCountsForProgress({ action: 'left_click', error: null, outOfRange: false }));
+  ok('  and a middle_click does',
+     fnCountsForProgress({ action: 'middle_click', error: null, outOfRange: false }));
 
   // ---- attribute churn is not progress ----
   // The other half of the same run: five clicks on that dropdown, each moving a

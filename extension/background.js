@@ -3044,6 +3044,123 @@ function shouldRetryApiCall(status, threw) {
   return false;                                 // 400/401/403/404 are deterministic
 }
 const VIS_REPORT_RETRIES = 2;                   // 3 attempts total
+const ANTHROPIC_RETRIES = 2;                    // default for anthropicFetch below
+
+// Whether a failed attempt may be tried again. Stated in one place rather than
+// implied by control flow, because two of the four outcomes must NEVER be
+// retried and both of them arrive as AbortError:
+//   • a Stop is the tester's decision, and retrying past it ignores them
+//   • a timeout has already spent the caller's whole allowance. Another attempt
+//     would double it, and a call that slow is not what "transient" means.
+function retryableFailure(kind, status) {
+  if (kind === 'stopped' || kind === 'timeout') return false;
+  if (kind === 'threw') return true;            // network-level and opaque — see above
+  return shouldRetryApiCall(status, false);     // a response arrived: retry only 429/5xx
+}
+
+// EVERY call to the Anthropic API goes through here. It exists because this
+// same failure has now cost real runs twice — the report path got a retry in
+// 7e38210, the funnel crawl got one today — and each time the OTHER call sites
+// kept the gap. Four of six had none. One more per-site fix would have
+// guaranteed a fifth.
+//
+// The helper owns the fetch, the retry and the body read, and nothing else:
+// three of its callers are message handlers with their own response shapes, so
+// they keep their own error handling and read `data` from the result.
+//
+// Returns { ok: true, data, res, attempts, transient } or
+//         { ok: false, kind, error, attempts, transient, res?, data? } where kind is
+//   'http'    a response arrived and was not ok — deterministic, or retried out
+//   'threw'   every attempt failed at the network level; there is no response
+//   'timeout' this call's own timeoutMs elapsed (only when one was given)
+//   'stopped' the caller's signal aborted, or stopRequested() went true
+//   'parse'   a response arrived whose body was not readable JSON
+//
+// `transient` is the messages of the attempts it retried PAST — a call that
+// succeeds on its second try currently leaves no evidence anywhere, which is
+// exactly how a flaky API stays invisible until it costs someone a run.
+async function anthropicFetch(body, opts = {}) {
+  const { apiKey, signal, beta, timeoutMs, stopRequested, readTimeoutMs } = opts;
+  const retries = opts.retries == null ? ANTHROPIC_RETRIES : opts.retries;
+  const transient = [];
+  let res = null, lastErr = null, attempts = 0;
+
+  for (let attempt = 0; ; attempt++) {
+    attempts = attempt + 1;
+    // One controller per attempt, composed with the caller's. The caller's must
+    // NOT be replaced by ours — a Stop on a funnel would otherwise abort an
+    // unrelated Figma summary through a shared module global.
+    const ctl = new AbortController();
+    let timedOut = false;
+    const timer = timeoutMs ? setTimeout(() => { timedOut = true; ctl.abort(); }, timeoutMs) : null;
+    const relay = () => ctl.abort();
+    if (signal) {
+      if (signal.aborted) ctl.abort();
+      else signal.addEventListener('abort', relay, { once: true });
+    }
+
+    let kind = 'ok', status = 0;
+    res = null;
+    try {
+      res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        signal: ctl.signal,
+        headers: Object.assign({
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+          'content-type': 'application/json',
+        }, beta ? { 'anthropic-beta': beta } : null),
+        body: JSON.stringify(body),
+      });
+      status = res.status;
+    } catch (e) {
+      kind = timedOut ? 'timeout' : (e.name === 'AbortError' ? 'stopped' : 'threw');
+      lastErr = e.message;
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (signal) { try { signal.removeEventListener('abort', relay); } catch (_) {} }
+    }
+
+    if (!retryableFailure(kind, status)) {
+      if (kind === 'timeout') return { kind, ok: false, error: lastErr, attempts, transient };
+      if (kind === 'stopped') return { kind, ok: false, error: 'Stopped', attempts, transient };
+      break;                                    // a usable response, or a deterministic 4xx
+    }
+    transient.push(kind === 'threw' ? lastErr : `HTTP ${status}`);
+    if (attempt >= retries) {
+      // A thrown fetch never produced a response, so there is nothing below to
+      // report and the attempt count is the only thing that explains the wait.
+      if (kind === 'threw') {
+        return { kind, ok: false, error: `${lastErr} (after ${attempts} attempts)`, attempts, transient };
+      }
+      break;                                    // a retryable status that ran out — reported below
+    }
+    // Exponential with jitter, so a rate limit is not retried in lockstep.
+    await new Promise(r => setTimeout(r, (500 * Math.pow(2, attempt)) + Math.random() * 400));
+    if (stopRequested && stopRequested()) {
+      // Nothing is in flight during the wait, so the flag is the only thing
+      // that can say the tester asked to stop.
+      return { kind: 'stopped', ok: false, error: 'Stopped', attempts, transient };
+    }
+  }
+
+  // The body read is not covered by the abort signal above, and a page of HTML
+  // from a proxy parses slowly or not at all.
+  let data;
+  try {
+    data = readTimeoutMs ? await fnTimeout(res.json(), readTimeoutMs, 'Reading the API response')
+                         : await res.json();
+  } catch (e) {
+    return { kind: 'parse', ok: false, error: `The API response could not be read: ${e.message}`,
+             attempts, transient, res };
+  }
+  if (!res.ok) {
+    return { kind: 'http', ok: false, error: data?.error?.message || res.statusText,
+             attempts, transient, res, data };
+  }
+  return { ok: true, data, res, attempts, transient };
+}
 
 // ── Visual Diff Stage 3: Opus report ────────────────────────────────────────
 // One call per variant, given only the (capped) diff findings computed by
@@ -3053,45 +3170,25 @@ const VIS_REPORT_RETRIES = 2;                   // 3 attempts total
 // same belt-and-braces no-spec-text coercion (every classification forced to
 // 'unclear' when there's nothing to judge against).
 async function runVisualReport(findings, stats, ticketVariantText, apiKey, signal, specSource) {
-  const body = JSON.stringify({
-    model: 'claude-opus-5',
-    max_tokens: VIS_REPORT_MAX_TOKENS,
-    output_config: { format: { type: 'json_schema', schema: VIS_REPORT_SCHEMA } },
-    messages: [{ role: 'user', content: [{ type: 'text', text: buildVisualReportPrompt(findings, stats, ticketVariantText, specSource) }] }],
-  });
   // "Failed to fetch" cost 2 of 3 consecutive real runs their grading, and the
   // whole variant with them until 7e38210. One request had no second chance.
   // The handler's 20s getPlatformInfo keepalive spans these attempts, so the
   // worker stays alive across the backoff.
-  let res, lastErr = null;
-  for (let attempt = 0; ; attempt++) {
-    let threw = false;
-    try {
-      res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST', signal, body,
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-          'content-type': 'application/json',
-        },
-      });
-    } catch (e) {
-      // Stop is the user's decision and must never be retried past.
-      if (e.name === 'AbortError') return { ok: false, stoppedAbort: true, error: 'Stopped' };
-      threw = true; lastErr = e.message; res = null;
-    }
-    if (!threw && !shouldRetryApiCall(res.status, false)) break;
-    if (attempt >= VIS_REPORT_RETRIES) {
-      if (threw) return { ok: false, error: `${lastErr} (after ${attempt + 1} attempts)` };
-      break;                                    // fall through to the !res.ok path below
-    }
-    // Exponential with jitter, so a rate limit is not retried in lockstep.
-    await new Promise(r => setTimeout(r, (500 * Math.pow(2, attempt)) + Math.random() * 400));
+  const r = await anthropicFetch({
+    model: 'claude-opus-5',
+    max_tokens: VIS_REPORT_MAX_TOKENS,
+    output_config: { format: { type: 'json_schema', schema: VIS_REPORT_SCHEMA } },
+    messages: [{ role: 'user', content: [{ type: 'text', text: buildVisualReportPrompt(findings, stats, ticketVariantText, specSource) }] }],
+  }, { apiKey, signal, retries: VIS_REPORT_RETRIES });
+  // attempts/transient ride every return: a grading that succeeded on its
+  // SECOND try used to be indistinguishable from one that never faltered.
+  const tries = { attempts: r.attempts, transient: r.transient };
+  if (!r.ok) {
+    if (r.kind === 'stopped') return Object.assign({ ok: false, stoppedAbort: true, error: 'Stopped' }, tries);
+    return Object.assign({ ok: false, error: r.error }, tries);
   }
-  const data = await res.json();
-  if (!res.ok) return { ok: false, error: data?.error?.message || res.statusText };
-  if (data.stop_reason === 'refusal') return { ok: false, error: 'The model declined to analyze these findings.' };
+  const data = r.data;
+  if (data.stop_reason === 'refusal') return Object.assign({ ok: false, error: 'The model declined to analyze these findings.' }, tries);
   const text = data.content?.find(b => b.type === 'text')?.text || '';
   let parsed;
   try {
@@ -4421,19 +4518,8 @@ const FN_MAX_STEPS = 500;
 // from a dead connection from in here. The crawl makes one call per STEP
 // rather than one per variant, so it meets that more often, not less.
 const FN_MODEL_RETRIES = 2;                     // 3 attempts total, same as the report
-
-// Whether a failed attempt may be tried again. Split out from the call so the
-// policy is testable without a network, and so the two that must NEVER be
-// retried are stated in one place rather than implied by control flow:
-//   • a Stop is the tester's decision, and retrying past it ignores them
-//   • a timeout has already spent FN_MODEL_TIMEOUT_MS. Two more attempts would
-//     put one step over the segment's whole clock, and a call that slow is not
-//     what "transient" means.
-function fnRetryableFailure(kind, status) {
-  if (kind === 'stopped' || kind === 'timeout') return false;
-  if (kind === 'threw') return true;            // network-level and opaque — see shouldRetryApiCall
-  return shouldRetryApiCall(status, false);     // 'ok': retry only 429/5xx
-}
+// The policy itself is not funnel-specific and now lives beside
+// shouldRetryApiCall, with anthropicFetch — see retryableFailure.
 
 // Bound a promise that has no bound of its own. Neither chrome.scripting nor
 // chrome.debugger.sendCommand can be cancelled, so the underlying work is not
@@ -5604,25 +5690,13 @@ async function callClaudeVision({ images, prompt, maxTokens }) {
       })),
       { type: 'text', text: prompt },
     ];
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      signal: _visionAbortController.signal,
-      headers: {
-        'x-api-key': anthropicApiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5',
-        max_tokens: maxTokens || 512,
-        messages: [{ role: 'user', content }],
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) return { ok: false, error: data?.error?.message || res.statusText };
-    const text = data.content?.find(b => b.type === 'text')?.text || '';
-    return { ok: true, text };
+    const r = await anthropicFetch(
+      { model: 'claude-sonnet-5', max_tokens: maxTokens || 512, messages: [{ role: 'user', content }] },
+      { apiKey: anthropicApiKey, signal: _visionAbortController.signal });
+    const tries = { attempts: r.attempts, transient: r.transient };
+    if (!r.ok) return Object.assign({ ok: false, error: r.kind === 'stopped' ? 'Stopped' : r.error }, tries);
+    const text = r.data.content?.find(b => b.type === 'text')?.text || '';
+    return Object.assign({ ok: true, text }, tries);
   } catch (e) {
     return { ok: false, error: e.name === 'AbortError' ? 'Stopped' : e.message };
   } finally {
@@ -5646,76 +5720,37 @@ function funnelUrlKey(url) {
 // { error, stopReason } on failure — never throws, so the caller's control flow
 // stays a flat `break` and the retry loop cannot be confused with the step loop.
 async function fnVisionCall(apiKey, tools, messages) {
-  let res = null, lastErr = null;
-  for (let attempt = 0; ; attempt++) {
-    _visionAbortController = new AbortController();
-    // A timeout and a Stop both arrive as AbortError. One flag is the whole
-    // difference between "nothing answered" and "the tester chose this".
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      try { _visionAbortController?.abort(); } catch (_) {}
-    }, FN_MODEL_TIMEOUT_MS);
-    let kind = 'ok', status = 0;
-    res = null;
-    try {
-      res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        signal: _visionAbortController.signal,
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-          'anthropic-beta': 'computer-use-2025-11-24',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1024, tools, messages }),
-      });
-      status = res.status;
-    } catch (e) {
-      kind = timedOut ? 'timeout' : (e.name === 'AbortError' ? 'stopped' : 'threw');
-      lastErr = e.message;
-    } finally {
-      clearTimeout(timer);
-      _visionAbortController = null;
-    }
-
-    if (!fnRetryableFailure(kind, status)) {
-      if (kind === 'timeout') {
-        return { error: `The model did not respond within ${Math.round(FN_MODEL_TIMEOUT_MS / 1000)}s`,
-                 stopReason: 'model-timeout' };
-      }
-      if (kind === 'stopped') return { error: 'Stopped', stopReason: 'user-stopped' };
-      break;                                    // a usable response, or a deterministic 4xx
-    }
-    if (attempt >= FN_MODEL_RETRIES) {
-      // A thrown fetch never produced a response, so there is nothing below to
-      // report and the attempt count is the only thing that explains the wait.
-      if (kind === 'threw') {
-        return { error: `${lastErr} (after ${attempt + 1} attempts)`, stopReason: 'api-error' };
-      }
-      break;                                    // a retryable status that ran out — reported below
-    }
-    // Exponential with jitter, so a rate limit is not retried in lockstep.
-    await new Promise(r => setTimeout(r, (500 * Math.pow(2, attempt)) + Math.random() * 400));
-    // The step loop checks this at the TOP, which a retry sits underneath —
-    // without it here, Stop pressed during a backoff still spends another call
-    // before anything notices. There is no in-flight request to abort during
-    // the wait, so the flag is the only thing that can say so.
-    if (_funnelStopRequested) return { error: 'Stopped', stopReason: 'user-stopped' };
-  }
-
-  // The body read is no longer covered by the abort signal above, and a page of
-  // HTML from a proxy parses slowly or not at all — bound it like any other
-  // step in this loop rather than letting it hang the segment.
-  let data;
+  // The controller is the crawl's own, so Stop reaches an in-flight attempt.
+  // anthropicFetch composes it with its own per-attempt timeout rather than
+  // replacing it — see the comment there about not sharing a module global.
+  _visionAbortController = new AbortController();
   try {
-    data = await fnTimeout(res.json(), FN_ACTION_TIMEOUT_MS, 'Reading the model response');
-  } catch (e) {
-    return { error: `The API response could not be read: ${e.message}`, stopReason: 'api-error' };
+    const r = await anthropicFetch(
+      { model: 'claude-sonnet-5', max_tokens: 1024, tools, messages },
+      {
+        apiKey,
+        signal: _visionAbortController.signal,
+        beta: 'computer-use-2025-11-24',
+        timeoutMs: FN_MODEL_TIMEOUT_MS,
+        retries: FN_MODEL_RETRIES,
+        readTimeoutMs: FN_ACTION_TIMEOUT_MS,
+        stopRequested: () => _funnelStopRequested,
+      });
+    const tries = { attempts: r.attempts, transient: r.transient };
+    if (r.ok) return Object.assign({ data: r.data }, tries);
+    // The only funnel-specific part: which of our stop reasons this maps to.
+    // 'timeout' and 'stopped' both arrive as AbortError inside the helper and
+    // are told apart there; here they only need different words.
+    if (r.kind === 'timeout') {
+      return Object.assign({
+        error: `The model did not respond within ${Math.round(FN_MODEL_TIMEOUT_MS / 1000)}s`,
+        stopReason: 'model-timeout' }, tries);
+    }
+    if (r.kind === 'stopped') return Object.assign({ error: 'Stopped', stopReason: 'user-stopped' }, tries);
+    return Object.assign({ error: r.error, stopReason: 'api-error' }, tries);
+  } finally {
+    _visionAbortController = null;
   }
-  if (!res.ok) return { error: data?.error?.message || res.statusText, stopReason: 'api-error' };
-  return { data };
 }
 
 // One waypoint→next-waypoint hop. Returns { from, to, reached, steps, note, error }.
@@ -5740,6 +5775,11 @@ async function crawlSegment(tabId, fromUrl, target, supplementalPrompt = '') {
     //     from the end, so the terminal "I'm stopping because…" sentence was
     //     always the first thing cut.
     stopReason: null, apiStopReason: null, finalText: '',
+    // Which gate the agent reported, when it stopped at one. fnStopSentence
+    // classifies this for its own sentence and discards it, so the only
+    // consumer that could ever see it was the sentence itself — and the report
+    // then badged a correct, complete "blocked by a bot check" as an ERROR.
+    blockedBy: null,
     // Wall clock for the hop. null when the segment never got as far as running
     // — an honest "not measured", not a zero.
     elapsedMs: null,
@@ -5918,6 +5958,12 @@ async function crawlSegment(tabId, fromUrl, target, supplementalPrompt = '') {
           // out took. Recorded per action because "the run is slow" has two
           // very different causes and nothing in the log could tell them apart.
           modelMs, ms: null,
+          // How many attempts this step's vision call took, and the failures it
+          // retried PAST. A call that succeeds on its second try was previously
+          // indistinguishable from one that never faltered — which is how a
+          // flaky API stays invisible until it costs a whole run.
+          modelAttempts: call.attempts == null ? null : call.attempts,
+          modelTransient: call.transient && call.transient.length ? call.transient : null,
           // What was chosen when the click landed on a native dropdown, and the
           // list it was chosen from. Random by design, so the resolved pick is
           // recorded -- otherwise two runs of the same funnel cannot be compared.
@@ -6140,6 +6186,10 @@ async function crawlSegment(tabId, fromUrl, target, supplementalPrompt = '') {
   // Reaching the runaway guard is not "ran out of budget" — there is no budget.
   // It means nothing above stopped the segment, which should be impossible.
   if (!out.stopReason) out.stopReason = 'runaway';
+  // The SAME pure function fnStopSentence uses, so the stored value and the
+  // sentence can never disagree — and popup.js never re-implements the
+  // classifier, which the comment above fnStopSentence forbids.
+  out.blockedBy = out.stopReason === 'agent-stopped' ? fnClassifyGate(out.finalText) : null;
   out.note = fnTrimNote(notes.join(' '), 1500);
   // Computed once, here, so the sentence travels with the segment into session
   // storage, the rendered report and the debug log without popup.js
@@ -6450,26 +6500,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         heartbeat = setInterval(() => { chrome.runtime.getPlatformInfo(() => {}); }, 20000);
 
         const content = buildFigmaSummaryContent({ boards, compDataUrl, labels, ticketKey });
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'x-api-key': anthropicApiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true',
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            // Sonnet, not Opus: this is a description task over an image with
-            // the variant ids already supplied, not a judgment call.
-            model: 'claude-sonnet-5',
-            max_tokens: 4096,
-            system: FIGMA_SUMMARY_PROMPT,
-            output_config: { format: { type: 'json_schema', schema: FIGMA_SUMMARY_SCHEMA } },
-            messages: [{ role: 'user', content }],
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) { sendResponse({ ok: false, error: data?.error?.message || res.statusText }); return; }
+        const r = await anthropicFetch({
+          // Sonnet, not Opus: this is a description task over an image with
+          // the variant ids already supplied, not a judgment call.
+          model: 'claude-sonnet-5',
+          max_tokens: 4096,
+          system: FIGMA_SUMMARY_PROMPT,
+          output_config: { format: { type: 'json_schema', schema: FIGMA_SUMMARY_SCHEMA } },
+          messages: [{ role: 'user', content }],
+        }, { apiKey: anthropicApiKey });
+        if (!r.ok) { sendResponse({ ok: false, error: r.error }); return; }
+        const data = r.data;
         // Surface the real stop reason rather than letting an empty parse
         // masquerade as a model that had nothing to say.
         if (data.stop_reason === 'refusal') { sendResponse({ ok: false, error: 'The model declined to read this comp.' }); return; }
@@ -6728,12 +6769,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
         const report = await runVisualReport(findings, stats, ticketVariantText, anthropicApiKey, _visionAbortController.signal, specSource);
         if (!report.ok) {
-          sendResponse({ ok: false, error: report.error, stoppedAbort: !!report.stoppedAbort });
+          sendResponse({ ok: false, error: report.error, stoppedAbort: !!report.stoppedAbort,
+                         reportAttempts: report.attempts ?? null,
+                         reportTransient: report.transient && report.transient.length ? report.transient : null });
           return;
         }
 
         const result = {
           ok: true, overallSummary: report.overallSummary, findings: report.findings,
+          // What the grading call cost. Its own comment records that "Failed to
+          // fetch" once took 2 of 3 consecutive runs' grading — and until now a
+          // run that recovered on its second attempt said nothing at all.
+          reportAttempts: report.attempts ?? null,
+          reportTransient: report.transient && report.transient.length ? report.transient : null,
           noVerdictCount: report.noVerdictCount, duplicateIndexCount: report.duplicateIndexCount,
           truncated: report.truncated, pixelDiff,
         };
@@ -6924,22 +6972,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
         if (!anthropicApiKey) { sendResponse({ ok: false, error: 'No API key configured' }); return; }
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'x-api-key': anthropicApiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true',
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'claude-opus-4-8',
-            max_tokens: 1024,
-            messages: [{ role: 'user', content: buildTestAgentSummaryPrompt(msg.payload?.modeResults || [], msg.payload?.ticketContext || null) }],
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) { sendResponse({ ok: false, error: data?.error?.message || res.statusText }); return; }
+        const r = await anthropicFetch({
+          model: 'claude-opus-4-8',
+          max_tokens: 1024,
+          messages: [{ role: 'user', content: buildTestAgentSummaryPrompt(msg.payload?.modeResults || [], msg.payload?.ticketContext || null) }],
+        }, { apiKey: anthropicApiKey });
+        if (!r.ok) { sendResponse({ ok: false, error: r.error }); return; }
+        const data = r.data;
         const text = data.content?.find(b => b.type === 'text')?.text || '';
         sendResponse({ ok: true, summary: text });
       } catch (e) {
@@ -6965,24 +7004,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // in-flight fetch. Tick a trivial call so the worker survives a slow
         // model response.
         heartbeat = setInterval(() => { chrome.runtime.getPlatformInfo(() => {}); }, 20000);
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'x-api-key': anthropicApiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true',
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'claude-opus-5',
-            max_tokens: 8192,
-            system: INIT_TICKET_FIELD_EXTRACTION_PROMPT,
-            output_config: { format: { type: 'json_schema', schema: INIT_FIELD_EXTRACTION_SCHEMA } },
-            messages: [{ role: 'user', content: buildInitTicketFieldExtractionPrompt(msg.payload || {}) }],
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) { sendResponse({ ok: false, error: data?.error?.message || res.statusText }); return; }
+        const r = await anthropicFetch({
+          model: 'claude-opus-5',
+          max_tokens: 8192,
+          system: INIT_TICKET_FIELD_EXTRACTION_PROMPT,
+          output_config: { format: { type: 'json_schema', schema: INIT_FIELD_EXTRACTION_SCHEMA } },
+          messages: [{ role: 'user', content: buildInitTicketFieldExtractionPrompt(msg.payload || {}) }],
+        }, { apiKey: anthropicApiKey });
+        if (!r.ok) { sendResponse({ ok: false, error: r.error }); return; }
+        const data = r.data;
         if (data.stop_reason === 'refusal') { sendResponse({ ok: false, error: 'The model declined to process this ticket.' }); return; }
         const text = data.content?.find(b => b.type === 'text')?.text || '';
         let fields;

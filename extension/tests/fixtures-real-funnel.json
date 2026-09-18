@@ -6,6 +6,7 @@
 {
 "actions": [],
 "apiStopReason": null,
+"blockedBy": null,
 "elapsedMs": null,
 "error": null,
 "finalText": null,
@@ -27,6 +28,7 @@
 {
 "actions": [],
 "apiStopReason": null,
+"blockedBy": null,
 "elapsedMs": null,
 "error": null,
 "finalText": null,
@@ -69,13 +71,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"div.product-tile__cta-button",
+"div.product-tile__content.js-product-tile-footer",
+"#06b992d19961a0713704b6cc5b",
+"figure.recommendations.cell"
+],
 "top": "div.product-tile__cta-button"
 },
+"modelAttempts": null,
 "modelCoord": [
 1483,
 1119
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 0,
 "outOfRange": false,
@@ -108,13 +118,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#meru-cm__cnt-inr-i",
+"#meru-cm__cnt-inr",
+"#meru-cm",
+"div.product-tile__detailsTop__overview"
+],
 "top": "#meru-cm__cnt-inr-i"
 },
+"modelAttempts": null,
 "modelCoord": [
 1475,
 1068
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 0,
 "outOfRange": false,
@@ -147,13 +165,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#meru-cm__cnt-inr-i",
+"#meru-cm__cnt-inr",
+"#meru-cm",
+"div.product-tile__detailsTop__overview"
+],
 "top": "#meru-cm__cnt-inr-i"
 },
+"modelAttempts": null,
 "modelCoord": [
 1475,
 1068
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 0,
 "outOfRange": false,
@@ -186,13 +212,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#meru-cm__cnt-inr-i",
+"#meru-cm__cnt-inr",
+"#meru-cm",
+"div.product-tile__detailsTop__overview"
+],
 "top": "#meru-cm__cnt-inr-i"
 },
+"modelAttempts": null,
 "modelCoord": [
 1475,
 1068
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 0,
 "outOfRange": false,
@@ -225,13 +259,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#meru-cm__cnt-inr-i",
+"#meru-cm__cnt-inr",
+"#meru-cm",
+"div.product-tile__detailsTop__overview"
+],
 "top": "#meru-cm__cnt-inr-i"
 },
+"modelAttempts": null,
 "modelCoord": [
 1475,
 1068
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 0,
 "outOfRange": false,
@@ -264,13 +306,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#meru-cm__cnt-inr-i",
+"#meru-cm__cnt-inr",
+"#meru-cm",
+"div.product-tile__detailsTop__overview"
+],
 "top": "#meru-cm__cnt-inr-i"
 },
+"modelAttempts": null,
 "modelCoord": [
 1475,
 1068
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 0,
 "outOfRange": false,
@@ -303,13 +353,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#meru-cm__cnt-inr-i",
+"#meru-cm__cnt-inr",
+"#meru-cm",
+"div.product-tile__detailsTop__overview"
+],
 "top": "#meru-cm__cnt-inr-i"
 },
+"modelAttempts": null,
 "modelCoord": [
 1475,
 1068
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 0,
 "outOfRange": false,
@@ -322,6 +380,7 @@
 }
 ],
 "apiStopReason": null,
+"blockedBy": null,
 "elapsedMs": null,
 "error": null,
 "finalText": "",
@@ -378,13 +437,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "fixed",
+"stack": [
+"#meru-cm",
+"div.productRecommendations.contentSection",
+"div.category-sales-products",
+"div.grid-container"
+],
 "top": "#meru-cm"
 },
+"modelAttempts": null,
 "modelCoord": [
 1476,
 1117
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 0,
 "outOfRange": false,
@@ -424,13 +491,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#c-rall-bn",
+"#meru-cm__bns",
+"#meru-cm__cnt-inr",
+"#meru-cm"
+],
 "top": "#c-rall-bn"
 },
+"modelAttempts": null,
 "modelCoord": [
 1476,
 1067
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 19,
 "outOfRange": false,
@@ -470,13 +545,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "relative",
+"stack": [
+"a.button.js-addItemToCart",
+"div.appointmentCTA",
+"div.storeDetails.storeDetails--tiny",
+"section.banner__information--alwaysBottom.callout"
+],
 "top": "a.button.js-addItemToCart"
 },
+"modelAttempts": null,
 "modelCoord": [
 2328,
 673
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 3,
 "outOfRange": false,
@@ -516,13 +599,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "relative",
+"stack": [
+"button.store-confirm__continue.button",
+"div.store-confirm__details",
+"div.store-confirm",
+"div.ui-dialog-content"
+],
 "top": "button.store-confirm__continue.button"
 },
+"modelAttempts": null,
 "modelCoord": [
 1121,
 763
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": null,
 "outOfRange": false,
@@ -562,13 +653,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "absolute",
+"stack": [
+"#701971",
+"span.checkbox__proxy.js-select-service-checkbox-proxy",
+"div.checkbox__container.service__checkbox",
+"label.checkbox"
+],
 "top": "#701971"
 },
+"modelAttempts": null,
 "modelCoord": [
 1308,
 554
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 21,
 "outOfRange": false,
@@ -608,13 +707,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"ul.schedule__list",
+"li.schedule__accordion-category.open",
+"ul.accordion",
+"section.cell"
+],
 "top": "ul.schedule__list"
 },
+"modelAttempts": null,
 "modelCoord": [
 1288,
 700
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 0,
 "outOfRange": false,
@@ -654,13 +761,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "relative",
+"stack": [
+"button.button.schedule__button",
+"section.section",
+"div.js-services-list-section.schedule__services-list",
+"div.js-services-list"
+],
 "top": "button.button.schedule__button"
 },
+"modelAttempts": null,
 "modelCoord": [
 1723,
 1047
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 17,
 "outOfRange": false,
@@ -673,6 +788,7 @@
 }
 ],
 "apiStopReason": null,
+"blockedBy": null,
 "elapsedMs": null,
 "error": null,
 "finalText": "",
@@ -729,13 +845,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "relative",
+"stack": [
+"a.button.js-addItemToCart",
+"div.appointmentCTA",
+"div.storeDetails.storeDetails--tiny",
+"section.banner__information--alwaysBottom.callout"
+],
 "top": "a.button.js-addItemToCart"
 },
+"modelAttempts": null,
 "modelCoord": [
 2329,
 673
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": null,
 "outOfRange": false,
@@ -775,13 +899,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"ul.schedule__list",
+"li.schedule__accordion-category.open",
+"ul.accordion",
+"section.cell"
+],
 "top": "ul.schedule__list"
 },
+"modelAttempts": null,
 "modelCoord": [
 1288,
 700
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 0,
 "outOfRange": false,
@@ -821,13 +953,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "relative",
+"stack": [
+"button.button.schedule__button",
+"section.section",
+"div.js-services-list-section.schedule__services-list",
+"div.js-services-list"
+],
 "top": "button.button.schedule__button"
 },
+"modelAttempts": null,
 "modelCoord": [
 1723,
 1047
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 22,
 "outOfRange": false,
@@ -840,6 +980,7 @@
 }
 ],
 "apiStopReason": null,
+"blockedBy": null,
 "elapsedMs": null,
 "error": null,
 "finalText": "",
@@ -896,13 +1037,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#pet-name-1",
+"div.hero__notch__form__input-group",
+"div.hero__notch__form__left",
+"form.hero__notch__form.quote-entry__form"
+],
 "top": "#pet-name-1"
 },
+"modelAttempts": null,
 "modelCoord": [
 1026,
 700
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 7,
 "outOfRange": false,
@@ -939,10 +1088,13 @@
 "isIframe": null,
 "nothingAtPoint": true,
 "position": null,
+"stack": [],
 "top": null
 },
+"modelAttempts": null,
 "modelCoord": null,
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": 0,
 "outOfRange": false,
@@ -982,13 +1134,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"span.cta-title",
+"button.btn.btn-default",
+"div.primary_btn.primary_black",
+"div.hero__notch__form__right.cta-group"
+],
 "top": "span.cta-title"
 },
+"modelAttempts": null,
 "modelCoord": [
 1659,
 700
 ],
 "modelMs": null,
+"modelTransient": null,
 "ms": null,
 "mutations": null,
 "outOfRange": false,
@@ -1001,6 +1161,7 @@
 }
 ],
 "apiStopReason": null,
+"blockedBy": null,
 "elapsedMs": null,
 "error": null,
 "finalText": "",
@@ -1057,13 +1218,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#pet-name-1",
+"div.hero__notch__form__input-group",
+"div.hero__notch__form__left",
+"form.hero__notch__form.quote-entry__form"
+],
 "top": "#pet-name-1"
 },
+"modelAttempts": null,
 "modelCoord": [
 1026,
 699
 ],
 "modelMs": 3261,
+"modelTransient": null,
 "ms": 1250,
 "mutations": 6,
 "outOfRange": false,
@@ -1100,10 +1269,13 @@
 "isIframe": null,
 "nothingAtPoint": true,
 "position": null,
+"stack": [],
 "top": null
 },
+"modelAttempts": null,
 "modelCoord": null,
 "modelMs": 2174,
+"modelTransient": null,
 "ms": 16,
 "mutations": 0,
 "outOfRange": false,
@@ -1143,13 +1315,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"span.cta-title",
+"button.btn.btn-default",
+"div.primary_btn.primary_black",
+"div.hero__notch__form__right.cta-group"
+],
 "top": "span.cta-title"
 },
+"modelAttempts": null,
 "modelCoord": [
 1659,
 700
 ],
 "modelMs": 2624,
+"modelTransient": null,
 "ms": 4286,
 "mutations": null,
 "outOfRange": false,
@@ -1189,13 +1369,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#select2-petBreed-container",
+"div",
+"div.pet-breed",
+"div.breed-and-age"
+],
 "top": "#select2-petBreed-container"
 },
+"modelAttempts": null,
 "modelCoord": [
 1169,
 523
 ],
 "modelMs": 2271,
+"modelTransient": null,
 "ms": 1259,
 "mutations": 1224,
 "outOfRange": false,
@@ -1235,13 +1423,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#select2-petBreed-result-yyu1-102",
+"#select2-petBreed-results",
+"span.select2-results",
+"span.select2-dropdown.select2-dropdown--below"
+],
 "top": "#select2-petBreed-result-yyu1-102"
 },
+"modelAttempts": null,
 "modelCoord": [
 1090,
 712
 ],
 "modelMs": 2311,
+"modelTransient": null,
 "ms": 1233,
 "mutations": 26,
 "outOfRange": false,
@@ -1281,13 +1477,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#petBirthYear",
+"div.pet-age",
+"div.breed-and-age",
+"div.form-wrapper"
+],
 "top": "#petBirthYear"
 },
+"modelAttempts": null,
 "modelCoord": [
 1526,
 523
 ],
 "modelMs": 3632,
+"modelTransient": null,
 "ms": 1259,
 "mutations": 5,
 "outOfRange": false,
@@ -1327,13 +1531,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#petBirthYear",
+"div.pet-age",
+"div.breed-and-age",
+"div.form-wrapper"
+],
 "top": "#petBirthYear"
 },
+"modelAttempts": null,
 "modelCoord": [
 1526,
 523
 ],
 "modelMs": 2458,
+"modelTransient": null,
 "ms": 1253,
 "mutations": 3,
 "outOfRange": false,
@@ -1373,13 +1585,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#petBirthYear",
+"div.pet-age",
+"div.breed-and-age",
+"div.form-wrapper"
+],
 "top": "#petBirthYear"
 },
+"modelAttempts": null,
 "modelCoord": [
 1526,
 523
 ],
 "modelMs": 2806,
+"modelTransient": null,
 "ms": 1255,
 "mutations": 3,
 "outOfRange": false,
@@ -1419,13 +1639,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#petBirthYear",
+"div.pet-age",
+"div.breed-and-age",
+"div.form-wrapper"
+],
 "top": "#petBirthYear"
 },
+"modelAttempts": null,
 "modelCoord": [
 1526,
 523
 ],
 "modelMs": 2924,
+"modelTransient": null,
 "ms": 1241,
 "mutations": 3,
 "outOfRange": false,
@@ -1465,13 +1693,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#petBirthYear",
+"div.pet-age",
+"div.breed-and-age",
+"div.form-wrapper"
+],
 "top": "#petBirthYear"
 },
+"modelAttempts": null,
 "modelCoord": [
 1604,
 523
 ],
 "modelMs": 2355,
+"modelTransient": null,
 "ms": 1252,
 "mutations": 3,
 "outOfRange": false,
@@ -1484,6 +1720,7 @@
 }
 ],
 "apiStopReason": null,
+"blockedBy": null,
 "elapsedMs": 42882,
 "error": null,
 "finalText": "",
@@ -1540,13 +1777,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#pet-name-1",
+"div.hero__notch__form__input-group",
+"div.hero__notch__form__left",
+"form.hero__notch__form.quote-entry__form"
+],
 "top": "#pet-name-1"
 },
+"modelAttempts": null,
 "modelCoord": [
 1025,
 699
 ],
 "modelMs": 3598,
+"modelTransient": null,
 "ms": 1248,
 "mutations": 6,
 "outOfRange": false,
@@ -1583,10 +1828,13 @@
 "isIframe": null,
 "nothingAtPoint": true,
 "position": null,
+"stack": [],
 "top": null
 },
+"modelAttempts": null,
 "modelCoord": null,
 "modelMs": 2328,
+"modelTransient": null,
 "ms": 15,
 "mutations": 0,
 "outOfRange": false,
@@ -1626,13 +1874,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"span.cta-title",
+"button.btn.btn-default",
+"div.primary_btn.primary_black",
+"div.hero__notch__form__right.cta-group"
+],
 "top": "span.cta-title"
 },
+"modelAttempts": null,
 "modelCoord": [
 1659,
 700
 ],
 "modelMs": 2840,
+"modelTransient": null,
 "ms": 4889,
 "mutations": null,
 "outOfRange": false,
@@ -1672,13 +1928,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#select2-petBreed-container",
+"div",
+"div.pet-breed",
+"div.breed-and-age"
+],
 "top": "#select2-petBreed-container"
 },
+"modelAttempts": null,
 "modelCoord": [
 1170,
 523
 ],
 "modelMs": 2582,
+"modelTransient": null,
 "ms": 1242,
 "mutations": 1224,
 "outOfRange": false,
@@ -1718,13 +1982,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#select2-petBreed-result-0jc5-103",
+"#select2-petBreed-results",
+"span.select2-results",
+"span.select2-dropdown.select2-dropdown--below"
+],
 "top": "#select2-petBreed-result-0jc5-103"
 },
+"modelAttempts": null,
 "modelCoord": [
 1098,
 756
 ],
 "modelMs": 2453,
+"modelTransient": null,
 "ms": 1232,
 "mutations": 26,
 "outOfRange": false,
@@ -1794,13 +2066,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#petBirthYear",
+"div.pet-age",
+"div.breed-and-age",
+"div.form-wrapper"
+],
 "top": "#petBirthYear"
 },
+"modelAttempts": null,
 "modelCoord": [
 1526,
 523
 ],
 "modelMs": 2207,
+"modelTransient": null,
 "ms": 444,
 "mutations": 8,
 "outOfRange": false,
@@ -1840,13 +2120,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#email",
+"div.email",
+"div.email-and-zip",
+"div.form-wrapper"
+],
 "top": "#email"
 },
+"modelAttempts": null,
 "modelCoord": [
 1170,
 628
 ],
 "modelMs": 2223,
+"modelTransient": null,
 "ms": 1242,
 "mutations": 14,
 "outOfRange": false,
@@ -1883,10 +2171,13 @@
 "isIframe": null,
 "nothingAtPoint": true,
 "position": null,
+"stack": [],
 "top": null
 },
+"modelAttempts": null,
 "modelCoord": null,
 "modelMs": 2365,
+"modelTransient": null,
 "ms": 57,
 "mutations": 0,
 "outOfRange": false,
@@ -1926,13 +2217,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#zipCode",
+"div.zip",
+"div.email-and-zip",
+"div.form-wrapper"
+],
 "top": "#zipCode"
 },
+"modelAttempts": null,
 "modelCoord": [
 1526,
 628
 ],
 "modelMs": 2213,
+"modelTransient": null,
 "ms": 1234,
 "mutations": 17,
 "outOfRange": false,
@@ -1969,10 +2268,13 @@
 "isIframe": null,
 "nothingAtPoint": true,
 "position": null,
+"stack": [],
 "top": null
 },
+"modelAttempts": null,
 "modelCoord": null,
 "modelMs": 2524,
+"modelTransient": null,
 "ms": 33,
 "mutations": 1,
 "outOfRange": false,
@@ -1985,6 +2287,7 @@
 }
 ],
 "apiStopReason": null,
+"blockedBy": null,
 "elapsedMs": 38691,
 "error": null,
 "finalText": "",
@@ -2041,13 +2344,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#pet-name-1",
+"div.hero__notch__form__input-group",
+"div.hero__notch__form__left",
+"form.hero__notch__form.quote-entry__form"
+],
 "top": "#pet-name-1"
 },
+"modelAttempts": null,
 "modelCoord": [
 1025,
 699
 ],
 "modelMs": 3330,
+"modelTransient": null,
 "ms": 1240,
 "mutations": 6,
 "outOfRange": false,
@@ -2084,10 +2395,13 @@
 "isIframe": null,
 "nothingAtPoint": true,
 "position": null,
+"stack": [],
 "top": null
 },
+"modelAttempts": null,
 "modelCoord": null,
 "modelMs": 2364,
+"modelTransient": null,
 "ms": 15,
 "mutations": 0,
 "outOfRange": false,
@@ -2127,13 +2441,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"span.cta-title",
+"button.btn.btn-default",
+"div.primary_btn.primary_black",
+"div.hero__notch__form__right.cta-group"
+],
 "top": "span.cta-title"
 },
+"modelAttempts": null,
 "modelCoord": [
 1646,
 700
 ],
 "modelMs": 2821,
+"modelTransient": null,
 "ms": 2814,
 "mutations": null,
 "outOfRange": false,
@@ -2173,13 +2495,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#select2-petBreed-container",
+"div",
+"div.pet-breed",
+"div.breed-and-age"
+],
 "top": "#select2-petBreed-container"
 },
+"modelAttempts": null,
 "modelCoord": [
 1170,
 523
 ],
 "modelMs": 2230,
+"modelTransient": null,
 "ms": 1258,
 "mutations": 1224,
 "outOfRange": false,
@@ -2219,13 +2549,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#select2-petBreed-result-dfx1-103",
+"#select2-petBreed-results",
+"span.select2-results",
+"span.select2-dropdown.select2-dropdown--below"
+],
 "top": "#select2-petBreed-result-dfx1-103"
 },
+"modelAttempts": null,
 "modelCoord": [
 1097,
 754
 ],
 "modelMs": 2212,
+"modelTransient": null,
 "ms": 1231,
 "mutations": 26,
 "outOfRange": false,
@@ -2295,13 +2633,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#petBirthYear",
+"div.pet-age",
+"div.breed-and-age",
+"div.form-wrapper"
+],
 "top": "#petBirthYear"
 },
+"modelAttempts": null,
 "modelCoord": [
 1526,
 523
 ],
 "modelMs": 2487,
+"modelTransient": null,
 "ms": 445,
 "mutations": 8,
 "outOfRange": false,
@@ -2341,13 +2687,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#email",
+"div.email",
+"div.email-and-zip",
+"div.form-wrapper"
+],
 "top": "#email"
 },
+"modelAttempts": null,
 "modelCoord": [
 1170,
 628
 ],
 "modelMs": 2114,
+"modelTransient": null,
 "ms": 1237,
 "mutations": 14,
 "outOfRange": false,
@@ -2384,10 +2738,13 @@
 "isIframe": null,
 "nothingAtPoint": true,
 "position": null,
+"stack": [],
 "top": null
 },
+"modelAttempts": null,
 "modelCoord": null,
 "modelMs": 3136,
+"modelTransient": null,
 "ms": 51,
 "mutations": 0,
 "outOfRange": false,
@@ -2427,13 +2784,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"#zipCode",
+"div.zip",
+"div.email-and-zip",
+"div.form-wrapper"
+],
 "top": "#zipCode"
 },
+"modelAttempts": null,
 "modelCoord": [
 1526,
 628
 ],
 "modelMs": 2438,
+"modelTransient": null,
 "ms": 1240,
 "mutations": 17,
 "outOfRange": false,
@@ -2470,10 +2835,13 @@
 "isIframe": null,
 "nothingAtPoint": true,
 "position": null,
+"stack": [],
 "top": null
 },
+"modelAttempts": null,
 "modelCoord": null,
 "modelMs": 1927,
+"modelTransient": null,
 "ms": 24,
 "mutations": 1,
 "outOfRange": false,
@@ -2486,6 +2854,7 @@
 }
 ],
 "apiStopReason": "end_turn",
+"blockedBy": null,
 "elapsedMs": 48084,
 "error": null,
 "finalText": "I've reached a point in the funnel where all the form fields are filled in (Pet Name: Buddy, Dog, Boy, Breed: Mixed Breed Medium, Age: 5 years, Email: qa-test@example.com, ZIP: 98101), but the page displays a Cloudflare \"Verify you are human\" bot-check checkbox that must be checked before proceeding to \"Next: Select a Plan.\"\n\nPer my instructions, I must not attempt to solve, bypass, or trick any CAPTCHA or bot-check mechanism, and no test credentials/bypass method was provided for this challenge.\n\n**Result: Blocked.** I was able to progress from the homepage through the initial \"See My Rates\" pet name entry and fully complete the Step 1 \"Pet Details\" form (name, type, breed, age, email, ZIP). However, the funnel path to Step 2 (\"Select a Plan\") and onward to `/quote/step3` is gated behind a Cloudflare \"Verify you are human\" bot-check checkbox on the Pet Details page. Since I'm instructed never to interact with CAPTCHA/bot-check challenges, I cannot proceed further through the legitimate on-page UI path at this time.\n\nIf you have valid test credentials, a known bypass token, or guidance on how QA typically clears this Cloudflare check in your test environment, please advise and I can continue the crawl toward step3.",
@@ -2542,13 +2911,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "absolute",
+"stack": [
+"a.link-sZR.link--default-outline-rJR",
+"div.jsx-838440310.banner__properties-container-Uhf",
+"div.banner-AtC.jsx-843611644",
+"div.r-grid__col-N9o.r-grid__col--12-MWy"
+],
 "top": "a.link-sZR.link--default-outline-rJR"
 },
+"modelAttempts": null,
 "modelCoord": [
 1378,
 19
 ],
 "modelMs": 4562,
+"modelTransient": null,
 "ms": 1298,
 "mutations": 617,
 "outOfRange": false,
@@ -2585,10 +2962,13 @@
 "isIframe": null,
 "nothingAtPoint": true,
 "position": null,
+"stack": [],
 "top": null
 },
+"modelAttempts": null,
 "modelCoord": null,
 "modelMs": 7562,
+"modelTransient": null,
 "ms": 3,
 "mutations": 0,
 "outOfRange": false,
@@ -2628,13 +3008,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"use",
+"svg.icon-Dvc",
+"button.close-button-sch.close-button--dark-jDm",
+"div.layover__centered-close-N_e"
+],
 "top": "use"
 },
+"modelAttempts": null,
 "modelCoord": [
 1611,
 355
 ],
 "modelMs": 3203,
+"modelTransient": null,
 "ms": 1249,
 "mutations": 20,
 "outOfRange": false,
@@ -2674,13 +3062,21 @@
 "isIframe": false,
 "nothingAtPoint": false,
 "position": "static",
+"stack": [
+"div.element__text-S1H.element__text--capitalized-CMQ",
+"button.element-io5.element--icon-button-OIa",
+"div.left-menu__hamburger-enR.left-menu__hamburger--visible-xVT",
+"div.responsive-_v0.responsive-1024px-_cd"
+],
 "top": "div.element__text-S1H.element__text--capitalized-CMQ"
 },
+"modelAttempts": null,
 "modelCoord": [
 65,
 70
 ],
 "modelMs": 3676,
+"modelTransient": null,
 "ms": 1258,
 "mutations": 10,
 "outOfRange": false,
@@ -2693,6 +3089,7 @@
 }
 ],
 "apiStopReason": null,
+"blockedBy": null,
 "elapsedMs": 25014,
 "error": "Failed to fetch",
 "finalText": "",
@@ -2709,6 +3106,684 @@
 "steps": 4,
 "stopReason": "api-error",
 "summary": "The crawl could not run: Failed to fetch (after 4 agent step(s)). This is a Selenite or API failure, not a finding about the site.",
+"to": "https://www.toryburch.com/es-us/sale/categories/sport-sale/"
+}
+],
+"status": "ran"
+},
+"1789755806034": {
+"error": null,
+"reachedEnd": true,
+"segments": [
+{
+"actions": [
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+2737,
+1181
+],
+"delivered": true,
+"deliveredTo": "a.link-sZR.link--default-outline-rJR",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 91,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "absolute",
+"stack": [
+"a.link-sZR.link--default-outline-rJR",
+"video.video__player-qFP",
+"div.video-wYN",
+"div.banner-AtC.jsx-2151962360"
+],
+"top": "a.link-sZR.link--default-outline-rJR"
+},
+"modelAttempts": null,
+"modelCoord": [
+2543,
+1097
+],
+"modelMs": 4687,
+"modelTransient": null,
+"ms": 1288,
+"mutations": 623,
+"outOfRange": false,
+"page": {
+"textLen": 2710,
+"url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
+},
+"step": 1,
+"structuralMutations": 322
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1484,
+20
+],
+"delivered": true,
+"deliveredTo": "button.layover__link-ahy.banner__link-I5x",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 2,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "absolute",
+"stack": [
+"button.layover__link-ahy.banner__link-I5x",
+"span.rte-color--tory-black",
+"span",
+"span"
+],
+"top": "button.layover__link-ahy.banner__link-I5x"
+},
+"modelAttempts": null,
+"modelCoord": [
+1379,
+19
+],
+"modelMs": 5004,
+"modelTransient": null,
+"ms": 1261,
+"mutations": 325,
+"outOfRange": false,
+"page": {
+"textLen": 2825,
+"url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
+},
+"step": 2,
+"structuralMutations": 23
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1733,
+382
+],
+"delivered": true,
+"deliveredTo": "svg.icon-Dvc",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"stack": [
+"svg.icon-Dvc",
+"button.close-button-sch.close-button--dark-jDm",
+"div.layover__centered-close-N_e",
+"div.sign-up__content-wSY.sign-up__content--drawer-nfV"
+],
+"top": "svg.icon-Dvc"
+},
+"modelAttempts": null,
+"modelCoord": [
+1610,
+355
+],
+"modelMs": 3278,
+"modelTransient": null,
+"ms": 1252,
+"mutations": 19,
+"outOfRange": false,
+"page": {
+"textLen": 2685,
+"url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
+},
+"step": 3,
+"structuralMutations": 5
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+2737,
+1181
+],
+"delivered": true,
+"deliveredTo": "use",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"stack": [
+"use",
+"svg.icon-Dvc",
+"button.minimized-signup__close-y43",
+"#minimized-signup"
+],
+"top": "use"
+},
+"modelAttempts": null,
+"modelCoord": [
+2543,
+1097
+],
+"modelMs": 4803,
+"modelTransient": null,
+"ms": 1240,
+"mutations": 2,
+"outOfRange": false,
+"page": {
+"textLen": 2672,
+"url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
+},
+"step": 4,
+"structuralMutations": 1
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+70,
+75
+],
+"delivered": true,
+"deliveredTo": "div.element__text-S1H.element__text--capitalized-CMQ",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"stack": [
+"div.element__text-S1H.element__text--capitalized-CMQ",
+"button.element-io5.element--icon-button-OIa",
+"div.left-menu__hamburger-enR.left-menu__hamburger--visible-xVT",
+"div.responsive-_v0.responsive-1024px-_cd"
+],
+"top": "div.element__text-S1H.element__text--capitalized-CMQ"
+},
+"modelAttempts": null,
+"modelCoord": [
+65,
+70
+],
+"modelMs": 3893,
+"modelTransient": null,
+"ms": 1263,
+"mutations": 10,
+"outOfRange": false,
+"page": {
+"textLen": 2887,
+"url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
+},
+"step": 5,
+"structuralMutations": 2
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+84,
+798
+],
+"delivered": true,
+"deliveredTo": "span.shipping-label__country-zhB",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"stack": [
+"span.shipping-label__country-zhB",
+"span.link-sZR.link--default-outline-rJR",
+"div.shipping-label-GvF",
+"span.link-sZR.link--default-outline-rJR"
+],
+"top": "span.shipping-label__country-zhB"
+},
+"modelAttempts": null,
+"modelCoord": [
+78,
+741
+],
+"modelMs": 3318,
+"modelTransient": null,
+"ms": 1269,
+"mutations": 42,
+"outOfRange": false,
+"page": {
+"textLen": 3587,
+"url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
+},
+"step": 6,
+"structuralMutations": 12
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1385,
+1100
+],
+"delivered": true,
+"deliveredTo": "button.caption-JuI",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"stack": [
+"button.caption-JuI",
+"div.dropdown__current-value-xbJ.dropdown__current-value--tb-nBt",
+"div.dropdown__custom-wrap-wBt",
+"select.dropdown__native-pww"
+],
+"top": "button.caption-JuI"
+},
+"modelAttempts": null,
+"modelCoord": [
+1287,
+1022
+],
+"modelMs": 3815,
+"modelTransient": null,
+"ms": 1253,
+"mutations": 16,
+"outOfRange": false,
+"page": {
+"textLen": 3619,
+"url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
+},
+"step": 7,
+"structuralMutations": 1
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1261,
+1045
+],
+"delivered": true,
+"deliveredTo": "#localePopupLanguage_/es-us/",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"stack": [
+"#localePopupLanguage_/es-us/",
+"#id-locale-popup-language-custom-dropdown",
+"div.dropdown__list-wrap-zFV.dropdown__list-wrap--opened-Bu5",
+"button.caption-JuI"
+],
+"top": "#localePopupLanguage_/es-us/"
+},
+"modelAttempts": null,
+"modelCoord": [
+1171,
+971
+],
+"modelMs": 3689,
+"modelTransient": null,
+"ms": 1246,
+"mutations": 29,
+"outOfRange": false,
+"page": {
+"textLen": 3587,
+"url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
+},
+"step": 8,
+"structuralMutations": 4
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1385,
+1170
+],
+"delivered": null,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"stack": [
+"span.button__content-nae",
+"button.button-ee4.button--dark-SRv",
+"form.locale-popup__form-hLy",
+"div.locale-popup__form-wrap-OMh"
+],
+"top": "span.button__content-nae"
+},
+"modelAttempts": null,
+"modelCoord": [
+1287,
+1087
+],
+"modelMs": 3041,
+"modelTransient": null,
+"ms": 3179,
+"mutations": null,
+"outOfRange": false,
+"page": {
+"textLen": 3853,
+"url": "https://www.toryburch.com/es-us/handbags/bunny-knot/?fromCountry=US&toCountry=US"
+},
+"step": 9,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+70,
+75
+],
+"delivered": true,
+"deliveredTo": "div.element__text-S1H.element__text--capitalized-CMQ",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"stack": [
+"div.element__text-S1H.element__text--capitalized-CMQ",
+"button.element-io5.element--icon-button-OIa",
+"div.left-menu__hamburger-enR.left-menu__hamburger--visible-xVT",
+"div.responsive-_v0.responsive-1024px-_cd"
+],
+"top": "div.element__text-S1H.element__text--capitalized-CMQ"
+},
+"modelAttempts": null,
+"modelCoord": [
+65,
+70
+],
+"modelMs": 3712,
+"modelTransient": null,
+"ms": 1254,
+"mutations": 14,
+"outOfRange": false,
+"page": {
+"textLen": 4116,
+"url": "https://www.toryburch.com/es-us/handbags/bunny-knot/?fromCountry=US&toCountry=US"
+},
+"step": 10,
+"structuralMutations": 2
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+88,
+636
+],
+"delivered": true,
+"deliveredTo": "a.link-sZR.link--default-outline-rJR",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"stack": [
+"a.link-sZR.link--default-outline-rJR",
+"div.menu-item-bkq",
+"nav.menu-layer__nav-Rd2.menu-layer__nav--padded-pqD",
+"div.menu-layer-U2O.menu-layer--main-RGU"
+],
+"top": "a.link-sZR.link--default-outline-rJR"
+},
+"modelAttempts": null,
+"modelCoord": [
+82,
+591
+],
+"modelMs": 3678,
+"modelTransient": null,
+"ms": 1259,
+"mutations": 27,
+"outOfRange": false,
+"page": {
+"textLen": 4186,
+"url": "https://www.toryburch.com/es-us/handbags/bunny-knot/?fromCountry=US&toCountry=US"
+},
+"step": 11,
+"structuralMutations": 1
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+585,
+313
+],
+"delivered": true,
+"deliveredTo": "a.link-sZR.link--default-outline-rJR",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"stack": [
+"a.link-sZR.link--default-outline-rJR",
+"div.menu-item-bkq",
+"nav.menu-layer__nav-Rd2",
+"#id-submenu"
+],
+"top": "a.link-sZR.link--default-outline-rJR"
+},
+"modelAttempts": null,
+"modelCoord": [
+543,
+291
+],
+"modelMs": 3751,
+"modelTransient": null,
+"ms": 1289,
+"mutations": 672,
+"outOfRange": false,
+"page": {
+"textLen": 3760,
+"url": "https://www.toryburch.com/es-us/sale/categories/sport-sale/"
+},
+"step": 12,
+"structuralMutations": 376
+}
+],
+"apiStopReason": null,
+"blockedBy": null,
+"elapsedMs": 69417,
+"error": null,
+"finalText": "",
+"from": "http://toryburch.com/",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"reached": true,
+"steps": 12,
+"stopReason": "arrived",
+"summary": "Reached https://www.toryburch.com/es-us/sale/categories/sport-sale/ in 12 agent step(s).",
 "to": "https://www.toryburch.com/es-us/sale/categories/sport-sale/"
 }
 ],

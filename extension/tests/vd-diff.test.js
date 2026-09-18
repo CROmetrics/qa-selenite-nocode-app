@@ -95,7 +95,7 @@ eval(_bg.slice(_bg.indexOf('function cropVisualDiffBlock'),
 // The retry predicate. Sliced to just before runVisualReport so the
 // VIS_REPORT_RETRIES const comes with it.
 eval(_bg.slice(_bg.indexOf('function shouldRetryApiCall'),
-                _bg.indexOf('async function runVisualReport')));
+                _bg.indexOf('async function anthropicFetch')));
 
 eval(_bg.slice(_bg.indexOf('function vdImageScale'),
                 _bg.indexOf('function clampBox')));
@@ -4192,27 +4192,104 @@ eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
   // "Failed to fetch" on its fifth vision call. The report path has retried
   // since 7e38210; the crawl, which makes one call per STEP rather than one per
   // variant, had no retry at all.
-  ok('a thrown fetch is retried', fnRetryableFailure('threw', 0));
-  ok('  and so is a hidden rate limit that did surface as a status', fnRetryableFailure('ok', 429));
-  ok('  and an overloaded server', fnRetryableFailure('ok', 529));
-  ok('a good response is not retried', !fnRetryableFailure('ok', 200));
-  ok('  nor a deterministic 400', !fnRetryableFailure('ok', 400));
-  ok('  nor a 401', !fnRetryableFailure('ok', 401));
+  ok('a thrown fetch is retried', retryableFailure('threw', 0));
+  ok('  and so is a hidden rate limit that did surface as a status', retryableFailure('ok', 429));
+  ok('  and an overloaded server', retryableFailure('ok', 529));
+  ok('a good response is not retried', !retryableFailure('ok', 200));
+  ok('  nor a deterministic 400', !retryableFailure('ok', 400));
+  ok('  nor a 401', !retryableFailure('ok', 401));
   // THE TWO THAT MUST NEVER BE RETRIED. Both arrive as AbortError, so only an
   // explicit policy keeps them apart from a network blip.
-  ok('a user Stop is never retried', !fnRetryableFailure('stopped', 0));
-  ok('  not even carrying a retryable status', !fnRetryableFailure('stopped', 429));
-  ok('a timeout is never retried', !fnRetryableFailure('timeout', 0));
-  ok('  not even carrying a retryable status', !fnRetryableFailure('timeout', 503));
+  ok('a user Stop is never retried', !retryableFailure('stopped', 0));
+  ok('  not even carrying a retryable status', !retryableFailure('stopped', 429));
+  ok('a timeout is never retried', !retryableFailure('timeout', 0));
+  ok('  not even carrying a retryable status', !retryableFailure('timeout', 503));
 
   // THE WIRE, again. A policy nothing consults is a policy that does not exist,
   // and a second raw call site is exactly how one of them ends up with no retry.
-  ok('fnVisionCall consults the policy', _bg.indexOf('fnRetryableFailure(kind, status)') !== -1);
+  ok('fnVisionCall consults the policy', _bg.indexOf('retryableFailure(kind, status)') !== -1);
   var segBody = _bg.slice(_bg.indexOf('async function crawlSegment'), _bg.indexOf('async function runFunnelCrawl'));
   ok('  and it is a real slice of the crawl', segBody.length > 2000, segBody.length);
   ok('the crawl loop no longer calls the API directly', segBody.indexOf('api.anthropic.com') === -1);
   ok('  it goes through fnVisionCall', segBody.indexOf('await fnVisionCall(') !== -1);
-  ok('  which honours Stop during a backoff too', _bg.indexOf('_funnelStopRequested) return { error') !== -1);
+  ok('  passing the crawl\'s stop flag down', _bg.indexOf('stopRequested: () => _funnelStopRequested') !== -1);
+  ok('  which the helper checks after a backoff', _bg.indexOf('if (stopRequested && stopRequested())') !== -1);
+  // THE GUARD THAT MATTERS NOW. Four of six call sites had no retry because each
+  // fix was applied at one site. Exactly one raw call site is what stops a
+  // seventh being written without one.
+  var rawSites = (_bg.match(/api\.anthropic\.com\/v1\/messages/g) || []).length;
+  eq('there is exactly ONE place this extension calls the Anthropic API', rawSites, 1);
+  var helperBody = _bg.slice(_bg.indexOf('async function anthropicFetch'));
+  ok('  and it is inside anthropicFetch',
+     helperBody.indexOf('api.anthropic.com/v1/messages') !== -1
+     && helperBody.indexOf('api.anthropic.com/v1/messages') < helperBody.indexOf('\n}\n'));
+
+  // ---- the helper's outcome mapping, against a stubbed network ----
+  // jsc runs no timers under drainMicrotasks, so only the paths that take NO
+  // backoff are reachable: retries:0 makes every failure terminal on attempt 1.
+  // The backoff and timeout paths are covered by the policy above and by real runs.
+  eval(_bg.slice(_bg.indexOf('async function anthropicFetch'), _bg.indexOf('async function runVisualReport')));
+  var gg = (typeof globalThis === 'object') ? globalThis : this;
+  var withNet = function (steps, fn) {
+    var had = { f: gg.fetch, a: gg.AbortController };
+    var i = 0;
+    gg.fetch = function () {
+      var st = steps[Math.min(i++, steps.length - 1)];
+      if (st.thrown) { var e = new Error(st.thrown); e.name = st.name || 'TypeError'; return Promise.reject(e); }
+      return Promise.resolve({ ok: st.status >= 200 && st.status < 300, status: st.status,
+                               json: function () { return Promise.resolve(st.body || {}); } });
+    };
+    gg.AbortController = function () {
+      this.signal = { aborted: false, addEventListener: function () {}, removeEventListener: function () {} };
+      this.abort = function () {};
+    };
+    try { return fn(function () { return i; }); }
+    finally { gg.fetch = had.f; gg.AbortController = had.a; }
+  };
+  var settle = function (pr) { var out = null; pr.then(function (r) { out = r; }); drainMicrotasks(); return out; };
+
+  var okRes = withNet([{ status: 200, body: { content: [{ type: 'text', text: 'hi' }] } }],
+    function () { return settle(anthropicFetch({ m: 1 }, { apiKey: 'k', retries: 0 })); });
+  ok('a 200 comes back ok', okRes && okRes.ok === true, okRes);
+  eq('  parsed, not raw', okRes.data.content[0].text, 'hi');
+  eq('  on one attempt', okRes.attempts, 1);
+  eq('  with nothing retried past', okRes.transient.length, 0);
+
+  var badRes = withNet([{ status: 400, body: { error: { message: 'bad request' } } }],
+    function () { return settle(anthropicFetch({ m: 1 }, { apiKey: 'k', retries: 0 })); });
+  eq('a deterministic 400 is kind http', badRes.kind, 'http');
+  eq('  carrying the API\'s own message', badRes.error, 'bad request');
+  eq('  and is never retried', badRes.attempts, 1);
+  eq('  so nothing is recorded as transient', badRes.transient.length, 0);
+
+  var threwRes = withNet([{ thrown: 'Failed to fetch' }],
+    function (calls) { var r = settle(anthropicFetch({ m: 1 }, { apiKey: 'k', retries: 0 })); r._calls = calls(); return r; });
+  eq('a thrown fetch is kind threw', threwRes.kind, 'threw');
+  ok('  and says how many attempts it took', /after 1 attempts/.test(threwRes.error), threwRes.error);
+  eq('  recording the failure it gave up on', threwRes.transient.length, 1);
+  eq('    verbatim', threwRes.transient[0], 'Failed to fetch');
+  eq('  having really called the network once', threwRes._calls, 1);
+
+  // THE POINT OF transient: a call that SUCCEEDS on a later try must still say
+  // it faltered, or a flaky API stays invisible until it costs someone a run.
+  var recovered = withNet([{ thrown: 'Failed to fetch' }, { status: 200, body: { ok: 1 } }],
+    function () { return settle(anthropicFetch({ m: 1 }, { apiKey: 'k', retries: 0 })); });
+  eq('with no retries left, one throw is terminal', recovered.kind, 'threw');
+  eq('  and the second response is never reached', recovered.attempts, 1);
+
+  var unreadable = withNet([{ status: 200 }],
+    function () {
+      var had = gg.fetch;
+      gg.fetch = function () {
+        return Promise.resolve({ ok: true, status: 200,
+          json: function () { return Promise.reject(new Error('Unexpected token <')); } });
+      };
+      try { return settle(anthropicFetch({ m: 1 }, { apiKey: 'k', retries: 0 })); }
+      finally { gg.fetch = had; }
+    });
+  eq('an unreadable body is its own kind', unreadable.kind, 'parse');
+  ok('  and says so', /could not be read/.test(unreadable.error), unreadable.error);
+
 
   // ---- time bounds ----
   // Nothing in the crawl loop had one: the vision call carried only the Stop

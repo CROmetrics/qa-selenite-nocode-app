@@ -72,6 +72,18 @@ The call moved into `fnVisionCall`, which returns a result rather than throwing,
 
 Tests pin the policy and, separately, **that something consults it**: the crawl must not contain a raw API call site any more. A second one is exactly how one of them ends up without a retry, which is the whole defect.
 
+**One place calls the Anthropic API now, and it retries.** There were six call sites and four had no retry at all. The same failure has cost real runs twice — the Visual Diff report path got a retry in `7e38210`, the funnel crawl got one earlier today — and both times the other call sites kept the gap. A third per-site fix would have guaranteed a fourth.
+
+`anthropicFetch()` owns the fetch, the retry and the body read; every caller keeps its own error handling and response shape, because three of them are message handlers with their own. `callClaudeVision` (three callers behind it), the Figma comp summary, the Test Agent summary and the AI field extraction all gained a retry they never had. The policy moved with it: `vdShouldRetryReport` became `shouldRetryApiCall` and `fnRetryableFailure` became `retryableFailure`, since a `vd`/`fn` prefix on something every path depends on lies about who owns it. The suite now asserts `api.anthropic.com` appears **exactly once** in the file — that is what stops a seventh call site being written without a retry.
+
+The two outcomes that must never be retried are still stated in one place: a **Stop** is the tester's decision, a **timeout** has already spent the caller's whole allowance. Both arrive as `AbortError`, and the helper composes each caller's own signal with its own per-attempt timeout rather than reaching for a module global — a Stop on a funnel must not abort an unrelated Figma summary.
+
+**A retry that succeeds now leaves a trace.** It left none: `modelMs` spans every attempt, so a fast failure plus a retry read as one slow call, and the toryburch run that reached its destination could not say whether the retry shipped an hour earlier had ever fired. Every call now reports `attempts` and `transient` — the failures it retried *past* — recorded per funnel action and on the Visual Diff report result. That is the signal that says the API is flaky *before* it costs a run.
+
+**A gate-blocked funnel is a caveat, not a failure.** A CAPTCHA, login wall or payment step now reports `warn` rather than `error`, so it no longer badges the section DEGRADED. *"This funnel cannot be crawled past step 1 without solving a bot check"* is a complete, correct answer — the crawl did exactly its job. Everything else stays `error`. The gate classification is now stored on the segment instead of being computed for a sentence and thrown away, using the same pure function `fnStopSentence` already calls, so the two cannot disagree and `popup.js` never re-implements the patterns.
+
+**And the closing quote printed twice.** `fnStopSentence` already embeds the agent's last words via *"In its own words:"*, and the problems builder appended them again — the same text twice in one 837-character entry. It is appended only when the summary does not already carry it.
+
 ### Also fixed, found while instrumenting
 
 - **`key` was a no-op that reported success.** It slept 100ms and dispatched nothing, and `rec.error` stayed null, so the model was told every Enter-to-submit worked. Now dispatches `rawKeyDown`/`keyUp` for Enter/Tab/Escape; anything else is reported as unsupported rather than silently skipped. Unhandled actions (`hover`, `wait`, `double_click`, `left_click_drag`…) no longer fall through claiming success.

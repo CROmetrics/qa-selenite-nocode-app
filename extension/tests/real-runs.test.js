@@ -45,6 +45,11 @@ var RUNS = JSON.parse(readFile('fixtures-real-runs.json'));
 // background.js, so it is sliced the same way vd-diff.test.js slices it.
 var FUNNEL = JSON.parse(readFile('fixtures-real-funnel.json'));
 var _bg = readFile('../background.js');
+// The shared retry policy lives above the funnel block, beside shouldRetryApiCall.
+// Sliced to stop BEFORE anthropicFetch, which references fnTimeout from a region
+// this suite evals later.
+eval(_bg.slice(_bg.indexOf('function shouldRetryApiCall'),
+                _bg.indexOf('async function anthropicFetch')));
 eval(_bg.slice(_bg.indexOf('const FN_MAX_IMAGE_EDGE'),
                 _bg.indexOf('// Returns { dataUrl, width, height')));
 eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
@@ -1184,9 +1189,42 @@ section('funnel crawl coordinate space (real runs)');
   eq('  four calls returned; the fifth is the one that threw', died.steps, 4);
   ok('  and it cost a real amount of work', died.elapsedMs > 20000, died.elapsedMs);
   // The retry policy, applied to exactly this failure.
-  ok('a thrown fetch of this shape is retryable', fnRetryableFailure('threw', 0));
+  ok('a thrown fetch of this shape is retryable', retryableFailure('threw', 0));
   print('    api-error: ' + died.steps + ' good calls then "' + died.error + '", '
         + Math.round(died.elapsedMs / 1000) + 's lost with no retry');
+
+  // ---- the same funnel, reached ----
+  // r_1789755806034 is the toryburch walk 13 minutes after the api-error one.
+  var won = FUNNEL['1789755806034'].segments[0];
+  eq('it reached the destination', won.reached, true);
+  eq('  in 12 steps', won.steps, 12);
+  eq('  with every coordinate converted',
+     (won.actions || []).filter(function (a) { return a.coordConverted === true; }).length, 12);
+
+  // THE STEP BUDGET IS WHAT MADE IT POSSIBLE. At step 10 it was not there yet,
+  // so the old cap of 10 ends this run two steps short.
+  var at10 = won.actions[9];
+  ok('at step 10 it had not arrived', at10.page.url !== won.to, at10.page.url);
+  eq('  and step 12 is what did', won.actions[11].page.url, won.to);
+  ok('  so the old 10-step cap would have failed a funnel that works',
+     won.actions.length > 10);
+
+  // A native <select> in the hit stack that must NOT be intercepted: a custom
+  // dropdown paints over it, so closest('select') on the top element is null
+  // and the click goes through to the widget, which is what worked.
+  var overlay = (won.actions || []).filter(function (a) {
+    return a.hit && (a.hit.stack || []).some(function (e) { return e.indexOf('select.') === 0; });
+  });
+  ok('a native select appears in a hit stack', overlay.length > 0);
+  ok('  and is NOT reported as a control', overlay.every(function (a) { return a.hit.control === null; }));
+  ok('  so nothing was chosen for it', overlay.every(function (a) { return a.choice === null; }));
+
+  // TRAP 7 again: this log predates the attempt counters, so a retry that fired
+  // during it would have left nothing at all.
+  ok('no action carries an attempt count yet',
+     (won.actions || []).every(function (a) { return a.modelAttempts === null; }));
+  print('    reached: 12 steps, step 10 at ' + at10.page.url.slice(-28)
+        + ' -> old cap would have missed it by 2');
 
   // ---- and what the log's own "start here" list says about it ----
   // vdCollectProblems is 500+ lines with its own dependencies, so only its
@@ -1223,6 +1261,42 @@ section('funnel crawl coordinate space (real runs)');
   var stale = collect(FUNNEL['1789742354610'].segments);
   eq('a steps-but-no-actions walk is named as an old background build',
      stale.filter(function (p) { return /older background build/.test(p.detail); }).length, 1);
+
+  // A gate is a COMPLETE answer, not a failed run. severity drives the section
+  // badge, so an error here reads DEGRADED on a crawl that did exactly its job.
+  var gated = { from: 'a', to: 'b', reached: false, steps: 11, stopReason: 'agent-stopped',
+                // Geometry, or the stale-worker check fires on a segment that
+                // reports steps and records nothing -- correctly, so the
+                // fixture has to look like a real one.
+                geometry: { viewportW: 2773, viewportH: 1225, imageW: 2576, imageH: 1138 },
+                blockedBy: { gate: 'captcha', evidence: 'Verify you are human' },
+                finalText: 'I stopped because a Cloudflare bot check blocks the path.',
+                summary: 'The agent stopped after 11 step(s) and reported a CAPTCHA / bot check, which it is '
+                       + 'instructed not to attempt (matched "Verify you are human"). In its own words: '
+                       + '"I stopped because a Cloudflare bot check blocks the path."',
+                actions: [] };
+  var gp = collect([gated]);
+  eq('a gate-blocked funnel produces one problem', gp.length, 1);
+  eq('  as a caveat, not a failed run', gp[0].sev, 'warn');
+  // THE DUPLICATE. fnStopSentence already embeds the closing words, and the
+  // builder appended them again — the same quote twice in one 837-char entry.
+  eq('  and the closing words appear exactly once',
+     gp[0].detail.split('I stopped because a Cloudflare bot check').length - 1, 1);
+  ok('  with no second attribution line', gp[0].detail.indexOf("closing words") === -1, gp[0].detail);
+
+  // Everything that is NOT a gate still invalidates the run.
+  var brokeSeg = { from: 'a', to: 'b', reached: false, steps: 6, stopReason: 'stuck',
+                   geometry: { viewportW: 2773, viewportH: 1225, imageW: 2576, imageH: 1138 },
+                   blockedBy: null, finalText: '', summary: 'Six clicks changed nothing.', actions: [] };
+  eq('a non-gate failure is still an error', collect([brokeSeg])[0].sev, 'error');
+  // A summary that does NOT carry the quote must still get it appended.
+  var quietSeg = { from: 'a', to: 'b', reached: false, steps: 4, stopReason: 'api-error',
+                   geometry: { viewportW: 2773, viewportH: 1225, imageW: 2576, imageH: 1138 },
+                   blockedBy: null, error: 'Failed to fetch',
+                   finalText: 'Something the summary never quotes at all.',
+                   summary: 'The crawl could not run: Failed to fetch.', actions: [] };
+  ok('an unquoted closing line is still appended',
+     /closing words/.test(collect([quietSeg])[0].detail), collect([quietSeg])[0].detail);
 
   // Out-of-range used to be described with the FIRST segment's geometry, whoever
   // the clicks belonged to. Two segments, different sizes, offender in the second.

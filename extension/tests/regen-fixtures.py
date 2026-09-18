@@ -333,6 +333,11 @@ def gen_funnel():
                 # The detail behind an api-error/exception stop. `stopReason`
                 # says WHICH class of failure; only this says which failure.
                 "error": s.get('error'),
+                # Which gate stopped it. Classified in the worker (fnClassifyGate)
+                # and now STORED rather than recomputed for a sentence and
+                # dropped -- it is what decides whether the problem is a warn or
+                # an error. TRAP 7: null on every log before that.
+                "blockedBy": s.get('blockedBy'),
                 "finalText": s.get('finalText'),
                 # The sentence production ACTUALLY emitted. Frozen in the log, so
                 # pinning it is stable across wording changes -- and it is the
@@ -355,6 +360,11 @@ def gen_funnel():
                     "geometry": a.get('geometry'),
                     "modelMs": a.get('modelMs'),   # TRAP 7
                     "ms": a.get('ms'),             # TRAP 7
+                    # A retry that SUCCEEDS leaves no other trace: modelMs spans
+                    # every attempt, so a fast failure plus a retry reads as one
+                    # slow call. TRAP 7 for both.
+                    "modelAttempts": a.get('modelAttempts'),
+                    "modelTransient": a.get('modelTransient'),
                     "choice": a.get('choice'),     # TRAP 7
                     "structuralMutations": a.get('structuralMutations'),   # TRAP 7
                     "outOfRange": a.get('outOfRange'),
@@ -363,6 +373,11 @@ def gen_funnel():
                     "mutations": a.get('mutations'),
                     "hit": None if a.get('hit') is None else {   # TRAP 6
                         "top": (a.get('hit') or {}).get('top'),
+                        # The z-ordered stack, capped at 4 by the probe. `top`
+                        # alone cannot show a native <select> painted UNDER a
+                        # custom dropdown -- which is the case that proves the
+                        # closest('select') discriminator does not over-reach.
+                        "stack": (a.get('hit') or {}).get('stack'),
                         # brief() reduces the element to '#id', so the tag is
                         # gone -- this is the only place a native <select> is
                         # distinguishable from a link downstream. TRAP 7.

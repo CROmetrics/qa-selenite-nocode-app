@@ -3642,6 +3642,7 @@ async function runAbComparison(opts = {}) {
               variantVerified: v.variantVerified,
               overallSummary: v.overallSummary, structuralStats: v.structuralStats,
               truncatedFindingCount: v.truncatedFindingCount, noVerdictCount: v.noVerdictCount,
+              reportAttempts: v.reportAttempts, reportTransient: v.reportTransient,
               duplicateIndexCount: v.duplicateIndexCount, truncated: v.truncated, pixelDiff: v.pixelDiff,
               fullPageTruncated: v.fullPageTruncated, resumed: v.resumed, noSpecText: v.noSpecText,
               // Diff diagnostics ride along on this mirror too. It exists to
@@ -4505,6 +4506,7 @@ async function runVisualDiffPipeline(captures, { ctx, resumeCheckpoint, onStatus
       label: c.label, sameUrlNote, findings, overallSummary: reportRes.overallSummary,
       noSpecText: !gradedSpec, requirements, requirementsUnsupported, structuralStats, truncatedFindingCount: truncatedCount,
       noVerdictCount: reportRes.noVerdictCount, duplicateIndexCount: reportRes.duplicateIndexCount,
+      reportAttempts: reportRes.reportAttempts ?? null, reportTransient: reportRes.reportTransient || null,
       truncated: reportRes.truncated, pixelDiff: reportRes.pixelDiff,
       aggregate, diffMode: mode, matchedFraction, matchTierCounts, diffDebug, notWalked,
       fullPageTruncated: !!c.fullPage.truncated,
@@ -7549,14 +7551,27 @@ function vdCollectProblems(sections) {
     } else if (broken) {
       // The worker now names the cause; this used to assemble a generic
       // sentence that could only ever say "didn't reach End after N steps".
-      add('error', 'funnel-crawl',
+      //
+      // `warn`, not `error`, when a gate stopped it. Severity drives the section
+      // badge (errors.length ? DEGRADED : CAVEATS), and a CAPTCHA, login wall or
+      // payment step is a COMPLETE, CORRECT answer — "this funnel cannot be
+      // crawled past here without solving a bot check" is the result, not a
+      // failure to produce one. Everything else — stuck, coord-space, the three
+      // timeouts, runaway, exceptions — invalidates the run and stays `error`.
+      const sev = broken.blockedBy ? 'warn' : 'error';
+      // fnStopSentence already embeds the closing words for the gate and
+      // agent-stopped branches ("In its own words: …"), so appending them again
+      // printed the same quote twice in one 837-character entry.
+      const quoted = !!(broken.finalText && broken.summary
+        && broken.summary.indexOf(broken.finalText.trim().replace(/\s+/g, ' ').slice(0, 40)) !== -1);
+      add(sev, 'funnel-crawl',
         (broken.summary
           || `Did not reach End — broke going from ${broken.from} to ${broken.to}`
              + (broken.error ? ` (${broken.error})` : '')
              + ` after ${broken.steps} agent step(s).`)
         + ` Segment: ${broken.from} → ${broken.to}.`
         + (skipped ? ` ${skipped} later segment(s) were not attempted.` : '')
-        + (broken.finalText ? ` The agent's closing words: "${broken.finalText.slice(0, 300)}"` : ''));
+        + (broken.finalText && !quoted ? ` The agent's closing words: "${broken.finalText.slice(0, 300)}"` : ''));
     } else if (segs.length) {
       const totalSteps = segs.reduce((n, s) => n + (s.steps || 0), 0);
       add('info', 'funnel-crawl', `Reached End across ${segs.length} segment(s), ${totalSteps} agent step(s) total.`);
@@ -7758,6 +7773,10 @@ function buildDebugLog(sections) {
         suppressionAggregate: v.aggregate || null,
         reportedFindingCount: (v.findings || []).length,
         truncatedFindingCount: v.truncatedFindingCount || 0,
+        // A grading call that succeeded on a later attempt used to look exactly
+        // like one that never faltered. null means a build that did not measure.
+        reportAttempts: v.reportAttempts ?? null,
+        reportTransient: v.reportTransient || null,
         // Without these six, a run that degraded gracefully looks identical in
         // the log to one where the model returned nothing — which is the wrong
         // conclusion and the one I drew from run 1788360614883 before reading
@@ -7814,6 +7833,9 @@ function buildDebugLog(sections) {
         // run from a worker build that predates these.
         stopReason: s.stopReason || null,
         apiStopReason: s.apiStopReason || null,
+        // Which gate stopped it, when one did. Classified in the worker so this
+        // side never re-implements the patterns.
+        blockedBy: s.blockedBy || null,
         finalText: s.finalText || '',
         summary: s.summary || '',
         // What the agent DID, alongside what it said. `note` alone could not
@@ -7838,6 +7860,10 @@ function buildDebugLog(sections) {
           // the vision call, ms is carrying the action out.
           modelMs: a.modelMs ?? null,
           ms: a.ms ?? null,
+          // A retry that SUCCEEDS leaves no other trace: modelMs spans every
+          // attempt, so a fast failure plus a retry reads as one slow call.
+          modelAttempts: a.modelAttempts ?? null,
+          modelTransient: a.modelTransient || null,
           outOfRange: !!a.outOfRange, urlAfter: a.urlAfter || null, error: a.error || null,
           // What was under the point, whether the click reached anything, and
           // whether the page moved — the evidence behind every claim above.

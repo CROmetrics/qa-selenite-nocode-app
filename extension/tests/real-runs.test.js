@@ -40,6 +40,16 @@ eval(slicePopup('function abCaptureWidths(modes) {', '\nfunction abPageUrls(mode
 
 var RUNS = JSON.parse(readFile('fixtures-real-runs.json'));
 
+// The Funnel Crawl walk each run recorded, and the worker helpers that produced
+// it. This suite reads popup.js everywhere else; the crawl lives in
+// background.js, so it is sliced the same way vd-diff.test.js slices it.
+var FUNNEL = JSON.parse(readFile('fixtures-real-funnel.json'));
+var _bg = readFile('../background.js');
+eval(_bg.slice(_bg.indexOf('const FN_MAX_IMAGE_EDGE'),
+                _bg.indexOf('// Returns { dataUrl, width, height')));
+eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
+                _bg.indexOf('// Injected, so fully self-contained')));
+
 // Kept in its own file on purpose. fixtures-real-runs.json is a verdict
 // projection whose invariants are derived by counting classifications; bolting
 // geometry onto it muddles a file with one clear job. This one carries the
@@ -836,6 +846,239 @@ section('spec suppression cause across every recorded run');
   ok('  and it is the zapier redesign-misread run',
      /widths differ/.test(abCaptureWidths([{ mode: 2, data: { captures: CAPTURES['1787604099659'].captures } }])));
   print('    cover width rendered on ' + rendered + ' of ' + ids.length + ' recorded runs, 1 flagged');
+})();
+
+
+// ── Funnel Crawl: the coordinate space, driven by the recorded walk ─────────
+// Run 1789744771634 clicked six times at raw screenshot coordinates, reported
+// every one as delivered, and concluded the SITE was at fault. None of that was
+// visible in the log: the conversion failed silently, the out-of-range net
+// could not see it, and the segment's own geometry did not describe the step
+// that worked. This drives the real converter with the real recorded numbers.
+section('funnel crawl coordinate space (real runs)');
+(function funnelCoordinateSpace() {
+  if (typeof fnCoordToCss !== 'function' || typeof fnStopSentence !== 'function') {
+    ok('funnel helpers are exported from background.js', false, 'slice markers stale?');
+    return;
+  }
+  var fids = Object.keys(FUNNEL).sort();
+  ok('the funnel corpus is not empty', fids.length > 0);
+
+  // TRAP 4, pinned: `steps > 0` with no actions is the stale-service-worker
+  // shape, not a parse failure. Two runs on record carry it, and the popup
+  // detects exactly this to tell the tester to reload the extension.
+  var staleWorker = 0, withActions = 0;
+  fids.forEach(function (rid) {
+    (FUNNEL[rid].segments || []).forEach(function (sg) {
+      if ((sg.steps || 0) > 0 && !(sg.actions || []).length) staleWorker++;
+      if ((sg.actions || []).length) withActions++;
+    });
+  });
+  eq('two recorded walks are the stale-worker shape', staleWorker, 2);
+  eq('  and two recorded actions: the run that failed and the run that worked', withActions, 2);
+
+  // THE RUN. Replaying the converter over the SEGMENT geometry reproduces steps
+  // 2-7 byte for byte and canNOT reproduce step 1 — which is the whole
+  // diagnosis. out.geometry is one object mutated per capture, so it holds only
+  // the last screenshot's numbers; step 1 ran against a taller image whose
+  // dimensions the log never recorded.
+  var seg = FUNNEL['1789744771634'].segments[0];
+  var g = seg.geometry;
+  eq('the recorded segment geometry is the LAST capture', g.imageH, 1138);
+  var reproduced = 0, notReproduced = [];
+  (seg.actions || []).forEach(function (a) {
+    if (!a.modelCoord || !a.cssCoord) return;
+    var c = fnCoordToCss(a.modelCoord[0], a.modelCoord[1], g.imageW, g.imageH, g.viewportW, g.viewportH);
+    if (c.x === a.cssCoord[0] && c.y === a.cssCoord[1]) reproduced++;
+    else notReproduced.push(a.step);
+  });
+  eq('the segment geometry reproduces every step but the first', reproduced, 6);
+  eq('  and the one it cannot is step 1', notReproduced.join(','), '1');
+
+  // Step 1's real image height, recovered the only way the log allows: by
+  // solving backwards. 1186 is the unique integer that reproduces its output.
+  var a1 = seg.actions[0];
+  var solved = null;
+  for (var h = 1100; h <= 1281; h++) {
+    var c1 = fnCoordToCss(a1.modelCoord[0], a1.modelCoord[1], g.imageW, h, g.viewportW, g.viewportH);
+    if (c1.x === a1.cssCoord[0] && c1.y === a1.cssCoord[1]) { solved = solved === null ? h : -1; }
+  }
+  eq('step 1 ran against a uniquely determined, unrecorded image height', solved, 1186);
+  ok('  which is TALLER than every later capture', solved > g.imageH);
+
+  // Replaying the segment geometry declines ALL SEVEN, including the step that
+  // demonstrably converted. That is not a contradiction, it is the same fact
+  // again: this geometry never described step 1, so it cannot be used to decide
+  // what step 1 did. Pinned, because reading it as per-action is the trap.
+  var conv = (seg.actions || []).map(function (a) {
+    return a.modelCoord
+      ? fnCoordToCss(a.modelCoord[0], a.modelCoord[1], g.imageW, g.imageH, g.viewportW, g.viewportH)
+      : null;
+  });
+  eq('under the segment geometry every step declines',
+     conv.filter(function (c) { return c && c.converted === false; }).length, 7);
+  eq('  all for the same reason', conv[1].reason, 'axes-disagree');
+
+  // What ACTUALLY happened is recoverable only from the outputs: a converted
+  // coordinate moved, a declined one came back identical. (Sound here because
+  // the scale is 1.076, not 1.0 — a 1x host would make the two indistinguishable,
+  // which is exactly why coordConverted is now recorded rather than inferred.)
+  var moved = function (a) {
+    return !!(a.modelCoord && a.cssCoord
+      && (a.cssCoord[0] !== a.modelCoord[0] || a.cssCoord[1] !== a.modelCoord[1]));
+  };
+  var converted = (seg.actions || []).filter(moved);
+  var declined = (seg.actions || []).filter(function (a) { return !moved(a); });
+  eq('exactly one recorded step was converted', converted.length, 1);
+  eq('  and it is step 1', converted[0].step, 1);
+  eq('the other six were left in screenshot space', declined.length, 6);
+
+  // THE HOLE the fix exists to close. Every declined coordinate was dispatched
+  // anyway, landed inside the viewport, and came back `delivered: true`.
+  eq('all six were dispatched and reported delivered',
+     declined.filter(function (a) { return a.delivered === true; }).length, 6);
+  eq('  and none was flagged out of range', declined.filter(function (a) { return a.outOfRange; }).length, 0);
+  eq('  because the downscaled image fits inside the viewport',
+     declined.filter(function (a) { return fnCoordInViewport(a.cssCoord[0], a.cssCoord[1], g.viewportW, g.viewportH); }).length, 6);
+
+  // What the run actually told the tester, kept verbatim so the regression is
+  // a record rather than a memory.
+  ok('the run concluded it was NOT a targeting problem',
+     /not a\s+targeting problem/.test(seg.summary), seg.summary);
+
+  // And what the current build says about the same walk. The recorded actions
+  // predate coordConverted, so it is DERIVED here by the real converter over
+  // the recorded geometry — not hand-written — and fed back through the real
+  // sentence builder.
+  var asFixed = {
+    from: seg.from, to: seg.to, reached: false, steps: seg.steps, error: null,
+    geometry: g, stopReason: seg.stopReason, apiStopReason: null, finalText: '',
+    actions: (seg.actions || []).map(function (a, i) {
+      var o = {};
+      for (var k in a) o[k] = a[k];
+      // Converted-ness from what the run RECORDED; the reason from the real
+      // converter. Neither is hand-written.
+      o.coordConverted = a.modelCoord ? moved(a) : null;
+      o.coordReason = a.modelCoord ? (moved(a) ? null : (conv[i] || {}).reason) : 'no-coordinate';
+      o.hit = a.hit || {};
+      o.page = a.page || null;
+      return o;
+    }),
+  };
+  var now = fnStopSentence(asFixed);
+  ok('the current build no longer calls it a targeting-free failure',
+     now.indexOf('not a targeting problem') === -1, now);
+  ok('  it names the coordinate space', /could not be converted out of the screenshot/.test(now), now);
+  ok('  and says the fault is ours', /Selenite/.test(now), now);
+  ok('  counting the six that failed, not all seven', /^6 of 7 actions/.test(now), now);
+  print('    was: ' + seg.summary.slice(0, 96) + '...');
+  print('    now: ' + now.slice(0, 96) + '...');
+
+  // ---- the same funnel, after the fix ----
+  // 1789747242103 is 1789744771634 re-run against the current build: same two
+  // waypoints, same site, 40 minutes later. It is the only post-fix walk on
+  // record and the only real data exercising coordConverted and per-action
+  // geometry, so what it proves it proves once.
+  var ok2 = FUNNEL['1789747242103'].segments[0];
+  ok('the same funnel now reaches the end', ok2.reached === true);
+  eq('  and says so', ok2.stopReason, 'arrived');
+  eq('every action converted its coordinate',
+     (ok2.actions || []).filter(function (a) { return a.coordConverted === true; }).length, ok2.actions.length);
+  eq('  with no reason to report',
+     (ok2.actions || []).filter(function (a) { return a.coordReason === null; }).length, ok2.actions.length);
+  eq('  and every one carries the geometry it used',
+     (ok2.actions || []).filter(function (a) { return a.geometry && a.geometry.imageH; }).length, ok2.actions.length);
+
+  // THE DIAGNOSIS, confirmed by instrumentation rather than argued. The viewport
+  // drops once, right after the debugger attaches, and then holds -- which is
+  // what a browser infobar does and what a site cannot do on cue.
+  var vps = (ok2.actions || []).map(function (a) { return a.geometry.viewportH; });
+  eq('the viewport moves exactly once, on the first capture', new Set(vps.slice(1)).size, 1);
+  ok('  downward', vps[0] > vps[1], vps.join(','));
+  eq('  by the 56px the pre-fix run lost between its first two captures', 1281 - vps[1], 56);
+
+  // And the answer to the question the innerW/innerH probe was added to settle:
+  // window.innerHeight and cssVisualViewport.clientHeight are the SAME number on
+  // every settled capture, so there is no scrollbar correction to make.
+  var agree = (ok2.actions || []).slice(1).every(function (a) {
+    return a.hit && a.hit.innerH === a.geometry.viewportH && a.hit.innerW === a.geometry.viewportW;
+  });
+  ok('the two viewport primitives agree on every settled capture', agree);
+
+  // The residual this run exposed, and what now prevents it. Step 1's capture
+  // and its measurement were taken either side of the infobar animation; both
+  // convert, so fnCoordToCss cannot be the thing that catches it.
+  var a1ok = ok2.actions[0], a2ok = ok2.actions[1];
+  ok('the seed capture was taken while the viewport was moving',
+     !fnCaptureAxesAgree(a1ok.geometry.imageW, a1ok.geometry.imageH,
+                         a1ok.geometry.viewportW, a1ok.geometry.viewportH));
+  ok('  but it converted, so only the capture check can see it', a1ok.coordConverted === true);
+  ok('  and every later capture was settled',
+     (ok2.actions || []).slice(1).every(function (a) {
+       return fnCaptureAxesAgree(a.geometry.imageW, a.geometry.imageH,
+                                 a.geometry.viewportW, a.geometry.viewportH);
+     }));
+  // What it cost: the first click missed the button and hit its container.
+  eq('the first click reached only the banner container', a1ok.deliveredTo, '#meru-cm');
+  eq('  and changed nothing', a1ok.mutations, 0);
+  eq('  while the settled step hit the button itself', a2ok.deliveredTo, '#c-rall-bn');
+  ok('  which was interactive', a2ok.hit.interactive === true);
+  ok('  and dismissed the banner', a2ok.mutations > 0 && a2ok.page.textLen < a1ok.page.textLen);
+  var frac = a1ok.modelCoord[1] / a1ok.geometry.imageH;
+  eq('the miss is exactly the viewport delta, not a targeting error',
+     a1ok.cssCoord[1] - Math.round(frac * a1ok.hit.innerH), 37);
+  print('    post-fix: reached in ' + ok2.steps + ' steps, ' + ok2.actions.length + '/'
+        + ok2.actions.length + ' converted, viewport ' + vps[0] + ' -> ' + vps[1]);
+
+  // ---- and what the log's own "start here" list says about it ----
+  // vdCollectProblems is 500+ lines with its own dependencies, so only its
+  // funnel branch is sliced. It is self-contained: `sections` and `add` in,
+  // strings out.
+  var funnelProblems = new Function('sections', 'add',
+    slicePopup('// Funnel Crawl: this whole mode IS the AI-vision agent walking one waypoint',
+               '  return problems;'));
+  var collect = function (segments) {
+    var got = [];
+    funnelProblems({ modes: [{ mode: 'funnel', status: 'ran', data: { segments: segments } }] },
+                   function (sev, where, detail) { got.push({ sev: sev, where: where, detail: detail }); });
+    return got;
+  };
+
+  // TRAP 5, pinned at the consumer. The recorded actions predate
+  // coordConverted, so it reads null — which must NOT be treated as false, or
+  // every pre-fix run turns into a fabricated conversion failure.
+  var asRecorded = collect([seg]);
+  eq('the recorded run reports its stop',
+     asRecorded.filter(function (p) { return /not a\s+targeting problem/.test(p.detail); }).length, 1);
+  eq('  and a null coordConverted raises nothing',
+     asRecorded.filter(function (p) { return /could not be converted/.test(p.detail); }).length, 0);
+
+  // The same walk as the current build would record it.
+  var afterFix = collect([asFixed]);
+  var conversion = afterFix.filter(function (p) { return /could not be converted/.test(p.detail); });
+  eq('a post-fix run names the conversion failure', conversion.length, 1);
+  eq('  as an error', conversion[0].sev, 'error');
+  ok('  quoting both scales', /1\.076 across and 1\.126 down/.test(conversion[0].detail), conversion[0].detail);
+  ok('  and saying whose fault it is', /Selenite/.test(conversion[0].detail), conversion[0].detail);
+
+  // The stale-worker shape reaches the reader as an instruction, not a mystery.
+  var stale = collect(FUNNEL['1789742354610'].segments);
+  eq('a steps-but-no-actions walk is named as an old background build',
+     stale.filter(function (p) { return /older background build/.test(p.detail); }).length, 1);
+
+  // Out-of-range used to be described with the FIRST segment's geometry, whoever
+  // the clicks belonged to. Two segments, different sizes, offender in the second.
+  var segA = { from: 'a', to: 'b', reached: true, stopReason: 'arrived', steps: 1, actions: [],
+               geometry: { viewportW: 1280, viewportH: 800, imageW: 1280, imageH: 800 } };
+  var segB = { from: 'b', to: 'c', reached: false, stopReason: 'stuck', steps: 1, summary: 'x',
+               geometry: { viewportW: 1171, viewportH: 760, imageW: 2342, imageH: 1520 },
+               actions: [{ step: 1, action: 'left_click', outOfRange: true, cssCoord: [2342, 673],
+                           geometry: { viewportW: 1171, viewportH: 760, imageW: 2342, imageH: 1520 } }] };
+  var crossSeg = collect([segA, segB]).filter(function (p) { return /OUTSIDE the/.test(p.detail); });
+  eq('an out-of-range click is reported once', crossSeg.length, 1);
+  ok('  against ITS OWN viewport, not the first segment\'s',
+     crossSeg[0].detail.indexOf('1171x760') !== -1 && crossSeg[0].detail.indexOf('1280x800') === -1,
+     crossSeg[0].detail);
 })();
 
 

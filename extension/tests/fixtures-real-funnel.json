@@ -1,0 +1,605 @@
+{
+"1789678299756": {
+"error": null,
+"reachedEnd": false,
+"segments": [
+{
+"actions": [],
+"apiStopReason": null,
+"finalText": null,
+"from": "https://www.lesschwab.com/wheels",
+"geometry": null,
+"reached": false,
+"steps": 10,
+"stopReason": null,
+"summary": null,
+"to": "https://www.lesschwab.com/schedule-appointment/date"
+}
+],
+"status": "ran"
+},
+"1789742354610": {
+"error": null,
+"reachedEnd": false,
+"segments": [
+{
+"actions": [],
+"apiStopReason": null,
+"finalText": null,
+"from": "https://www.lesschwab.com/wheels",
+"geometry": null,
+"reached": false,
+"steps": 10,
+"stopReason": null,
+"summary": null,
+"to": "https://www.lesschwab.com/schedule-appointment/date"
+}
+],
+"status": "ran"
+},
+"1789744771634": {
+"error": null,
+"reachedEnd": false,
+"segments": [
+{
+"actions": [
+{
+"action": "left_click",
+"coordConverted": null,
+"coordReason": null,
+"cssCoord": [
+1596,
+1209
+],
+"delivered": true,
+"deliveredTo": "div.product-tile__cta-button",
+"geometry": null,
+"hit": {
+"coversPct": 1,
+"innerH": null,
+"innerW": null,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "div.product-tile__cta-button"
+},
+"modelCoord": [
+1483,
+1119
+],
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9291,
+"url": "https://www.lesschwab.com/wheels"
+},
+"step": 1
+},
+{
+"action": "left_click",
+"coordConverted": null,
+"coordReason": null,
+"cssCoord": [
+1475,
+1068
+],
+"delivered": true,
+"deliveredTo": "#meru-cm__cnt-inr-i",
+"geometry": null,
+"hit": {
+"coversPct": 2,
+"innerH": null,
+"innerW": null,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#meru-cm__cnt-inr-i"
+},
+"modelCoord": [
+1475,
+1068
+],
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9291,
+"url": "https://www.lesschwab.com/wheels"
+},
+"step": 2
+},
+{
+"action": "left_click",
+"coordConverted": null,
+"coordReason": null,
+"cssCoord": [
+1475,
+1068
+],
+"delivered": true,
+"deliveredTo": "#meru-cm__cnt-inr-i",
+"geometry": null,
+"hit": {
+"coversPct": 2,
+"innerH": null,
+"innerW": null,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#meru-cm__cnt-inr-i"
+},
+"modelCoord": [
+1475,
+1068
+],
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9291,
+"url": "https://www.lesschwab.com/wheels"
+},
+"step": 3
+},
+{
+"action": "left_click",
+"coordConverted": null,
+"coordReason": null,
+"cssCoord": [
+1475,
+1068
+],
+"delivered": true,
+"deliveredTo": "#meru-cm__cnt-inr-i",
+"geometry": null,
+"hit": {
+"coversPct": 2,
+"innerH": null,
+"innerW": null,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#meru-cm__cnt-inr-i"
+},
+"modelCoord": [
+1475,
+1068
+],
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9291,
+"url": "https://www.lesschwab.com/wheels"
+},
+"step": 4
+},
+{
+"action": "left_click",
+"coordConverted": null,
+"coordReason": null,
+"cssCoord": [
+1475,
+1068
+],
+"delivered": true,
+"deliveredTo": "#meru-cm__cnt-inr-i",
+"geometry": null,
+"hit": {
+"coversPct": 2,
+"innerH": null,
+"innerW": null,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#meru-cm__cnt-inr-i"
+},
+"modelCoord": [
+1475,
+1068
+],
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9291,
+"url": "https://www.lesschwab.com/wheels"
+},
+"step": 5
+},
+{
+"action": "left_click",
+"coordConverted": null,
+"coordReason": null,
+"cssCoord": [
+1475,
+1068
+],
+"delivered": true,
+"deliveredTo": "#meru-cm__cnt-inr-i",
+"geometry": null,
+"hit": {
+"coversPct": 2,
+"innerH": null,
+"innerW": null,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#meru-cm__cnt-inr-i"
+},
+"modelCoord": [
+1475,
+1068
+],
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9291,
+"url": "https://www.lesschwab.com/wheels"
+},
+"step": 6
+},
+{
+"action": "left_click",
+"coordConverted": null,
+"coordReason": null,
+"cssCoord": [
+1475,
+1068
+],
+"delivered": true,
+"deliveredTo": "#meru-cm__cnt-inr-i",
+"geometry": null,
+"hit": {
+"coversPct": 2,
+"innerH": null,
+"innerW": null,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#meru-cm__cnt-inr-i"
+},
+"modelCoord": [
+1475,
+1068
+],
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9291,
+"url": "https://www.lesschwab.com/wheels"
+},
+"step": 7
+}
+],
+"apiStopReason": null,
+"finalText": "",
+"from": "https://www.lesschwab.com/wheels",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.125659050966608,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1281,
+"viewportW": 2773
+},
+"reached": false,
+"steps": 7,
+"stopReason": "stuck",
+"summary": "6 consecutive clicks were delivered to #meru-cm__cnt-inr-i and the page did not change: same URL, same title, same visible text, and no DOM mutation. The click reached an element, so this is not a targeting problem — but this check cannot confirm which control the agent meant to hit, so treat it as an observation to reproduce by hand rather than a proven site defect.",
+"to": "https://www.lesschwab.com/schedule-appointment/date"
+}
+],
+"status": "ran"
+},
+"1789747242103": {
+"error": null,
+"reachedEnd": true,
+"segments": [
+{
+"actions": [
+{
+"action": "left_click",
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1589,
+1191
+],
+"delivered": true,
+"deliveredTo": "#meru-cm",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.066610455311973,
+"imageH": 1186,
+"imageW": 2576,
+"viewportH": 1265,
+"viewportW": 2773
+},
+"hit": {
+"coversPct": 4,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "fixed",
+"top": "#meru-cm"
+},
+"modelCoord": [
+1476,
+1117
+],
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9291,
+"url": "https://www.lesschwab.com/wheels"
+},
+"step": 1
+},
+{
+"action": "left_click",
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1589,
+1149
+],
+"delivered": true,
+"deliveredTo": "#c-rall-bn",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#c-rall-bn"
+},
+"modelCoord": [
+1476,
+1067
+],
+"mutations": 19,
+"outOfRange": false,
+"page": {
+"textLen": 8866,
+"url": "https://www.lesschwab.com/wheels"
+},
+"step": 2
+},
+{
+"action": "left_click",
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+2506,
+724
+],
+"delivered": true,
+"deliveredTo": "a.button.js-addItemToCart",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "relative",
+"top": "a.button.js-addItemToCart"
+},
+"modelCoord": [
+2328,
+673
+],
+"mutations": 3,
+"outOfRange": false,
+"page": {
+"textLen": 9162,
+"url": "https://www.lesschwab.com/wheels"
+},
+"step": 3
+},
+{
+"action": "left_click",
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1207,
+821
+],
+"delivered": null,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "relative",
+"top": "button.store-confirm__continue.button"
+},
+"modelCoord": [
+1121,
+763
+],
+"mutations": null,
+"outOfRange": false,
+"page": {
+"textLen": 1050,
+"url": "https://www.lesschwab.com/schedule-appointment/services"
+},
+"step": 4
+},
+{
+"action": "left_click",
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1408,
+596
+],
+"delivered": true,
+"deliveredTo": "#701971",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "absolute",
+"top": "#701971"
+},
+"modelCoord": [
+1308,
+554
+],
+"mutations": 21,
+"outOfRange": false,
+"page": {
+"textLen": 1033,
+"url": "https://www.lesschwab.com/schedule-appointment/services"
+},
+"step": 5
+},
+{
+"action": "scroll",
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1387,
+754
+],
+"delivered": false,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"coversPct": 7,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "ul.schedule__list"
+},
+"modelCoord": [
+1288,
+700
+],
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 1033,
+"url": "https://www.lesschwab.com/schedule-appointment/services"
+},
+"step": 6
+},
+{
+"action": "left_click",
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1855,
+1127
+],
+"delivered": true,
+"deliveredTo": "button.button.schedule__button",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "relative",
+"top": "button.button.schedule__button"
+},
+"modelCoord": [
+1723,
+1047
+],
+"mutations": 17,
+"outOfRange": false,
+"page": {
+"textLen": 1148,
+"url": "https://www.lesschwab.com/schedule-appointment/date"
+},
+"step": 7
+}
+],
+"apiStopReason": null,
+"finalText": "",
+"from": "https://www.lesschwab.com/wheels",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"reached": true,
+"steps": 7,
+"stopReason": "arrived",
+"summary": "Reached https://www.lesschwab.com/schedule-appointment/date in 7 agent step(s).",
+"to": "https://www.lesschwab.com/schedule-appointment/date"
+}
+],
+"status": "ran"
+}
+}

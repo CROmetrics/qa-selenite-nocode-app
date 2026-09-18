@@ -10,6 +10,7 @@ let bcLogData = [];
 let bcFilterLevel = null;
 let bcTagOnly = false;   // Browser Console "CRO" toggle: narrow the live mirror to [PjS]/[cro] tagged lines
 let metrics = [];        // User-defined metric values (Build tab → Metrics), persisted in storage.local
+let autofillProfiles = []; // Named { id, name, firstName, lastName, phone, address, zip, country, email } sets for Autofill Form, persisted in storage.local
 let logOffset = 0;
 let _wasRunning = false;
 
@@ -105,6 +106,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load function metadata from background
   const res = await chrome.runtime.sendMessage({ action: 'getFunctions' });
   FN_META = res.functions;
+
+  // Loaded before the queue is restored below, so any restored Autofill Form
+  // step's profile dropdown is populated on its first render instead of
+  // showing empty until something later happens to re-render it.
+  const { autofillProfiles: storedProfiles } = await chrome.storage.local.get('autofillProfiles');
+  autofillProfiles = storedProfiles || [];
 
   // Restore saved queue state. The first step is always the mandatory
   // "Open URL" step; seed it from the saved state if present, otherwise
@@ -438,7 +445,7 @@ const taQueuedExtra = new Set(); // mode ids checked in the "Also Run" list, not
 let _taStopRequested = false;
 
 // ── Funnel Crawl (Test Agent-native — no Test Modes submenu to reparent) ──────
-let funnelState = { start: '', middles: [], end: '', supplementalPrompt: '' };  // waypoint URLs + optional supplemental prompt, persisted to sessionNS
+let funnelState = { start: '', middles: [], end: '', supplementalPrompt: '', crawlMaxPages: 150, crawlMaxDepth: 6 };  // waypoint URLs + optional supplemental prompt, persisted to sessionNS
 let _funnelLastRun = null;
 let _taCheckboxPrior = null;      // remembers agentic-checkbox state while funnel force-enables both
 
@@ -452,6 +459,163 @@ function funnelWaypoints() {
 function syncFunnelRunEnabled() {
   if (document.getElementById('ta-primary-select').value !== 'funnel') return;
   document.getElementById('btn-ta-run').disabled = !(funnelState.start.trim() && funnelState.end.trim());
+}
+
+// ── Funnel path discovery — Matrix Auditor's own crawl mechanics ────────────
+// Matrix's crawl (mxCrawlWalk/runMatrixCrawlStep, above) proves pages EXIST
+// under a base URL: open a page, read its real <a href> links, filter to
+// scope, dedupe, queue the new ones, repeat. This reuses that exact executor
+// (runMatrixCrawlStep — zero background.js changes) and the same URL
+// normalization (mxNormalizeCrawlUrl), but asks a different question: not
+// "what's under here", but "is there a click-path from here to THAT specific
+// page" — so it tracks a parent pointer per discovered URL and stops the
+// instant the target turns up, instead of exhausting the whole site.
+//
+// Deliberately SAME-ORIGIN scoping (fnIsSameOrigin), not mxIsUnderBase's
+// same-DIRECTORY scoping: a real funnel routinely crosses sections of one
+// site (a landing page under /lp/ into a checkout under /cart/), which
+// mxIsUnderBase's "+ '/'" prefix test exists specifically to keep OUT of a
+// section audit. Pathfinding across a whole site needs the looser bound;
+// only third-party/off-site links (ads, socials) are out of scope here.
+//
+// The discovered path only proves an anchor-link chain exists — a step
+// gated behind a button, a form submit, or JS-driven navigation won't be
+// found even though a real visitor could complete it. That's why this only
+// fills the waypoint list Funnel Crawl already has: the AI agent still
+// walks every hop exactly as before, so "a human could click through this"
+// stays the thing that's actually verified. Manual waypoint entry remains
+// the fallback for whatever this can't find.
+let _fnCrawling = false;
+let _fnCrawlStop = false;
+
+function fnSetCrawlStatus(text) {
+  const el = document.getElementById('fn-crawl-status');
+  if (el) el.textContent = text;
+}
+
+function fnSetCrawlUiState(state) {
+  const run  = document.getElementById('btn-fn-crawl');
+  const stop = document.getElementById('btn-fn-crawl-stop');
+  if (run)  run.style.display  = state === 'busy' ? 'none' : '';
+  if (stop) stop.style.display = state === 'busy' ? '' : 'none';
+}
+
+function fnStopCrawl() {
+  _fnCrawlStop = true;
+  fnSetCrawlStatus('Stopping after the current page…');
+}
+
+// Same origin, any path — the deliberately looser bound described above.
+function fnIsSameOrigin(url, baseUrl) {
+  const u = mxSplitUrl(url), b = mxSplitUrl(baseUrl);
+  return !!u && !!b && u.origin === b.origin;
+}
+
+// Walk parent pointers from the target back to the base (which has none),
+// reversing into base→…→target order. Returns null if target was never
+// reached — callers only invoke this after confirming it was.
+function fnReconstructPath(parent, baseNorm, targetNorm) {
+  const path = [];
+  let cur = targetNorm;
+  let guard = 0;
+  while (cur && cur !== baseNorm) {
+    path.push(cur);
+    cur = parent.get(cur);
+    if (++guard > 10000) return null; // defensive only — parent can't cycle by construction
+  }
+  if (cur !== baseNorm) return null;
+  path.push(baseNorm);
+  return path.reverse();
+}
+
+// Breadth-first, one page per background round trip via the same
+// runMatrixCrawlStep executor Matrix's own crawl uses — early-exits the
+// instant the (normalized) target is found among a page's links.
+async function fnCrawlFindPath({ baseUrl, endUrl, maxPages, maxDepth, onProgress }) {
+  const base   = mxNormalizeCrawlUrl(baseUrl);
+  const target = mxNormalizeCrawlUrl(endUrl);
+  if (!base)   return { found: false, path: null, scanned: 0, failed: 0, error: 'Start is not a valid http(s) URL.' };
+  if (!target) return { found: false, path: null, scanned: 0, failed: 0, error: 'End is not a valid http(s) URL.' };
+  if (base === target) return { found: true, path: [base], scanned: 0, failed: 0 };
+
+  const visited = new Set([base]);
+  // Keyed and valued by NORMALIZED url throughout — fnReconstructPath walks
+  // this by repeated lookup, so a value that isn't also a valid key (e.g. the
+  // page's raw href, trailing slash and all) breaks the chain after one hop.
+  // Matches Matrix's own convention of surfacing normalized urls downstream
+  // (mxCrawlAbsorb stores mxNormalizeCrawlUrl(href), never the raw href).
+  const parent  = new Map();     // discovered (normalized) url -> the (normalized) url it was found on
+  const queue   = [{ url: baseUrl, norm: base, depth: 0 }];
+  let scanned = 0, failed = 0;
+
+  while (queue.length && !_fnCrawlStop && scanned < maxPages) {
+    const { url, norm: curNorm, depth } = queue.shift();
+    scanned++;
+    if (onProgress) onProgress(`Scanning page ${scanned} (depth ${depth + 1})…`);
+
+    let res;
+    try {
+      // The RAW url, not curNorm, is what actually gets navigated to — the
+      // normalized form has tracking params stripped that are safe to dedupe
+      // on but no reason to risk rewriting on the real request.
+      res = await chrome.runtime.sendMessage({
+        action: 'runMatrixCrawlStep',
+        payload: { url, waitTime: 1500, winId: WIN_ID },
+      });
+    } catch (e) {
+      res = { ok: false, error: e.message };
+    }
+    if (!res || !res.ok || res.loadError) { failed++; continue; }
+
+    for (const href of res.hrefs || []) {
+      const norm = mxNormalizeCrawlUrl(href);
+      if (!norm || visited.has(norm) || !fnIsSameOrigin(norm, base)) continue;
+      visited.add(norm);
+      parent.set(norm, curNorm);
+      if (norm === target) {
+        const path = fnReconstructPath(parent, base, target);
+        return { found: true, path, scanned, failed };
+      }
+      if (depth + 1 < maxDepth) queue.push({ url: href, norm, depth: depth + 1 });
+    }
+  }
+  return {
+    found: false, path: null, scanned, failed,
+    error: _fnCrawlStop ? 'Stopped' : `No link path found to End within ${maxPages} page(s) / depth ${maxDepth}.`,
+  };
+}
+
+async function runFnDiscoverPath() {
+  if (_fnCrawling) return;
+  const baseUrl = funnelState.start.trim();
+  const endUrl  = funnelState.end.trim();
+  if (!baseUrl || !endUrl) { alert('Fill in both Start and End first.'); return; }
+  if (funnelState.middles.some(m => m.trim())
+      && !confirm('Replace the current middle waypoints with the discovered path?')) return;
+
+  _fnCrawling = true;
+  _fnCrawlStop = false;
+  fnSetCrawlUiState('busy');
+  fnSetCrawlStatus('Crawling…');
+  try {
+    const res = await fnCrawlFindPath({
+      baseUrl, endUrl,
+      maxPages: funnelState.crawlMaxPages,
+      maxDepth: funnelState.crawlMaxDepth,
+      onProgress: fnSetCrawlStatus,
+    });
+    if (res.found) {
+      funnelState.middles = res.path.slice(1, -1); // exclude Start/End, already their own fields
+      persistFunnel();
+      taRenderFunnel();
+      fnSetCrawlStatus(`Path found — ${res.path.length - 2} waypoint(s), ${res.scanned} page(s) scanned${res.failed ? `, ${res.failed} could not load` : ''}.`);
+    } else {
+      fnSetCrawlStatus(`${res.error} (${res.scanned} page(s) scanned${res.failed ? `, ${res.failed} could not load` : ''}) — add waypoints manually, or raise the limits below.`);
+    }
+  } finally {
+    _fnCrawling = false;
+    fnSetCrawlUiState('idle');
+  }
 }
 
 function taRenderFunnel() {
@@ -472,8 +636,20 @@ function taRenderFunnel() {
         <span id="fn-fill-hint" style="font-size:10px;color:var(--fg3)">No active ticket context — use the Initialize tab</span>
       </div>
       <label class="cap">Middle waypoints (optional, in order)</label>
+      <div style="font-size:10px;color:var(--fg3);margin-bottom:6px">Add them by hand, or crawl for a route below (same link-discovery Matrix Auditor uses) — it only finds plain &lt;a&gt; link chains, so a button/JS/form-driven step still needs a manual waypoint.</div>
       <div id="fn-mid-list">${midRows}</div>
       <button class="btn sm" id="fn-add-mid" style="margin:2px 0 8px">+ Add Waypoint</button>
+      <div class="arg-row" style="margin-bottom:4px">
+        <span class="arg-lbl">Max pages</span>
+        <input type="text" id="fn-crawl-max" value="${esc(funnelState.crawlMaxPages)}" style="max-width:60px">
+        <span class="arg-lbl">Max depth</span>
+        <input type="text" id="fn-crawl-depth" value="${esc(funnelState.crawlMaxDepth)}" style="max-width:60px">
+      </div>
+      <div class="row" style="gap:6px;margin-bottom:8px">
+        <button class="btn sm" id="btn-fn-crawl" type="button">Discover Waypoints</button>
+        <button class="btn danger sm" id="btn-fn-crawl-stop" type="button" style="display:none">Stop</button>
+        <span id="fn-crawl-status" style="font-size:10px;color:var(--fg3)">Not crawled yet.</span>
+      </div>
       <label class="cap">End (required)</label>
       <input type="text" id="fn-end" value="${esc(funnelState.end)}" placeholder="https://example.com/confirmation" style="width:100%;margin-bottom:8px">
       <label class="cap">Supplemental Instructions (optional)</label>
@@ -493,6 +669,16 @@ function taRenderFunnel() {
   slot.querySelector('#fn-add-mid').addEventListener('click', () => {
     funnelState.middles.push(''); persistFunnel(); taRenderFunnel();
   });
+  slot.querySelector('#fn-crawl-max').addEventListener('input', e => {
+    funnelState.crawlMaxPages = Math.min(500, Math.max(1, parseInt(e.target.value, 10) || 150));
+    persistFunnel();
+  });
+  slot.querySelector('#fn-crawl-depth').addEventListener('input', e => {
+    funnelState.crawlMaxDepth = Math.min(10, Math.max(1, parseInt(e.target.value, 10) || 6));
+    persistFunnel();
+  });
+  slot.querySelector('#btn-fn-crawl').addEventListener('click', runFnDiscoverPath);
+  slot.querySelector('#btn-fn-crawl-stop').addEventListener('click', fnStopCrawl);
   slot.querySelector('#fn-fill-ticket').addEventListener('click', () => fillOneFromTicket('funnel'));
   // The form was just rebuilt with the button disabled; getActiveContext()
   // is async so this resolves a moment later — same fire-and-forget pattern
@@ -506,8 +692,11 @@ function renderFunnelResults(el, run) {
     el.innerHTML = `<div style="color:var(--err);font-size:12px;padding:6px 0">${esc(run.error)}</div>`;
     return;
   }
+  // The thinnest surface, and the one a tester actually watches. It used to
+  // show a red X, two URLs and a step count — nothing about what stopped it.
   const rows = (run.segments || []).map(s => `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--stroke)">
-    ${s.reached ? '✅' : '❌'} ${esc(shortUrl(s.from))} → ${esc(shortUrl(s.to))} <span style="color:var(--fg3)">(${s.steps} step${s.steps === 1 ? '' : 's'}${s.error ? ' · ' + esc(s.error) : ''})</span></div>`).join('');
+    ${s.reached ? '✅' : s.stopReason === 'not-attempted' ? '–' : '❌'} ${esc(shortUrl(s.from))} → ${esc(shortUrl(s.to))} <span style="color:var(--fg3)">(${s.steps} step${s.steps === 1 ? '' : 's'}${s.error ? ' · ' + esc(s.error) : ''})</span>
+    ${s.reached || !s.summary ? '' : `<div style="color:var(--fg2);padding:2px 0 0 14px;line-height:1.45">${esc(s.summary)}</div>`}</div>`).join('');
   el.innerHTML = `<div style="font-weight:600;font-size:12px;margin-bottom:4px">${run.reachedEnd ? 'Reached End ✅' : 'Did not reach End ❌'}</div>${rows}`;
 }
 
@@ -1480,6 +1669,31 @@ const ALERT_ACTIONS = [
   { value: 'get_text', label: 'Get Text',         doc: 'Logs the message text from the current alert dialog to the console.' },
 ];
 
+// Fields Autofill Form fills. Keys match background.js's ACTIONS.autofill_form
+// arg names exactly (value arg = key, override-selector arg = key + 'Sel').
+const AUTOFILL_FIELDS = [
+  { key: 'firstName', label: 'First Name', placeholder: 'Jane' },
+  { key: 'lastName',  label: 'Last Name',  placeholder: 'Doe' },
+  { key: 'phone',     label: 'Phone',      placeholder: '555-123-4567' },
+  { key: 'address',   label: 'Address',    placeholder: '123 Main St' },
+  { key: 'zip',       label: 'Zip Code',   placeholder: '10001' },
+  { key: 'country',   label: 'Country',    placeholder: 'United States' },
+  { key: 'email',     label: 'Email',      placeholder: 'jane.doe@example.com' },
+];
+
+// SPA: Resize width options (CSS px). Values are strings — they travel as
+// step.inputs.width and are parsed back to a number in background.js.
+const RESIZE_WIDTHS = [
+  { value: '2040', label: 'Desktop X-Large (2040px)', doc: 'A very wide desktop viewport, above typical 1920px monitors — for testing max-width breakpoints and ultra-wide layouts.' },
+  { value: '1920', label: 'Desktop Large (1920px)',   doc: 'Standard full-HD desktop width.' },
+  { value: '1400', label: 'Desktop Medium (1400px)',  doc: 'A mid-size laptop/desktop breakpoint, common just below the widest desktop layout.' },
+  { value: '1200', label: 'Desktop Small (1200px)',   doc: 'The narrow end of typical desktop layouts — often where multi-column designs start to compress.' },
+  { value: '1024', label: 'Desktop X-Small (1024px)', doc: 'Small laptop / large tablet landscape width — frequently a desktop-to-tablet breakpoint.' },
+  { value: '400',  label: 'Mobile Large (400px)',     doc: 'A large phone viewport, wider than most standard phones.' },
+  { value: '375',  label: 'Mobile Small (375px)',     doc: 'A common phone viewport width (e.g. iPhone-class devices).' },
+  { value: '320',  label: 'Mobile X-Small (320px)',   doc: 'The narrowest common phone viewport — the classic "small phone" breakpoint.' },
+];
+
 // Build a tooltip for a sub-option select based on the currently selected value
 function buildSubTooltipHTML(options, currentValue) {
   const opt = options.find(o => o.value === currentValue) || options[0];
@@ -1491,7 +1705,17 @@ function buildSubTooltipHTML(options, currentValue) {
 }
 
 function buildMethodArgsHTML(step, methods, hasText) {
-  const method   = step.inputs.method   || methods[0].value;
+  // Written back into step.inputs immediately, not just used as a local
+  // rendering default: the <option selected> below makes the default LOOK
+  // chosen, but a <select>'s 'change' event only fires on an actual value
+  // change — a step left on its first-rendered method never gets one, so
+  // step.inputs.method stays unset and the step runs with method === '',
+  // throwing "Unknown click method: ". Same fix applied at every other
+  // builder with a meaningful (non-empty) default: buildSwitchArgsHTML,
+  // buildAlertArgsHTML, buildResizeArgsHTML — found via SPA: Resize
+  // reporting "No width selected" after a real option was visibly chosen.
+  if (!step.inputs.method) step.inputs.method = methods[0].value;
+  const method   = step.inputs.method;
   const selector = step.inputs.selector || '';
   const methodOpts = methods.map(m =>
     `<option value="${m.value}"${m.value === method ? ' selected' : ''}>${m.label}</option>`
@@ -1515,7 +1739,10 @@ function buildMethodArgsHTML(step, methods, hasText) {
 }
 
 function buildSwitchArgsHTML(step) {
-  const target     = step.inputs.target || 'frame';
+  // Same fix as buildMethodArgsHTML above — write the default back so a step
+  // left on its first-rendered Target actually carries that value.
+  if (!step.inputs.target) step.inputs.target = 'frame';
+  const target     = step.inputs.target;
   const value      = step.inputs.value  || '';
   const targetInfo = SWITCH_TARGETS.find(t => t.value === target) || SWITCH_TARGETS[0];
   const targetOpts = SWITCH_TARGETS.map(t =>
@@ -1534,7 +1761,10 @@ function buildSwitchArgsHTML(step) {
 }
 
 function buildAlertArgsHTML(step) {
-  const action     = step.inputs.action || 'accept';
+  // Same fix as buildMethodArgsHTML above — write the default back so a step
+  // left on its first-rendered Action actually carries that value.
+  if (!step.inputs.action) step.inputs.action = 'accept';
+  const action     = step.inputs.action;
   const actionOpts = ALERT_ACTIONS.map(a =>
     `<option value="${a.value}"${a.value === action ? ' selected' : ''}>${a.label}</option>`
   ).join('');
@@ -1630,14 +1860,75 @@ function buildTrackMetricArgsHTML(step) {
     + (pendingGoals ? `<div class="no-args">${pendingGoals} goal-derived metric(s) hidden until reviewed — confirm them in the Tracker tab.</div>` : '');
 }
 
-// Rebuild every Track Metric step's dropdown so it reflects the current
-// Metrics list — called whenever that list changes.
+// Rebuild every Track Metric (and Trigger Metric, which carries the same
+// metricId dropdown) step so it reflects the current Metrics list — called
+// whenever that list changes.
 function refreshTrackMetricSteps() {
   for (const step of steps) {
-    if (step.func !== 'track_metric') continue;
+    if (step.func !== 'track_metric' && step.func !== 'trigger_metric') continue;
     const el = document.getElementById('step-' + step.id);
     if (el) rerenderStepArgs(el, step);
   }
+}
+
+// Click targeting (reusing the same method+selector UI as the Click step)
+// plus the Track Metric dropdown, plus a wait between the two — Trigger
+// Metric is the click and the assertion fused into one step.
+function buildTriggerMetricArgsHTML(step) {
+  const wait = step.inputs.waitSeconds ?? '1';
+  return buildMethodArgsHTML(step, CLICK_METHODS, false)
+    + `<div class="arg-row">
+        <span class="arg-lbl">Wait (s)</span>
+        <input type="text" data-arg="waitSeconds" value="${esc(wait)}" style="max-width:60px">
+      </div>`
+    + buildTrackMetricArgsHTML(step);
+}
+
+// One value + one optional override-selector row per field. The override row
+// is visually secondary (muted, smaller) since auto-detection is expected to
+// handle most forms — see AUTOFILL_FIELDS and ACTIONS.autofill_form.
+function buildAutofillArgsHTML(step) {
+  const profileOpts = ['<option value="">— Select saved profile —</option>']
+    .concat(autofillProfiles.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`))
+    .join('');
+
+  const fieldRows = AUTOFILL_FIELDS.map(f => `
+    <div class="arg-row">
+      <span class="arg-lbl">${esc(f.label)}</span>
+      <input type="text" data-arg="${f.key}" placeholder="${esc(f.placeholder)}" value="${esc(step.inputs[f.key] || '')}">
+    </div>
+    <div class="arg-row autofill-override-row">
+      <span class="arg-lbl"></span>
+      <input type="text" data-arg="${f.key}Sel" placeholder="optional: override selector (auto-detects by default)" value="${esc(step.inputs[f.key + 'Sel'] || '')}">
+      <button class="btn-pick" data-pick-arg="${f.key}Sel" title="Pick element from page">&#x1F3AF;</button>
+    </div>`).join('');
+
+  return `
+    <div class="script-row autofill-profile-row">
+      <select class="autofill-profile-select">${profileOpts}</select>
+      <button class="btn sm autofill-load-btn" type="button">Load</button>
+      <button class="btn sm autofill-save-btn" type="button">Save…</button>
+      <button class="btn danger sm autofill-delete-btn" type="button">Delete</button>
+    </div>
+    ${fieldRows}`;
+}
+
+function buildResizeArgsHTML(step) {
+  // Same fix as buildMethodArgsHTML above — write the default back so a step
+  // left on its first-rendered Width actually carries that value. This is
+  // the bug the "No width selected" report traced to: the select showed a
+  // real option chosen, but nothing had written it into step.inputs yet.
+  if (!step.inputs.width) step.inputs.width = RESIZE_WIDTHS[0].value;
+  const width = step.inputs.width;
+  const opts = RESIZE_WIDTHS.map(w =>
+    `<option value="${w.value}"${w.value === width ? ' selected' : ''}>${esc(w.label)}</option>`
+  ).join('');
+  return `
+    <div class="arg-row">
+      <span class="arg-lbl">Width</span>
+      <select data-arg="width" class="method-select">${opts}</select>
+      <span class="sub-tooltip-slot">${buildSubTooltipHTML(RESIZE_WIDTHS, width)}</span>
+    </div>`;
 }
 
 function buildArgsHTML(step) {
@@ -1647,6 +1938,9 @@ function buildArgsHTML(step) {
   if (step.func === 'switch_to')      return buildSwitchArgsHTML(step);
   if (step.func === 'alert')          return buildAlertArgsHTML(step);
   if (step.func === 'track_metric')   return buildTrackMetricArgsHTML(step);
+  if (step.func === 'trigger_metric') return buildTriggerMetricArgsHTML(step);
+  if (step.func === 'autofill_form')  return buildAutofillArgsHTML(step);
+  if (step.func === 'spa_resize')     return buildResizeArgsHTML(step);
   if (step.func === OPEN_URL_FUNC)    return buildOpenUrlArgsHTML(step);
 
   const args = FN_META[step.func]?.args || [];
@@ -1667,11 +1961,13 @@ function buildArgsHTML(step) {
 function wireArgs(el, step) {
   // Map each sub-select arg to its options list for tooltip updates
   const SUB_OPTION_MAP = {
-    click:     { method:  CLICK_METHODS   },
-    fill:      { method:  FILL_METHODS    },
-    submit:    { method:  SUBMIT_METHODS  },
-    switch_to: { target:  SWITCH_TARGETS  },
-    alert:     { action:  ALERT_ACTIONS   },
+    click:          { method:  CLICK_METHODS   },
+    fill:           { method:  FILL_METHODS    },
+    submit:         { method:  SUBMIT_METHODS  },
+    switch_to:      { target:  SWITCH_TARGETS  },
+    alert:          { action:  ALERT_ACTIONS   },
+    trigger_metric: { method:  CLICK_METHODS   },
+    spa_resize:     { width:   RESIZE_WIDTHS   },
   };
 
   el.querySelectorAll('[data-arg]').forEach(inp => {
@@ -1683,7 +1979,7 @@ function wireArgs(el, step) {
       // script saved by this build still runs on a build that predates
       // metricId — and so a step whose metric is later deleted still knows
       // what it was pointed at.
-      if (step.func === 'track_metric' && inp.dataset.arg === 'metricId') {
+      if ((step.func === 'track_metric' || step.func === 'trigger_metric') && inp.dataset.arg === 'metricId') {
         const ent = metrics.find(m => m.id === e.target.value);
         step.inputs.metric = ent ? ent.pattern : (step.inputs.metric || '');
       }
@@ -1708,11 +2004,16 @@ function wireArgs(el, step) {
 
   el.querySelectorAll('.btn-pick').forEach(btn => {
     const argName = btn.dataset.pickArg;
-    const onResult = ['click', 'fill', 'submit'].includes(step.func) ? applyPickerToMethod : null;
+    // autofill_form's per-field override pickers deliberately fall through to
+    // the default (argName-keyed) behavior in startPicker — each one writes
+    // straight into its own `<field>Sel` input, not a shared method+selector
+    // pair like click/fill/submit/trigger_metric use.
+    const onResult = ['click', 'fill', 'submit', 'trigger_metric'].includes(step.func) ? applyPickerToMethod : null;
     btn.addEventListener('click', () => startPicker(el, step, argName, onResult));
   });
 
-  if (step.func === OPEN_URL_FUNC) wireOpenUrlArgs(el, step);
+  if (step.func === OPEN_URL_FUNC)   wireOpenUrlArgs(el, step);
+  if (step.func === 'autofill_form') wireAutofillArgs(el, step);
 }
 
 // Rebuild and rewire a step's argument area in place — used whenever the
@@ -1742,6 +2043,39 @@ function wireOpenUrlArgs(el, step) {
   });
   el.querySelector('.add-open-url-param')?.addEventListener('click', () => {
     step.inputs.params.push('');
+    rerenderStepArgs(el, step);
+  });
+}
+
+// Save/Load/Delete for Autofill Form's named profiles — the reusable
+// identity values (not selectors, which are page-specific and travel with
+// the step itself via the override inputs, wired generically above).
+function wireAutofillArgs(el, step) {
+  const select = () => el.querySelector('.autofill-profile-select');
+
+  el.querySelector('.autofill-load-btn')?.addEventListener('click', () => {
+    const p = autofillProfiles.find(p => p.id === select().value);
+    if (!p) { alert('Select a saved profile to load first.'); return; }
+    for (const f of AUTOFILL_FIELDS) step.inputs[f.key] = p[f.key] || '';
+    rerenderStepArgs(el, step);
+  });
+
+  el.querySelector('.autofill-save-btn')?.addEventListener('click', async () => {
+    const name = (prompt('Save these values as a profile named:', '') || '').trim();
+    if (!name) return;
+    const entry = { id: 'ap_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), name };
+    for (const f of AUTOFILL_FIELDS) entry[f.key] = step.inputs[f.key] || '';
+    autofillProfiles.push(entry);
+    await chrome.storage.local.set({ autofillProfiles });
+    rerenderStepArgs(el, step); // refresh the dropdown with the new option selectable
+  });
+
+  el.querySelector('.autofill-delete-btn')?.addEventListener('click', async () => {
+    const p = autofillProfiles.find(p => p.id === select().value);
+    if (!p) { alert('Select a saved profile to delete first.'); return; }
+    if (!confirm(`Delete saved profile "${p.name}"?`)) return;
+    autofillProfiles = autofillProfiles.filter(x => x.id !== p.id);
+    await chrome.storage.local.set({ autofillProfiles });
     rerenderStepArgs(el, step);
   });
 }
@@ -5873,6 +6207,19 @@ function abPageUrls(modes) {
       if (!u || seen.has(u)) continue;
       seen.add(u); out.push(u);
     }
+    // Funnel Crawl has no .captures (a different data shape entirely — see
+    // buildDebugLog's own funnel section) — its pages are the waypoint chain
+    // instead: each segment's `from` then `to`, so a broken run still reports
+    // every page actually reached, not just the ones in a completed segment.
+    if (m?.mode === 'funnel') {
+      const segs = m?.data?.segments || [];
+      if (segs[0]?.from) { const u = segs[0].from.trim(); if (u && !seen.has(u)) { seen.add(u); out.push(u); } }
+      for (const s of segs) {
+        const u = (s.to || '').trim();
+        if (!u || seen.has(u)) continue;
+        seen.add(u); out.push(u);
+      }
+    }
   }
   return out;
 }
@@ -6556,11 +6903,15 @@ function rptFunnelSection(entry) {
     : `Funnel broke at ${failedAt ? esc(shortUrl(failedAt.from)) + ' → ' + esc(shortUrl(failedAt.to)) : 'an early segment'}`;
   const rows = segments.map(s => `<tr>
     <td>${esc(shortUrl(s.from))} → ${esc(shortUrl(s.to))}</td>
-    <td>${s.reached ? 'REACHED' : 'FAILED'}</td>
+    <td>${s.reached ? 'REACHED' : s.stopReason === 'not-attempted' ? 'NOT ATTEMPTED' : 'FAILED'}</td>
     <td>${s.steps} step${s.steps === 1 ? '' : 's'}${s.error ? ' · ' + esc(s.error) : ''}</td>
+    <td>${esc(s.summary || '')}</td>
   </tr>`).join('');
-  let body = `<table class="rpt-table"><thead><tr><th>Segment</th><th>Result</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table>
-    <p class="rpt-muted">An AI agent (Sonnet) navigated by clicking the live UI, up to ~10 actions per segment. A segment fails if the next waypoint wasn't reached within that budget.</p>`;
+  // "Why it stopped" carries the worker's own classification. The old caption
+  // asserted a single hypothesis — that the budget ran out — which was wrong
+  // for every run that was actually blocked by something.
+  let body = `<table class="rpt-table"><thead><tr><th>Segment</th><th>Result</th><th>Detail</th><th>Why it stopped</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="rpt-muted">An AI agent (Sonnet) navigated by clicking the live UI. "Why it stopped" is derived from what was recorded at each action — what sat under the click point, whether the click reached an element, and whether the page changed — not from the agent's own account of it.</p>`;
   for (const s of segments) if (s.note) body += rptAgenticNoteHtml(s.note, `${shortUrl(s.from)} → ${shortUrl(s.to)} — Agent notes (Sonnet)`);
   return rptSection(entry.name, badge, summary, body);
 }
@@ -7178,6 +7529,97 @@ function vdCollectProblems(sections) {
       }
     }
   }
+
+  // Funnel Crawl: this whole mode IS the AI-vision agent walking one waypoint
+  // to the next (see crawlSegment/runFunnelCrawl in background.js) — there is
+  // no visual-diff-style structural check to degrade, so "reached the end or
+  // not, and where it broke if not" is the entire diagnosis. Named here so it
+  // shows up under the log's own "problems lists everything that degraded
+  // this run — start there" promise, instead of only in run.funnel where a
+  // reader has to already know to look.
+  const funnelEntry = (sections.modes || []).find(m => m.mode === 'funnel');
+  if (funnelEntry?.status === 'ran') {
+    const segs = funnelEntry.data?.segments || [];
+    // The hop that actually broke — never a "not attempted" placeholder, which
+    // is a consequence of the break rather than its cause.
+    const broken = segs.find(s => !s.reached && s.stopReason !== 'not-attempted');
+    const skipped = segs.filter(s => s.stopReason === 'not-attempted').length;
+    if (funnelEntry.data?.error && !segs.length) {
+      add('error', 'funnel-crawl', funnelEntry.data.error);
+    } else if (broken) {
+      // The worker now names the cause; this used to assemble a generic
+      // sentence that could only ever say "didn't reach End after N steps".
+      add('error', 'funnel-crawl',
+        (broken.summary
+          || `Did not reach End — broke going from ${broken.from} to ${broken.to}`
+             + (broken.error ? ` (${broken.error})` : '')
+             + ` after ${broken.steps} agent step(s).`)
+        + ` Segment: ${broken.from} → ${broken.to}.`
+        + (skipped ? ` ${skipped} later segment(s) were not attempted.` : '')
+        + (broken.finalText ? ` The agent's closing words: "${broken.finalText.slice(0, 300)}"` : ''));
+    } else if (segs.length) {
+      const totalSteps = segs.reduce((n, s) => n + (s.steps || 0), 0);
+      add('info', 'funnel-crawl', `Reached End across ${segs.length} segment(s), ${totalSteps} agent step(s) total.`);
+    }
+
+    // A click dispatched outside the viewport hits nothing, and CDP raises no
+    // error for it — so without this the run reads as "the agent couldn't find
+    // the button" when the truth is every click missed the page. That is
+    // exactly how run r_1789678299756 presented before the coordinate fix.
+    // A worker running the current build ALWAYS records geometry before its
+    // first step and an action per tool call, so steps-without-either is
+    // structurally impossible — it means the service worker is older than this
+    // popup. Chrome re-reads popup.js when the panel opens but keeps the
+    // running worker, so this split is easy to hit and silent: run
+    // r_1789742354610 was diagnosed by hand precisely because nothing said it.
+    // Same structural-tell pattern already used for a stale capture build.
+    const staleWorker = segs.some(s => (s.steps || 0) > 0 && !s.geometry && !(s.actions || []).length);
+    if (staleWorker) {
+      add('error', 'funnel-crawl',
+        'This run came from an older background build — it reported agent steps but recorded none of the '
+        + 'per-action evidence the current build always captures, so nothing below can name what stopped it. '
+        + 'Reload the extension so the service worker picks up the current build, then re-run.');
+    }
+
+    // An action's OWN geometry, falling back to its segment's and then to any
+    // segment's. The fallbacks are for logs from older worker builds; the last
+    // one used to be the only path, and it described one segment's clicks using
+    // a DIFFERENT segment's screenshot dimensions.
+    const geomFor = (a, seg) => a?.geometry || seg?.geometry || segs.find(s => s.geometry)?.geometry || null;
+    const withSeg = segs.flatMap(s => (s.actions || []).map(a => ({ a, s })));
+
+    const offscreen = withSeg.filter(({ a }) => a.outOfRange);
+    if (offscreen.length) {
+      const g = geomFor(offscreen[0].a, offscreen[0].s);
+      add('error', 'funnel-crawl',
+        `${offscreen.length} of the agent's clicks landed OUTSIDE the ${g ? `${g.viewportW}x${g.viewportH} ` : ''}viewport `
+        + `(e.g. ${offscreen[0].a.cssCoord ? offscreen[0].a.cssCoord.join(',') : '?'}) and so hit nothing. `
+        + (g && g.imageW && g.imageW !== g.viewportW
+            ? `The screenshot is ${g.imageW}x${g.imageH} against a ${g.viewportW}x${g.viewportH} viewport — a coordinate-space mismatch, not a navigation failure.`
+            : 'Coordinates are being applied to a display of a different size than the screenshot.'));
+    }
+
+    // The failure the out-of-range check above CANNOT see. A coordinate the
+    // converter declined stays in the screenshot's pixel space, and once a wide
+    // capture is downscaled that space fits inside the viewport — so the click
+    // is dispatched, reported as delivered, and reads as a finding about the
+    // site. That is run r_1789744771634, which had to be diagnosed by solving
+    // the scale backwards from one step's output. Never again silently.
+    const unconv = withSeg.filter(({ a }) => a.coordConverted === false && a.coordReason !== 'no-coordinate');
+    if (unconv.length) {
+      const g = geomFor(unconv[0].a, unconv[0].s);
+      const scales = g && g.imageW && g.imageH && g.viewportW && g.viewportH
+        ? ` The screenshot is ${g.imageW}x${g.imageH} against a ${g.viewportW}x${g.viewportH} viewport, which scale by `
+          + `${(g.viewportW / g.imageW).toFixed(3)} across and ${(g.viewportH / g.imageH).toFixed(3)} down — one device `
+          + 'pixel ratio cannot produce both, so the capture and the viewport are not describing the same moment.'
+        : '';
+      add('error', 'funnel-crawl',
+        `${unconv.length} of the agent's coordinates could not be converted from the screenshot's pixel space into `
+        + `click points (${unconv[0].a.coordReason}).${scales} Where those clicks landed is unknown, so no hit-test, `
+        + 'delivery or mutation reading taken after them describes the site. This is a Selenite failure.');
+    }
+  }
+
   return problems;
 }
 
@@ -7250,6 +7692,7 @@ function vdExportFinding(f) {
 function buildDebugLog(sections) {
   const abEntry = (sections.modes || []).find(m => m.mode === 2);
   const vd = abEntry?.data?.visualDiffFull || abEntry?.data?.visualDiff;
+  const funnelEntry = (sections.modes || []).find(m => m.mode === 'funnel');
 
   return {
     readme: 'Selenite QA debug log. `problems` lists everything that degraded this run — start there. '
@@ -7293,7 +7736,15 @@ function buildDebugLog(sections) {
       consoleLineCount: (c.console || []).length,
       selectors: c.selectors || [],
     })),
-    visualDiff: !vd || vd.skipped ? { skipped: true, reason: vd?.reason || 'not run' } : {
+    // Visual Diff is a sub-step of mode 2, never a mode of its own, so there is
+    // no `modes` row for it and this is the only place its absence is recorded.
+    // The fallback wording matters: "not run" read like a decision Visual Diff
+    // made, when it only means there was no mode-2 entry to read a reason off.
+    // (`settings.visualDiff` above is live abState at report time, not a record
+    // of this run — it reads true on every log.)
+    visualDiff: !vd || vd.skipped
+      ? { skipped: true, reason: vd?.reason || (abEntry ? 'not run' : 'A/B Variant Comparison did not run, and Visual Diff is a step within it') }
+      : {
       baselineLabel: vd.baselineLabel, baselineWarning: vd.baselineWarning || null,
       // Lifted out of the per-variant lists — without these the debug log would
       // show fewer findings per variant than the diff actually produced.
@@ -7339,6 +7790,55 @@ function buildDebugLog(sections) {
         // wrong finding traceable to the pass that produced it.
         findings: (v.findings || []).map(vdExportFinding),
         diagnostics: v.diffDebug || null,
+      })),
+    },
+    // Funnel Crawl has no visual-diff-shaped data (no captures, no structural
+    // comparison) — its own result IS the segment-by-segment AI-agent walk
+    // (crawlSegment/runFunnelCrawl, background.js), so it gets its own
+    // section rather than being forced into the capture/visualDiff shape
+    // above, which was built for — and only ever populated by — mode 2.
+    // null (not omitted) when funnel didn't run, so its absence is a
+    // recorded fact rather than something a reader has to infer.
+    funnel: !funnelEntry ? null : {
+      status: funnelEntry.status, reason: funnelEntry.reason || null,
+      reachedEnd: !!funnelEntry.data?.reachedEnd,
+      error: funnelEntry.data?.error || null,
+      segments: (funnelEntry.data?.segments || []).map(s => ({
+        from: s.from, to: s.to, reached: !!s.reached,
+        steps: s.steps || 0, note: s.note || '', error: s.error || null,
+        // WHY it ended, and the model's own terminal sentence kept verbatim —
+        // `note` truncates and used to eat exactly that sentence. null on a
+        // run from a worker build that predates these.
+        stopReason: s.stopReason || null,
+        apiStopReason: s.apiStopReason || null,
+        finalText: s.finalText || '',
+        summary: s.summary || '',
+        // What the agent DID, alongside what it said. `note` alone could not
+        // tell "couldn't find the button" from "clicked 2x off-viewport ten
+        // times" — the bug in run r_1789678299756. geometry is null on a
+        // segment that never got as far as a capture (stopped, or a throw).
+        geometry: s.geometry || null,
+        actions: (s.actions || []).map(a => ({
+          step: a.step, action: a.action,
+          modelCoord: a.modelCoord || null, cssCoord: a.cssCoord || null,
+          // Whether the model's coordinate was actually converted into a click
+          // point, and the geometry THAT action used. The segment `geometry`
+          // above is one object mutated per screenshot, so it only ever holds
+          // the last one's numbers — in r_1789744771634 that left step 1's real
+          // scale recoverable only by solving backwards from its own output.
+          // null on a run from a worker build that predates these.
+          coordConverted: a.coordConverted == null ? null : !!a.coordConverted,
+          coordReason: a.coordReason || null,
+          geometry: a.geometry || null,
+          outOfRange: !!a.outOfRange, urlAfter: a.urlAfter || null, error: a.error || null,
+          // What was under the point, whether the click reached anything, and
+          // whether the page moved — the evidence behind every claim above.
+          hit: a.hit || null,
+          delivered: a.delivered == null ? null : !!a.delivered,
+          deliveredTo: a.deliveredTo || null,
+          mutations: a.mutations == null ? null : a.mutations,
+          page: a.page || null,
+        })),
       })),
     },
   };

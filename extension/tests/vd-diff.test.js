@@ -3774,6 +3774,311 @@ section('grading failure survivability');
   eq('  and false stays false', ok2.truncated, false);
 })();
 
+// ── 13. Funnel Crawl: screenshot px vs click px ────────────────────────────
+// Same class of bug as 8b2 above, in the other screenshot pipeline. Claude
+// returns computer-use coordinates in the pixel space of the screenshot it was
+// shown; CDP Input.dispatchMouseEvent clicks in CSS px. On a Retina host those
+// differ by 2x, so every click landed off-viewport, CDP raised nothing, and the
+// agent retried the same button until its budget ran out (run r_1789678299756).
+section('funnel click coordinates');
+// Deliberately truncated before the closing brace: captureClipped's return
+// shape gained cssW/cssH, and a marker that no longer matches makes indexOf
+// return -1, which slices to the END OF THE FILE and evals all of background.js
+// instead of failing. The guard below is the backstop; this is the fuse.
+eval(_bg.slice(_bg.indexOf('const FN_MAX_IMAGE_EDGE'),
+                _bg.indexOf('// Returns { dataUrl, width, height')));
+(function funnelClickCoordinates() {
+  // Guarded: a renamed marker yields an empty slice, and an unguarded call
+  // would abort every section after this one rather than fail this assertion.
+  if (typeof fnCoordToCss !== 'function' || typeof fnFitScale !== 'function'
+      || typeof fnCoordInViewport !== 'function' || typeof fnCaptureAxesAgree !== 'function') {
+    ok('funnel coordinate helpers are exported from background.js', false, 'not found — slice markers stale?');
+    return;
+  }
+
+  // 1x host: the screenshot IS the viewport, so nothing moves.
+  var a = fnCoordToCss(400, 300, 1280, 800, 1280, 800);
+  eq('1x host is a no-op in x', a.x, 400);
+  eq('  and in y', a.y, 300);
+
+  // 2x Retina: the real failing case. A 2342-wide screenshot of an 1171-wide
+  // viewport means the model's 2342 is the far right edge, i.e. CSS 1171.
+  var r = fnCoordToCss(2342, 673, 2342, 1520, 1171, 760);
+  eq('2x Retina halves x', r.x, 1171);
+  // 673/2 is 336.5 — rounded, not truncated. Pinned because a half-pixel that
+  // silently floors is how an off-by-one creeps into a click target.
+  eq('  and halves y, rounding the half pixel', r.y, 337);
+
+  eq('fractional DPR is handled', fnCoordToCss(150, 150, 1500, 1500, 1000, 1000).x, 100);
+
+  // Derived, so a disagreement must not be laundered into a plausible-looking
+  // correction that silently clicks somewhere else — same rule as vdImageScale.
+  eq('absurd ratio leaves the coordinate alone', fnCoordToCss(100, 100, 10, 10, 9000, 9000).x, 100);
+  eq('missing image dims leave it alone', fnCoordToCss(100, 100, 0, 0, 1280, 800).x, 100);
+  eq('missing viewport leaves it alone', fnCoordToCss(100, 100, 1280, 800, null, null).x, 100);
+  eq('a non-numeric coordinate passes through', fnCoordToCss(undefined, undefined, 1280, 800, 1280, 800).x, undefined);
+
+  // The out-of-range signal: what was invisible in the real run.
+  ok('an in-viewport click is not flagged', fnCoordInViewport(400, 300, 1171, 760));
+  ok('the real failing coordinate IS flagged', !fnCoordInViewport(2342, 673, 1171, 760));
+  ok('  negative is flagged too', !fnCoordInViewport(-5, 10, 1171, 760));
+  ok('unknown viewport does not cry wolf', fnCoordInViewport(2342, 673, null, null));
+  // The out-of-range gate sits in front of EVERY action, including type/key,
+  // which carry no coordinate at all. Those must never be flagged, or the fix
+  // would silently stop the agent from typing.
+  ok('a coordinate-less action is never flagged', fnCoordInViewport(undefined, undefined, 1171, 760));
+
+  // Axis disagreement means the bitmap is not this viewport at all — no single
+  // factor fixes that, so the coordinate must be left alone rather than
+  // "corrected" by whichever axis happened to be picked.
+  eq('axes that disagree leave the coordinate alone', fnCoordToCss(100, 100, 2560, 800, 1280, 800).x, 100);
+
+  // Declining has to be VISIBLE. Every one of these used to return a bare
+  // {x, y} indistinguishable from a successful 1x conversion, which is how six
+  // wrong clicks in r_1789744771634 read as six clean steps.
+  ok('a converted coordinate says so', fnCoordToCss(400, 300, 1280, 800, 1280, 800).converted === true);
+  eq('  and carries no reason', fnCoordToCss(400, 300, 1280, 800, 1280, 800).reason, null);
+  eq('axis disagreement is named', fnCoordToCss(100, 100, 2560, 800, 1280, 800).reason, 'axes-disagree');
+  eq('an absurd ratio is named', fnCoordToCss(100, 100, 10, 10, 9000, 9000).reason, 'scale-out-of-range');
+  eq('a missing dimension is named', fnCoordToCss(100, 100, 0, 0, 1280, 800).reason, 'missing-dimension');
+  // type/key carry no coordinate at all. They must read as their own case, not
+  // as a failure, or the fix would stop the agent typing.
+  eq('a coordinate-less action is its own reason', fnCoordToCss(undefined, undefined, 1280, 800, 1280, 800).reason, 'no-coordinate');
+
+  // r_1789744771634, replayed from the log's own numbers. The viewport lost
+  // ~56 CSS px of height between capture 1 and capture 2 while dispH stayed
+  // frozen at its segment-start value.
+  var step1 = fnCoordToCss(1483, 1119, 2576, 1186, 2773, 1281);   // axes still agreed
+  eq('the real run step 1 converted in x', step1.x, 1596);
+  eq('  and in y', step1.y, 1209);
+  ok('  and is marked converted', step1.converted === true);
+  var step2 = fnCoordToCss(1475, 1068, 2576, 1138, 2773, 1281);   // 4.6% apart
+  ok('the real run step 2 declined', step2.converted === false);
+  eq('  naming the axes', step2.reason, 'axes-disagree');
+  eq('  and left x in screenshot space', step2.x, 1475);
+  // THE HOLE. The declined coordinate is inside the viewport, so the
+  // out-of-range net cannot see it — it was built for a capture LARGER than the
+  // viewport, and FN_MAX_IMAGE_EDGE makes this one smaller.
+  ok('the out-of-range check is blind to it', fnCoordInViewport(step2.x, step2.y, 2773, 1281));
+  ok('  because the downscaled image fits inside the viewport', 2576 < 2773 && 1138 < 1281);
+
+  // ---- "was it holding still", which is NOT "is it the same viewport" ----
+  // r_1789747242103, the run after the fix. Both of these convert fine; only
+  // one of them was taken while the viewport was moving, and the difference
+  // decides whether to take the picture again, not whether to click.
+  ok('a settled capture agrees on both axes', fnCaptureAxesAgree(2576, 1138, 2773, 1225));
+  ok('  and converts', fnCoordToCss(1476, 1067, 2576, 1138, 2773, 1225).converted === true);
+  ok('a mid-animation capture does NOT agree', !fnCaptureAxesAgree(2576, 1186, 2773, 1265));
+  ok('  yet still converts, which is why it needed its own check',
+     fnCoordToCss(1476, 1117, 2576, 1186, 2773, 1265).converted === true);
+  // The measured separation the threshold sits in: 0.99% vs 0.0025%, i.e. more
+  // than two orders of magnitude. Pinned so a future tweak has to face it.
+  var moving = Math.abs(2773 / 2576 - 1265 / 1186) / (2773 / 2576);
+  var still = Math.abs(2773 / 2576 - 1225 / 1138) / (2773 / 2576);
+  ok('the moving capture is ~1% out', moving > 0.008 && moving < 0.012, moving);
+  ok('the settled one is ~400x closer', still < moving / 100, { moving: moving, still: still });
+  // Stated through the function, not the constant: a `const` inside an eval'd
+  // slice does not leak into this scope (only function declarations do), which
+  // is the same reason fnFitScale's limits are passed explicitly above.
+  ok('  and the default threshold sits between them',
+     fnCaptureAxesAgree(2576, 1138, 2773, 1225) && !fnCaptureAxesAgree(2576, 1186, 2773, 1265));
+  ok('  an explicit tolerance overrides it', fnCaptureAxesAgree(2576, 1186, 2773, 1265, 0.05));
+  // Unknown dimensions must never force a pointless recapture.
+  ok('nothing to compare agrees by default', fnCaptureAxesAgree(0, 0, 2773, 1225));
+  ok('  and a missing viewport too', fnCaptureAxesAgree(2576, 1138, null, null));
+
+  // Image limits. The API does not downscale a tool_result image for us — it
+  // rejects an oversized one outright, mid-segment. Limits are those of the
+  // model this loop declares (claude-sonnet-5, high-res tier).
+  eq('an image already within limits is untouched', fnFitScale(1280, 800, 2576, 4784), 1);
+  // The real failing capture: comfortably inside the limits, so it keeps full
+  // Retina detail and the fix is purely the coordinate conversion.
+  eq('the 2342x1330 Retina capture is NOT downscaled', fnFitScale(2342, 1330, 2576, 4784), 1);
+  ok('a capture past the long edge shrinks', fnFitScale(3456, 2234, 2576, 4784) < 1);
+  var s = fnFitScale(3456, 2234, 2576, 4784);
+  ok('  long edge is respected', Math.round(3456 * s) <= 2576);
+  ok('  and the visual-token budget is respected',
+    Math.ceil((3456 * s) / 28) * Math.ceil((2234 * s) / 28) <= 4784);
+  eq('unusable dimensions fall back to 1', fnFitScale(0, 0, 2576, 4784), 1);
+})();
+
+// ── 14. Funnel Crawl: naming what stopped it ───────────────────────────────
+// Two real runs burned the whole budget re-clicking one target and the report
+// could only say "did not reach End after 10 steps". These pin the classifier
+// AND the guards that stop it making a confident wrong claim — a named blocker
+// that isn't, or a site-defect accusation the evidence can't support.
+section('funnel stop classification');
+eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
+                _bg.indexOf('// Injected, so fully self-contained')));
+(function funnelStopClassification() {
+  if (typeof fnStopSentence !== 'function' || typeof fnNoProgressRun !== 'function'
+      || typeof fnNameBlocker !== 'function' || typeof fnClassifyGate !== 'function'
+      || typeof fnTrimNote !== 'function') {
+    ok('funnel stop helpers are exported from background.js', false, 'not found — slice markers stale?');
+    return;
+  }
+
+  // ---- the detector must not fabricate "stuck" out of our own gaps ----
+  var click = function (over) {
+    var a = { action: 'left_click', error: null, outOfRange: false, mutations: 0,
+              hit: { top: '#banner' }, page: { url: 'u', title: 't', textLen: 100 } };
+    for (var k in (over || {})) a[k] = over[k];
+    return a;
+  };
+  eq('three identical dead clicks are a run of 3', fnNoProgressRun([click(), click(), click()]), 3);
+  // `type` cannot move a text-length fingerprint at all — an input's value is
+  // not a text node — so counting it would call a working form "stuck".
+  eq('typing is never counted', fnNoProgressRun([click(), click(), click({ action: 'type' })]), 0);
+  eq('an undispatched action is never counted',
+    fnNoProgressRun([click(), click(), click({ error: 'Action "hover" is not implemented — nothing was dispatched.' })]), 0);
+  eq('an off-viewport click is never counted', fnNoProgressRun([click(), click(), click({ outOfRange: true })]), 0);
+  eq('a DOM mutation breaks the run', fnNoProgressRun([click(), click(), click({ mutations: 4 })]), 0);
+  eq('a URL change breaks the run',
+    fnNoProgressRun([click(), click(), click({ page: { url: 'v', title: 't', textLen: 100 } })]), 1);
+  // Unknown must never equal unknown: a probe that failed because the page
+  // NAVIGATED is the strongest evidence something happened.
+  eq('two unknown probes do not match each other', fnNoProgressRun([click({ page: null }), click({ page: null })]), 0);
+  eq('a different target breaks the run',
+    fnNoProgressRun([click(), click(), click({ hit: { top: '#other' } })]), 1);
+
+  // ---- naming a blocker ----
+  eq('OneTrust is named by id', fnNameBlocker({ top: '#onetrust-banner-sdk' }).vendor, 'the OneTrust cookie-consent banner');
+  eq('  and by its dark-filter class in the stack',
+    fnNameBlocker({ top: 'div', stack: ['div', 'div.onetrust-pc-dark-filter'] }).vendor, 'the OneTrust cookie-consent banner');
+  eq('a big pinned layer with no vendor name still counts',
+    fnNameBlocker({ top: 'div.sc-hXbkkk', position: 'fixed', coversPct: 80 }).vendor, 'an unnamed full-screen overlay');
+  ok('an ordinary button is NOT a blocker', fnNameBlocker({ top: 'button.cta', position: 'static', coversPct: 2 }) === null);
+  ok('a small pinned element is not a full-screen overlay',
+    fnNameBlocker({ top: 'div.badge', position: 'fixed', coversPct: 3 }) === null);
+
+  // ---- the model's own gate report ----
+  eq('a CAPTCHA is recognised', fnClassifyGate('I stopped because a reCAPTCHA blocks the path.').gate, 'captcha');
+  eq('a login wall is recognised', fnClassifyGate('This requires an account to continue.').gate, 'login');
+  eq('a payment step is recognised', fnClassifyGate('Continuing would require entering credit card details.').gate, 'payment');
+  ok('ordinary prose names no gate', fnClassifyGate('I clicked the button and the page loaded.') === null);
+  ok('empty prose names no gate', fnClassifyGate('') === null);
+
+  // ---- the terminal sentence must survive truncation ----
+  var long = 'A'.repeat(3000) + ' I am stopping because a login wall blocks the path.';
+  ok('the closing sentence survives a trim', fnTrimNote(long, 1500).indexOf('login wall blocks the path') !== -1);
+  ok('  and the trim respects its cap', fnTrimNote(long, 1500).length <= 1500 + 60);
+  eq('a short note is untouched', fnTrimNote('short', 1500), 'short');
+
+  // ---- classification, including the guards ----
+  var seg = function (over) {
+    var s = { from: 'A', to: 'B', reached: false, steps: 10, error: null, actions: [],
+              geometry: { viewportW: 1171, viewportH: 760, imageW: 2342, imageH: 1520 },
+              stopReason: 'budget', apiStopReason: null, finalText: '' };
+    for (var k in (over || {})) s[k] = over[k];
+    return s;
+  };
+  ok('arrival reads as arrival', /^Reached B/.test(fnStopSentence(seg({ reached: true }))));
+  ok('a not-attempted hop says so', /Not attempted/.test(fnStopSentence(seg({ stopReason: 'not-attempted' }))));
+  ok('a tester stop is not a site finding', /Stopped by the tester/.test(fnStopSentence(seg({ stopReason: 'user-stopped' }))));
+  ok('an API failure says it is ours, not the site\'s',
+    /not a finding about the site/.test(fnStopSentence(seg({ stopReason: 'api-error', error: 'overloaded' }))));
+
+  // The r_1789678299756 shape: every click off-viewport.
+  var offAct = { action: 'left_click', outOfRange: true, cssCoord: [2342, 673], error: null };
+  ok('the real coordinate-mismatch run is named as such',
+    /coordinate-space mismatch/.test(fnStopSentence(seg({ actions: [offAct, offAct, offAct] }))));
+
+  // A gate the model reported itself.
+  ok('a reported CAPTCHA is named',
+    /CAPTCHA/.test(fnStopSentence(seg({ stopReason: 'agent-stopped', finalText: 'A reCAPTCHA blocks the path, so I stopped.' }))));
+
+  // THE GUARD THAT MATTERS: both real failures were the agent clicking the
+  // banner's OWN dismiss button. Naming the banner as the blocker there is
+  // exactly backwards, so an intercept requires that the click reached
+  // something OTHER than the element we measured on top.
+  var onBanner = { action: 'left_click', error: null, outOfRange: false, mutations: 0,
+                   delivered: true, deliveredTo: '#onetrust-banner-sdk',
+                   hit: { top: '#onetrust-banner-sdk', coversPct: 40, position: 'fixed' },
+                   page: { url: 'u', title: 't', textLen: 5 } };
+  var aimedAtBanner = fnStopSentence(seg({ stopReason: 'stuck', actions: [onBanner, onBanner, onBanner] }));
+  ok('clicking the banner ITSELF is not reported as the banner blocking it',
+    aimedAtBanner.indexOf('rather than on the intended control') === -1, aimedAtBanner);
+
+  var intercepted = Object.assign({}, onBanner, { deliveredTo: '#onetrust-pc-dark-filter' });
+  ok('but a click that reached something else IS an intercept',
+    /rather than on the intended control/.test(
+      fnStopSentence(seg({ stopReason: 'stuck', actions: [intercepted, intercepted, intercepted] }))));
+
+  // The site-defect claim must stay an observation — intent is unknowable and a
+  // delegated handler is unprovable from the page.
+  var deadBtn = { action: 'left_click', error: null, outOfRange: false, mutations: 0,
+                  delivered: true, deliveredTo: 'button.cta',
+                  hit: { top: 'button.cta', coversPct: 2, position: 'static' },
+                  page: { url: 'u', title: 't', textLen: 5 } };
+  var deadSentence = fnStopSentence(seg({ stopReason: 'stuck', actions: [deadBtn, deadBtn, deadBtn] }));
+  ok('a dead control reports the measurement', /did not change/.test(deadSentence), deadSentence);
+  ok('  and explicitly does NOT accuse the site', /observation/.test(deadSentence), deadSentence);
+
+  // An iframe must never be classified — its contents are unreachable.
+  var frame = Object.assign({}, deadBtn, { hit: { top: 'iframe', isIframe: true, coversPct: 90 } });
+  ok('an iframe is reported as unknown, never as a blocker',
+    /cannot see into/.test(fnStopSentence(seg({ stopReason: 'stuck', actions: [frame, frame, frame] }))));
+
+  // THE OTHER GUARD THAT MATTERS, from r_1789744771634. The sentence above
+  // rules targeting OUT on the strength of `delivered: true` — which only
+  // proves the click hit SOMETHING. If the coordinate was never converted out
+  // of screenshot space it hit something the agent never aimed at, and "this is
+  // not a targeting problem" is the exact opposite of the truth. Same action
+  // shape as deadBtn, one field different.
+  var unconvBtn = Object.assign({}, deadBtn, {
+    coordConverted: false, coordReason: 'axes-disagree',
+    geometry: { imageW: 2576, imageH: 1138, viewportW: 2773, viewportH: 1281 },
+  });
+  var unconvStuck = fnStopSentence(seg({ stopReason: 'stuck', actions: [unconvBtn, unconvBtn, unconvBtn] }));
+  ok('an unconverted coordinate is never called "not a targeting problem"',
+    unconvStuck.indexOf('not a targeting problem') === -1, unconvStuck);
+  ok('  it is named as a coordinate-space failure', /coordinate-space failure/.test(unconvStuck), unconvStuck);
+  ok('  and it does NOT accuse the site', /not a site defect|not a finding about the page/.test(unconvStuck), unconvStuck);
+  // The same field must not fire on a healthy run, or every dead control turns
+  // into a Selenite bug report.
+  ok('a converted coordinate still reports the measurement',
+    /observation/.test(fnStopSentence(seg({ stopReason: 'stuck',
+      actions: [Object.assign({}, deadBtn, { coordConverted: true, coordReason: null })] .concat(
+               [Object.assign({}, deadBtn, { coordConverted: true, coordReason: null })],
+               [Object.assign({}, deadBtn, { coordConverted: true, coordReason: null })]) }))));
+  // type/key carry no coordinate and must not read as a conversion failure.
+  var typed = { action: 'type', error: null, outOfRange: false, coordConverted: false, coordReason: 'no-coordinate' };
+  ok('a coordinate-less action is not a conversion failure',
+    /observation/.test(fnStopSentence(seg({ stopReason: 'stuck', actions: [typed, deadBtn, deadBtn, deadBtn] }))));
+
+  // Majority-unconverted pre-empts the hit readings entirely, the way
+  // off-viewport does: the click point is unknown, so nothing downstream of it
+  // describes the page. This is the r_1789744771634 segment in miniature.
+  var unconvSeg = fnStopSentence(seg({ stopReason: 'stuck',
+    actions: [deadBtn, unconvBtn, unconvBtn, unconvBtn, unconvBtn, unconvBtn, unconvBtn] }));
+  ok('a mostly-unconverted segment is judged on that alone',
+    /could not be converted out of the screenshot/.test(unconvSeg), unconvSeg);
+  ok('  and quotes both scales from the action\'s OWN geometry',
+    unconvSeg.indexOf('2576x1138') !== -1 && unconvSeg.indexOf('2773x1281') !== -1, unconvSeg);
+
+  // The dedicated stop, for when the loop gives up rather than burning budget.
+  var coordSpace = fnStopSentence(seg({ stopReason: 'coord-space', steps: 3 }));
+  ok('the coord-space stop names itself', /stopped agreeing on size/.test(coordSpace), coordSpace);
+  ok('  and is ours, not the site\'s', /not a finding about the site/.test(coordSpace), coordSpace);
+
+  // Distinctness: the whole point is that causes stop looking alike.
+  var sentences = [
+    fnStopSentence(seg({ reached: true })),
+    fnStopSentence(seg({ stopReason: 'not-attempted' })),
+    fnStopSentence(seg({ stopReason: 'user-stopped' })),
+    fnStopSentence(seg({ stopReason: 'api-error', error: 'x' })),
+    fnStopSentence(seg({ actions: [offAct, offAct, offAct] })),
+    fnStopSentence(seg({ stopReason: 'agent-stopped', finalText: 'A reCAPTCHA blocks the path.' })),
+    fnStopSentence(seg({ stopReason: 'agent-stopped', finalText: 'I could not find a way through.' })),
+    fnStopSentence(seg({ stopReason: 'budget' })),
+    deadSentence,
+    unconvStuck,
+    unconvSeg,
+    coordSpace,
+  ];
+  eq('every distinct cause produces a distinct sentence', new Set(sentences).size, sentences.length);
+})();
+
 // ── report ─────────────────────────────────────────────────────────────────
 print('');
 if (failures.length) {

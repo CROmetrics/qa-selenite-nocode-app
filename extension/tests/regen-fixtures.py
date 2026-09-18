@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Regenerate fixtures-real-{captures,runs,clusters,specs}.json from the debug-log corpus.
+"""Regenerate fixtures-real-{captures,runs,clusters,specs,funnel}.json from the debug-log corpus.
 
     python3 extension/tests/regen-fixtures.py            # verify only; exits 1 on drift
-    python3 extension/tests/regen-fixtures.py --write     # rewrite the four fixtures
+    python3 extension/tests/regen-fixtures.py --write     # rewrite the five fixtures
     SELENITE_LOGS=/path/to/logs python3 ... --write       # corpus somewhere else
 
 WHY THIS FILE EXISTS. The four fixtures were built ad hoc and for months there was
@@ -20,7 +20,7 @@ same evidence. If it does not, the projection was misread and NOTHING is written
 a mismatch is not something to paper over by loosening the comparison. Done right
 the resulting diff is pure insertions, with no existing line touched. A MISMATCH
 on any one file blocks --write for ALL of them, so a refresh never leaves the
-four fixtures at different vintages of the projection rules.
+five fixtures at different vintages of the projection rules.
 
 This guard is for catching a misread, not for freezing the projection rules
 themselves. A DELIBERATE rule change (like TRAP 3 below) is applied by hand to
@@ -54,6 +54,22 @@ WRITE = '--write' in sys.argv[1:]
 BACKFILL = {'1787686041687', '1787687832083', '1787688438071', '1787689543404'}
 ERA_FLOOR = 1788191807035
 
+# RULE CHANGE, 2026-09-18. The era gate above was written when every log was an
+# A/B run, so it read a run id and nothing else. Funnel Crawl runs land in the
+# same id range and carry no verdict at all -- no captures, no perVariant, an
+# empty visualDiff -- and four of them projected as runs whose every count was
+# zero. That is not a clean run, it is an absent one, and the suite read it as
+# the former: `allClean` and the control-duplicate identity both fired on runs
+# that had compared nothing. The verdict corpus is about VERDICTS, so
+# membership now also requires that the A/B comparison actually ran.
+#
+# Mode 2 is the direct statement of that. `captures`, `perVariant` and a
+# non-skipped visualDiff are consequences of it and were measured to partition
+# the 35 era-gated logs identically (31 / 4) -- the mode row is used because it
+# says what is meant rather than what follows from it. The funnel walk itself is
+# not lost: it projects into fixtures-real-funnel.json, which is about the agent
+# loop rather than the diff.
+
 
 def logs():
     """Every debug log on disk, as (filename stem, run id, parsed)."""
@@ -63,8 +79,12 @@ def logs():
             yield stem, stem.split(' ')[0], json.load(fh)
 
 
-def in_verdict_corpus(rid):
-    return rid in BACKFILL or int(rid) >= ERA_FLOOR
+def in_verdict_corpus(rid, d=None):
+    if not (rid in BACKFILL or int(rid) >= ERA_FLOOR):
+        return False
+    if d is None:
+        return True
+    return any(m.get('mode') == 2 for m in ((d.get('run') or {}).get('modes') or []))
 
 
 # ── captures: every log that captured anything ────────────────────────────────
@@ -168,7 +188,7 @@ def not_served_map(d):
 def gen_runs():
     out = {}
     for _stem, rid, d in logs():
-        if not in_verdict_corpus(rid):
+        if not in_verdict_corpus(rid, d):
             continue
         vd = d.get('visualDiff') or {}
         ns = not_served_map(d)
@@ -222,7 +242,7 @@ def gen_runs():
 def gen_clusters():
     out = {}
     for _stem, rid, d in logs():
-        if not in_verdict_corpus(rid):
+        if not in_verdict_corpus(rid, d):
             continue
         pv = ((d.get('visualDiff') or {}).get('perVariant')) or []
         for v in pv:
@@ -248,9 +268,112 @@ def gen_clusters():
 # Serialization differs per file and all three settings matter to byte-identity.
 # `indent=0` is newline-separated with NO indentation -- not JSON.stringify(o,
 # null, 0), which emits no newlines at all.
+# ── funnel: every log carrying a Funnel Crawl walk ────────────────────────────
+# The only fixture about the AGENT loop rather than the diff. It exists because
+# a funnel failure is diagnosed from per-action evidence that appears nowhere
+# else, and run 1789744771634 had to be diagnosed by solving a scale backwards
+# from one step's output -- exactly the kind of hand-derivation a fixture ends.
+#
+# THE CORPUS IS ALMOST EMPTY, and that is the point of writing it down. Of 68
+# logs on record, 4 ran funnel; 3 carry a `funnel` section at all (it postdates
+# the others -- 1789677896589 ran funnel under an older popup.js and has no
+# section, so it is absent here rather than projected as an empty walk); and
+# exactly ONE (1789744771634) recorded any actions. This pins one real walk
+# today. It is built now so walks join it as they land, not because it has
+# coverage -- do not read a census off it the way the verdict fixtures allow.
+#
+# TRAP 4. `steps > 0` with an EMPTY action list is a real recorded shape, not a
+# parse failure: it is the stale-service-worker signature popup.js detects
+# (1789678299756, 1789742354610 -- a worker running a build older than the
+# popup that exported the log). Projecting it is the only way that signature
+# stays testable, so it must not be filtered out as uninteresting.
+#
+# TRAP 5. `coordConverted: null` is a THIRD state, distinct from false. null
+# means the worker predates the field; false means the converter declined and
+# the click point is unknown. A consumer writing `not a['coordConverted']`
+# collapses them and turns every pre-fix action into a conversion failure, so
+# the projection keeps `.get()`'s None rather than coercing to bool.
+#
+# TRAP 6. `hit: null` (the probe could not run -- an injection-refusing page, or
+# a navigation that destroyed the isolated world) is NOT the same as a hit whose
+# `top` is null (nothingAtPoint). Flattening to `(a.get('hit') or {}).get('top')`
+# merges them, and they behave differently: fnActionKey returns null for the
+# former, which BREAKS a no-progress streak, while the latter extends it.
+#
+# Segment `geometry` is the LAST screenshot's, for the whole segment -- it is one
+# object mutated in place per capture. It does NOT describe step 1. Only an
+# action's own `geometry` is per-action, and only builds after the r_1789744771634
+# fix carry one.
+def gen_funnel():
+    out = {}
+    for _stem, rid, d in logs():
+        f = d.get('funnel')
+        if not isinstance(f, dict):
+            continue
+        entry = {
+            "status": f.get('status'),
+            "reachedEnd": f.get('reachedEnd'),
+            "error": f.get('error'),
+            "segments": [{
+                "from": s.get('from'),
+                "to": s.get('to'),
+                "reached": s.get('reached'),
+                "steps": s.get('steps'),
+                "stopReason": s.get('stopReason'),
+                "apiStopReason": s.get('apiStopReason'),
+                "finalText": s.get('finalText'),
+                # The sentence production ACTUALLY emitted. Frozen in the log, so
+                # pinning it is stable across wording changes -- and it is the
+                # only record that 1789744771634 concluded "not a targeting
+                # problem" about a run whose coordinates were never converted.
+                "summary": s.get('summary'),
+                "geometry": s.get('geometry'),
+                "actions": [{
+                    "step": a.get('step'),
+                    "action": a.get('action'),
+                    "modelCoord": a.get('modelCoord'),
+                    "cssCoord": a.get('cssCoord'),
+                    "coordConverted": a.get('coordConverted'),   # TRAP 5
+                    "coordReason": a.get('coordReason'),
+                    "geometry": a.get('geometry'),
+                    "outOfRange": a.get('outOfRange'),
+                    "delivered": a.get('delivered'),
+                    "deliveredTo": a.get('deliveredTo'),
+                    "mutations": a.get('mutations'),
+                    "hit": None if a.get('hit') is None else {   # TRAP 6
+                        "top": (a.get('hit') or {}).get('top'),
+                        "interactive": (a.get('hit') or {}).get('interactive'),
+                        # The OTHER viewport primitive, read in the page at click
+                        # time. The scale comes from Page.getLayoutMetrics'
+                        # cssVisualViewport; these say whether the two agree, and
+                        # they are the only per-action record of that.
+                        "innerW": (a.get('hit') or {}).get('innerW'),
+                        "innerH": (a.get('hit') or {}).get('innerH'),
+                        "isIframe": (a.get('hit') or {}).get('isIframe'),
+                        "nothingAtPoint": (a.get('hit') or {}).get('nothingAtPoint'),
+                        "coversPct": (a.get('hit') or {}).get('coversPct'),
+                        "position": (a.get('hit') or {}).get('position'),
+                    },
+                    "page": None if a.get('page') is None else {
+                        "url": (a.get('page') or {}).get('url'),
+                        "textLen": (a.get('page') or {}).get('textLen'),
+                    },
+                } for a in (s.get('actions') or [])],   # TRAP 4: [] is a real shape
+            } for s in (f.get('segments') or [])],
+        }
+        if rid in out and out[rid] != entry:
+            raise SystemExit('duplicate downloads of %s disagree -- resolve by hand' % rid)
+        out[rid] = entry
+    return out, dict(indent=0, sort_keys=True, ensure_ascii=False), True
+
+
+# Serialization differs per file and all three settings matter to byte-identity.
+# `indent=0` is newline-separated with NO indentation -- not JSON.stringify(o,
+# null, 0), which emits no newlines at all.
 FIXTURES = [
     ('fixtures-real-captures.json', gen_captures),
     ('fixtures-real-clusters.json', gen_clusters),
+    ('fixtures-real-funnel.json', gen_funnel),
     ('fixtures-real-runs.json', gen_runs),
     ('fixtures-real-specs.json', gen_specs),
 ]

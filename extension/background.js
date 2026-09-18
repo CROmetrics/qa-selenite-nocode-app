@@ -1329,6 +1329,19 @@ const ACTIONS = {
     await waitForLoad(tabId);
   },
 
+  // "SPA:" group — a small suite of navigation checks aimed at single-page
+  // apps, grouped by label prefix in the step picker rather than by any
+  // different navigation mechanism (a hard reload/back/forward is still the
+  // most reliable way to exercise an SPA router's real bootstrap/history
+  // handling from outside the page).
+  spa_refresh: async (tabId) => ACTIONS.refresh(tabId),
+
+  spa_back_forth: async (tabId) => {
+    await ACTIONS.back(tabId);
+    await new Promise(r => setTimeout(r, 3000));
+    await ACTIONS.forward(tabId);
+  },
+
   wait_seconds: async (_tabId, { seconds }) => {
     await new Promise(r => setTimeout(r, parseFloat(seconds) * 1000));
   },
@@ -1424,6 +1437,108 @@ const ACTIONS = {
         }, 150);
       });
     }, [method, selector, text]);
+  },
+
+  // Fills a set of common identity fields in one step. Each field is targeted
+  // by, in order: an explicit override selector (if the user supplied one),
+  // a standard autocomplete-token match (the same vocabulary real browser
+  // autofill relies on), then a name/id/placeholder/aria-label pattern match
+  // as a last resort. Values are applied through the native value setter (see
+  // fill, above) so framework-bound forms (React et al.) see the change.
+  autofill_form: async (tabId, args) => {
+    const FIELD_DEFS = [
+      { key: 'firstName', label: 'First Name', autocomplete: ['given-name'],                        re: 'first.?name|fname|f.?name|given.?name',        type: null },
+      { key: 'lastName',  label: 'Last Name',  autocomplete: ['family-name'],                        re: 'last.?name|lname|l.?name|surname|family.?name', type: null },
+      { key: 'phone',     label: 'Phone',      autocomplete: ['tel', 'tel-national', 'tel-country-code'], re: 'phone|mobile|cell|tel(ephone)?',           type: 'tel' },
+      { key: 'address',   label: 'Address',    autocomplete: ['street-address', 'address-line1'],    re: 'address|street',                                type: null },
+      { key: 'zip',       label: 'Zip Code',   autocomplete: ['postal-code'],                         re: 'zip|postal',                                    type: null },
+      { key: 'country',   label: 'Country',    autocomplete: ['country', 'country-name'],             re: 'country',                                       type: null },
+      { key: 'email',     label: 'Email',      autocomplete: ['email'],                               re: 'e.?mail',                                        type: 'email' },
+    ];
+
+    const overrides = {};
+    const values = {};
+    for (const f of FIELD_DEFS) {
+      const sel = (args[f.key + 'Sel'] || '').trim();
+      if (sel) overrides[f.key] = sel;
+      values[f.key] = (args[f.key] ?? '').trim();
+    }
+
+    const filled = await exec(tabId, (fieldDefs, overrides, values) => {
+      function setNativeValue(el, val) {
+        el.focus();
+        const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype
+                    : el instanceof HTMLSelectElement    ? HTMLSelectElement.prototype
+                    : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+        if (setter) setter.call(el, val); else el.value = val;
+        el.dispatchEvent(new Event('input',  { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      // getClientRects (not offsetParent, which is null for position:fixed
+      // elements too) so a genuinely visible fixed-position field still counts.
+      function isVisible(el) { return el.getClientRects().length > 0; }
+      function findByOverride(sel) {
+        try { return document.querySelector(sel); } catch (_) { return null; }
+      }
+      function findByAutocomplete(tokens) {
+        for (const t of tokens) {
+          const el = document.querySelector(`[autocomplete="${t}"]`)
+                  || document.querySelector(`[autocomplete$=" ${t}"]`); // e.g. "shipping street-address"
+          if (el && isVisible(el) && !el.disabled) return el;
+        }
+        return null;
+      }
+      function findByPattern(reSrc, type) {
+        const re = new RegExp(reSrc, 'i');
+        const candidates = Array.from(document.querySelectorAll('input, select, textarea'))
+          .filter(el => isVisible(el) && !el.disabled && el.type !== 'hidden');
+        for (const el of candidates) {
+          if (type && el.tagName === 'INPUT' && el.type && el.type !== type && el.type !== 'text') continue;
+          const hay = [el.name, el.id, el.placeholder, el.getAttribute('aria-label')].filter(Boolean).join(' ');
+          if (re.test(hay)) return el;
+        }
+        return null;
+      }
+      function selectOption(el, val) {
+        const target = val.trim().toLowerCase();
+        const opt = Array.from(el.options).find(o =>
+          o.value.toLowerCase() === target || o.textContent.trim().toLowerCase() === target);
+        if (!opt) return false;
+        setNativeValue(el, opt.value);
+        return true;
+      }
+
+      const results = {};
+      for (const f of fieldDefs) {
+        const val = values[f.key];
+        if (!val) { results[f.key] = 'skipped (no value)'; continue; }
+
+        let el = null;
+        if (overrides[f.key]) {
+          el = findByOverride(overrides[f.key]);
+          if (!el) { results[f.key] = 'override selector matched nothing'; continue; }
+        }
+        if (!el) el = findByAutocomplete(f.autocomplete);
+        if (!el) el = findByPattern(f.re, f.type);
+        if (!el) { results[f.key] = 'not found'; continue; }
+
+        if (el.tagName === 'SELECT') {
+          results[f.key] = selectOption(el, val) ? 'filled' : `no matching option for "${val}"`;
+        } else {
+          setNativeValue(el, val);
+          results[f.key] = 'filled';
+        }
+      }
+      return results;
+    }, [FIELD_DEFS, overrides, values]);
+
+    const entries = FIELD_DEFS.map(f => [f.label, filled[f.key]]).filter(([, v]) => v !== 'skipped (no value)');
+    const hits    = entries.filter(([, v]) => v === 'filled');
+    const misses  = entries.filter(([, v]) => v !== 'filled');
+    if (!hits.length) throw new Error('Autofill matched no fields on this page.');
+    if (misses.length) return `Filled ${hits.length}/${entries.length} — missed: ${misses.map(([l, v]) => `${l} (${v})`).join(', ')}`;
+    return `Filled ${hits.length} field(s): ${hits.map(([l]) => l).join(', ')}`;
   },
 
   submit: async (tabId, { method, selector }) => {
@@ -1555,6 +1670,19 @@ const ACTIONS = {
     return `Metric fired ×${fires.length}: ${name}`;
   },
 
+  // Combines a click with the existing Track Metric assertion, so a single
+  // step both triggers the interaction and confirms the metric it's expected
+  // to fire — instead of chaining a separate Click + Track Metric pair. Waits
+  // waitSeconds after the click (metrics/analytics calls are frequently
+  // debounced or fired from an async network call) before checking the same
+  // metricsLog the standalone Track Metric step reads.
+  trigger_metric: async (tabId, { method, selector, metricId, metric, waitSeconds }) => {
+    await ACTIONS.click(tabId, { method, selector });
+    const wait = parseFloat(waitSeconds);
+    await new Promise(r => setTimeout(r, (Number.isFinite(wait) && wait >= 0 ? wait : 1) * 1000));
+    return await ACTIONS.track_metric(tabId, { metricId, metric });
+  },
+
   // DevTools' Application panel "Clear site data" button issues this exact
   // CDP command. The run's own tab already has a debugger session attached
   // for the passive console mirror (see followTab, called by runQueue before
@@ -1588,7 +1716,53 @@ const ACTIONS = {
     }
     return `Cleared cookies, storage & cache for ${origin}`;
   },
+
+  // Pins the CSS viewport to a specific width via the same CDP call
+  // captureFullPageAndViewport uses for geometry-pinned Visual Diff captures
+  // (Emulation.setDeviceMetricsOverride) — height:0/deviceScaleFactor:0 both
+  // mean "don't override," so only width changes and the page's own height
+  // and pixel density are left alone. mobile:false — this is a viewport-width
+  // check for CSS breakpoints, not full device emulation (no touch/UA spoof).
+  // Reuses the run's own debugger session (attached by followTab for the
+  // passive console mirror) exactly like clear_session_data above; if none is
+  // attached, attaches fresh and records that in _spaResizeApplied so
+  // runQueue's finally block below can detach it again once the run ends —
+  // left attached, the override would silently follow the user's own tab
+  // past the end of this run (the same reasoning documented on
+  // captureFullPageAndViewport's own cleanup).
+  spa_resize: async (tabId, { width }) => {
+    const w = parseInt(width, 10);
+    if (!w) throw new Error('No width selected');
+
+    await restoreFollowState();
+    const winId = tabToWin.get(tabId);
+    const rec = winId != null ? winFollow.get(winId) : null;
+    const alreadyAttached = !!rec && rec.attached && rec.tabId === tabId;
+
+    if (!alreadyAttached) {
+      try {
+        await chrome.debugger.attach({ tabId }, CDP_VERSION);
+      } catch (e) {
+        throw new Error(`Could not attach to resize viewport: ${e.message}`);
+      }
+    }
+    // Only set on the first Resize step of a run — a later one reusing the
+    // now-attached session must not overwrite selfAttached back to false.
+    if (!_spaResizeApplied || _spaResizeApplied.tabId !== tabId) {
+      _spaResizeApplied = { tabId, selfAttached: !alreadyAttached };
+    }
+
+    await chrome.debugger.sendCommand({ tabId }, 'Emulation.setDeviceMetricsOverride', {
+      width: w, height: 0, deviceScaleFactor: 0, mobile: false,
+    });
+    return `Viewport width set to ${w}px`;
+  },
 };
+
+// Run-scoped: { tabId, selfAttached } while an SPA: Resize override from the
+// current queue run is still live on a tab. Cleared (and the override/
+// attachment undone) in runQueue's finally block — see spa_resize above.
+let _spaResizeApplied = null;
 
 // ── Execution loop ─────────────────────────────────────────────────────────
 let _running = false;
@@ -1678,6 +1852,19 @@ async function runQueue({ queue, mode, targetTabId, universalDelay, winId, track
     _stopRequested = false;
     await ns(_runWin).set({ running: false });
     if (_mtOverrideWin != null) _mtSettings.delete(_mtOverrideWin);
+    // Undo any SPA: Resize override left on this run's tab — detach if we
+    // attached fresh for it (see spa_resize), otherwise just clear the
+    // override and leave the shared console-mirror session alone.
+    if (_spaResizeApplied && _spaResizeApplied.tabId === tabId) {
+      try {
+        if (_spaResizeApplied.selfAttached) {
+          await chrome.debugger.detach({ tabId });
+        } else {
+          await chrome.debugger.sendCommand({ tabId }, 'Emulation.clearDeviceMetricsOverride');
+        }
+      } catch (_) {}
+      _spaResizeApplied = null;
+    }
     // The run is over — hand the window back to passive follow-mode, resolved
     // against whatever tab the user is actually focused on right now (not
     // assumed to be the run's own tab; they may have switched away mid-run).
@@ -3270,6 +3457,12 @@ const ARG_NAMES = {
   // the run-log line below will print both args; accepted as harmless noise
   // rather than adding a display-only filter for one step type.
   track_metric:              ['metricId', 'metric'],
+  trigger_metric:            ['method', 'selector', 'metricId', 'metric', 'waitSeconds'],
+  autofill_form:             ['firstName', 'lastName', 'phone', 'address', 'zip', 'country', 'email',
+                               'firstNameSel', 'lastNameSel', 'phoneSel', 'addressSel', 'zipSel', 'countrySel', 'emailSel'],
+  // spa_refresh and spa_back_forth take no args — omitted, like back/forward/
+  // refresh/clear_session_data above, rather than listed with an empty array.
+  spa_resize:                ['width'],
 };
 
 // ── Descriptions (shown as tooltips in the UI) ────────────────────────────
@@ -3287,6 +3480,11 @@ const DESCRIPTIONS = {
   alert:                     'Handles a JavaScript alert dialog. Choose Accept (OK), Dismiss (Cancel), or Get Text to log the message.',
   wait_seconds:              'Pauses execution for an exact number of seconds before running the next step.',
   track_metric:              'Checks the console output captured during this run for the selected metric (defined in the Metrics section) and reports whether it fired, using that metric\'s own match mode (Contains/Exact/Smart/Regex) at the global match sensitivity. Goal-derived metrics awaiting review are skipped with a warning instead of asserted on. A missed metric logs an error but does not stop the queue.',
+  trigger_metric:            'Clicks a target element (choose a method and enter the value, or use the picker 🎯), waits the given number of seconds, then checks whether the selected metric fired — the same assertion Track Metric makes. Use this instead of a separate Click + Track Metric pair when one interaction is meant to trigger one specific metric.',
+  autofill_form:             'Fills First/Last Name, Phone, Address, Zip Code, Country, and Email in one step. Each field is auto-detected — first by its standard autocomplete attribute, then by common name/id/placeholder patterns — so most forms need no configuration. Leave a field\'s value blank to skip it, or give it an override selector (with the 🎯 picker) if auto-detection misses on a particular page. Values can be saved as a named, reusable profile.',
+  spa_refresh:               'Reloads the current page and waits for it to fully load again — identical to Refresh Page, grouped here as part of the SPA test suite.',
+  spa_back_forth:            'Navigates back one page, waits 3 seconds, then navigates forward again — back to the page the step started on.',
+  spa_resize:                'Sets the page\'s CSS viewport to a specific width (a responsive/device breakpoint), leaving height and pixel density untouched. Persists for the rest of the run so subsequent steps see the resized layout, and is automatically cleared when the run ends.',
   clear_session_data:       "Clears cookies, local storage, session storage, IndexedDB, and cache for the current page's origin — the same as DevTools' Application panel \"Clear site data\" button. The already-loaded page isn't reloaded, so its in-memory state is untouched; follow with a Refresh Page or Open URL step to test as a fresh session.",
 };
 
@@ -3305,6 +3503,11 @@ const DISPLAY_NAMES = {
   alert:                     'Alert',
   wait_seconds:              'Wait (seconds)',
   track_metric:              'Track Metric',
+  trigger_metric:            'Trigger Metric',
+  autofill_form:             'Autofill Form',
+  spa_refresh:               'SPA: Refresh',
+  spa_back_forth:            'SPA: Back and Forth',
+  spa_resize:                'SPA: Resize',
   clear_session_data:        'Clear Session Data',
 };
 
@@ -4057,18 +4260,614 @@ async function captureViewportScreenshot(tabId) {
   }
 }
 
-// Funnel Crawl: capture at a 1-CSS-px-per-image-px clip so the screenshot's
-// pixel space equals both the computer-use tool's declared display size AND the
-// CSS-pixel space CDP Input.dispatchMouseEvent clicks in — Claude's returned
-// coordinates then map 1:1 to a trusted click. Assumes the debugger is ALREADY
-// attached to `target` (the crawl loop attaches once per segment).
+// ── Funnel Crawl: screenshot ⇄ click coordinate space ───────────────────────
+// Claude returns computer-use coordinates in the pixel space of the screenshot
+// it was SHOWN; CDP Input.dispatchMouseEvent clicks in CSS-px viewport space.
+// Those two are equal only at devicePixelRatio 1. This comment used to claim
+// the clip below guaranteed 1-CSS-px-per-image-px — it never did, and nothing
+// enforced it, so on a Retina host every click landed at ~2x its intended
+// position: off-viewport, no CDP error, page unchanged, agent retrying the
+// same button until its step budget ran out (run r_1789678299756).
+//
+// Same finding as vdImageScale's, in the same file: Page.captureScreenshot
+// returns a bitmap at the host's device pixel ratio. And per that function's
+// own history the ratio is not even stable within one session — a measured run
+// saw two captures of the same page come back at different scales 64s apart —
+// so it is DERIVED from each returned bitmap here too, never assumed or cached.
+//
+// The three helpers below are pure so the jsc suite can slice and test them.
+
+// Model image limits, for the model this loop actually declares below
+// (claude-sonnet-5 — high-resolution vision tier). The API does NOT downscale
+// a tool_result image for us; an oversized one is rejected with a validation
+// error mid-segment. Tied to the model string: if that changes to a
+// pre-Opus-4.7 model these must drop to 1568 / 1568 visual tokens.
+// Visual tokens are ceil(w/28) * ceil(h/28), which is the real published
+// constraint — a plain megapixel cap is only an approximation of it.
+const FN_MAX_IMAGE_EDGE = 2576;
+const FN_MAX_IMAGE_TOKENS = 4784;
+
+function fnVisualTokens(w, h) {
+  return Math.ceil(w / 28) * Math.ceil(h / 28);
+}
+
+// How much to shrink a captured bitmap so it fits the limits above. Returns 1
+// when it already fits — the common case, including the 2342x1330 Retina
+// capture that exposed this bug, which is well inside both limits and so keeps
+// its full detail. Also 1 when the inputs are unusable, so this can never make
+// a working capture worse.
+function fnFitScale(imgW, imgH, maxLongEdge, maxTokens) {
+  if (!imgW || !imgH || imgW <= 0 || imgH <= 0) return 1;
+  const edge = maxLongEdge || FN_MAX_IMAGE_EDGE;
+  const tokens = maxTokens || FN_MAX_IMAGE_TOKENS;
+  let s = Math.min(1, edge / Math.max(imgW, imgH));
+  // Token count is a step function of the dimensions, so solve it by shrinking
+  // until it fits rather than by a closed form that can land a pixel over.
+  for (let i = 0; i < 40 && fnVisualTokens(imgW * s, imgH * s) > tokens; i++) s *= 0.95;
+  return s;
+}
+
+// A model coordinate (image px) → a click coordinate (CSS px). Declines rather
+// than guesses when a dimension is missing or the implied ratio is outside the
+// range a real device pixel ratio can produce — same clamp-and-fall-back-to-1
+// convention as vdImageScale, for the same reason: a disagreement between the
+// capture and the viewport must not be laundered into a plausible-looking
+// correction that silently clicks somewhere else.
+//
+// It returns `converted` and a `reason` rather than only the numbers, because
+// the declining case used to be INVISIBLE. This comment used to say the
+// out-of-range check below would surface it; that was wrong in the one
+// direction that matters. See fnCoordInViewport.
+function fnCoordToCss(x, y, imgW, imgH, dispW, dispH) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return { x, y, converted: false, reason: 'no-coordinate' };
+  if (!imgW || !imgH || !dispW || !dispH) return { x, y, converted: false, reason: 'missing-dimension' };
+  const sx = dispW / imgW, sy = dispH / imgH;
+  if (sx < 0.25 || sx > 4 || sy < 0.25 || sy > 4) return { x, y, converted: false, reason: 'scale-out-of-range' };
+  // The two axes must agree: one device pixel ratio scales both. If they
+  // disagree the bitmap is not this viewport at all (a stale capture, a clip
+  // that missed), and no single factor fixes that — correcting by either one
+  // would be worse than not correcting, so decline and say so.
+  if (Math.abs(sx - sy) > 0.02 * Math.max(sx, sy)) return { x, y, converted: false, reason: 'axes-disagree' };
+  return { x: Math.round(x * sx), y: Math.round(y * sy), converted: true, reason: null };
+}
+
+// Do a bitmap and the viewport measured beside it describe the same MOMENT? One
+// device pixel ratio scales both axes, so a disagreement here is clock skew
+// rather than geometry.
+//
+// Deliberately much tighter than fnCoordToCss's 2%, because it asks a different
+// question. That one asks "is this the same viewport at all" and its answer
+// decides whether to click; this one asks "was it holding still" and its answer
+// decides whether to take the picture again. Run r_1789747242103 separates the
+// two populations by more than two orders of magnitude -- 0.99% while Chrome's
+// debugger infobar animated in, 0.0025% on all six settled captures after it --
+// so a threshold between them is measured, not guessed.
+const FN_CAPTURE_AXIS_TOL = 0.005;
+
+function fnCaptureAxesAgree(imgW, imgH, cssW, cssH, tol) {
+  if (!imgW || !imgH || !cssW || !cssH) return true;   // nothing to compare -- never force a retry
+  const sx = cssW / imgW, sy = cssH / imgH;
+  return Math.abs(sx - sy) <= (tol || FN_CAPTURE_AXIS_TOL) * Math.max(sx, sy);
+}
+
+// Did a click coordinate land on the page at all? An out-of-range coordinate is
+// the signature of the bug above, and CDP accepts one silently — so it is
+// recorded (never clamped: a clamped click can hit the WRONG element, which is
+// worse than a no-op) and surfaced as a problem in the debug log.
+//
+// WHAT THIS CANNOT SEE, and why fnCoordToCss now reports for itself. This check
+// was built for a capture LARGER than the viewport (Retina, run
+// r_1789678299756): an unconverted coordinate overflowed the viewport and was
+// caught here. FN_MAX_IMAGE_EDGE downscales a wide capture, so the image can be
+// SMALLER than the viewport in CSS px — and then every coordinate inside the
+// image is inside the viewport by construction, so an unconverted one is
+// provably invisible here. Run r_1789744771634 dispatched six of them at a
+// point the agent never chose, and this returned true for all six.
+function fnCoordInViewport(x, y, dispW, dispH) {
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !dispW || !dispH) return true;
+  return x >= 0 && y >= 0 && x <= dispW && y <= dispH;
+}
+
+// ── Funnel Crawl: why did an action achieve nothing? ────────────────────────
+// Both recorded real failures ran the whole step budget re-clicking one target
+// while the page never changed, and the report could only say "did not reach
+// End after 10 steps". These record WHAT WAS ACTUALLY AT the clicked point and
+// WHETHER THE PAGE REACTED, so the failure can name its own cause.
+const FN_STUCK_NUDGE = 3;   // consecutive no-progress actions before telling the agent
+const FN_STUCK_ABORT = 6;   // …and before giving up rather than burning the budget
+
+// The keys a funnel actually needs. Enter submits, Tab moves between fields,
+// Escape closes an overlay — the three that turn up in real checkout flows.
+const FN_KEY_CODES = {
+  'return': { code: 13, key: 'Enter',  code_: 'Enter',  text: '\r' },
+  'enter':  { code: 13, key: 'Enter',  code_: 'Enter',  text: '\r' },
+  'tab':    { code: 9,  key: 'Tab',    code_: 'Tab',    text: '\t' },
+  'escape': { code: 27, key: 'Escape', code_: 'Escape' },
+  'esc':    { code: 27, key: 'Escape', code_: 'Escape' },
+};
+
+// Only a DISPATCHED CLICK can count toward no-progress, and this restriction is
+// the single most important thing here. The loop's own gaps otherwise fabricate
+// a perfect stuck signature out of healthy runs:
+//   • `type` cannot move this fingerprint AT ALL — an input's value lives in
+//     .value, not in a text node, so filling name/email/phone is three
+//     "unchanged" readings on a form that is working perfectly.
+//   • `key` and the unhandled actions (hover, wait, double_click, drag…)
+//     dispatch nothing, so of course nothing changes.
+// Counting those would nudge — and then abort — runs that were succeeding, and
+// would hand the classifier a false "the page never responded".
+function fnCountsForProgress(a) {
+  return !!a && !a.error && !a.outOfRange
+    && (a.action === 'left_click' || a.action === 'right_click' || a.action === 'middle_click');
+}
+
+// Identity of an action for no-progress comparison. Deliberately includes the
+// hit element: clicking the same coordinate is not the same as clicking the
+// same THING, because a page that reflows under a fixed coordinate is making
+// progress even though the numbers match.
+// Returns null when the evidence is UNKNOWN (probe failed, page navigated out
+// from under the injection). null never equals null here — see fnNoProgressRun.
+function fnActionKey(a) {
+  if (!a || !a.page || !a.hit || a.hit.probeError) return null;
+  const p = a.page;
+  if (!p.url) return null;
+  return [a.action || '-', a.hit.top || '-', p.url, p.title || '', p.textLen == null ? '-' : p.textLen].join('|');
+}
+
+// How many consecutive trailing click actions provably changed nothing.
+// Breaks the run on: a non-click, a positive mutation count (the page did
+// something even if URL/title did not move), or UNKNOWN evidence. That last one
+// matters — a failed probe returns null, and treating null as "same as the
+// previous null" would make NAVIGATION, the strongest possible evidence that
+// something happened, read as a stuck run.
+function fnNoProgressRun(actions) {
+  const list = Array.isArray(actions) ? actions : [];
+  if (!list.length) return 0;
+  const last = list[list.length - 1];
+  if (!fnCountsForProgress(last) || last.mutations > 0) return 0;
+  const key = fnActionKey(last);
+  if (key === null) return 0;
+  let run = 1;
+  for (let i = list.length - 2; i >= 0; i--) {
+    const a = list[i];
+    if (!fnCountsForProgress(a) || a.mutations > 0) break;
+    const k = fnActionKey(a);
+    if (k === null || k !== key) break;
+    run++;
+  }
+  return run;
+}
+
+// Turns a raw element identity into words a tester can act on. This is the gap
+// the WCAG modalescape check cannot close: OneTrust's banner is
+// #onetrust-banner-sdk / .onetrust-pc-dark-filter and carries neither
+// role="dialog" nor aria-modal, so a presence-based modal check reports "no
+// modal in the DOM" on the very run a banner blocked.
+const FN_OVERLAY_VENDORS = [
+  [/onetrust|optanon|ot-sdk|ot-pc/i,                'the OneTrust cookie-consent banner'],
+  [/cookiebot|cybotcookiebot/i,                     'the Cookiebot consent banner'],
+  [/trustarc|truste/i,                              'the TrustArc consent banner'],
+  [/usercentrics|uc-banner|uc-overlay/i,            'the Usercentrics consent banner'],
+  [/didomi|osano|quantcast|qc-cmp/i,                'a consent-management banner'],
+  [/klaro|cookieyes|termly|iubenda|civic.?cookie/i, 'a cookie-consent banner'],
+  [/recaptcha|hcaptcha|turnstile|cf-chl/i,          'a CAPTCHA / bot-check widget'],
+  [/intercom|drift|zendesk|livechat|tawk|olark|freshchat/i, 'a chat widget'],
+  [/\b(cookie|consent|gdpr|ccpa)\b/i,               'a cookie/consent banner'],
+  [/newsletter|subscribe|email-?capture|exit-?intent/i, 'a newsletter popup'],
+  [/modal|overlay|lightbox|popup|backdrop|scrim/i,  'a modal overlay'],
+];
+
+// Names what a click actually landed on. Returns null when nothing recognisable
+// is there — an unnamed element is NOT evidence of a blocker, and saying so
+// anyway is how a QA tool sends someone chasing the wrong thing.
+function fnNameBlocker(hit) {
+  if (!hit) return null;
+  if (hit.isIframe) {
+    return { vendor: 'an embedded frame', iframe: true, matched: 'iframe' };
+  }
+  const hay = [hit.top, (hit.stack || []).join(' ')].filter(Boolean).join(' ');
+  for (const [re, vendor] of FN_OVERLAY_VENDORS) {
+    const m = hay.match(re);
+    if (m) return { vendor, iframe: false, matched: m[0].slice(0, 40) };
+  }
+  // No vendor keyword, but a pinned layer over a large slice of the viewport is
+  // a blocker by behaviour even when nobody labelled it one.
+  if ((hit.position === 'fixed' || hit.position === 'sticky') && hit.coversPct >= 25) {
+    return { vendor: 'an unnamed full-screen overlay', iframe: false, matched: hit.top };
+  }
+  return null;
+}
+
+// The system prompt tells the model to stop and REPORT a CAPTCHA, a login wall
+// or a real-money step, so its vocabulary here is predictable. Matching it is
+// what turns "the agent stopped for some reason" into a named gate. Ordered
+// most-specific first: a login wall on a checkout page is login, not payment.
+const FN_GATE_PATTERNS = [
+  ['captcha', /\b(captcha|recaptcha|hcaptcha|turnstile|bot[- ]?(check|detection)|not a robot|verify (you(?:'re| are)? )?(a )?human)\b/i],
+  ['login',   /\b(log[- ]?in wall|login wall|sign[- ]?in wall|paywall|authentication (wall|required)|requires? (an? )?(account|login|sign[- ]?in)|credentials|one[- ]time (code|password)|two[- ]factor)\b/i],
+  ['payment', /\b(payment (details|information|method)|billing (details|information)|credit card|card (details|number)|real (transaction|purchase|money)|place (the |your )?order|complete (the |your )?(purchase|order|donation)|financial obligation)\b/i],
+];
+
+// Pure. The model's terminal sentence -> a named gate, or null.
+function fnClassifyGate(text) {
+  const t = String(text || '');
+  if (!t.trim()) return null;
+  for (const [gate, re] of FN_GATE_PATTERNS) {
+    const m = t.match(re);
+    if (m) return { gate, evidence: m[0].slice(0, 60) };
+  }
+  return null;
+}
+
+// A segment that never ran a step, in the same shape as a real one so every
+// consumer (report table, debug log, problem collector) needs no special case.
+function fnPlaceholderSegment(from, to, stopReason, error) {
+  const seg = {
+    from, to, reached: false, steps: 0, note: '', error: error || null,
+    geometry: null, actions: [], summary: '',
+    stopReason, apiStopReason: null, finalText: '',
+  };
+  seg.summary = fnStopSentence(seg);
+  return seg;
+}
+
+// Keeps BOTH ends. `notes.join(' ').slice(0, n)` is head-keeping, so the
+// model's closing "I'm stopping because…" — the one sentence the whole report
+// exists to carry — was always the first casualty.
+function fnTrimNote(text, max) {
+  const s = String(text || '');
+  const cap = max || 1500;
+  if (s.length <= cap) return s;
+  const tail = Math.min(600, Math.floor(cap / 2));
+  const head = Math.max(0, cap - tail - 40);
+  return s.slice(0, head) + ` … [${s.length - head - tail} chars omitted] … ` + s.slice(-tail);
+}
+
+// ONE sentence saying what stopped a segment. Pure, so it is unit-testable and
+// so popup.js does not reimplement any of this.
+//
+// Order is by evidentiary strength, and the confidence of each branch is capped
+// by what is actually obtainable. Three rules, learned the hard way:
+//   • A coordinate that never landed makes every downstream reading
+//     meaningless, so it is judged first.
+//   • "Blocked by X" requires that the thing hit is NOT what the click reached.
+//     Both recorded real failures were the agent clicking the consent banner's
+//     OWN dismiss button — naming the banner as the blocker there would be
+//     precisely backwards.
+//   • We never say the site is broken. Even with delivery confirmed we cannot
+//     know what the agent INTENDED to hit, and a delegated handler is
+//     unprovable from the page. So the strongest form is the measured facts:
+//     what it clicked, that it arrived, and that nothing changed.
+function fnStopSentence(seg) {
+  const s = seg || {};
+  const steps = s.steps || 0;
+  const acts = Array.isArray(s.actions) ? s.actions : [];
+  const g = s.geometry;
+  const gate = s.stopReason === 'agent-stopped' ? fnClassifyGate(s.finalText) : null;
+  const quote = String(s.finalText || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+
+  if (s.reached) return `Reached ${s.to} in ${steps} agent step(s).`;
+  if (s.stopReason === 'not-attempted') return 'Not attempted — the crawl had already stopped at an earlier segment.';
+  if (s.stopReason === 'user-stopped') return `Stopped by the tester after ${steps} agent step(s) — no verdict for this segment.`;
+  if (s.stopReason === 'attach-failed' || s.stopReason === 'api-error' || s.stopReason === 'exception') {
+    return `The crawl could not run: ${s.error || 'unknown error'}${steps ? ` (after ${steps} agent step(s))` : ''}. `
+      + 'This is a Selenite or API failure, not a finding about the site.';
+  }
+
+  // Same class as off-viewport, and judged alongside it. A coordinate the
+  // converter declined is in the SCREENSHOT's pixel space, so the click point is
+  // unknown — pre-fix builds dispatched it anyway and every reading taken after
+  // it describes a place the agent never chose (r_1789744771634).
+  const unconv = acts.filter(a => a.coordConverted === false && a.coordReason !== 'no-coordinate');
+  if (unconv.length && unconv.length >= Math.max(1, Math.floor(acts.length / 2))) {
+    const u = unconv[0].geometry || g || {};
+    const scales = u.imageW && u.imageH && u.viewportW && u.viewportH
+      ? ` — the screenshot is ${u.imageW}x${u.imageH} against a ${u.viewportW}x${u.viewportH} viewport, which scale`
+        + ` by ${(u.viewportW / u.imageW).toFixed(3)} across and ${(u.viewportH / u.imageH).toFixed(3)} down`
+      : '';
+    return `${unconv.length} of ${acts.length} actions used a coordinate that could not be converted out of the `
+      + `screenshot's pixel space${scales}. Where those clicks would have landed is unknown, so nothing measured `
+      + 'after them describes the site. This is a Selenite coordinate-space failure, not a finding about the page.';
+  }
+
+  // Off-viewport pre-empts everything: nothing on the page could have responded,
+  // so no hit-test reading downstream of it means anything.
+  const off = acts.filter(a => a.outOfRange);
+  if (off.length && off.length >= Math.max(1, Math.floor(acts.length / 2))) {
+    return `${off.length} of ${acts.length} actions used coordinates outside the `
+      + `${g ? `${g.viewportW}x${g.viewportH} ` : ''}viewport and were never dispatched, so nothing could respond`
+      + (g && g.imageW && g.imageW !== g.viewportW
+          ? ` — the screenshot is ${g.imageW}x${g.imageH} against a ${g.viewportW}x${g.viewportH} viewport, a coordinate-space mismatch rather than a navigation failure.`
+          : '.');
+  }
+
+  // Actions this build never dispatched. Ours, not the site's.
+  const noop = acts.filter(a => a.error && /not implemented|not supported/i.test(a.error));
+  if (noop.length && noop.length >= Math.max(2, Math.floor(acts.length / 2))) {
+    return `${noop.length} of ${acts.length} steps used "${noop[0].action}", which this crawler does not dispatch, `
+      + 'so the page was never given anything to respond to. This is a Selenite gap, not a site issue.';
+  }
+
+  if (gate) {
+    const label = gate.gate === 'captcha' ? 'a CAPTCHA / bot check'
+      : gate.gate === 'login' ? 'a login or authentication wall'
+      : 'a step that would move real money';
+    return `The agent stopped after ${steps} step(s) and reported ${label}, which it is instructed not to attempt`
+      + ` (matched "${gate.evidence}")${quote ? `. In its own words: "${quote}"` : '.'}`;
+  }
+  if (s.apiStopReason === 'max_tokens') {
+    return `The agent's reply was cut off by the token limit on step ${steps} before it issued an action, `
+      + 'so the crawl stalled on a tooling limit rather than on anything about the site. Re-run.';
+  }
+  if (s.apiStopReason === 'refusal') {
+    return `The model declined to continue on step ${steps}${quote ? `: "${quote}"` : '.'}`;
+  }
+
+  // No-progress. State the measurement; name a blocker only when the thing hit
+  // is demonstrably not the thing the click reached.
+  const run = fnNoProgressRun(acts);
+  const last = acts.length ? acts[acts.length - 1] : null;
+  if (run >= FN_STUCK_NUDGE && last) {
+    const hit = last.hit || {};
+    const blocker = fnNameBlocker(hit);
+    const where = hit.top ? ` on ${hit.top}` : '';
+    const tail = ` The page's URL, title and visible text were unchanged after each, and no DOM change was observed.`;
+    // GUARD. Every branch below reads the hit test at the point that was
+    // clicked, and the delivered branch goes further and rules targeting OUT.
+    // All of that assumes the click went where the agent aimed. If the
+    // coordinate was never converted out of screenshot space it demonstrably
+    // did not, and "this is not a targeting problem" is exactly backwards —
+    // which is what r_1789744771634 reported. Checked before the readings, not
+    // after, because a wrong point makes all of them describe the wrong element.
+    if (acts.slice(-run).some(a => a.coordConverted === false && a.coordReason !== 'no-coordinate')) {
+      return `${run} consecutive clicks changed nothing, and their coordinates were never converted out of the `
+        + "screenshot's pixel space — so each one landed at a point the agent did not choose, and what they hit says "
+        + 'nothing about the control it was aiming at. This is a Selenite coordinate-space failure, not a site defect.';
+    }
+    if (hit.isIframe) {
+      return `${run} consecutive clicks landed on an embedded frame, whose contents this tool cannot see into or drive,`
+        + ` so what happened inside it is unknown.${tail}`;
+    }
+    if (hit.nothingAtPoint) {
+      return `${run} consecutive clicks landed on no element at all — there is nothing at that point on the page.${tail}`;
+    }
+    if (hit.disabled) {
+      return `${run} consecutive clicks landed${where}, which is disabled, so the page ignored them.`
+        + ' Something earlier in the flow has probably not validated yet.';
+    }
+    // Only an intercept when the click reached something OTHER than the top
+    // element we measured — otherwise the agent was aiming AT this thing.
+    if (blocker && last.delivered && last.deliveredTo && hit.top && last.deliveredTo !== hit.top) {
+      return `${run} consecutive clicks were landing on ${blocker.vendor} (${hit.top}), covering ${hit.coversPct}% of the `
+        + `viewport, rather than on the intended control.${tail}`;
+    }
+    if (last.delivered === true) {
+      return `${run} consecutive clicks were delivered${where ? ` to ${hit.top}` : ''} and the page did not change: `
+        + 'same URL, same title, same visible text, and no DOM mutation. The click reached an element, so this is not a '
+        + 'targeting problem — but this check cannot confirm which control the agent meant to hit, so treat it as an '
+        + 'observation to reproduce by hand rather than a proven site defect.';
+    }
+    if (last.delivered === false) {
+      return `${run} consecutive clicks were dispatched${where} but no element received a click event, `
+        + 'so the page never saw them.';
+    }
+    return `${run} consecutive clicks changed nothing${where}, and this check could not confirm whether they were `
+      + 'delivered, so the cause is unresolved.';
+  }
+
+  if (s.stopReason === 'coord-space') {
+    return `Ended early after ${steps} step(s): the screenshot and the page's viewport stopped agreeing on size, so `
+      + "the agent's coordinates could not be converted into click points and nothing was dispatched. This is a "
+      + 'Selenite failure, not a finding about the site.';
+  }
+  if (s.stopReason === 'stuck') {
+    return `Ended early after ${steps} step(s): the agent repeated an action that provably changed nothing, `
+      + 'and the rest of the budget would not have changed that.';
+  }
+  if (s.stopReason === 'agent-stopped') {
+    return `The agent stopped on its own after ${steps} step(s) without reaching ${s.to} and without naming anything `
+      + `that blocked it${quote ? `. Its last words: "${quote}"` : '.'}`;
+  }
+  if (s.stopReason === 'budget') {
+    return `Ran out of budget after ${steps} step(s) without reaching ${s.to}; the page was still changing, `
+      + 'so raising the step budget may get further.';
+  }
+  return `Did not reach ${s.to} after ${steps} agent step(s); no cause could be determined from the recorded evidence.`;
+}
+
+// Injected, so fully self-contained (exec serializes it). Runs BEFORE the
+// click: reports the z-ordered element stack at the point, and arms a
+// capturing click listener plus a MutationObserver so the matching read below
+// can say whether the click was actually delivered and whether anything moved.
+// `brief()` is copied rather than imported — the WCAG audit's copy is local to
+// its own injected closure, which is the established constraint here.
+function fnPreClickProbeFn(x, y) {
+  function brief(el) {
+    if (!el || !el.tagName) return '?';
+    if (el.id) return '#' + el.id;
+    var cls = (el.classList ? Array.prototype.slice.call(el.classList) : []).slice(0, 2).join('.');
+    return el.tagName.toLowerCase() + (cls ? '.' + cls : '');
+  }
+  var hit;
+  try {
+    var stack = (document.elementsFromPoint
+      ? document.elementsFromPoint(x, y)
+      : [document.elementFromPoint(x, y)]).filter(Boolean);
+    if (!stack.length) {
+      hit = { top: null, stack: [], nothingAtPoint: true };
+    } else {
+      var el = stack[0];
+      var r = el.getBoundingClientRect();
+      var cs = getComputedStyle(el);
+      var vw = Math.max(1, window.innerWidth), vh = Math.max(1, window.innerHeight);
+      hit = {
+        top: brief(el),
+        stack: stack.slice(0, 4).map(brief),
+        coversPct: Math.round((Math.min(r.width, vw) * Math.min(r.height, vh)) / (vw * vh) * 100),
+        position: cs.position,
+        pointerEvents: cs.pointerEvents,
+        disabled: !!(el.disabled || el.getAttribute('aria-disabled') === 'true'),
+        ariaHidden: !!(el.closest && el.closest('[aria-hidden="true"]')),
+        interactive: !!(el.closest && el.closest('a,button,input,select,textarea,label,summary,[role=button],[role=link],[onclick]')),
+        // The scale is derived from Page.getLayoutMetrics' cssVisualViewport,
+        // which excludes scrollbars; these do not. Recorded so a handful of real
+        // runs can settle which one actually tracks the bitmap, rather than the
+        // question being argued from documentation.
+        innerW: window.innerWidth, innerH: window.innerHeight,
+        isIframe: el.tagName === 'IFRAME',
+        // exec() is top-frame only, so an element inside a cross-origin iframe
+        // is unreachable — that must read as "unknown", never as a blocker.
+        crossOriginFrame: el.tagName === 'IFRAME' ? !el.contentDocument : false,
+        shadowHost: !!el.shadowRoot,
+        nothingAtPoint: false,
+      };
+    }
+  } catch (e) {
+    hit = { top: null, stack: [], probeError: String((e && e.message) || e) };
+  }
+  try {
+    if (window.__seleniteCrawlProbeStop) window.__seleniteCrawlProbeStop();
+    var state = { delivered: false, target: null, mutations: 0 };
+    var onClick = function (e) {
+      state.delivered = true;
+      if (!state.target) state.target = brief(e.target);
+    };
+    window.addEventListener('click', onClick, true);
+    var mo = new MutationObserver(function (muts) { state.mutations += muts.length; });
+    mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
+    window.__seleniteCrawlProbe = state;
+    window.__seleniteCrawlProbeStop = function () {
+      window.removeEventListener('click', onClick, true);
+      mo.disconnect();
+      window.__seleniteCrawlProbeStop = null;
+    };
+  } catch (_) {}
+  return hit;
+}
+
+// The matching read: delivery, DOM reaction, and the page fingerprint the
+// no-progress detector compares. Folded into one call rather than two so a
+// click costs two round trips, not three.
+function fnPostActionProbeFn() {
+  var out = { delivered: null, deliveredTo: null, mutations: null, page: null };
+  try {
+    var s = window.__seleniteCrawlProbe || null;
+    if (window.__seleniteCrawlProbeStop) window.__seleniteCrawlProbeStop();
+    window.__seleniteCrawlProbe = null;
+    if (s) {
+      out.delivered = !!s.delivered;
+      out.deliveredTo = s.target || null;
+      out.mutations = s.mutations || 0;
+    }
+  } catch (_) {}
+  try {
+    out.page = {
+      url: location.href,
+      title: document.title || '',
+      textLen: document.body ? (document.body.innerText || '').length : 0,
+    };
+  } catch (_) {}
+  return out;
+}
+
+// Returns { dataUrl, width, height, cssW, cssH } — width/height are of the image
+// ACTUALLY sent, which is the space the caller must declare as display_width_px/
+// display_height_px and the space Claude's coordinates will come back in; cssW/
+// cssH are the CSS-px viewport that same bitmap covers, which is the space its
+// coordinates must be converted INTO.
+//
+// Both come from here, together, on purpose. The caller used to measure the
+// viewport once per segment and the image every step, so the ratio between them
+// mixed a stale numerator with a fresh denominator. Anything that shrinks the
+// visual viewport mid-segment — a scrollbar, the debugger infobar, a downloads
+// bar — then desynced the two permanently and every later click missed
+// (r_1789744771634). Two numbers that are divided by each other have to be
+// measured at the same moment.
+//
+// Assumes the debugger is ALREADY attached to `target` (the crawl loop attaches
+// once per segment).
+//
+// ONE RETRY when the bitmap and its measurement disagree, because that means the
+// viewport was moving while they were taken and the model would be shown a
+// layout that has already changed. In r_1789747242103 the seed capture caught
+// the debugger infobar mid-animation: the image was 1186 tall, the viewport read
+// 1265 beside it, and by the time the click went out it was 1225 -- so the first
+// click landed 42px low, on the cookie banner's container instead of its button.
+// Costs nothing on a page holding still, which is every capture after the first.
 async function captureClipped(target, width, height) {
-  const shot = await chrome.debugger.sendCommand(target, 'Page.captureScreenshot', {
-    format: 'png',
-    clip: { x: 0, y: 0, width, height, scale: 1 },
-    captureBeyondViewport: false,
-  });
-  return 'data:image/png;base64,' + shot.data;
+  const first = await captureAndMeasure(target, width, height);
+  if (fnCaptureAxesAgree(first.width, first.height, first.cssW, first.cssH)) return first;
+  // Let whatever is moving finish, then take the later one. If it still
+  // disagrees, it is at least the more settled of the two, and fnCoordToCss
+  // still gets the final say on whether it can be clicked through at all.
+  await new Promise(r => setTimeout(r, 250));
+  return captureAndMeasure(target, width, height);
+}
+
+async function captureAndMeasure(target, width, height) {
+  // Deliberately UNCLIPPED, like captureViewportScreenshot above. A `clip` is
+  // in DOCUMENT coordinates, so `clip: {x:0, y:0}` always framed the top of the
+  // page — but the agent has a scroll action, and Input.dispatchMouseEvent
+  // works in the SCROLLED viewport. After any scroll the model was reasoning
+  // about content that was no longer where it clicked. An unclipped capture is
+  // exactly the current visual viewport, which is the space mouse input uses.
+  const shot = await chrome.debugger.sendCommand(target, 'Page.captureScreenshot', { format: 'png' });
+  const dataUrl = 'data:image/png;base64,' + shot.data;
+
+  // Adjacent to the capture, on the same target, so it describes the same
+  // moment. cssVisualViewport is the CSS-px visual viewport — exactly what an
+  // unclipped capture covers — and clientWidth/clientHeight exclude the
+  // scrollbars, which window.innerWidth/innerHeight do not. No script
+  // injection, so a page that refuses it still gets measured. Degrades to the
+  // caller's own numbers, same convention as the decode below.
+  let cssW = width, cssH = height;
+  try {
+    const m = await chrome.debugger.sendCommand(target, 'Page.getLayoutMetrics');
+    const vv = m && (m.cssVisualViewport || m.visualViewport);
+    if (vv && vv.clientWidth && vv.clientHeight) { cssW = vv.clientWidth; cssH = vv.clientHeight; }
+  } catch (_) { /* keep the caller's numbers — an honest stale beats a wrong fresh */ }
+
+  // Measure what actually came back rather than assuming it matches the
+  // viewport — that assumption is the whole bug this function used to carry.
+  let bitmap = null;
+  try { bitmap = await decodeDataUrl(dataUrl); } catch (_) {}
+  if (!bitmap) return { dataUrl, width, height, cssW, cssH };   // degrade to the caller's own numbers
+
+  const fit = fnFitScale(bitmap.width, bitmap.height, FN_MAX_IMAGE_EDGE, FN_MAX_IMAGE_TOKENS);
+  if (fit >= 1) return { dataUrl, width: bitmap.width, height: bitmap.height, cssW, cssH };
+
+  const outW = Math.max(1, Math.round(bitmap.width * fit));
+  const outH = Math.max(1, Math.round(bitmap.height * fit));
+  const c = new OffscreenCanvas(outW, outH);
+  c.getContext('2d').drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, 0, 0, outW, outH);
+  return { dataUrl: await canvasToDataUrl(c), width: outW, height: outH, cssW, cssH };
+}
+
+// chrome.debugger.attach makes Chrome slide in its "started debugging this
+// browser" infobar, which takes ~56 CSS px off the visual viewport over a few
+// hundred milliseconds. The seed capture used to be taken during that, so the
+// retry above would fire on every single segment. Two consecutive identical
+// readings is the cheapest definition of "settled" that does not need to know
+// what is moving -- an infobar, a downloads bar, a lazily-loaded sticky header
+// all end the same way. Bounded, and a timeout is not an error: capture anyway
+// and let the axis check decide.
+async function waitForStableViewport(target, timeoutMs = 2000, stepMs = 120) {
+  const read = async () => {
+    try {
+      const m = await chrome.debugger.sendCommand(target, 'Page.getLayoutMetrics');
+      const vv = m && (m.cssVisualViewport || m.visualViewport);
+      return vv && vv.clientWidth && vv.clientHeight ? `${vv.clientWidth}x${vv.clientHeight}` : null;
+    } catch (_) { return null; }
+  };
+  const started = Date.now();
+  let prev = await read();
+  while (Date.now() - started < timeoutMs) {
+    await new Promise(r => setTimeout(r, stepMs));
+    const cur = await read();
+    if (cur && cur === prev) return true;
+    prev = cur;
+  }
+  return false;
 }
 
 // ── Performance/Load measurement (Test Modes tab) ───────────────────────────
@@ -4622,7 +5421,27 @@ function funnelUrlKey(url) {
 
 // One waypoint→next-waypoint hop. Returns { from, to, reached, steps, note, error }.
 async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalPrompt = '') {
-  const out = { from: fromUrl, to: target, reached: false, steps: 0, note: '', error: null };
+  const out = {
+    from: fromUrl, to: target, reached: false, steps: 0, note: '', error: null,
+    // What the agent actually DID, not just what it said about it. The prose in
+    // `note` alone could not distinguish "could not find the button" from
+    // "clicked 2x off-viewport ten times" — see captureClipped's comment.
+    geometry: null, actions: [], summary: '',
+    // WHY this segment ended. Without these three, a CAPTCHA wall, a payment
+    // gate, a login wall, an exhausted budget, a max_tokens truncation and a
+    // model that simply ran out of ideas were byte-identical to every consumer:
+    // all of them returned {reached:false, error:null}. The prompt explicitly
+    // tells the model to stop and REPORT the first three, and that report had
+    // nowhere to go. Same principle the Figma path already states: "surface the
+    // real stop reason rather than letting an empty parse masquerade as a model
+    // that had nothing to say."
+    //   stopReason: our own coarse cause (the enum below)
+    //   apiStopReason: the API's raw stop_reason, kept verbatim
+    //   finalText: the model's last text block, UNTRUNCATED — `note` truncates
+    //     from the end, so the terminal "I'm stopping because…" sentence was
+    //     always the first thing cut.
+    stopReason: null, apiStopReason: null, finalText: '',
+  };
   const targetKey = funnelUrlKey(target);
   const dbg = { tabId };
   const notes = [];
@@ -4632,7 +5451,9 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
   // so check before spending any agent steps.
   try {
     const cur = await chrome.tabs.get(tabId);
-    if (funnelUrlKey(cur.url) === targetKey) { out.reached = true; return out; }
+    if (funnelUrlKey(cur.url) === targetKey) {
+      out.reached = true; out.stopReason = 'arrived'; out.summary = fnStopSentence(out); return out;
+    }
   } catch (_) {}
 
   try {
@@ -4640,32 +5461,83 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
     attached = true;
   } catch (e) {
     out.error = `Could not attach for crawl (is DevTools open?): ${e.message}`;
+    out.stopReason = 'attach-failed';
+    out.summary = fnStopSentence(out);
     return out;
   }
 
   try {
+    // Only a seed, and only a fallback: captureClipped re-measures the viewport
+    // against each bitmap it returns, and syncDeclaredSize below installs that.
     const dims = await exec(tabId, () => ({ w: window.innerWidth, h: window.innerHeight }));
-    const dispW = dims?.w || 1280;
-    const dispH = dims?.h || 800;
-    const tools = [{ type: 'computer_20251124', name: 'computer', display_width_px: dispW, display_height_px: dispH }];
+    let dispW = dims?.w || 1280;
+    let dispH = dims?.h || 800;
     const messages = [];
     const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
-    if (!anthropicApiKey) { out.error = 'No API key configured'; return out; }
+    if (!anthropicApiKey) {
+      out.error = 'No API key configured'; out.stopReason = 'api-error';
+      out.summary = fnStopSentence(out); return out;
+    }
 
-    // Seed the conversation with the goal + the first screenshot.
+    // Seed the conversation with the goal + the first screenshot. The tool's
+    // declared display size is the IMAGE's size, not the viewport's — those
+    // differ by the host's device pixel ratio, and Claude answers in the space
+    // of the image it was shown. fnCoordToCss converts back before dispatch.
+    //
+    // Settle first: attaching the debugger is itself what moves the viewport, so
+    // the one capture guaranteed to be taken mid-animation is the first one.
+    await waitForStableViewport(dbg);
     let shot = await captureClipped(dbg, dispW, dispH);
+    let imgW = shot.width, imgH = shot.height;
+    out.geometry = {
+      viewportW: dispW, viewportH: dispH, imageW: imgW, imageH: imgH,
+      coordScaleX: imgW ? dispW / imgW : null, coordScaleY: imgH ? dispH / imgH : null,
+    };
+    const tools = [{ type: 'computer_20251124', name: 'computer', display_width_px: imgW, display_height_px: imgH }];
+    // Re-declare if a later capture comes back a different size — a scrollbar
+    // appearing as content loads shrinks the visual viewport, and a declared
+    // size that no longer matches the image is the same class of mismatch this
+    // whole block exists to prevent, just smaller. `tools` is re-serialized on
+    // every request, so mutating it here is enough.
+    //
+    // It re-installs the VIEWPORT too, which it did not used to. Fixing only the
+    // image half is what broke r_1789744771634: the bitmap lost ~56 CSS px of
+    // height between the first capture and the second, dispH stayed at its
+    // segment-start value, and from then on the two axes implied different
+    // scales, so fnCoordToCss declined every conversion and every click landed
+    // at the raw screenshot coordinate. Both halves now come from one capture.
+    const syncDeclaredSize = () => {
+      if (shot.cssW && shot.cssH) { dispW = shot.cssW; dispH = shot.cssH; }
+      if (shot.width && shot.height) {
+        imgW = shot.width; imgH = shot.height;
+        tools[0].display_width_px = imgW;
+        tools[0].display_height_px = imgH;
+      }
+      out.geometry.imageW = imgW; out.geometry.imageH = imgH;
+      out.geometry.viewportW = dispW; out.geometry.viewportH = dispH;
+      out.geometry.coordScaleX = imgW ? dispW / imgW : null;
+      out.geometry.coordScaleY = imgH ? dispH / imgH : null;
+    };
+    // The seed above was read BEFORE the first capture — the same
+    // measure-then-capture gap, one step earlier. Close it immediately.
+    syncDeclaredSize();
     const supplementalText = supplementalPrompt.trim() ? `\n\nTester's notes:\n${supplementalPrompt}` : '';
     const systemPrompt = `${FUNNEL_CRAWL_PRIMARY_PROMPT}\n\nYour specific task: navigate from "${fromUrl}" to "${target}".${supplementalText}`;
     messages.push({
       role: 'user',
       content: [
         { type: 'text', text: systemPrompt },
-        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: shot.replace(/^data:image\/png;base64,/, '') } },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: shot.dataUrl.replace(/^data:image\/png;base64,/, '') } },
       ],
     });
 
+    // Consecutive steps whose coordinate could not be converted. One is a
+    // transient the next capture fixes; a run of them means the bitmap and the
+    // viewport have stopped describing each other, and the rest of the budget
+    // would only produce more undispatched steps under a misleading 'budget'.
+    let coordBailRun = 0;
     for (let step = 0; step < stepBudget; step++) {
-      if (_funnelStopRequested) { out.error = 'Stopped'; break; }
+      if (_funnelStopRequested) { out.error = 'Stopped'; out.stopReason = 'user-stopped'; break; }
 
       _visionAbortController = new AbortController();
       let data;
@@ -4683,9 +5555,10 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
           body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1024, tools, messages }),
         });
         data = await res.json();
-        if (!res.ok) { out.error = data?.error?.message || res.statusText; break; }
+        if (!res.ok) { out.error = data?.error?.message || res.statusText; out.stopReason = 'api-error'; break; }
       } catch (e) {
         out.error = e.name === 'AbortError' ? 'Stopped' : e.message;
+        out.stopReason = e.name === 'AbortError' ? 'user-stopped' : 'api-error';
         break;
       } finally {
         _visionAbortController = null;
@@ -4693,16 +5566,28 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
 
       out.steps = step + 1;
       const blocks = data.content || [];
-      for (const b of blocks) if (b.type === 'text' && b.text.trim()) notes.push(b.text.trim());
+      const stepText = blocks.filter(b => b.type === 'text' && b.text.trim()).map(b => b.text.trim());
+      for (const t of stepText) notes.push(t);
       messages.push({ role: 'assistant', content: blocks });
 
       // Model finished talking without a tool call (e.g. it clicked, landed, and
       // says it arrived) → decide arrival by the URL, not the model's say-so.
       if (data.stop_reason !== 'tool_use') {
+        out.apiStopReason = data.stop_reason || null;
+        // Kept verbatim and separate from `note`. When the model stops because
+        // of a CAPTCHA, a login wall or a payment step — all three of which the
+        // system prompt tells it to stop and report — THIS is the sentence that
+        // says so, and `note`'s truncate-from-the-end would eat it first.
+        out.finalText = stepText.join(' ');
         try {
           const cur = await chrome.tabs.get(tabId);
           if (funnelUrlKey(cur.url) === targetKey) out.reached = true;
-        } catch (_) {}
+        } catch (e) {
+          // Was swallowed. A throw here meant a segment that DID arrive got
+          // reported as broken, with nothing anywhere saying why.
+          out.error = out.error || `Could not read the tab to confirm arrival: ${e.message}`;
+        }
+        out.stopReason = out.reached ? 'arrived' : 'agent-stopped';
         break;
       }
 
@@ -4712,33 +5597,149 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
         if (b.type !== 'tool_use' || b.name !== 'computer') continue;
         const action = b.input?.action;
         const [x, y] = b.input?.coordinate || [];
+        // Claude answered in the screenshot's pixel space; CDP clicks in CSS px.
+        // Converted HERE rather than inside dispatchTrustedClick, which is shared
+        // with the $click/$hover REPL helpers whose coordinates already are CSS px.
+        const css = fnCoordToCss(x, y, imgW, imgH, dispW, dispH);
+        // A coordinate the converter declined is still in SCREENSHOT space. On a
+        // downscaled capture that is always inside the viewport, so outOfRange
+        // below cannot see it — it has to be carried explicitly.
+        const coordUnusable = css.converted === false && css.reason !== 'no-coordinate';
+        const rec = {
+          step: step + 1, action,
+          modelCoord: Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null,
+          cssCoord: Number.isFinite(css.x) && Number.isFinite(css.y) ? [css.x, css.y] : null,
+          coordConverted: css.converted, coordReason: css.reason,
+          // The geometry THIS action used. out.geometry is one object mutated in
+          // place, so it only ever holds the last screenshot's numbers for the
+          // whole segment — in r_1789744771634 that made step 1's actual scale
+          // unrecoverable except by solving backwards from its own output.
+          geometry: {
+            imageW: imgW, imageH: imgH, viewportW: dispW, viewportH: dispH,
+            coordScaleX: imgW ? dispW / imgW : null, coordScaleY: imgH ? dispH / imgH : null,
+          },
+          outOfRange: !fnCoordInViewport(css.x, css.y, dispW, dispH),
+          urlAfter: null, error: null,
+          // Evidence, filled by the probes below: what was at the point, whether
+          // the click reached an element, and whether the page reacted at all.
+          hit: null, delivered: null, deliveredTo: null, mutations: null, page: null,
+        };
+        // Read the point and arm the delivery/mutation watch BEFORE dispatching.
+        // Skipped for actions with no coordinate (type/key), which have nothing
+        // to hit-test — the watch is still armed so their effect is measured.
         try {
-          if (action === 'left_click' || action === 'right_click' || action === 'middle_click') {
-            await dispatchTrustedClick(tabId, x, y);
+          rec.hit = await exec(tabId, fnPreClickProbeFn, [
+            Number.isFinite(css.x) ? css.x : -1,
+            Number.isFinite(css.y) ? css.y : -1,
+          ]);
+        } catch (_) { /* a page that refuses injection leaves hit null — honest unknown */ }
+        try {
+          if (rec.outOfRange) {
+            // Don't dispatch a coordinate that lands off the page: CDP accepts
+            // it silently, so the model would get back an identical screenshot
+            // with no idea its click went nowhere — which is precisely how this
+            // loop burned ten steps re-clicking the same button. Skipping and
+            // SAYING SO in the tool_result is what lets it adapt instead.
+            rec.error = `Coordinate (${css.x}, ${css.y}) is outside the ${dispW}x${dispH} viewport — not dispatched.`;
+          } else if (coordUnusable) {
+            // Dispatching it anyway is what made r_1789744771634 unreadable: six
+            // clicks landed somewhere the agent never chose, each one reported
+            // as delivered, and the segment concluded the SITE was at fault.
+            // A click whose point is unknown is worse than no click, because it
+            // manufactures evidence. The next capture re-measures both halves,
+            // so a transient mismatch clears itself on the following step.
+            rec.error = `The screenshot (${imgW}x${imgH}) and the viewport (${dispW}x${dispH}) imply different `
+              + `horizontal and vertical scales (${(dispW / imgW).toFixed(3)} vs ${(dispH / imgH).toFixed(3)}), `
+              + `so (${x}, ${y}) cannot be converted to a click point — not dispatched. A fresh screenshot follows.`;
+          } else if (action === 'left_click' || action === 'right_click' || action === 'middle_click') {
+            await dispatchTrustedClick(tabId, css.x, css.y);
             await new Promise(r => setTimeout(r, 1200)); // let any navigation/settle happen
           } else if (action === 'scroll') {
             const dir = b.input?.scroll_direction, amt = (b.input?.scroll_amount || 3) * 100;
             const dx = dir === 'right' ? amt : dir === 'left' ? -amt : 0;
             const dy = dir === 'down' ? amt : dir === 'up' ? -amt : 0;
-            await chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent', { type: 'mouseWheel', x: x || dispW / 2, y: y || dispH / 2, deltaX: dx, deltaY: dy });
+            await chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent', { type: 'mouseWheel', x: css.x || dispW / 2, y: css.y || dispH / 2, deltaX: dx, deltaY: dy });
             await new Promise(r => setTimeout(r, 400));
           } else if (action === 'type') {
             for (const ch of String(b.input?.text || '')) {
               await chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent', { type: 'char', text: ch });
             }
           } else if (action === 'key') {
-            // best-effort: submit the common case
-            await new Promise(r => setTimeout(r, 100));
+            // Was a 100ms sleep and nothing else — the model was told every
+            // keypress succeeded while Enter-to-submit silently never happened,
+            // one of the likeliest ways a funnel stalls with no trace at all.
+            const combo = String(b.input?.text || '').trim();
+            const vk = FN_KEY_CODES[combo.toLowerCase()];
+            if (!vk) {
+              rec.error = `Key "${combo || '?'}" is not supported — nothing was pressed.`;
+            } else {
+              for (const type of ['rawKeyDown', 'keyUp']) {
+                await chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent', {
+                  type, windowsVirtualKeyCode: vk.code, nativeVirtualKeyCode: vk.code,
+                  key: vk.key, code: vk.code_, text: vk.text || undefined,
+                });
+              }
+              await new Promise(r => setTimeout(r, 400));
+            }
+          } else if (action !== 'screenshot') {
+            // Every other action (hover, wait, double_click, left_click_drag,
+            // hold_key…) used to fall through silently and be reported as a
+            // success. An action that dispatches nothing must say so, or the
+            // model retries it forever and the run looks stuck for a reason
+            // that is ours, not the site's.
+            rec.error = `Action "${action}" is not implemented — nothing was dispatched.`;
           }
-          // 'screenshot' and any unhandled action just fall through to re-capture.
         } catch (e) {
+          rec.error = e.message;
           notes.push(`Action "${action}" failed: ${e.message}`);
         }
+        // A click can start a navigation that outlasts the flat settle above.
+        // Without this the fingerprint is read mid-transition and a slow SPA
+        // route change reads as "nothing happened" — a false stuck, and a false
+        // accusation against the page. waitForLoadTimeout is what the rest of
+        // this file uses; the crawl was the one place that didn't.
+        if (!rec.error && !rec.outOfRange) {
+          try { await waitForLoadTimeout(tabId, 3000); } catch (_) {}
+        }
+        try { rec.urlAfter = (await chrome.tabs.get(tabId)).url || null; } catch (_) {}
+        // Read delivery + reaction + fingerprint AFTER the settle, so what the
+        // detector compares describes the same moment the model will see.
+        try {
+          const post = await exec(tabId, fnPostActionProbeFn, []);
+          if (post) {
+            rec.delivered = post.delivered;
+            rec.deliveredTo = post.deliveredTo;
+            rec.mutations = post.mutations;
+            rec.page = post.page;
+          }
+        } catch (_) { /* navigated out from under the probe — stays unknown, which breaks the streak */ }
+        out.actions.push(rec);
+        if (coordUnusable) coordBailRun++; else if (Number.isFinite(x)) coordBailRun = 0;
         shot = await captureClipped(dbg, dispW, dispH);
+        syncDeclaredSize();
+        // An action that didn't happen has to SAY so. Returning only a fresh
+        // screenshot after a skipped or failed action tells the model nothing
+        // went wrong, so it repeats the same move — ten times, in the run that
+        // exposed this. The text block costs a few tokens and ends that loop.
+        const resultContent = [];
+        if (rec.error) resultContent.push({ type: 'text', text: `That action did not run: ${rec.error}` });
+        // Deliberately an OBSERVATION, never a conclusion and never an
+        // instruction. "You are stuck, try something else" is an order the
+        // model will obey even when the detector is wrong — and it biases it
+        // toward whatever element we name. Stating only what was measured lets
+        // it draw its own conclusion, and costs nothing if we're mistaken.
+        const run = fnNoProgressRun(out.actions);
+        if (run >= FN_STUCK_NUDGE && run < FN_STUCK_ABORT) {
+          const where = rec.hit && rec.hit.top ? ` on ${rec.hit.top}` : '';
+          resultContent.push({ type: 'text', text:
+            `For information: your last ${run} clicks landed${where}, and after each one the page's `
+            + `URL, title and visible text were unchanged and no DOM change was observed.` });
+        }
+        resultContent.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: shot.dataUrl.replace(/^data:image\/png;base64,/, '') } });
         toolResults.push({
           type: 'tool_result',
           tool_use_id: b.id,
-          content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: shot.replace(/^data:image\/png;base64,/, '') } }],
+          content: resultContent,
         });
       }
       messages.push({ role: 'user', content: toolResults });
@@ -4756,16 +5757,43 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
       // Arrival check.
       try {
         const cur = await chrome.tabs.get(tabId);
-        if (funnelUrlKey(cur.url) === targetKey) { out.reached = true; break; }
-      } catch (_) {}
+        if (funnelUrlKey(cur.url) === targetKey) { out.reached = true; out.stopReason = 'arrived'; break; }
+      } catch (e) {
+        // Was swallowed — see the matching comment on the stop_reason branch.
+        out.error = out.error || `Could not read the tab to confirm arrival: ${e.message}`;
+      }
+
+      // No progress for several steps running: tell the agent so it can try
+      // something else, and give up rather than spending the rest of the budget
+      // repeating an action that provably does nothing. Both real failures ran
+      // the budget to zero re-clicking one target.
+      if (coordBailRun >= 2) {
+        out.stopReason = 'coord-space';
+        break;
+      }
+
+      const stuck = fnNoProgressRun(out.actions);
+      if (stuck >= FN_STUCK_ABORT) {
+        out.stopReason = 'stuck';
+        break;
+      }
     }
   } catch (e) {
     out.error = out.error || e.message;
+    out.stopReason = out.stopReason || 'exception';
   } finally {
     if (attached) { try { await chrome.debugger.detach(dbg); } catch (_) {} }
   }
 
-  out.note = notes.join(' ').slice(0, 1500);
+  // Loop ran to completion without any exit setting a cause: the budget is what
+  // ended it. Distinguishable from 'agent-stopped' only because this is set
+  // here and nowhere else — previously both were {reached:false, error:null}.
+  if (!out.stopReason) out.stopReason = 'budget';
+  out.note = fnTrimNote(notes.join(' '), 1500);
+  // Computed once, here, so the sentence travels with the segment into session
+  // storage, the rendered report and the debug log without popup.js
+  // reimplementing any of the reasoning.
+  out.summary = fnStopSentence(out);
   return out;
 }
 
@@ -4786,17 +5814,26 @@ async function runFunnelCrawl({ waypoints = [], supplementalPrompt = '', stepBud
     let fromUrl = clean[0];
     for (let i = 1; i < clean.length; i++) {
       if (_funnelStopRequested) {
-        segments.push({ from: fromUrl, to: clean[i], reached: false, steps: 0, note: '', error: 'Stopped' });
+        segments.push(fnPlaceholderSegment(fromUrl, clean[i], 'user-stopped', 'Stopped'));
         continue;
       }
       await setTmProgress('funnelProgress', { running: true, index: i, total: clean.length - 1, label: clean[i] });
       const seg = await crawlSegment(tab.id, fromUrl, clean[i], stepBudget, supplementalPrompt);
       segments.push(seg);
       fromUrl = clean[i];
-      if (!seg.reached) break; // funnel is broken at this segment — stop
+      if (!seg.reached) {
+        // The remaining hops used to vanish: a 5-waypoint funnel that broke at
+        // hop 2 rendered as a 2-row table with nothing saying the other 3 were
+        // never tried. Record them, so "not attempted" and "failed" stop
+        // looking the same from the outside.
+        for (let j = i + 1; j < clean.length; j++) {
+          segments.push(fnPlaceholderSegment(clean[j - 1], clean[j], 'not-attempted', null));
+        }
+        break;
+      }
     }
   } catch (e) {
-    segments.push({ from: '', to: '', reached: false, steps: 0, note: '', error: e.message });
+    segments.push(fnPlaceholderSegment('', '', 'exception', e.message));
   } finally {
     await setTmProgress('funnelProgress', { running: false });
     if (tab) { try { await chrome.tabs.remove(tab.id); } catch (_) {} }

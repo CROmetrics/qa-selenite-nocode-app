@@ -378,6 +378,13 @@ def gen_funnel():
                         # custom dropdown -- which is the case that proves the
                         # closest('select') discriminator does not over-reach.
                         "stack": (a.get('hit') or {}).get('stack'),
+                        # The nearest fixed/sticky ANCESTOR and its coverage.
+                        # `position`/`coversPct` describe the leaf, which is
+                        # static and 0% inside a real popup -- which is why the
+                        # blocker namer's geometry fallback never fired. The
+                        # full ancestor `chain` is in the log but not projected:
+                        # 8 briefs an action, and `stack` already carries 4.
+                        "overlay": (a.get('hit') or {}).get('overlay'),
                         # brief() reduces the element to '#id', so the tag is
                         # gone -- this is the only place a native <select> is
                         # distinguishable from a link downstream. TRAP 7.

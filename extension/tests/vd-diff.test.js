@@ -4135,13 +4135,70 @@ eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
   eq('it never re-picks the option already selected', seen[1], undefined);
   eq('  and the only other choice is the one it takes', Object.keys(seen).join(','), '2');
 
-  // Nothing to choose is a reported fact, not a silent no-op.
+  // Nothing LEFT to choose, but a real value already in place, is SET — not
+  // broken. Reporting an error here put rec.error on every click of a
+  // single-country Country field forever, and fnCountsForProgress excludes
+  // errored actions, so nothing would ever have noticed the loop.
   var only = new FakeSelect('one', [opt('', 'pick'), opt('a', 'A')], 1);
   var none = withDom(only, function () { return fnChooseOptionFn(10, 10); });
-  ok('a dropdown with no other option says so', /no other option/.test(none.error), none);
-  eq('  and reports no choice', none.chosenIndex, null);
+  ok('a dropdown already on its only real option is not an error', none.error === null, none);
+  ok('  it reports that it is already set', none.alreadySet === true, none);
+  eq('  and claims no new choice', none.chosenIndex, null);
+  // Genuinely nothing choosable — only a placeholder — IS an error.
+  var empty = new FakeSelect('none', [opt('', 'pick')], 0);
+  var ne = withDom(empty, function () { return fnChooseOptionFn(10, 10); });
+  ok('a dropdown with nothing choosable at all says so', /no option that can be chosen/.test(ne.error), ne);
+  ok('  and is not reported as already set', !ne.alreadySet, ne);
   var gone = withDom(null, function () { return fnChooseOptionFn(10, 10); });
   ok('a point with no dropdown says so too', /no dropdown at that point/.test(gone.error), gone);
+
+  // ---- the interception must not fire on a select that is not the problem ----
+  // A multi-select would have its whole selection collapsed by the native value
+  // setter; a size>1 listbox renders its options INTO the page, so they can be
+  // clicked and seen. Neither is the case the interception exists for.
+  var gate = _bg.slice(_bg.indexOf("control.kind === 'select'"), _bg.indexOf("control.kind === 'select'") + 500);
+  ok('the interception excludes a multi-select', /!rec\.hit\.control\.multiple/.test(gate), gate.slice(0, 200));
+  ok('  and a size>1 listbox', /\(rec\.hit\.control\.size \|\| 1\) <= 1/.test(gate), gate.slice(0, 200));
+
+  // ---- the blocker namer reads the ANCESTOR, not the leaf ----
+  // stack[0] is an inner leaf (svg, use, span) on 10 of 12 clicks in
+  // r_1789755806034, so a 4-deep paint-order slice never reached the element
+  // carrying the vendor id: 0 of 4 on that run's popups, 0 of 7 on the one run
+  // that got stuck.
+  var leafInOverlay = {
+    top: 'use', stack: ['use', 'svg.icon-Dvc', 'button.close-button-sch', 'div.layover__centered-close-N_e'],
+    position: 'static', coversPct: 0,
+    overlay: { brief: '#onetrust-banner-sdk', position: 'fixed', coversPct: 40 },
+    chain: ['use', 'svg.icon-Dvc', 'button.close-button-sch', '#onetrust-banner-sdk'],
+  };
+  var named = fnNameBlocker(leafInOverlay);
+  ok('a leaf inside a fixed overlay now names the overlay', !!named, named);
+  ok('  naming the VENDOR, not just "something large"',
+     named.vendor.indexOf('unnamed') === -1, named);
+  // THE POINT: the vendor id is only in the ancestor chain. Drop the chain and
+  // the same hit can only fall through to the geometry fallback — which is the
+  // state every real popup in the corpus was in, since stack[0] is an inner
+  // leaf on 10 of 12 clicks.
+  var nc = fnNameBlocker(Object.assign({}, leafInOverlay, { chain: undefined }));
+  ok('without the chain it can only call it unnamed', /unnamed/.test(nc.vendor), nc);
+  // The leaf's own geometry is static/0% — which is exactly why the old
+  // fixed-and-large fallback could never fire on a real popup.
+  var unnamed = { top: 'use', stack: ['use', 'svg.x', 'button.y', 'div.z'], position: 'static', coversPct: 0,
+                  overlay: { brief: 'div.promo-wrap', position: 'fixed', coversPct: 80 },
+                  chain: ['use', 'svg.x', 'button.y', 'div.promo-wrap'] };
+  var un = fnNameBlocker(unnamed);
+  ok('an unrecognised fixed ancestor is still named as an overlay', !!un, un);
+  eq('  with the ancestor as the match, not the leaf', un.matched, 'div.promo-wrap');
+  ok('  and a small fixed ancestor is not', !fnNameBlocker(Object.assign({}, unnamed,
+     { overlay: { brief: 'div.promo-wrap', position: 'fixed', coversPct: 4 } })));
+  // A log written before `overlay` existed must keep reading as it did.
+  var oldShape = { top: '#onetrust-banner-sdk', stack: ['#onetrust-banner-sdk'], position: 'fixed', coversPct: 40 };
+  ok('a pre-overlay log still names its blocker', !!fnNameBlocker(oldShape));
+
+  // ---- the agent is told what it was about to hit ----
+  ok('a very large target is reported to the model',
+     _bg.indexOf('rec.hit.coversPct >= FN_BIG_TARGET_PCT') !== -1);
+  ok('  as an observation, not an instruction', _bg.indexOf('Controls are usually small') !== -1);
 
   // ---- attribute churn is not progress ----
   // The other half of the same run: five clicks on that dropdown, each moving a

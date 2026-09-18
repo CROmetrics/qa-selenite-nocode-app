@@ -4510,6 +4510,14 @@ const FN_SEGMENT_BUDGET_MS = 300000;   // one waypoint → waypoint hop, end to 
 // stop regardless of what it thinks it is doing.
 const FN_MAX_STEPS = 500;
 
+// A click target this large is almost never a control. Measured across the 57
+// clicks in the funnel corpus that carry a coverage reading: exactly ONE is at
+// or above this, and it is the anomaly — r_1789755806034 step 1, a link
+// wrapping a hero video at 91%, clicked while the agent narrated "closing the
+// promotional popup in the corner". `interactive === false` was the obvious
+// alternative and fires on 30% of the same clicks, which is noise.
+const FN_BIG_TARGET_PCT = 50;
+
 // The crawl's vision call had no retry at all, so ONE transient failure threw
 // away the whole segment: r_1789754996870 lost four good steps and 25 seconds
 // to a single "Failed to fetch" on the fifth call. The report path has had a
@@ -4574,6 +4582,17 @@ function fnCountsForProgress(a) {
 // from under the injection). null never equals null here — see fnNoProgressRun.
 function fnActionKey(a) {
   if (!a || !a.page || !a.hit || a.hit.probeError) return null;
+  // `page` is NOT the tell. fnPostActionProbeFn fills it unconditionally, from
+  // location/document, while the mutation counts come from the armed probe
+  // state — which a replaced document destroys. So a click that NAVIGATED, the
+  // strongest possible evidence that something happened, arrived here with a
+  // live page fingerprint and null counts, and fnDidSomething read the nulls as
+  // "nothing happened": five dead clicks plus one navigation reached
+  // FN_STUCK_ABORT, and six navigations alone did. That is the exact outcome
+  // the comment above says this returns null to prevent; it just tested the
+  // wrong field. Measured on the real functions against step 9 of
+  // r_1789755806034, which is that shape.
+  if (a.mutations == null) return null;
   const p = a.page;
   if (!p.url) return null;
   return [a.action || '-', a.hit.top || '-', p.url, p.title || '', p.textLen == null ? '-' : p.textLen].join('|');
@@ -4650,14 +4669,21 @@ function fnNameBlocker(hit) {
   if (hit.isIframe) {
     return { vendor: 'an embedded frame', iframe: true, matched: 'iframe' };
   }
-  const hay = [hit.top, (hit.stack || []).join(' ')].filter(Boolean).join(' ');
+  // The ancestor chain, not just the paint-order slice — see the probe's note.
+  const hay = [hit.top, (hit.stack || []).join(' '), (hit.chain || []).join(' ')].filter(Boolean).join(' ');
   for (const [re, vendor] of FN_OVERLAY_VENDORS) {
     const m = hay.match(re);
     if (m) return { vendor, iframe: false, matched: m[0].slice(0, 40) };
   }
   // No vendor keyword, but a pinned layer over a large slice of the viewport is
   // a blocker by behaviour even when nobody labelled it one.
-  if ((hit.position === 'fixed' || hit.position === 'sticky') && hit.coversPct >= 25) {
+  // The ANCESTOR's geometry, because a leaf inside a fixed overlay is itself
+  // static and 0% — which is why this branch never fired on a real popup.
+  if (hit.overlay && hit.overlay.coversPct >= 25) {
+    return { vendor: 'an unnamed full-screen overlay', iframe: false, matched: hit.overlay.brief };
+  }
+  // Logs from a build without `overlay` keep reading exactly as they did.
+  if (!hit.overlay && (hit.position === 'fixed' || hit.position === 'sticky') && hit.coversPct >= 25) {
     return { vendor: 'an unnamed full-screen overlay', iframe: false, matched: hit.top };
   }
   return null;
@@ -4950,9 +4976,38 @@ function fnPreClickProbeFn(x, y) {
           for (var i = 0; i < sel.options.length; i++) {
             if (!sel.options[i].disabled && sel.options[i].value !== '') usable++;
           }
+          // `size` decides whether the option list is browser chrome at all: a
+          // size>1 select renders its options INTO the page, so they are
+          // clickable and visible and the premise for intercepting does not
+          // hold. `usable` counts options that could ever be chosen; the
+          // chooser's own count excludes the one already selected, so the two
+          // differ BY DESIGN and a single-option select reads 1 here and 0 there.
           return { kind: 'select', id: sel.id || null, name: sel.name || null,
-                   multiple: !!sel.multiple, optionCount: sel.options.length,
+                   multiple: !!sel.multiple, size: sel.size || 0,
+                   optionCount: sel.options.length,
                    selectedIndex: sel.selectedIndex, usable: usable };
+        })(),
+        // The nearest fixed/sticky ANCESTOR and its coverage, plus the ancestor
+        // chain. fnNameBlocker scans hit.top and a 4-deep PAINT-ORDER slice, and
+        // stack[0] is an inner leaf (svg, use, span) on 10 of 12 clicks in
+        // r_1789755806034 — so it never reached the element carrying the vendor
+        // id and scored 0 of 4 on that run's real popups, and 0 of 7 on the one
+        // run that actually got stuck. `position`/`coversPct` above describe the
+        // leaf, which is why the fixed/sticky fallback could not fire either.
+        overlay: (function () {
+          for (var n = el; n && n.nodeType === 1; n = n.parentElement) {
+            var ncs = getComputedStyle(n);
+            if (ncs.position !== 'fixed' && ncs.position !== 'sticky') continue;
+            var nr = n.getBoundingClientRect();
+            return { brief: brief(n), position: ncs.position,
+                     coversPct: Math.round((Math.min(nr.width, vw) * Math.min(nr.height, vh)) / (vw * vh) * 100) };
+          }
+          return null;
+        })(),
+        chain: (function () {
+          var out = [];
+          for (var n = el; n && n.nodeType === 1 && out.length < 8; n = n.parentElement) out.push(brief(n));
+          return out;
         })(),
         nothingAtPoint: false,
       };
@@ -5051,8 +5106,18 @@ function fnChooseOptionFn(x, y) {
                  // list it was; the counts above are what identify it.
                  sampleOptions: opts.slice(0, 8).map(function (o) { return (o.text || '').trim().slice(0, 40); }) };
     if (!usable.length) {
-      base.error = 'That dropdown has no other option to choose.';
+      // A dropdown whose only real option is already selected — a single-country
+      // Country field — is SET, not broken. Reporting an error here set rec.error
+      // on every click of it forever, and fnCountsForProgress excludes errored
+      // actions, so nothing would ever notice the loop.
+      var cur = opts[sel.selectedIndex];
       base.chosenIndex = null; base.chosenText = null; base.applied = false;
+      if (cur && !cur.disabled && cur.value !== '') {
+        base.alreadySet = true;
+        base.error = null;
+      } else {
+        base.error = 'That dropdown has no option that can be chosen.';
+      }
       return base;
     }
 
@@ -5783,6 +5848,12 @@ async function crawlSegment(tabId, fromUrl, target, supplementalPrompt = '') {
     // Wall clock for the hop. null when the segment never got as far as running
     // — an honest "not measured", not a zero.
     elapsedMs: null,
+    // What the call that ENDED this segment cost. The per-action pair covers
+    // calls that returned; a call that failed never reaches an action record,
+    // and that is the one case where the retry is the whole point. Without
+    // these, a 429 retried three times and a 429 never retried are identical in
+    // an exported log.
+    modelAttempts: null, modelTransient: null,
   };
   const segmentStarted = Date.now();
   const targetKey = funnelUrlKey(target);
@@ -5896,7 +5967,13 @@ async function crawlSegment(tabId, fromUrl, target, supplementalPrompt = '') {
       const modelStarted = Date.now();
       const call = await fnVisionCall(anthropicApiKey, tools, messages);
       const modelMs = Date.now() - modelStarted;
-      if (call.error) { out.error = call.error; out.stopReason = call.stopReason; break; }
+      if (call.error) {
+        out.error = call.error;
+        out.stopReason = call.stopReason;
+        out.modelAttempts = call.attempts == null ? null : call.attempts;
+        out.modelTransient = call.transient && call.transient.length ? call.transient : null;
+        break;
+      }
       const data = call.data;
 
       out.steps = step + 1;
@@ -6005,7 +6082,13 @@ async function crawlSegment(tabId, fromUrl, target, supplementalPrompt = '') {
               + `horizontal and vertical scales (${(dispW / imgW).toFixed(3)} vs ${(dispH / imgH).toFixed(3)}), `
               + `so (${x}, ${y}) cannot be converted to a click point — not dispatched. A fresh screenshot follows.`;
           } else if ((action === 'left_click' || action === 'right_click' || action === 'middle_click')
-                     && rec.hit && rec.hit.control && rec.hit.control.kind === 'select') {
+                     && rec.hit && rec.hit.control && rec.hit.control.kind === 'select'
+                     // A multi-select would have its whole selection collapsed to
+                     // one random option by the native value setter, and a
+                     // size>1 listbox renders its options into the page where
+                     // they can simply be clicked. Neither is the case this
+                     // exists for.
+                     && !rec.hit.control.multiple && (rec.hit.control.size || 1) <= 1) {
             // A native <select> cannot be operated by a click at ANY coordinate,
             // so dispatching one is not a weaker version of choosing -- it is a
             // guaranteed no-op the model cannot see the result of.
@@ -6104,6 +6187,16 @@ async function crawlSegment(tabId, fromUrl, target, supplementalPrompt = '') {
         // exposed this. The text block costs a few tokens and ends that loop.
         const resultContent = [];
         if (rec.error) resultContent.push({ type: 'text', text: `That action did not run: ${rec.error}` });
+        // Deliberately an OBSERVATION, in the register of the stuck nudge: the
+        // model is told what its click DID and never what it was about to land
+        // on, though the probe measures exactly that immediately before
+        // dispatch and writes it to the log.
+        if (!rec.error && rec.hit && rec.hit.coversPct >= FN_BIG_TARGET_PCT && rec.hit.top) {
+          resultContent.push({ type: 'text', text:
+            `For information: that point was on ${rec.hit.top}, which covers ${rec.hit.coversPct}% of the viewport. `
+            + 'Controls are usually small — something that large is often a banner or hero link wrapping the area '
+            + 'rather than the element you meant to hit.' });
+        }
         if (rec.choice && !rec.choice.error) {
           const c = rec.choice;
           resultContent.push({ type: 'text', text:

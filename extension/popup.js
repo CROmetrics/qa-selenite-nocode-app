@@ -7836,6 +7836,10 @@ function buildDebugLog(sections) {
         // Which gate stopped it, when one did. Classified in the worker so this
         // side never re-implements the patterns.
         blockedBy: s.blockedBy || null,
+        // The cost of the call that ended the segment, when one did. The
+        // per-action pair below only covers calls that came back.
+        modelAttempts: s.modelAttempts ?? null,
+        modelTransient: s.modelTransient || null,
         finalText: s.finalText || '',
         summary: s.summary || '',
         // What the agent DID, alongside what it said. `note` alone could not

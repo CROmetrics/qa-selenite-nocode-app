@@ -7845,6 +7845,14 @@ function buildDebugLog(sections) {
           delivered: a.delivered == null ? null : !!a.delivered,
           deliveredTo: a.deliveredTo || null,
           mutations: a.mutations == null ? null : a.mutations,
+          // Attribute-only churn is not progress, and the total alone could not
+          // say which kind it was. A focus ring counts in `mutations` and not in
+          // this one; null means a worker that did not split them.
+          structuralMutations: a.structuralMutations == null ? null : a.structuralMutations,
+          // What was picked when a click landed on a native dropdown. Random by
+          // design, so the resolved choice is exported and two runs stay
+          // comparable — same rule the visual-diff prompt export follows.
+          choice: a.choice || null,
           page: a.page || null,
         })),
       })),

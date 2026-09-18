@@ -4069,6 +4069,108 @@ eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
   ok('the coord-space stop names itself', /stopped agreeing on size/.test(coordSpace), coordSpace);
   ok('  and is ours, not the site\'s', /not a finding about the site/.test(coordSpace), coordSpace);
 
+  // ---- a native dropdown is the one control a click cannot operate ----
+  // Its option list is drawn by the browser, outside the page: absent from the
+  // DOM, absent from the screenshot, unreachable by Input.dispatchMouseEvent.
+  // r_1789750056464 spent five of ten steps discovering that. These drive the
+  // REAL injected chooser against a stub DOM, so the option filter and the
+  // native-setter path are the production ones.
+  var opt = function (value, text, disabled) { return { value: value, text: text, disabled: !!disabled }; };
+  function FakeSelect(id, opts, selectedIndex) {
+    this.id = id; this.name = id; this.multiple = false;
+    this.options = opts; this.selectedIndex = selectedIndex == null ? 0 : selectedIndex;
+    this.events = []; this.focused = false;
+  }
+  Object.defineProperty(FakeSelect.prototype, 'value', {
+    get: function () { return (this.options[this.selectedIndex] || {}).value; },
+    set: function (v) {
+      for (var i = 0; i < this.options.length; i++) {
+        if (this.options[i].value === v) { this.selectedIndex = i; return; }
+      }
+    },
+  });
+  FakeSelect.prototype.focus = function () { this.focused = true; };
+  FakeSelect.prototype.dispatchEvent = function (e) { this.events.push(e.type); return true; };
+  FakeSelect.prototype.closest = function (q) { return q === 'select' ? this : null; };
+
+  var g = (typeof globalThis === 'object') ? globalThis : this;
+  var withDom = function (el, fn) {
+    var had = { d: g.document, H: g.HTMLSelectElement, E: g.Event };
+    g.document = { elementsFromPoint: function () { return el ? [el] : []; } };
+    g.HTMLSelectElement = FakeSelect;
+    g.Event = function (t) { this.type = t; };
+    try { return fn(); }
+    finally { g.document = had.d; g.HTMLSelectElement = had.H; g.Event = had.E; }
+  };
+
+  // The real Healthy Paws age dropdown: a placeholder with an empty value, then
+  // 14 real choices. Picking the placeholder is the same as not choosing.
+  var age = new FakeSelect('petBirthYear', [opt('', "Pet's Age")]
+    .concat([0,1,2,3,4,5,6,7,8,9,10,11,12,13].map(function (n) { return opt(String(n), n + ' years'); })), 0);
+  var chose = withDom(age, function () { return fnChooseOptionFn(10, 10); });
+  eq('a native dropdown reports how many options it had', chose.optionCount, 15);
+  eq('  and how many were actually choosable', chose.usableCount, 14);
+  ok('  it never picks the empty-valued placeholder', chose.chosenIndex > 0, chose);
+  ok('  it picks something', chose.chosenText && chose.error === null, chose);
+  eq('  the value actually landed', age.selectedIndex, chose.chosenIndex);
+  ok('  and it says so, read back rather than assumed', chose.applied === true);
+  eq('  through the native setter, after focusing', age.focused, true);
+  eq('  firing input then change, in that order', age.events.join(','), 'input,change');
+
+  // The breed list's real shape: a DISABLED group header at the top.
+  var breed = new FakeSelect('petBreed',
+    [opt('-1', '-- Mixed Breed --', true), opt('101', 'Toy'), opt('102', 'Small')], 0);
+  var cb = withDom(breed, function () { return fnChooseOptionFn(10, 10); });
+  eq('a disabled group header is not choosable', cb.usableCount, 2);
+  ok('  and is never chosen', cb.chosenIndex > 0, cb);
+
+  // Randomness is the point, but it must never re-pick what is already set.
+  var stuckOn = new FakeSelect('two', [opt('', 'pick'), opt('a', 'A'), opt('b', 'B')], 1);
+  var seen = {};
+  for (var t = 0; t < 40; t++) {
+    var r = withDom(stuckOn, function () { return fnChooseOptionFn(10, 10); });
+    seen[r.chosenIndex] = true;
+    stuckOn.selectedIndex = 1;   // reset, so "not the current one" is retested
+  }
+  eq('it never re-picks the option already selected', seen[1], undefined);
+  eq('  and the only other choice is the one it takes', Object.keys(seen).join(','), '2');
+
+  // Nothing to choose is a reported fact, not a silent no-op.
+  var only = new FakeSelect('one', [opt('', 'pick'), opt('a', 'A')], 1);
+  var none = withDom(only, function () { return fnChooseOptionFn(10, 10); });
+  ok('a dropdown with no other option says so', /no other option/.test(none.error), none);
+  eq('  and reports no choice', none.chosenIndex, null);
+  var gone = withDom(null, function () { return fnChooseOptionFn(10, 10); });
+  ok('a point with no dropdown says so too', /no dropdown at that point/.test(gone.error), gone);
+
+  // ---- attribute churn is not progress ----
+  // The other half of the same run: five clicks on that dropdown, each moving a
+  // focus ring, none moving the page. The detector called every one progress.
+  ok('a structural change is progress', fnDidSomething({ mutations: 9, structuralMutations: 2 }));
+  ok('attribute-only churn is NOT', !fnDidSomething({ mutations: 5, structuralMutations: 0 }));
+  ok('and nothing at all is not', !fnDidSomething({ mutations: 0, structuralMutations: 0 }));
+  // A log from a build that never split them has to keep reading as it did.
+  ok('an unsplit build falls back to the total', fnDidSomething({ mutations: 5 }));
+  ok('  including when that total is zero', !fnDidSomething({ mutations: 0 }));
+  ok('  and null is the tell, not zero', fnDidSomething({ mutations: 3, structuralMutations: null }));
+
+  // The r_1789750056464 signature, replayed through the streak counter.
+  var ringOnly = function () {
+    return { action: 'left_click', error: null, outOfRange: false,
+             mutations: 3, structuralMutations: 0, hit: { top: '#petBirthYear' },
+             page: { url: 'u', title: 't', textLen: 12178 } };
+  };
+  eq('five focus-ring clicks on one dropdown are a run of 5',
+     fnNoProgressRun([ringOnly(), ringOnly(), ringOnly(), ringOnly(), ringOnly()]), 5);
+  eq('  which the old total-only rule scored 0',
+     fnNoProgressRun([{ action: 'left_click', error: null, outOfRange: false, mutations: 3,
+                        hit: { top: '#petBirthYear' }, page: { url: 'u', title: 't', textLen: 12178 } }]), 0);
+  // The safety net that keeps this from accusing a working page: a revealed menu
+  // changes innerText length, so the identity half breaks the streak anyway.
+  var revealed = ringOnly(); revealed.page = { url: 'u', title: 't', textLen: 13000 };
+  eq('a click that reveals hidden text is never a no-progress run',
+     fnNoProgressRun([ringOnly(), ringOnly(), revealed]), 1);
+
   // ---- time bounds ----
   // Nothing in the crawl loop had one: the vision call carried only the Stop
   // button's AbortController, and exec()/CDP sends carried nothing, so a request

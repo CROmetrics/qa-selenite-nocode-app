@@ -895,8 +895,14 @@ section('funnel crawl coordinate space (real runs)');
       });
     });
   });
-  ok('the projection carries timing for every action', untimed + timed > 0);
-  eq('  and every recorded action predates the time bounds', timed, 0);
+  // Both vintages now exist, and that IS the assertion -- when this was written
+  // every log predated the bounds, and the first timed log arrived the same day.
+  // Requiring "all null" would have to be loosened on every run from here on.
+  ok('the corpus carries both vintages', timed > 0 && untimed > 0, { timed: timed, untimed: untimed });
+  eq('  and the run that first carried timing is timed throughout',
+     (FUNNEL['1789750056464'].segments[0].actions || [])
+       .filter(function (a) { return a.ms !== null && a.modelMs !== null; }).length, 10);
+  ok('  with a segment wall clock to match', FUNNEL['1789750056464'].segments[0].elapsedMs > 0);
 
   // THE RUN. Replaying the converter over the SEGMENT geometry reproduces steps
   // 2-7 byte for byte and canNOT reproduce step 1 — which is the whole
@@ -1077,6 +1083,55 @@ section('funnel crawl coordinate space (real runs)');
      { before: before, after: after });
   print('    settled: same funnel in ' + settled.steps + ' steps (was ' + ok2.steps
         + '), seed axes ' + before.toFixed(6) + ' -> ' + after.toFixed(8));
+
+  // ---- the dropdown that could not be clicked ----
+  // r_1789750056464 (healthypaws) spent five of ten steps on ONE native
+  // <select>, because a native select's option list is drawn by the browser
+  // outside the page: absent from the DOM, absent from the screenshot,
+  // unreachable by Input.dispatchMouseEvent. Clicking it can only focus it.
+  var dd = FUNNEL['1789750056464'].segments[0];
+  eq('the run ran out of budget rather than being caught', dd.stopReason, 'budget');
+  ok('  and never reached the destination', dd.reached === false);
+  var onSelect = (dd.actions || []).filter(function (a) { return a.deliveredTo === '#petBirthYear'; });
+  eq('five consecutive clicks landed on the same dropdown', onSelect.length, 5);
+  eq('  half the whole budget', onSelect.length * 2, dd.steps);
+  // The page was provably unmoved: identity is the half of the predicate that
+  // was already right.
+  eq('  with one single page fingerprint across all five',
+     new Set(onSelect.map(function (a) { return a.page.url + '|' + a.page.title + '|' + a.page.textLen; })).size, 1);
+  ok('  and yet every one of them reported mutations',
+     onSelect.every(function (a) { return a.mutations > 0; }),
+     onSelect.map(function (a) { return a.mutations; }));
+
+  // WHY THE DETECTOR STAYED SILENT, shown rather than asserted. The recorded
+  // actions predate structuralMutations, so fnDidSomething falls back to the
+  // total and scores them exactly as the old build did.
+  eq('under the recorded evidence the streak is 0', fnNoProgressRun(onSelect), 0);
+  // The counterfactual, built by adding the ONE field the build now records --
+  // nothing else about these actions is touched.
+  var withSplit = onSelect.map(function (a) {
+    var o = {}; for (var k in a) o[k] = a[k];
+    o.structuralMutations = 0;   // what a focus ring and an aria-expanded flip are
+    return o;
+  });
+  eq('  and with the split recorded it is a run of 5', fnNoProgressRun(withSplit), 5);
+  ok('  which would have nudged the agent', 5 >= 3);
+
+  // The same form proves the fix is aimed at the right thing: its OTHER
+  // dropdown is a native select wrapped by select2, so its options are real DOM
+  // and the click path worked. Two dropdowns, one form, opposite outcomes.
+  var breed = (dd.actions || []).filter(function (a) {
+    return a.deliveredTo && a.deliveredTo.indexOf('select2') !== -1;
+  });
+  eq('the select2-wrapped dropdown took exactly one click to open', breed.length, 1);
+  ok('  and it moved the page, unlike the native one', breed[0].mutations > 1000, breed[0].mutations);
+
+  // TRAP 7 again, at the consumer: this log predates every field the fix adds.
+  ok('the recorded actions carry no control report',
+     (dd.actions || []).every(function (a) { return !a.hit || a.hit.control === null; }));
+  ok('  and no choice', (dd.actions || []).every(function (a) { return a.choice === null; }));
+  print('    dropdown: ' + onSelect.length + ' of ' + dd.steps + ' steps on #petBirthYear, '
+        + 'streak 0 as recorded / ' + fnNoProgressRun(withSplit) + ' with the split');
 
   // ---- and what the log's own "start here" list says about it ----
   // vdCollectProblems is 500+ lines with its own dependencies, so only its

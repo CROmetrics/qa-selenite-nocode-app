@@ -47,6 +47,7 @@
 "actions": [
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": null,
 "coordReason": null,
 "cssCoord": [
@@ -57,6 +58,7 @@
 "deliveredTo": "div.product-tile__cta-button",
 "geometry": null,
 "hit": {
+"control": null,
 "coversPct": 1,
 "innerH": null,
 "innerW": null,
@@ -78,10 +80,12 @@
 "textLen": 9291,
 "url": "https://www.lesschwab.com/wheels"
 },
-"step": 1
+"step": 1,
+"structuralMutations": null
 },
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": null,
 "coordReason": null,
 "cssCoord": [
@@ -92,6 +96,7 @@
 "deliveredTo": "#meru-cm__cnt-inr-i",
 "geometry": null,
 "hit": {
+"control": null,
 "coversPct": 2,
 "innerH": null,
 "innerW": null,
@@ -113,10 +118,12 @@
 "textLen": 9291,
 "url": "https://www.lesschwab.com/wheels"
 },
-"step": 2
+"step": 2,
+"structuralMutations": null
 },
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": null,
 "coordReason": null,
 "cssCoord": [
@@ -127,6 +134,7 @@
 "deliveredTo": "#meru-cm__cnt-inr-i",
 "geometry": null,
 "hit": {
+"control": null,
 "coversPct": 2,
 "innerH": null,
 "innerW": null,
@@ -148,10 +156,12 @@
 "textLen": 9291,
 "url": "https://www.lesschwab.com/wheels"
 },
-"step": 3
+"step": 3,
+"structuralMutations": null
 },
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": null,
 "coordReason": null,
 "cssCoord": [
@@ -162,6 +172,7 @@
 "deliveredTo": "#meru-cm__cnt-inr-i",
 "geometry": null,
 "hit": {
+"control": null,
 "coversPct": 2,
 "innerH": null,
 "innerW": null,
@@ -183,10 +194,12 @@
 "textLen": 9291,
 "url": "https://www.lesschwab.com/wheels"
 },
-"step": 4
+"step": 4,
+"structuralMutations": null
 },
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": null,
 "coordReason": null,
 "cssCoord": [
@@ -197,6 +210,7 @@
 "deliveredTo": "#meru-cm__cnt-inr-i",
 "geometry": null,
 "hit": {
+"control": null,
 "coversPct": 2,
 "innerH": null,
 "innerW": null,
@@ -218,10 +232,12 @@
 "textLen": 9291,
 "url": "https://www.lesschwab.com/wheels"
 },
-"step": 5
+"step": 5,
+"structuralMutations": null
 },
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": null,
 "coordReason": null,
 "cssCoord": [
@@ -232,6 +248,7 @@
 "deliveredTo": "#meru-cm__cnt-inr-i",
 "geometry": null,
 "hit": {
+"control": null,
 "coversPct": 2,
 "innerH": null,
 "innerW": null,
@@ -253,10 +270,12 @@
 "textLen": 9291,
 "url": "https://www.lesschwab.com/wheels"
 },
-"step": 6
+"step": 6,
+"structuralMutations": null
 },
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": null,
 "coordReason": null,
 "cssCoord": [
@@ -267,6 +286,7 @@
 "deliveredTo": "#meru-cm__cnt-inr-i",
 "geometry": null,
 "hit": {
+"control": null,
 "coversPct": 2,
 "innerH": null,
 "innerW": null,
@@ -288,7 +308,8 @@
 "textLen": 9291,
 "url": "https://www.lesschwab.com/wheels"
 },
-"step": 7
+"step": 7,
+"structuralMutations": null
 }
 ],
 "apiStopReason": null,
@@ -320,6 +341,7 @@
 "actions": [
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": true,
 "coordReason": null,
 "cssCoord": [
@@ -337,6 +359,7 @@
 "viewportW": 2773
 },
 "hit": {
+"control": null,
 "coversPct": 4,
 "innerH": 1225,
 "innerW": 2773,
@@ -358,10 +381,12 @@
 "textLen": 9291,
 "url": "https://www.lesschwab.com/wheels"
 },
-"step": 1
+"step": 1,
+"structuralMutations": null
 },
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": true,
 "coordReason": null,
 "cssCoord": [
@@ -379,6 +404,7 @@
 "viewportW": 2773
 },
 "hit": {
+"control": null,
 "coversPct": 0,
 "innerH": 1225,
 "innerW": 2773,
@@ -400,10 +426,12 @@
 "textLen": 8866,
 "url": "https://www.lesschwab.com/wheels"
 },
-"step": 2
+"step": 2,
+"structuralMutations": null
 },
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": true,
 "coordReason": null,
 "cssCoord": [
@@ -421,6 +449,7 @@
 "viewportW": 2773
 },
 "hit": {
+"control": null,
 "coversPct": 0,
 "innerH": 1225,
 "innerW": 2773,
@@ -442,10 +471,12 @@
 "textLen": 9162,
 "url": "https://www.lesschwab.com/wheels"
 },
-"step": 3
+"step": 3,
+"structuralMutations": null
 },
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": true,
 "coordReason": null,
 "cssCoord": [
@@ -463,6 +494,7 @@
 "viewportW": 2773
 },
 "hit": {
+"control": null,
 "coversPct": 0,
 "innerH": 1225,
 "innerW": 2773,
@@ -484,10 +516,12 @@
 "textLen": 1050,
 "url": "https://www.lesschwab.com/schedule-appointment/services"
 },
-"step": 4
+"step": 4,
+"structuralMutations": null
 },
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": true,
 "coordReason": null,
 "cssCoord": [
@@ -505,6 +539,7 @@
 "viewportW": 2773
 },
 "hit": {
+"control": null,
 "coversPct": 0,
 "innerH": 1225,
 "innerW": 2773,
@@ -526,10 +561,12 @@
 "textLen": 1033,
 "url": "https://www.lesschwab.com/schedule-appointment/services"
 },
-"step": 5
+"step": 5,
+"structuralMutations": null
 },
 {
 "action": "scroll",
+"choice": null,
 "coordConverted": true,
 "coordReason": null,
 "cssCoord": [
@@ -547,6 +584,7 @@
 "viewportW": 2773
 },
 "hit": {
+"control": null,
 "coversPct": 7,
 "innerH": 1225,
 "innerW": 2773,
@@ -568,10 +606,12 @@
 "textLen": 1033,
 "url": "https://www.lesschwab.com/schedule-appointment/services"
 },
-"step": 6
+"step": 6,
+"structuralMutations": null
 },
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": true,
 "coordReason": null,
 "cssCoord": [
@@ -589,6 +629,7 @@
 "viewportW": 2773
 },
 "hit": {
+"control": null,
 "coversPct": 0,
 "innerH": 1225,
 "innerW": 2773,
@@ -610,7 +651,8 @@
 "textLen": 1148,
 "url": "https://www.lesschwab.com/schedule-appointment/date"
 },
-"step": 7
+"step": 7,
+"structuralMutations": null
 }
 ],
 "apiStopReason": null,
@@ -642,6 +684,7 @@
 "actions": [
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": true,
 "coordReason": null,
 "cssCoord": [
@@ -659,6 +702,7 @@
 "viewportW": 2773
 },
 "hit": {
+"control": null,
 "coversPct": 0,
 "innerH": 1225,
 "innerW": 2773,
@@ -680,10 +724,12 @@
 "textLen": 1033,
 "url": "https://www.lesschwab.com/schedule-appointment/services"
 },
-"step": 1
+"step": 1,
+"structuralMutations": null
 },
 {
 "action": "scroll",
+"choice": null,
 "coordConverted": true,
 "coordReason": null,
 "cssCoord": [
@@ -701,6 +747,7 @@
 "viewportW": 2773
 },
 "hit": {
+"control": null,
 "coversPct": 7,
 "innerH": 1225,
 "innerW": 2773,
@@ -722,10 +769,12 @@
 "textLen": 1033,
 "url": "https://www.lesschwab.com/schedule-appointment/services"
 },
-"step": 2
+"step": 2,
+"structuralMutations": null
 },
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": true,
 "coordReason": null,
 "cssCoord": [
@@ -743,6 +792,7 @@
 "viewportW": 2773
 },
 "hit": {
+"control": null,
 "coversPct": 0,
 "innerH": 1225,
 "innerW": 2773,
@@ -764,7 +814,8 @@
 "textLen": 1148,
 "url": "https://www.lesschwab.com/schedule-appointment/date"
 },
-"step": 3
+"step": 3,
+"structuralMutations": null
 }
 ],
 "apiStopReason": null,
@@ -796,6 +847,7 @@
 "actions": [
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": true,
 "coordReason": null,
 "cssCoord": [
@@ -813,6 +865,7 @@
 "viewportW": 3081.111328125
 },
 "hit": {
+"control": null,
 "coversPct": 1,
 "innerH": 1361,
 "innerW": 3081,
@@ -834,10 +887,12 @@
 "textLen": 6005,
 "url": "https://www.healthypawspetinsurance.com/"
 },
-"step": 1
+"step": 1,
+"structuralMutations": null
 },
 {
 "action": "type",
+"choice": null,
 "coordConverted": false,
 "coordReason": "no-coordinate",
 "cssCoord": null,
@@ -852,6 +907,7 @@
 "viewportW": 3081.111328125
 },
 "hit": {
+"control": null,
 "coversPct": null,
 "innerH": null,
 "innerW": null,
@@ -870,10 +926,12 @@
 "textLen": 6005,
 "url": "https://www.healthypawspetinsurance.com/"
 },
-"step": 2
+"step": 2,
+"structuralMutations": null
 },
 {
 "action": "left_click",
+"choice": null,
 "coordConverted": true,
 "coordReason": null,
 "cssCoord": [
@@ -891,6 +949,7 @@
 "viewportW": 3081.111328125
 },
 "hit": {
+"control": null,
 "coversPct": 0,
 "innerH": 1361,
 "innerW": 3081,
@@ -912,7 +971,8 @@
 "textLen": 12108,
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
-"step": 3
+"step": 3,
+"structuralMutations": null
 }
 ],
 "apiStopReason": null,
@@ -932,6 +992,478 @@
 "stopReason": "arrived",
 "summary": "Reached https://www.healthypawspetinsurance.com/quote/step1 in 3 agent step(s).",
 "to": "https://www.healthypawspetinsurance.com/quote/step1"
+}
+],
+"status": "ran"
+},
+"1789750056464": {
+"error": null,
+"reachedEnd": false,
+"segments": [
+{
+"actions": [
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1227,
+836
+],
+"delivered": true,
+"deliveredTo": "#pet-name-1",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#pet-name-1"
+},
+"modelCoord": [
+1026,
+699
+],
+"modelMs": 3261,
+"ms": 1250,
+"mutations": 6,
+"outOfRange": false,
+"page": {
+"textLen": 6005,
+"url": "https://www.healthypawspetinsurance.com/"
+},
+"step": 1,
+"structuralMutations": null
+},
+{
+"action": "type",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"position": null,
+"top": null
+},
+"modelCoord": null,
+"modelMs": 2174,
+"ms": 16,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 6005,
+"url": "https://www.healthypawspetinsurance.com/"
+},
+"step": 2,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1984,
+837
+],
+"delivered": null,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "span.cta-title"
+},
+"modelCoord": [
+1659,
+700
+],
+"modelMs": 2624,
+"ms": 4286,
+"mutations": null,
+"outOfRange": false,
+"page": {
+"textLen": 12102,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 3,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1398,
+626
+],
+"delivered": true,
+"deliveredTo": "#select2-petBreed-container",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#select2-petBreed-container"
+},
+"modelCoord": [
+1169,
+523
+],
+"modelMs": 2271,
+"ms": 1259,
+"mutations": 1224,
+"outOfRange": false,
+"page": {
+"textLen": 21951,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 4,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1304,
+852
+],
+"delivered": false,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#select2-petBreed-result-yyu1-102"
+},
+"modelCoord": [
+1090,
+712
+],
+"modelMs": 2311,
+"ms": 1233,
+"mutations": 26,
+"outOfRange": false,
+"page": {
+"textLen": 12178,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 5,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1825,
+626
+],
+"delivered": true,
+"deliveredTo": "#petBirthYear",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#petBirthYear"
+},
+"modelCoord": [
+1526,
+523
+],
+"modelMs": 3632,
+"ms": 1259,
+"mutations": 5,
+"outOfRange": false,
+"page": {
+"textLen": 12178,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 6,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1825,
+626
+],
+"delivered": true,
+"deliveredTo": "#petBirthYear",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#petBirthYear"
+},
+"modelCoord": [
+1526,
+523
+],
+"modelMs": 2458,
+"ms": 1253,
+"mutations": 3,
+"outOfRange": false,
+"page": {
+"textLen": 12178,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 7,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1825,
+626
+],
+"delivered": true,
+"deliveredTo": "#petBirthYear",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#petBirthYear"
+},
+"modelCoord": [
+1526,
+523
+],
+"modelMs": 2806,
+"ms": 1255,
+"mutations": 3,
+"outOfRange": false,
+"page": {
+"textLen": 12178,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 8,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1825,
+626
+],
+"delivered": true,
+"deliveredTo": "#petBirthYear",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#petBirthYear"
+},
+"modelCoord": [
+1526,
+523
+],
+"modelMs": 2924,
+"ms": 1241,
+"mutations": 3,
+"outOfRange": false,
+"page": {
+"textLen": 12178,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 9,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1919,
+626
+],
+"delivered": true,
+"deliveredTo": "#petBirthYear",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#petBirthYear"
+},
+"modelCoord": [
+1604,
+523
+],
+"modelMs": 2355,
+"ms": 1252,
+"mutations": 3,
+"outOfRange": false,
+"page": {
+"textLen": 12178,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 10,
+"structuralMutations": null
+}
+],
+"apiStopReason": null,
+"elapsedMs": 42882,
+"finalText": "",
+"from": "https://www.healthypawspetinsurance.com/",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"reached": false,
+"steps": 10,
+"stopReason": "budget",
+"summary": "Ran out of budget after 10 step(s) without reaching https://www.healthypawspetinsurance.com/quote/step3; the page was still changing, so raising the step budget may get further.",
+"to": "https://www.healthypawspetinsurance.com/quote/step3"
 }
 ],
 "status": "ran"

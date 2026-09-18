@@ -294,11 +294,14 @@ def gen_clusters():
 # collapses them and turns every pre-fix action into a conversion failure, so
 # the projection keeps `.get()`'s None rather than coercing to bool.
 #
-# TRAP 7. Timing is `null` on every log written before the crawl had any time
-# bounds -- which is every log on record at the time this was added. null means
-# the worker did not measure, NOT that the step was instant, and the difference
-# matters because the stop sentence sums modelMs/ms to say which half of a slow
-# hop to fix. `a.get()`'s None is kept rather than coerced to 0.
+# TRAP 7. Several fields are `null` on every log written before the feature that
+# produces them existed -- timing (`ms`/`modelMs`/`elapsedMs`), the native-control
+# report (`hit.control`), the dropdown pick (`choice`) and the split mutation
+# count (`structuralMutations`). null means the worker did not measure, NOT that
+# the answer was zero/absent, and the difference is load-bearing twice over: the
+# stop sentence sums modelMs/ms to say which half of a slow hop to fix, and
+# fnDidSomething falls back to the undifferentiated total precisely when
+# structuralMutations is null. `a.get()`'s None is kept rather than coerced.
 #
 # TRAP 6. `hit: null` (the probe could not run -- an injection-refusing page, or
 # a navigation that destroyed the isolated world) is NOT the same as a hit whose
@@ -345,12 +348,18 @@ def gen_funnel():
                     "geometry": a.get('geometry'),
                     "modelMs": a.get('modelMs'),   # TRAP 7
                     "ms": a.get('ms'),             # TRAP 7
+                    "choice": a.get('choice'),     # TRAP 7
+                    "structuralMutations": a.get('structuralMutations'),   # TRAP 7
                     "outOfRange": a.get('outOfRange'),
                     "delivered": a.get('delivered'),
                     "deliveredTo": a.get('deliveredTo'),
                     "mutations": a.get('mutations'),
                     "hit": None if a.get('hit') is None else {   # TRAP 6
                         "top": (a.get('hit') or {}).get('top'),
+                        # brief() reduces the element to '#id', so the tag is
+                        # gone -- this is the only place a native <select> is
+                        # distinguishable from a link downstream. TRAP 7.
+                        "control": (a.get('hit') or {}).get('control'),
                         "interactive": (a.get('hit') or {}).get('interactive'),
                         # The OTHER viewport primitive, read in the page at click
                         # time. The scale comes from Page.getLayoutMetrics'

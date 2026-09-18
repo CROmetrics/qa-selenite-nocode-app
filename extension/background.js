@@ -145,6 +145,7 @@ How you work:
 - Never submit real payment details, and never complete an actual purchase, subscription, donation, or any other action that moves real money or creates a real financial obligation. If reaching the destination would require entering billing/card information or clicking a final purchase, order, or payment-confirmation button, stop there without clicking it and report that a real transaction would be required to continue.
 - Never try to solve, bypass, or trick a CAPTCHA, bot-check, or login wall. If one blocks the path, stop and report it — unless the tester's notes below give you working test credentials for it.
 - Only interact through the page itself — click, scroll, type, submit with Enter. Don't reach the destination by any means other than the on-page UI a visitor would use (e.g. never type a URL directly); the point of the crawl is to prove that UI path exists.
+- Clicking a native dropdown picks a value in it for you, at random, because the browser draws its option list outside the page where nothing can see or click it. You'll be told which value was chosen — click it again if you need a different one, and otherwise just move on. Dropdowns that render their options into the page itself work normally; click through those the way a visitor would.
 - When the page in front of you matches the destination, stop taking actions and say so in plain text. Don't keep clicking to double-check.`;
 
 // ── Initialize tab — AI field extraction ────────────────────────────────────
@@ -4451,6 +4452,26 @@ function fnActionKey(a) {
   return [a.action || '-', a.hit.top || '-', p.url, p.title || '', p.textLen == null ? '-' : p.textLen].join('|');
 }
 
+// Did the page do anything a VISITOR could see? Not "did any MutationRecord
+// fire" -- a focus ring, an aria-expanded flip and a class toggle all fire, and
+// treating them as progress is what let r_1789750056464 spend five of ten steps
+// re-clicking one native <select> with the detector silent throughout.
+//
+// This is NOT a relaxed guard, because it is never consulted alone: a streak
+// also requires fnActionKey to match, and that key carries
+// document.body.innerText.length, which EXCLUDES hidden text. A click that
+// reveals a menu by toggling a class moves textLen, so the key differs and the
+// streak breaks whatever this says. Attribute-only churn together with an
+// identical URL, title and visible text is the page acknowledging a click and
+// doing nothing with it.
+function fnDidSomething(a) {
+  if (!a) return false;
+  // A build that did not split the counts can only offer the total, and a log
+  // written by one has to keep reading exactly as it always did.
+  if (a.structuralMutations == null) return (a.mutations || 0) > 0;
+  return a.structuralMutations > 0;
+}
+
 // How many consecutive trailing click actions provably changed nothing.
 // Breaks the run on: a non-click, a positive mutation count (the page did
 // something even if URL/title did not move), or UNKNOWN evidence. That last one
@@ -4461,13 +4482,13 @@ function fnNoProgressRun(actions) {
   const list = Array.isArray(actions) ? actions : [];
   if (!list.length) return 0;
   const last = list[list.length - 1];
-  if (!fnCountsForProgress(last) || last.mutations > 0) return 0;
+  if (!fnCountsForProgress(last) || fnDidSomething(last)) return 0;
   const key = fnActionKey(last);
   if (key === null) return 0;
   let run = 1;
   for (let i = list.length - 2; i >= 0; i--) {
     const a = list[i];
-    if (!fnCountsForProgress(a) || a.mutations > 0) break;
+    if (!fnCountsForProgress(a) || fnDidSomething(a)) break;
     const k = fnActionKey(a);
     if (k === null || k !== key) break;
     run++;
@@ -4778,6 +4799,27 @@ function fnPreClickProbeFn(x, y) {
         // is unreachable — that must read as "unknown", never as a blocker.
         crossOriginFrame: el.tagName === 'IFRAME' ? !el.contentDocument : false,
         shadowHost: !!el.shadowRoot,
+        // brief() returns '#' + id as its FIRST branch, so hit.top is
+        // "#petBirthYear" and the tag name is gone — nothing downstream could
+        // tell a <select> from a link. A native select is the one control a
+        // click can never operate, so it has to be named here or not at all.
+        //
+        // el.closest('select') IS the discriminator and needs no size
+        // heuristic: a select2/Chosen/selectize widget puts its own span at the
+        // point, so the click never lands inside the native select and this
+        // stays null. When it does return one, the click landed on something
+        // whose option list the browser draws outside the page.
+        control: (function () {
+          var sel = el.closest && el.closest('select');
+          if (!sel) return null;
+          var usable = 0;
+          for (var i = 0; i < sel.options.length; i++) {
+            if (!sel.options[i].disabled && sel.options[i].value !== '') usable++;
+          }
+          return { kind: 'select', id: sel.id || null, name: sel.name || null,
+                   multiple: !!sel.multiple, optionCount: sel.options.length,
+                   selectedIndex: sel.selectedIndex, usable: usable };
+        })(),
         nothingAtPoint: false,
       };
     }
@@ -4786,13 +4828,22 @@ function fnPreClickProbeFn(x, y) {
   }
   try {
     if (window.__seleniteCrawlProbeStop) window.__seleniteCrawlProbeStop();
-    var state = { delivered: false, target: null, mutations: 0 };
+    var state = { delivered: false, target: null, mutations: 0, structural: 0 };
     var onClick = function (e) {
       state.delivered = true;
       if (!state.target) state.target = brief(e.target);
     };
     window.addEventListener('click', onClick, true);
-    var mo = new MutationObserver(function (muts) { state.mutations += muts.length; });
+    // Two counts, not one. `attributes` fires for a focus ring, an
+    // aria-expanded flip, a class toggle -- the page acknowledging a click
+    // without doing anything with it -- and the old single total made all of
+    // that indistinguishable from real work. r_1789750056464 spent five of ten
+    // steps on one dropdown at 3-5 attribute records a click, and the
+    // no-progress detector called every one of them progress.
+    var mo = new MutationObserver(function (muts) {
+      state.mutations += muts.length;
+      for (var i = 0; i < muts.length; i++) if (muts[i].type !== 'attributes') state.structural++;
+    });
     mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
     window.__seleniteCrawlProbe = state;
     window.__seleniteCrawlProbeStop = function () {
@@ -4808,7 +4859,7 @@ function fnPreClickProbeFn(x, y) {
 // no-progress detector compares. Folded into one call rather than two so a
 // click costs two round trips, not three.
 function fnPostActionProbeFn() {
-  var out = { delivered: null, deliveredTo: null, mutations: null, page: null };
+  var out = { delivered: null, deliveredTo: null, mutations: null, structuralMutations: null, page: null };
   try {
     var s = window.__seleniteCrawlProbe || null;
     if (window.__seleniteCrawlProbeStop) window.__seleniteCrawlProbeStop();
@@ -4817,6 +4868,7 @@ function fnPostActionProbeFn() {
       out.delivered = !!s.delivered;
       out.deliveredTo = s.target || null;
       out.mutations = s.mutations || 0;
+      out.structuralMutations = s.structural || 0;
     }
   } catch (_) {}
   try {
@@ -4827,6 +4879,70 @@ function fnPostActionProbeFn() {
     };
   } catch (_) {}
   return out;
+}
+
+// Injected, so fully self-contained (exec serializes it), same constraint as
+// the probes above. Operates a NATIVE <select>, which is the one control a
+// click can never operate: the browser draws its option list outside the page,
+// so it is absent from the DOM, absent from Page.captureScreenshot, and
+// unreachable by Input.dispatchMouseEvent. Clicking it can only focus it.
+//
+// The choice is random ON PURPOSE -- the job is to get through the funnel, not
+// to test a particular value -- so the resolved pick is returned and recorded.
+// That is this codebase's standing rule for variance it cannot remove: export
+// the exact input, so two runs can be compared rather than argued about.
+function fnChooseOptionFn(x, y) {
+  try {
+    var stack = (document.elementsFromPoint
+      ? document.elementsFromPoint(x, y)
+      : [document.elementFromPoint(x, y)]).filter(Boolean);
+    var el = stack[0];
+    var sel = el && el.closest ? el.closest('select') : null;
+    if (!sel) return { error: 'There is no dropdown at that point any more.' };
+
+    var opts = Array.prototype.slice.call(sel.options);
+    var before = sel.selectedIndex >= 0 && opts[sel.selectedIndex]
+      ? (opts[sel.selectedIndex].text || '').trim().slice(0, 80) : null;
+    var usable = [];
+    for (var i = 0; i < opts.length; i++) {
+      // A placeholder ("Pet's Age") carries an empty value and a group header
+      // ("-- Mixed Breed --") is disabled. Both are on the real form this was
+      // built against, and choosing either is the same as not choosing.
+      if (!opts[i].disabled && opts[i].value !== '' && i !== sel.selectedIndex) usable.push(i);
+    }
+    var base = { id: sel.id || null, name: sel.name || null, optionCount: opts.length,
+                 usableCount: usable.length, previousText: before,
+                 // Capped: a breed list on a real form ran to 594 options, and
+                 // the log is not the place for it. Enough to see what kind of
+                 // list it was; the counts above are what identify it.
+                 sampleOptions: opts.slice(0, 8).map(function (o) { return (o.text || '').trim().slice(0, 40); }) };
+    if (!usable.length) {
+      base.error = 'That dropdown has no other option to choose.';
+      base.chosenIndex = null; base.chosenText = null; base.applied = false;
+      return base;
+    }
+
+    var pick = usable[Math.floor(Math.random() * usable.length)];
+    sel.focus();
+    // The native prototype setter, never `sel.value = ...`: a direct assignment
+    // defeats React's value tracker, so a framework-bound form never sees it.
+    var d = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+    if (d && d.set) d.set.call(sel, opts[pick].value); else sel.value = opts[pick].value;
+    sel.dispatchEvent(new Event('input', { bubbles: true }));
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+
+    base.chosenIndex = pick;
+    base.chosenValue = opts[pick].value;
+    base.chosenText = (opts[pick].text || '').trim().slice(0, 80);
+    // Read back rather than assume. A select whose value is driven by something
+    // else will not keep it, and that is worth saying rather than reporting a
+    // choice that did not stick.
+    base.applied = sel.selectedIndex === pick;
+    base.error = null;
+    return base;
+  } catch (e) {
+    return { error: String((e && e.message) || e) };
+  }
 }
 
 // Returns { dataUrl, width, height, cssW, cssH } — width/height are of the image
@@ -5602,6 +5718,9 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
     // A CDP send or probe injection that stops answering. Set inside the action
     // loop, which can only break out of itself.
     let hardStop = false;
+    // Dropdowns already set in this segment, so a second click on one says "it
+    // is set, move on" instead of silently re-rolling the value.
+    const chosenControls = new Set();
     for (let step = 0; step < stepBudget; step++) {
       if (_funnelStopRequested) { out.error = 'Stopped'; out.stopReason = 'user-stopped'; break; }
       // Checked BEFORE spending another vision call, so an over-budget segment
@@ -5711,6 +5830,10 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
           // out took. Recorded per action because "the run is slow" has two
           // very different causes and nothing in the log could tell them apart.
           modelMs, ms: null,
+          // What was chosen when the click landed on a native dropdown, and the
+          // list it was chosen from. Random by design, so the resolved pick is
+          // recorded -- otherwise two runs of the same funnel cannot be compared.
+          choice: null,
           urlAfter: null, error: null,
           // Evidence, filled by the probes below: what was at the point, whether
           // the click reached an element, and whether the page reacted at all.
@@ -5747,6 +5870,19 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
             rec.error = `The screenshot (${imgW}x${imgH}) and the viewport (${dispW}x${dispH}) imply different `
               + `horizontal and vertical scales (${(dispW / imgW).toFixed(3)} vs ${(dispH / imgH).toFixed(3)}), `
               + `so (${x}, ${y}) cannot be converted to a click point — not dispatched. A fresh screenshot follows.`;
+          } else if ((action === 'left_click' || action === 'right_click' || action === 'middle_click')
+                     && rec.hit && rec.hit.control && rec.hit.control.kind === 'select') {
+            // A native <select> cannot be operated by a click at ANY coordinate,
+            // so dispatching one is not a weaker version of choosing -- it is a
+            // guaranteed no-op the model cannot see the result of.
+            // r_1789750056464 spent five of its ten steps proving that.
+            const key = rec.hit.control.id || rec.hit.control.name || rec.hit.top || '?';
+            const repeat = chosenControls.has(key);
+            chosenControls.add(key);
+            const chosen = await bounded(exec(tabId, fnChooseOptionFn, [css.x, css.y]), 'The dropdown choice');
+            rec.choice = chosen ? Object.assign({ repeat }, chosen) : { repeat, error: 'The page did not answer.' };
+            if (rec.choice.error) rec.error = rec.choice.error;
+            await new Promise(r => setTimeout(r, 400));
           } else if (action === 'left_click' || action === 'right_click' || action === 'middle_click') {
             await bounded(dispatchTrustedClick(tabId, css.x, css.y), `The ${action.replace('_', ' ')}`);
             await new Promise(r => setTimeout(r, 1200)); // let any navigation/settle happen
@@ -5833,6 +5969,16 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
         // exposed this. The text block costs a few tokens and ends that loop.
         const resultContent = [];
         if (rec.error) resultContent.push({ type: 'text', text: `That action did not run: ${rec.error}` });
+        if (rec.choice && !rec.choice.error) {
+          const c = rec.choice;
+          resultContent.push({ type: 'text', text:
+            'That is a native dropdown — the browser draws its option list outside the page, so it cannot be '
+            + `clicked or seen in a screenshot. Selected "${c.chosenText}" (option ${c.chosenIndex + 1} of `
+            + `${c.optionCount})`
+            + (c.applied ? '' : ', but the control did not keep that value, so something else is driving it')
+            + (c.repeat ? '. You have already set this one — its value is in place, so move on.'
+                        : '. Click it again if you need a different value.') });
+        }
         // Deliberately an OBSERVATION, never a conclusion and never an
         // instruction. "You are stuck, try something else" is an order the
         // model will obey even when the detector is wrong — and it biases it
@@ -5843,7 +5989,8 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
           const where = rec.hit && rec.hit.top ? ` on ${rec.hit.top}` : '';
           resultContent.push({ type: 'text', text:
             `For information: your last ${run} clicks landed${where}, and after each one the page's `
-            + `URL, title and visible text were unchanged and no DOM change was observed.` });
+            + 'URL, title and visible text were unchanged, with nothing changed in the page\'s structure '
+            + 'or text — at most a focus ring or similar attribute change.' });
         }
         resultContent.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: shot.dataUrl.replace(/^data:image\/png;base64,/, '') } });
         toolResults.push({

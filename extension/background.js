@@ -4376,6 +4376,43 @@ function fnCoordInViewport(x, y, dispW, dispH) {
 const FN_STUCK_NUDGE = 3;   // consecutive no-progress actions before telling the agent
 const FN_STUCK_ABORT = 6;   // …and before giving up rather than burning the budget
 
+// ── Funnel Crawl: time bounds ───────────────────────────────────────────────
+// Nothing in this loop had one. The vision call carried only the Stop button's
+// AbortController, and exec()/CDP sends carried nothing at all, so a request
+// that never came back stalled the segment for as long as the tab stayed open
+// — with no error, no step recorded, and nothing in the log to say which of the
+// two it was waiting on.
+//
+// Deliberately generous. These exist to end a HANG, not to hurry a slow page:
+// a bound that fires on ordinary slowness converts working runs into false
+// failures, which is a worse outcome than waiting. No log on record carries any
+// timing at all, so these are first principles rather than measurements — and
+// every action now records its own `ms`/`modelMs` precisely so the next runs
+// can replace them with numbers, the way FN_CAPTURE_AXIS_TOL was.
+const FN_MODEL_TIMEOUT_MS = 90000;     // one vision call, image in and tool call out
+const FN_ACTION_TIMEOUT_MS = 15000;    // one CDP send, probe injection or capture
+const FN_SEGMENT_BUDGET_MS = 300000;   // one waypoint → waypoint hop, end to end
+
+// Bound a promise that has no bound of its own. Neither chrome.scripting nor
+// chrome.debugger.sendCommand can be cancelled, so the underlying work is not
+// stopped — it is merely no longer awaited, which is the difference between a
+// step that fails and a crawl that never returns. The rejection is NAMED so a
+// caller can tell "this took too long" from "this went wrong", because those
+// two have different fixes and the report says which.
+function fnTimeout(promise, ms, label) {
+  let timer = null;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const e = new Error(`${label} did not finish within ${Math.round(ms / 1000)}s`);
+        e.name = 'SeleniteTimeout';
+        reject(e);
+      }, ms);
+    }),
+  ]).finally(() => { if (timer !== null) clearTimeout(timer); });
+}
+
 // The keys a funnel actually needs. Enter submits, Tab moves between fields,
 // Escape closes an overlay — the three that turn up in real checkout flows.
 const FN_KEY_CODES = {
@@ -4552,6 +4589,28 @@ function fnStopSentence(seg) {
   if (s.stopReason === 'attach-failed' || s.stopReason === 'api-error' || s.stopReason === 'exception') {
     return `The crawl could not run: ${s.error || 'unknown error'}${steps ? ` (after ${steps} agent step(s))` : ''}. `
       + 'This is a Selenite or API failure, not a finding about the site.';
+  }
+  // Three time bounds, three different fixes for whoever reads this: re-run,
+  // check the browser, or give the hop more room. Kept apart for that reason.
+  if (s.stopReason === 'model-timeout') {
+    return `The model did not answer within the time allowed on step ${steps + 1}, so the crawl stopped with the `
+      + 'page untouched. This is an API or network failure, not a finding about the site. Re-run.';
+  }
+  if (s.stopReason === 'action-timeout') {
+    return `A browser action stopped responding on step ${steps}${s.error ? ` (${s.error})` : ''}. The tab was no `
+      + 'longer answering the debugger, so the crawl could not continue and the page was never given anything more '
+      + 'to respond to. This is a Selenite or browser failure, not a finding about the site.';
+  }
+  if (s.stopReason === 'timeout') {
+    // The split is the useful part: it says which half to fix. Only possible
+    // because every action records its own time.
+    const model = acts.reduce((n, a) => n + (a.modelMs || 0), 0);
+    const page = acts.reduce((n, a) => n + (a.ms || 0), 0);
+    const total = s.elapsedMs || (model + page);
+    const secs = (n) => `${Math.round(n / 1000)}s`;
+    return `Ran out of time after ${secs(total)} and ${steps} agent step(s) without reaching ${s.to}.`
+      + (model && page ? ` ${secs(model)} of that was spent waiting for the model and ${secs(page)} on the page.` : '')
+      + ' Nothing here says the page is broken — this hop simply takes longer than the time allowed for it.';
   }
 
   // Same class as off-viewport, and judged alongside it. A coordinate the
@@ -5441,7 +5500,11 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
     //     from the end, so the terminal "I'm stopping because…" sentence was
     //     always the first thing cut.
     stopReason: null, apiStopReason: null, finalText: '',
+    // Wall clock for the hop. null when the segment never got as far as running
+    // — an honest "not measured", not a zero.
+    elapsedMs: null,
   };
+  const segmentStarted = Date.now();
   const targetKey = funnelUrlKey(target);
   const dbg = { tabId };
   const notes = [];
@@ -5487,7 +5550,7 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
     // Settle first: attaching the debugger is itself what moves the viewport, so
     // the one capture guaranteed to be taken mid-animation is the first one.
     await waitForStableViewport(dbg);
-    let shot = await captureClipped(dbg, dispW, dispH);
+    let shot = await fnTimeout(captureClipped(dbg, dispW, dispH), FN_ACTION_TIMEOUT_MS, 'The first screenshot');
     let imgW = shot.width, imgH = shot.height;
     out.geometry = {
       viewportW: dispW, viewportH: dispH, imageW: imgW, imageH: imgH,
@@ -5536,10 +5599,25 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
     // viewport have stopped describing each other, and the rest of the budget
     // would only produce more undispatched steps under a misleading 'budget'.
     let coordBailRun = 0;
+    // A CDP send or probe injection that stops answering. Set inside the action
+    // loop, which can only break out of itself.
+    let hardStop = false;
     for (let step = 0; step < stepBudget; step++) {
       if (_funnelStopRequested) { out.error = 'Stopped'; out.stopReason = 'user-stopped'; break; }
+      // Checked BEFORE spending another vision call, so an over-budget segment
+      // ends on the clock rather than on the next thing that happens to fail.
+      if (Date.now() - segmentStarted > FN_SEGMENT_BUDGET_MS) { out.stopReason = 'timeout'; break; }
 
       _visionAbortController = new AbortController();
+      const modelStarted = Date.now();
+      // A timeout must not read as a user Stop. Both arrive as AbortError, but
+      // 'user-stopped' says the tester chose this and 'model-timeout' says
+      // nothing answered — same mechanism, opposite meaning to a reader.
+      let modelTimedOut = false;
+      const modelTimer = setTimeout(() => {
+        modelTimedOut = true;
+        try { _visionAbortController?.abort(); } catch (_) {}
+      }, FN_MODEL_TIMEOUT_MS);
       let data;
       try {
         const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -5557,12 +5635,22 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
         data = await res.json();
         if (!res.ok) { out.error = data?.error?.message || res.statusText; out.stopReason = 'api-error'; break; }
       } catch (e) {
-        out.error = e.name === 'AbortError' ? 'Stopped' : e.message;
-        out.stopReason = e.name === 'AbortError' ? 'user-stopped' : 'api-error';
+        if (modelTimedOut) {
+          out.error = `The model did not respond within ${Math.round(FN_MODEL_TIMEOUT_MS / 1000)}s`;
+          out.stopReason = 'model-timeout';
+        } else if (e.name === 'AbortError') {
+          out.error = 'Stopped';
+          out.stopReason = 'user-stopped';
+        } else {
+          out.error = e.message;
+          out.stopReason = 'api-error';
+        }
         break;
       } finally {
+        clearTimeout(modelTimer);
         _visionAbortController = null;
       }
+      const modelMs = Date.now() - modelStarted;
 
       out.steps = step + 1;
       const blocks = data.content || [];
@@ -5619,19 +5707,27 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
             coordScaleX: imgW ? dispW / imgW : null, coordScaleY: imgH ? dispH / imgH : null,
           },
           outOfRange: !fnCoordInViewport(css.x, css.y, dispW, dispH),
+          // How long the model took to ask for this, and how long carrying it
+          // out took. Recorded per action because "the run is slow" has two
+          // very different causes and nothing in the log could tell them apart.
+          modelMs, ms: null,
           urlAfter: null, error: null,
           // Evidence, filled by the probes below: what was at the point, whether
           // the click reached an element, and whether the page reacted at all.
           hit: null, delivered: null, deliveredTo: null, mutations: null, page: null,
         };
+        const actionStarted = Date.now();
+        // Neither chrome.scripting nor chrome.debugger.sendCommand can hang
+        // forever on a healthy tab, and neither has a bound when the tab is not.
+        const bounded = (pr, what) => fnTimeout(pr, FN_ACTION_TIMEOUT_MS, what);
         // Read the point and arm the delivery/mutation watch BEFORE dispatching.
         // Skipped for actions with no coordinate (type/key), which have nothing
         // to hit-test — the watch is still armed so their effect is measured.
         try {
-          rec.hit = await exec(tabId, fnPreClickProbeFn, [
+          rec.hit = await bounded(exec(tabId, fnPreClickProbeFn, [
             Number.isFinite(css.x) ? css.x : -1,
             Number.isFinite(css.y) ? css.y : -1,
-          ]);
+          ]), 'The pre-click probe');
         } catch (_) { /* a page that refuses injection leaves hit null — honest unknown */ }
         try {
           if (rec.outOfRange) {
@@ -5652,18 +5748,20 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
               + `horizontal and vertical scales (${(dispW / imgW).toFixed(3)} vs ${(dispH / imgH).toFixed(3)}), `
               + `so (${x}, ${y}) cannot be converted to a click point — not dispatched. A fresh screenshot follows.`;
           } else if (action === 'left_click' || action === 'right_click' || action === 'middle_click') {
-            await dispatchTrustedClick(tabId, css.x, css.y);
+            await bounded(dispatchTrustedClick(tabId, css.x, css.y), `The ${action.replace('_', ' ')}`);
             await new Promise(r => setTimeout(r, 1200)); // let any navigation/settle happen
           } else if (action === 'scroll') {
             const dir = b.input?.scroll_direction, amt = (b.input?.scroll_amount || 3) * 100;
             const dx = dir === 'right' ? amt : dir === 'left' ? -amt : 0;
             const dy = dir === 'down' ? amt : dir === 'up' ? -amt : 0;
-            await chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent', { type: 'mouseWheel', x: css.x || dispW / 2, y: css.y || dispH / 2, deltaX: dx, deltaY: dy });
+            await bounded(chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent', { type: 'mouseWheel', x: css.x || dispW / 2, y: css.y || dispH / 2, deltaX: dx, deltaY: dy }), 'The scroll');
             await new Promise(r => setTimeout(r, 400));
           } else if (action === 'type') {
-            for (const ch of String(b.input?.text || '')) {
-              await chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent', { type: 'char', text: ch });
-            }
+            await bounded((async () => {
+              for (const ch of String(b.input?.text || '')) {
+                await chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent', { type: 'char', text: ch });
+              }
+            })(), 'The typing');
           } else if (action === 'key') {
             // Was a 100ms sleep and nothing else — the model was told every
             // keypress succeeded while Enter-to-submit silently never happened,
@@ -5673,12 +5771,14 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
             if (!vk) {
               rec.error = `Key "${combo || '?'}" is not supported — nothing was pressed.`;
             } else {
-              for (const type of ['rawKeyDown', 'keyUp']) {
-                await chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent', {
-                  type, windowsVirtualKeyCode: vk.code, nativeVirtualKeyCode: vk.code,
-                  key: vk.key, code: vk.code_, text: vk.text || undefined,
-                });
-              }
+              await bounded((async () => {
+                for (const type of ['rawKeyDown', 'keyUp']) {
+                  await chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent', {
+                    type, windowsVirtualKeyCode: vk.code, nativeVirtualKeyCode: vk.code,
+                    key: vk.key, code: vk.code_, text: vk.text || undefined,
+                  });
+                }
+              })(), `The "${combo}" keypress`);
               await new Promise(r => setTimeout(r, 400));
             }
           } else if (action !== 'screenshot') {
@@ -5692,6 +5792,10 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
         } catch (e) {
           rec.error = e.message;
           notes.push(`Action "${action}" failed: ${e.message}`);
+          // A tab that stopped answering the debugger does not start again, and
+          // every later step would be measured against a page we can no longer
+          // reach. Stop and say so rather than recording fiction.
+          if (e.name === 'SeleniteTimeout') { out.stopReason = 'action-timeout'; out.error = e.message; hardStop = true; }
         }
         // A click can start a navigation that outlasts the flat settle above.
         // Without this the fingerprint is read mid-transition and a slow SPA
@@ -5705,7 +5809,7 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
         // Read delivery + reaction + fingerprint AFTER the settle, so what the
         // detector compares describes the same moment the model will see.
         try {
-          const post = await exec(tabId, fnPostActionProbeFn, []);
+          const post = await bounded(exec(tabId, fnPostActionProbeFn, []), 'The post-action probe');
           if (post) {
             rec.delivered = post.delivered;
             rec.deliveredTo = post.deliveredTo;
@@ -5713,9 +5817,15 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
             rec.page = post.page;
           }
         } catch (_) { /* navigated out from under the probe — stays unknown, which breaks the streak */ }
+        rec.ms = Date.now() - actionStarted;
         out.actions.push(rec);
         if (coordUnusable) coordBailRun++; else if (Number.isFinite(x)) coordBailRun = 0;
-        shot = await captureClipped(dbg, dispW, dispH);
+        if (hardStop) break;
+        try {
+          shot = await bounded(captureClipped(dbg, dispW, dispH), 'The screenshot');
+        } catch (e) {
+          out.stopReason = 'action-timeout'; out.error = e.message; hardStop = true; break;
+        }
         syncDeclaredSize();
         // An action that didn't happen has to SAY so. Returning only a fresh
         // screenshot after a skipped or failed action tells the model nothing
@@ -5754,6 +5864,8 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
         }
       }
 
+      if (hardStop) break;
+
       // Arrival check.
       try {
         const cur = await chrome.tabs.get(tabId);
@@ -5782,6 +5894,7 @@ async function crawlSegment(tabId, fromUrl, target, stepBudget, supplementalProm
     out.error = out.error || e.message;
     out.stopReason = out.stopReason || 'exception';
   } finally {
+    out.elapsedMs = Date.now() - segmentStarted;
     if (attached) { try { await chrome.debugger.detach(dbg); } catch (_) {} }
   }
 

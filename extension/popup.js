@@ -7806,6 +7806,9 @@ function buildDebugLog(sections) {
       segments: (funnelEntry.data?.segments || []).map(s => ({
         from: s.from, to: s.to, reached: !!s.reached,
         steps: s.steps || 0, note: s.note || '', error: s.error || null,
+        // Wall clock for the hop. `?? null` not `|| null`: a sub-millisecond
+        // segment is 0, which is a measurement, and null means never measured.
+        elapsedMs: s.elapsedMs ?? null,
         // WHY it ended, and the model's own terminal sentence kept verbatim —
         // `note` truncates and used to eat exactly that sentence. null on a
         // run from a worker build that predates these.
@@ -7830,6 +7833,11 @@ function buildDebugLog(sections) {
           coordConverted: a.coordConverted == null ? null : !!a.coordConverted,
           coordReason: a.coordReason || null,
           geometry: a.geometry || null,
+          // "The run is slow" has two causes with two different fixes, and
+          // nothing in the log could tell them apart: modelMs is the wait for
+          // the vision call, ms is carrying the action out.
+          modelMs: a.modelMs ?? null,
+          ms: a.ms ?? null,
           outOfRange: !!a.outOfRange, urlAfter: a.urlAfter || null, error: a.error || null,
           // What was under the point, whether the click reached anything, and
           // whether the page moved — the evidence behind every claim above.

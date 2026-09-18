@@ -6,6 +6,7 @@
 {
 "actions": [],
 "apiStopReason": null,
+"elapsedMs": null,
 "finalText": null,
 "from": "https://www.lesschwab.com/wheels",
 "geometry": null,
@@ -25,6 +26,7 @@
 {
 "actions": [],
 "apiStopReason": null,
+"elapsedMs": null,
 "finalText": null,
 "from": "https://www.lesschwab.com/wheels",
 "geometry": null,
@@ -68,6 +70,8 @@
 1483,
 1119
 ],
+"modelMs": null,
+"ms": null,
 "mutations": 0,
 "outOfRange": false,
 "page": {
@@ -101,6 +105,8 @@
 1475,
 1068
 ],
+"modelMs": null,
+"ms": null,
 "mutations": 0,
 "outOfRange": false,
 "page": {
@@ -134,6 +140,8 @@
 1475,
 1068
 ],
+"modelMs": null,
+"ms": null,
 "mutations": 0,
 "outOfRange": false,
 "page": {
@@ -167,6 +175,8 @@
 1475,
 1068
 ],
+"modelMs": null,
+"ms": null,
 "mutations": 0,
 "outOfRange": false,
 "page": {
@@ -200,6 +210,8 @@
 1475,
 1068
 ],
+"modelMs": null,
+"ms": null,
 "mutations": 0,
 "outOfRange": false,
 "page": {
@@ -233,6 +245,8 @@
 1475,
 1068
 ],
+"modelMs": null,
+"ms": null,
 "mutations": 0,
 "outOfRange": false,
 "page": {
@@ -266,6 +280,8 @@
 1475,
 1068
 ],
+"modelMs": null,
+"ms": null,
 "mutations": 0,
 "outOfRange": false,
 "page": {
@@ -276,6 +292,7 @@
 }
 ],
 "apiStopReason": null,
+"elapsedMs": null,
 "finalText": "",
 "from": "https://www.lesschwab.com/wheels",
 "geometry": {
@@ -333,6 +350,8 @@
 1476,
 1117
 ],
+"modelMs": null,
+"ms": null,
 "mutations": 0,
 "outOfRange": false,
 "page": {
@@ -373,6 +392,8 @@
 1476,
 1067
 ],
+"modelMs": null,
+"ms": null,
 "mutations": 19,
 "outOfRange": false,
 "page": {
@@ -413,6 +434,8 @@
 2328,
 673
 ],
+"modelMs": null,
+"ms": null,
 "mutations": 3,
 "outOfRange": false,
 "page": {
@@ -453,6 +476,8 @@
 1121,
 763
 ],
+"modelMs": null,
+"ms": null,
 "mutations": null,
 "outOfRange": false,
 "page": {
@@ -493,6 +518,8 @@
 1308,
 554
 ],
+"modelMs": null,
+"ms": null,
 "mutations": 21,
 "outOfRange": false,
 "page": {
@@ -533,6 +560,8 @@
 1288,
 700
 ],
+"modelMs": null,
+"ms": null,
 "mutations": 0,
 "outOfRange": false,
 "page": {
@@ -573,6 +602,8 @@
 1723,
 1047
 ],
+"modelMs": null,
+"ms": null,
 "mutations": 17,
 "outOfRange": false,
 "page": {
@@ -583,6 +614,7 @@
 }
 ],
 "apiStopReason": null,
+"elapsedMs": null,
 "finalText": "",
 "from": "https://www.lesschwab.com/wheels",
 "geometry": {
@@ -598,6 +630,308 @@
 "stopReason": "arrived",
 "summary": "Reached https://www.lesschwab.com/schedule-appointment/date in 7 agent step(s).",
 "to": "https://www.lesschwab.com/schedule-appointment/date"
+}
+],
+"status": "ran"
+},
+"1789747941369": {
+"error": null,
+"reachedEnd": true,
+"segments": [
+{
+"actions": [
+{
+"action": "left_click",
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+2507,
+724
+],
+"delivered": null,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "relative",
+"top": "a.button.js-addItemToCart"
+},
+"modelCoord": [
+2329,
+673
+],
+"modelMs": null,
+"ms": null,
+"mutations": null,
+"outOfRange": false,
+"page": {
+"textLen": 1033,
+"url": "https://www.lesschwab.com/schedule-appointment/services"
+},
+"step": 1
+},
+{
+"action": "scroll",
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1387,
+754
+],
+"delivered": false,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"coversPct": 7,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "ul.schedule__list"
+},
+"modelCoord": [
+1288,
+700
+],
+"modelMs": null,
+"ms": null,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 1033,
+"url": "https://www.lesschwab.com/schedule-appointment/services"
+},
+"step": 2
+},
+{
+"action": "left_click",
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1855,
+1127
+],
+"delivered": true,
+"deliveredTo": "button.button.schedule__button",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "relative",
+"top": "button.button.schedule__button"
+},
+"modelCoord": [
+1723,
+1047
+],
+"modelMs": null,
+"ms": null,
+"mutations": 22,
+"outOfRange": false,
+"page": {
+"textLen": 1148,
+"url": "https://www.lesschwab.com/schedule-appointment/date"
+},
+"step": 3
+}
+],
+"apiStopReason": null,
+"elapsedMs": null,
+"finalText": "",
+"from": "https://www.lesschwab.com/wheels",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"reached": true,
+"steps": 3,
+"stopReason": "arrived",
+"summary": "Reached https://www.lesschwab.com/schedule-appointment/date in 3 agent step(s).",
+"to": "https://www.lesschwab.com/schedule-appointment/date"
+}
+],
+"status": "ran"
+},
+"1789748018475": {
+"error": null,
+"reachedEnd": true,
+"segments": [
+{
+"actions": [
+{
+"action": "left_click",
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1227,
+837
+],
+"delivered": true,
+"deliveredTo": "#pet-name-1",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"coversPct": 1,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#pet-name-1"
+},
+"modelCoord": [
+1026,
+700
+],
+"modelMs": null,
+"ms": null,
+"mutations": 7,
+"outOfRange": false,
+"page": {
+"textLen": 6005,
+"url": "https://www.healthypawspetinsurance.com/"
+},
+"step": 1
+},
+{
+"action": "type",
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"position": null,
+"top": null
+},
+"modelCoord": null,
+"modelMs": null,
+"ms": null,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 6005,
+"url": "https://www.healthypawspetinsurance.com/"
+},
+"step": 2
+},
+{
+"action": "left_click",
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1984,
+837
+],
+"delivered": null,
+"deliveredTo": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"coversPct": 0,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "span.cta-title"
+},
+"modelCoord": [
+1659,
+700
+],
+"modelMs": null,
+"ms": null,
+"mutations": null,
+"outOfRange": false,
+"page": {
+"textLen": 12108,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 3
+}
+],
+"apiStopReason": null,
+"elapsedMs": null,
+"finalText": "",
+"from": "https://www.healthypawspetinsurance.com",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"reached": true,
+"steps": 3,
+"stopReason": "arrived",
+"summary": "Reached https://www.healthypawspetinsurance.com/quote/step1 in 3 agent step(s).",
+"to": "https://www.healthypawspetinsurance.com/quote/step1"
 }
 ],
 "status": "ran"

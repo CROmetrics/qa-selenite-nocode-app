@@ -3781,6 +3781,14 @@ section('grading failure survivability');
 // differ by 2x, so every click landed off-viewport, CDP raised nothing, and the
 // agent retried the same button until its budget ran out (run r_1789678299756).
 section('funnel click coordinates');
+// jsc's shell has setTimeout but NOT clearTimeout, and fnTimeout clears its
+// timer in a .finally() — so without this the helper rejects with a
+// ReferenceError on its happy path. That is a gap in this harness, not in the
+// extension, where clearTimeout is always present. (Timers still never fire
+// under drainMicrotasks, so only fnTimeout's pass-through paths are reachable
+// from a synchronous suite; see the notes on its assertions below.)
+if (typeof clearTimeout !== 'function') { this.clearTimeout = function () {}; }
+
 // Deliberately truncated before the closing brace: captureClipped's return
 // shape gained cssW/cssH, and a marker that no longer matches makes indexOf
 // return -1, which slices to the END OF THE FILE and evals all of background.js
@@ -4061,6 +4069,56 @@ eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
   ok('the coord-space stop names itself', /stopped agreeing on size/.test(coordSpace), coordSpace);
   ok('  and is ours, not the site\'s', /not a finding about the site/.test(coordSpace), coordSpace);
 
+  // ---- time bounds ----
+  // Nothing in the crawl loop had one: the vision call carried only the Stop
+  // button's AbortController, and exec()/CDP sends carried nothing, so a request
+  // that never came back stalled the segment for as long as the tab stayed open.
+  //
+  // fnTimeout's FIRING path is not unit-testable here — jsc has setTimeout but
+  // does not run timers under drainMicrotasks, so a pending timer cannot be
+  // driven from a synchronous suite. What IS testable is the contract that keeps
+  // the report honest: a real failure must never come back wearing a timeout's
+  // name, or "the tab stopped responding" would be printed about an ordinary
+  // error. The firing path is covered by the sentences below and by real runs.
+  // 10ms, not a realistic bound: the shimmed clearTimeout above cannot actually
+  // cancel a jsc timer, so a 90s one would hold the run loop open for 90s after
+  // the suite finished. The race is settled by the microtask either way — the
+  // timer is simply left to expire into nothing.
+  var passed = null, threw = null;
+  fnTimeout(Promise.resolve(42), 10, 'x').then(function (v) { passed = v; });
+  fnTimeout(Promise.reject(Object.assign(new Error('boom'), { name: 'TypeError' })), 10, 'x')
+    .catch(function (e) { threw = e; });
+  drainMicrotasks();
+  eq('a value passes straight through', passed, 42);
+  ok('a real failure passes through unchanged', threw && threw.message === 'boom', threw);
+  eq('  and keeps its own name, never SeleniteTimeout', threw && threw.name, 'TypeError');
+
+  var modelOut = fnStopSentence(seg({ stopReason: 'model-timeout', steps: 3 }));
+  ok('a model that never answered is named', /did not answer within the time allowed/.test(modelOut), modelOut);
+  ok('  and is ours, not the site\'s', /not a finding about the site/.test(modelOut), modelOut);
+  ok('  and says to re-run', /Re-run/.test(modelOut), modelOut);
+
+  var actOut = fnStopSentence(seg({ stopReason: 'action-timeout', steps: 4, error: 'The click did not finish within 15s' }));
+  ok('a wedged tab is named', /stopped responding/.test(actOut), actOut);
+  ok('  quoting what hung', /did not finish within 15s/.test(actOut), actOut);
+  ok('  and is ours too', /not a finding about the site/.test(actOut), actOut);
+
+  // The segment wall clock, and the split that says WHICH HALF to fix. Only
+  // possible because every action now records its own time.
+  var slow = function (model, page) {
+    return { action: 'left_click', error: null, outOfRange: false, mutations: 1,
+             modelMs: model, ms: page, hit: { top: 'a' }, page: { url: 'u', title: 't', textLen: 1 } };
+  };
+  var slowSeg = fnStopSentence(seg({ stopReason: 'timeout', steps: 5, elapsedMs: 300000,
+                                     actions: [slow(50000, 10000), slow(40000, 5000)] }));
+  ok('running out of time is named', /Ran out of time after 300s/.test(slowSeg), slowSeg);
+  ok('  and split into model vs page', /90s .*waiting for the model and 15s on the page/.test(slowSeg), slowSeg);
+  ok('  without blaming the page', /Nothing here says the page is broken/.test(slowSeg), slowSeg);
+  // A segment from a build with no timing still has to produce a sentence.
+  var noTiming = fnStopSentence(seg({ stopReason: 'timeout', steps: 5, actions: [] }));
+  ok('a run with no timing still reports the stop', /Ran out of time/.test(noTiming), noTiming);
+  ok('  and omits a split it cannot compute', noTiming.indexOf('waiting for the model') === -1, noTiming);
+
   // Distinctness: the whole point is that causes stop looking alike.
   var sentences = [
     fnStopSentence(seg({ reached: true })),
@@ -4075,6 +4133,9 @@ eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
     unconvStuck,
     unconvSeg,
     coordSpace,
+    modelOut,
+    actOut,
+    slowSeg,
   ];
   eq('every distinct cause produces a distinct sentence', new Set(sentences).size, sentences.length);
 })();

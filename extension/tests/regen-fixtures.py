@@ -294,6 +294,12 @@ def gen_clusters():
 # collapses them and turns every pre-fix action into a conversion failure, so
 # the projection keeps `.get()`'s None rather than coercing to bool.
 #
+# TRAP 7. Timing is `null` on every log written before the crawl had any time
+# bounds -- which is every log on record at the time this was added. null means
+# the worker did not measure, NOT that the step was instant, and the difference
+# matters because the stop sentence sums modelMs/ms to say which half of a slow
+# hop to fix. `a.get()`'s None is kept rather than coerced to 0.
+#
 # TRAP 6. `hit: null` (the probe could not run -- an injection-refusing page, or
 # a navigation that destroyed the isolated world) is NOT the same as a hit whose
 # `top` is null (nothingAtPoint). Flattening to `(a.get('hit') or {}).get('top')`
@@ -328,6 +334,7 @@ def gen_funnel():
                 # problem" about a run whose coordinates were never converted.
                 "summary": s.get('summary'),
                 "geometry": s.get('geometry'),
+                "elapsedMs": s.get('elapsedMs'),   # TRAP 7
                 "actions": [{
                     "step": a.get('step'),
                     "action": a.get('action'),
@@ -336,6 +343,8 @@ def gen_funnel():
                     "coordConverted": a.get('coordConverted'),   # TRAP 5
                     "coordReason": a.get('coordReason'),
                     "geometry": a.get('geometry'),
+                    "modelMs": a.get('modelMs'),   # TRAP 7
+                    "ms": a.get('ms'),             # TRAP 7
                     "outOfRange": a.get('outOfRange'),
                     "delivered": a.get('delivered'),
                     "deliveredTo": a.get('deliveredTo'),

@@ -874,8 +874,29 @@ section('funnel crawl coordinate space (real runs)');
       if ((sg.actions || []).length) withActions++;
     });
   });
+  // Exact, and it stays exact: the stale-worker shape cannot recur now that the
+  // current build always records per-action evidence, so a third would mean a
+  // worker older than this popup is running again.
   eq('two recorded walks are the stale-worker shape', staleWorker, 2);
-  eq('  and two recorded actions: the run that failed and the run that worked', withActions, 2);
+  // NOT exact. This corpus gains runs faster than the suite is edited, and a
+  // census that breaks on every successful funnel teaches people to loosen
+  // assertions. The runs that carry a claim are named individually below.
+  ok('and the rest recorded actions', withActions >= 4, withActions);
+
+  // TRAP 7, pinned. Every log on record predates the crawl having any time
+  // bound, so all of its timing reads null -- which means "not measured", not
+  // "instant". The stop sentence sums these to say which half of a slow hop to
+  // fix, and a null summed as 0 would silently report the wrong half.
+  var timed = 0, untimed = 0;
+  fids.forEach(function (rid) {
+    (FUNNEL[rid].segments || []).forEach(function (sg) {
+      (sg.actions || []).forEach(function (a) {
+        if (a.ms === null && a.modelMs === null) untimed++; else timed++;
+      });
+    });
+  });
+  ok('the projection carries timing for every action', untimed + timed > 0);
+  eq('  and every recorded action predates the time bounds', timed, 0);
 
   // THE RUN. Replaying the converter over the SEGMENT geometry reproduces steps
   // 2-7 byte for byte and canNOT reproduce step 1 — which is the whole
@@ -1029,6 +1050,33 @@ section('funnel crawl coordinate space (real runs)');
      a1ok.cssCoord[1] - Math.round(frac * a1ok.hit.innerH), 37);
   print('    post-fix: reached in ' + ok2.steps + ' steps, ' + ok2.actions.length + '/'
         + ok2.actions.length + ' converted, viewport ' + vps[0] + ' -> ' + vps[1]);
+
+  // ---- and once the seed capture waits for the viewport to settle ----
+  // 1789747941369 is the SAME lesschwab funnel as the two above, run again with
+  // waitForStableViewport in front of the seed capture. The whole point is that
+  // the first capture is no longer taken mid-animation.
+  var settled = FUNNEL['1789747941369'].segments[0];
+  var seed = function (sg) { return sg.actions[0].geometry; };
+  ok('before the settle wait, the seed capture was moving',
+     !fnCaptureAxesAgree(seed(ok2).imageW, seed(ok2).imageH, seed(ok2).viewportW, seed(ok2).viewportH));
+  ok('after it, the seed capture is settled',
+     fnCaptureAxesAgree(seed(settled).imageW, seed(settled).imageH,
+                        seed(settled).viewportW, seed(settled).viewportH));
+  // The viewport no longer moves mid-segment at all, because the segment now
+  // starts after it has stopped.
+  eq('and it holds from the very first capture',
+     new Set((settled.actions || []).map(function (a) { return a.geometry.viewportH; })).size, 1);
+  eq('  at the post-infobar height', settled.actions[0].geometry.viewportH, ok2.actions[1].geometry.viewportH);
+  // What it bought: the wasted first click is gone. Same two waypoints, same
+  // site, same build otherwise.
+  ok('the same funnel now takes fewer steps', settled.steps < ok2.steps, {
+    before: ok2.steps, after: settled.steps });
+  var before = Math.abs(seed(ok2).coordScaleX - seed(ok2).coordScaleY);
+  var after = Math.abs(seed(settled).coordScaleX - seed(settled).coordScaleY);
+  ok('  and the seed capture is orders of magnitude closer to agreeing', after < before / 100,
+     { before: before, after: after });
+  print('    settled: same funnel in ' + settled.steps + ' steps (was ' + ok2.steps
+        + '), seed axes ' + before.toFixed(6) + ' -> ' + after.toFixed(8));
 
   // ---- and what the log's own "start here" list says about it ----
   // vdCollectProblems is 500+ lines with its own dependencies, so only its

@@ -3033,7 +3033,11 @@ function buildVisualDiffDebug({ match, matchTierCounts, all, shiftClusters, aggr
 // case is a live candidate and would explain why the failures cluster on the
 // largest reports. We cannot tell which from here. Retry covers every
 // transient variant, and that is the whole justification.
-function vdShouldRetryReport(status, threw) {
+//
+// Named for the API rather than for Visual Diff because the crawl loop uses
+// it too: the same failure, on a path that makes one call per STEP instead of
+// one per variant, so it meets this more often rather than less.
+function shouldRetryApiCall(status, threw) {
   if (threw) return true;                       // network-level, opaque, possibly a hidden 429
   if (status === 429) return true;              // rate limited
   if (status >= 500) return true;               // server side
@@ -3077,7 +3081,7 @@ async function runVisualReport(findings, stats, ticketVariantText, apiKey, signa
       if (e.name === 'AbortError') return { ok: false, stoppedAbort: true, error: 'Stopped' };
       threw = true; lastErr = e.message; res = null;
     }
-    if (!threw && !vdShouldRetryReport(res.status, false)) break;
+    if (!threw && !shouldRetryApiCall(res.status, false)) break;
     if (attempt >= VIS_REPORT_RETRIES) {
       if (threw) return { ok: false, error: `${lastErr} (after ${attempt + 1} attempts)` };
       break;                                    // fall through to the !res.ok path below
@@ -4409,6 +4413,28 @@ const FN_SEGMENT_BUDGET_MS = 300000;   // one waypoint → waypoint hop, end to 
 // stop regardless of what it thinks it is doing.
 const FN_MAX_STEPS = 500;
 
+// The crawl's vision call had no retry at all, so ONE transient failure threw
+// away the whole segment: r_1789754996870 lost four good steps and 25 seconds
+// to a single "Failed to fetch" on the fifth call. The report path has had a
+// retry since 7e38210, and its comment already describes this exact failure —
+// a 429 whose error response arrives without CORS headers is indistinguishable
+// from a dead connection from in here. The crawl makes one call per STEP
+// rather than one per variant, so it meets that more often, not less.
+const FN_MODEL_RETRIES = 2;                     // 3 attempts total, same as the report
+
+// Whether a failed attempt may be tried again. Split out from the call so the
+// policy is testable without a network, and so the two that must NEVER be
+// retried are stated in one place rather than implied by control flow:
+//   • a Stop is the tester's decision, and retrying past it ignores them
+//   • a timeout has already spent FN_MODEL_TIMEOUT_MS. Two more attempts would
+//     put one step over the segment's whole clock, and a call that slow is not
+//     what "transient" means.
+function fnRetryableFailure(kind, status) {
+  if (kind === 'stopped' || kind === 'timeout') return false;
+  if (kind === 'threw') return true;            // network-level and opaque — see shouldRetryApiCall
+  return shouldRetryApiCall(status, false);     // 'ok': retry only 429/5xx
+}
+
 // Bound a promise that has no bound of its own. Neither chrome.scripting nor
 // chrome.debugger.sendCommand can be cancelled, so the underlying work is not
 // stopped — it is merely no longer awaited, which is the difference between a
@@ -5616,6 +5642,82 @@ function funnelUrlKey(url) {
   return normalizeUrl(url || '').replace(/^https?:\/\//i, '').replace(/#.*$/, '').replace(/\/+$/, '').toLowerCase();
 }
 
+// One vision call for the crawl. Returns { data } on success or
+// { error, stopReason } on failure — never throws, so the caller's control flow
+// stays a flat `break` and the retry loop cannot be confused with the step loop.
+async function fnVisionCall(apiKey, tools, messages) {
+  let res = null, lastErr = null;
+  for (let attempt = 0; ; attempt++) {
+    _visionAbortController = new AbortController();
+    // A timeout and a Stop both arrive as AbortError. One flag is the whole
+    // difference between "nothing answered" and "the tester chose this".
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try { _visionAbortController?.abort(); } catch (_) {}
+    }, FN_MODEL_TIMEOUT_MS);
+    let kind = 'ok', status = 0;
+    res = null;
+    try {
+      res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        signal: _visionAbortController.signal,
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+          'anthropic-beta': 'computer-use-2025-11-24',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1024, tools, messages }),
+      });
+      status = res.status;
+    } catch (e) {
+      kind = timedOut ? 'timeout' : (e.name === 'AbortError' ? 'stopped' : 'threw');
+      lastErr = e.message;
+    } finally {
+      clearTimeout(timer);
+      _visionAbortController = null;
+    }
+
+    if (!fnRetryableFailure(kind, status)) {
+      if (kind === 'timeout') {
+        return { error: `The model did not respond within ${Math.round(FN_MODEL_TIMEOUT_MS / 1000)}s`,
+                 stopReason: 'model-timeout' };
+      }
+      if (kind === 'stopped') return { error: 'Stopped', stopReason: 'user-stopped' };
+      break;                                    // a usable response, or a deterministic 4xx
+    }
+    if (attempt >= FN_MODEL_RETRIES) {
+      // A thrown fetch never produced a response, so there is nothing below to
+      // report and the attempt count is the only thing that explains the wait.
+      if (kind === 'threw') {
+        return { error: `${lastErr} (after ${attempt + 1} attempts)`, stopReason: 'api-error' };
+      }
+      break;                                    // a retryable status that ran out — reported below
+    }
+    // Exponential with jitter, so a rate limit is not retried in lockstep.
+    await new Promise(r => setTimeout(r, (500 * Math.pow(2, attempt)) + Math.random() * 400));
+    // The step loop checks this at the TOP, which a retry sits underneath —
+    // without it here, Stop pressed during a backoff still spends another call
+    // before anything notices. There is no in-flight request to abort during
+    // the wait, so the flag is the only thing that can say so.
+    if (_funnelStopRequested) return { error: 'Stopped', stopReason: 'user-stopped' };
+  }
+
+  // The body read is no longer covered by the abort signal above, and a page of
+  // HTML from a proxy parses slowly or not at all — bound it like any other
+  // step in this loop rather than letting it hang the segment.
+  let data;
+  try {
+    data = await fnTimeout(res.json(), FN_ACTION_TIMEOUT_MS, 'Reading the model response');
+  } catch (e) {
+    return { error: `The API response could not be read: ${e.message}`, stopReason: 'api-error' };
+  }
+  if (!res.ok) return { error: data?.error?.message || res.statusText, stopReason: 'api-error' };
+  return { data };
+}
+
 // One waypoint→next-waypoint hop. Returns { from, to, reached, steps, note, error }.
 async function crawlSegment(tabId, fromUrl, target, supplementalPrompt = '') {
   const out = {
@@ -5749,49 +5851,13 @@ async function crawlSegment(tabId, fromUrl, target, supplementalPrompt = '') {
       // ends on the clock rather than on the next thing that happens to fail.
       if (Date.now() - segmentStarted > FN_SEGMENT_BUDGET_MS) { out.stopReason = 'timeout'; break; }
 
-      _visionAbortController = new AbortController();
+      // Retries inside, so modelMs spans every attempt — which is the honest
+      // number: that is how long this step actually waited on the model.
       const modelStarted = Date.now();
-      // A timeout must not read as a user Stop. Both arrive as AbortError, but
-      // 'user-stopped' says the tester chose this and 'model-timeout' says
-      // nothing answered — same mechanism, opposite meaning to a reader.
-      let modelTimedOut = false;
-      const modelTimer = setTimeout(() => {
-        modelTimedOut = true;
-        try { _visionAbortController?.abort(); } catch (_) {}
-      }, FN_MODEL_TIMEOUT_MS);
-      let data;
-      try {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          signal: _visionAbortController.signal,
-          headers: {
-            'x-api-key': anthropicApiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true',
-            'anthropic-beta': 'computer-use-2025-11-24',
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1024, tools, messages }),
-        });
-        data = await res.json();
-        if (!res.ok) { out.error = data?.error?.message || res.statusText; out.stopReason = 'api-error'; break; }
-      } catch (e) {
-        if (modelTimedOut) {
-          out.error = `The model did not respond within ${Math.round(FN_MODEL_TIMEOUT_MS / 1000)}s`;
-          out.stopReason = 'model-timeout';
-        } else if (e.name === 'AbortError') {
-          out.error = 'Stopped';
-          out.stopReason = 'user-stopped';
-        } else {
-          out.error = e.message;
-          out.stopReason = 'api-error';
-        }
-        break;
-      } finally {
-        clearTimeout(modelTimer);
-        _visionAbortController = null;
-      }
+      const call = await fnVisionCall(anthropicApiKey, tools, messages);
       const modelMs = Date.now() - modelStarted;
+      if (call.error) { out.error = call.error; out.stopReason = call.stopReason; break; }
+      const data = call.data;
 
       out.steps = step + 1;
       const blocks = data.content || [];

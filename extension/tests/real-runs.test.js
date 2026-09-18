@@ -1168,6 +1168,26 @@ section('funnel crawl coordinate space (real runs)');
   print('    chose: "' + c.chosenText + '" (' + (c.chosenIndex + 1) + ' of ' + c.optionCount
         + ', ' + c.usableCount + ' usable) in 1 action, applied=' + c.applied);
 
+  // ---- one transient API failure, and what it cost ----
+  // r_1789754996870 (toryburch) made four good vision calls and lost the whole
+  // segment to the fifth. The crawl had no retry; the report path had had one
+  // since 7e38210. This pins what that looked like.
+  var died = FUNNEL['1789754996870'].segments[0];
+  eq('the segment died on the API, not the site', died.stopReason, 'api-error');
+  eq('  with the opaque error the retry exists for', died.error, 'Failed to fetch');
+  eq('  after four actions that all worked', (died.actions || []).length, 4);
+  ok('  none of which errored',
+     (died.actions || []).every(function (a) { return a.error === null; }));
+  ok('  and the summary blames us, not the page', /not a finding about the site/.test(died.summary), died.summary);
+  // out.steps is set AFTER a successful call, so it counts the calls that
+  // returned — the failure is call five.
+  eq('  four calls returned; the fifth is the one that threw', died.steps, 4);
+  ok('  and it cost a real amount of work', died.elapsedMs > 20000, died.elapsedMs);
+  // The retry policy, applied to exactly this failure.
+  ok('a thrown fetch of this shape is retryable', fnRetryableFailure('threw', 0));
+  print('    api-error: ' + died.steps + ' good calls then "' + died.error + '", '
+        + Math.round(died.elapsedMs / 1000) + 's lost with no retry');
+
   // ---- and what the log's own "start here" list says about it ----
   // vdCollectProblems is 500+ lines with its own dependencies, so only its
   // funnel branch is sliced. It is self-contained: `sections` and `add` in,

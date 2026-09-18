@@ -62,6 +62,16 @@ What remains is a runaway guard, not a budget: at the ~4s per step these runs ac
 
 **A defect in the previous change, found by that same log and fixed here.** `structuralMutations` shipped with the observer counting it and the debug log exporting it — and nothing in between copying it from the probe onto the action record. So `fnDidSomething` fell back to the undifferentiated total on every real run and the attribute-churn fix was inert, while every unit test stayed green because they all feed the predicate hand-built objects. The log is unambiguous about it: `hit.control` populated, `structuralMutations` null on all ten actions. The suite now asserts that **every field the post-action probe returns is copied onto the record**, which is the shape of the failure rather than the instance of it.
 
+**The crawl's vision call had no retry, so one blip cost the whole segment.** A toryburch run made four good calls and lost everything to a single `Failed to fetch` on the fifth — four working steps and 25 seconds, discarded, with the tester left to start again. The report path has retried since `7e38210`, and the comment there already describes this exact failure: from inside a page context, a 429 whose error response arrives without CORS headers is indistinguishable from a dead connection. The crawl makes one call per *step* rather than one per variant, so it meets that more often, not less.
+
+It now gets the same three attempts with exponential backoff and jitter, through the same predicate — renamed from `vdShouldRetryReport` to `shouldRetryApiCall`, because a `vd` prefix on something the crawl depends on would be a lie about who owns it.
+
+Two failures must never be retried, and they are stated in one place rather than implied by control flow: a **Stop** is the tester's decision, and a **timeout** has already spent 90 seconds, so two more attempts would put one step over the segment's entire clock. Both surface as `AbortError`, so only an explicit policy keeps them apart from a network blip. Stop is also honoured *during* a backoff — the step loop checks it at the top, which a retry sits underneath, and without that check a Stop pressed mid-wait still spent another call.
+
+The call moved into `fnVisionCall`, which returns a result rather than throwing, so the retry loop can never be confused with the step loop. `modelMs` now spans every attempt, which is the honest number: that is how long the step actually waited. The response body read is bounded too — it was previously covered by the abort signal and no longer is.
+
+Tests pin the policy and, separately, **that something consults it**: the crawl must not contain a raw API call site any more. A second one is exactly how one of them ends up without a retry, which is the whole defect.
+
 ### Also fixed, found while instrumenting
 
 - **`key` was a no-op that reported success.** It slept 100ms and dispatched nothing, and `rec.error` stayed null, so the model was told every Enter-to-submit worked. Now dispatches `rawKeyDown`/`keyUp` for Enter/Tab/Escape; anything else is reported as unsupported rather than silently skipped. Unhandled actions (`hover`, `wait`, `double_click`, `left_click_drag`…) no longer fall through claiming success.

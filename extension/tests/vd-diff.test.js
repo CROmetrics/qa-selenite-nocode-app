@@ -94,7 +94,7 @@ eval(_bg.slice(_bg.indexOf('function cropVisualDiffBlock'),
 // CSS-px rects vs device-px bitmaps — the correction both stages depend on.
 // The retry predicate. Sliced to just before runVisualReport so the
 // VIS_REPORT_RETRIES const comes with it.
-eval(_bg.slice(_bg.indexOf('function vdShouldRetryReport'),
+eval(_bg.slice(_bg.indexOf('function shouldRetryApiCall'),
                 _bg.indexOf('async function runVisualReport')));
 
 eval(_bg.slice(_bg.indexOf('function vdImageScale'),
@@ -3652,21 +3652,21 @@ section('grading failure survivability');
   // Guarded: the slice above yields nothing if the function is renamed, and an
   // unguarded call would throw and abort every remaining section of this suite
   // rather than failing this one assertion. Four suites have been lost that way.
-  if (typeof vdShouldRetryReport !== 'function') {
-    ok('vdShouldRetryReport is exported from background.js', false, 'not found — slice markers stale?');
+  if (typeof shouldRetryApiCall !== 'function') {
+    ok('shouldRetryApiCall is exported from background.js', false, 'not found — slice markers stale?');
     return;
   }
-  ok('a rejected fetch retries', vdShouldRetryReport(0, true));
-  ok('  even carrying a status, since the throw is what we saw', vdShouldRetryReport(400, true));
-  ok('429 retries', vdShouldRetryReport(429, false));
-  ok('500 retries', vdShouldRetryReport(500, false));
-  ok('529 retries — Anthropic overloaded', vdShouldRetryReport(529, false));
+  ok('a rejected fetch retries', shouldRetryApiCall(0, true));
+  ok('  even carrying a status, since the throw is what we saw', shouldRetryApiCall(400, true));
+  ok('429 retries', shouldRetryApiCall(429, false));
+  ok('500 retries', shouldRetryApiCall(500, false));
+  ok('529 retries — Anthropic overloaded', shouldRetryApiCall(529, false));
   // These are deterministic. A retry cannot change the answer and costs tokens.
-  ok('400 does not', !vdShouldRetryReport(400, false));
-  ok('401 does not', !vdShouldRetryReport(401, false));
-  ok('403 does not', !vdShouldRetryReport(403, false));
-  ok('404 does not', !vdShouldRetryReport(404, false));
-  ok('a 200 does not', !vdShouldRetryReport(200, false));
+  ok('400 does not', !shouldRetryApiCall(400, false));
+  ok('401 does not', !shouldRetryApiCall(401, false));
+  ok('403 does not', !shouldRetryApiCall(403, false));
+  ok('404 does not', !shouldRetryApiCall(404, false));
+  ok('a 200 does not', !shouldRetryApiCall(200, false));
   // Read from source: a `const` declared inside eval() is block-scoped to the
   // eval and never reaches this scope.
   var n = /VIS_REPORT_RETRIES\s*=\s*(\d+)/.exec(_bg);
@@ -4186,6 +4186,33 @@ eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
   var revealed = ringOnly(); revealed.page = { url: 'u', title: 't', textLen: 13000 };
   eq('a click that reveals hidden text is never a no-progress run',
      fnNoProgressRun([ringOnly(), ringOnly(), revealed]), 1);
+
+  // ---- one transient failure must not cost the whole segment ----
+  // r_1789754996870 lost four good steps and 25 seconds to a single
+  // "Failed to fetch" on its fifth vision call. The report path has retried
+  // since 7e38210; the crawl, which makes one call per STEP rather than one per
+  // variant, had no retry at all.
+  ok('a thrown fetch is retried', fnRetryableFailure('threw', 0));
+  ok('  and so is a hidden rate limit that did surface as a status', fnRetryableFailure('ok', 429));
+  ok('  and an overloaded server', fnRetryableFailure('ok', 529));
+  ok('a good response is not retried', !fnRetryableFailure('ok', 200));
+  ok('  nor a deterministic 400', !fnRetryableFailure('ok', 400));
+  ok('  nor a 401', !fnRetryableFailure('ok', 401));
+  // THE TWO THAT MUST NEVER BE RETRIED. Both arrive as AbortError, so only an
+  // explicit policy keeps them apart from a network blip.
+  ok('a user Stop is never retried', !fnRetryableFailure('stopped', 0));
+  ok('  not even carrying a retryable status', !fnRetryableFailure('stopped', 429));
+  ok('a timeout is never retried', !fnRetryableFailure('timeout', 0));
+  ok('  not even carrying a retryable status', !fnRetryableFailure('timeout', 503));
+
+  // THE WIRE, again. A policy nothing consults is a policy that does not exist,
+  // and a second raw call site is exactly how one of them ends up with no retry.
+  ok('fnVisionCall consults the policy', _bg.indexOf('fnRetryableFailure(kind, status)') !== -1);
+  var segBody = _bg.slice(_bg.indexOf('async function crawlSegment'), _bg.indexOf('async function runFunnelCrawl'));
+  ok('  and it is a real slice of the crawl', segBody.length > 2000, segBody.length);
+  ok('the crawl loop no longer calls the API directly', segBody.indexOf('api.anthropic.com') === -1);
+  ok('  it goes through fnVisionCall', segBody.indexOf('await fnVisionCall(') !== -1);
+  ok('  which honours Stop during a backoff too', _bg.indexOf('_funnelStopRequested) return { error') !== -1);
 
   // ---- time bounds ----
   // Nothing in the crawl loop had one: the vision call carried only the Stop

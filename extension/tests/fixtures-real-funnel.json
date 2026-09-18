@@ -7,6 +7,7 @@
 "actions": [],
 "apiStopReason": null,
 "elapsedMs": null,
+"error": null,
 "finalText": null,
 "from": "https://www.lesschwab.com/wheels",
 "geometry": null,
@@ -27,6 +28,7 @@
 "actions": [],
 "apiStopReason": null,
 "elapsedMs": null,
+"error": null,
 "finalText": null,
 "from": "https://www.lesschwab.com/wheels",
 "geometry": null,
@@ -56,6 +58,7 @@
 ],
 "delivered": true,
 "deliveredTo": "div.product-tile__cta-button",
+"error": null,
 "geometry": null,
 "hit": {
 "control": null,
@@ -94,6 +97,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#meru-cm__cnt-inr-i",
+"error": null,
 "geometry": null,
 "hit": {
 "control": null,
@@ -132,6 +136,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#meru-cm__cnt-inr-i",
+"error": null,
 "geometry": null,
 "hit": {
 "control": null,
@@ -170,6 +175,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#meru-cm__cnt-inr-i",
+"error": null,
 "geometry": null,
 "hit": {
 "control": null,
@@ -208,6 +214,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#meru-cm__cnt-inr-i",
+"error": null,
 "geometry": null,
 "hit": {
 "control": null,
@@ -246,6 +253,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#meru-cm__cnt-inr-i",
+"error": null,
 "geometry": null,
 "hit": {
 "control": null,
@@ -284,6 +292,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#meru-cm__cnt-inr-i",
+"error": null,
 "geometry": null,
 "hit": {
 "control": null,
@@ -314,6 +323,7 @@
 ],
 "apiStopReason": null,
 "elapsedMs": null,
+"error": null,
 "finalText": "",
 "from": "https://www.lesschwab.com/wheels",
 "geometry": {
@@ -350,6 +360,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#meru-cm",
+"error": null,
 "geometry": {
 "coordScaleX": 1.076475155279503,
 "coordScaleY": 1.066610455311973,
@@ -395,6 +406,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#c-rall-bn",
+"error": null,
 "geometry": {
 "coordScaleX": 1.076475155279503,
 "coordScaleY": 1.0764499121265378,
@@ -440,6 +452,7 @@
 ],
 "delivered": true,
 "deliveredTo": "a.button.js-addItemToCart",
+"error": null,
 "geometry": {
 "coordScaleX": 1.076475155279503,
 "coordScaleY": 1.0764499121265378,
@@ -485,6 +498,7 @@
 ],
 "delivered": null,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.076475155279503,
 "coordScaleY": 1.0764499121265378,
@@ -530,6 +544,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#701971",
+"error": null,
 "geometry": {
 "coordScaleX": 1.076475155279503,
 "coordScaleY": 1.0764499121265378,
@@ -575,6 +590,7 @@
 ],
 "delivered": false,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.076475155279503,
 "coordScaleY": 1.0764499121265378,
@@ -620,6 +636,7 @@
 ],
 "delivered": true,
 "deliveredTo": "button.button.schedule__button",
+"error": null,
 "geometry": {
 "coordScaleX": 1.076475155279503,
 "coordScaleY": 1.0764499121265378,
@@ -657,6 +674,7 @@
 ],
 "apiStopReason": null,
 "elapsedMs": null,
+"error": null,
 "finalText": "",
 "from": "https://www.lesschwab.com/wheels",
 "geometry": {
@@ -693,6 +711,7 @@
 ],
 "delivered": null,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.076475155279503,
 "coordScaleY": 1.0764499121265378,
@@ -738,6 +757,7 @@
 ],
 "delivered": false,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.076475155279503,
 "coordScaleY": 1.0764499121265378,
@@ -783,6 +803,7 @@
 ],
 "delivered": true,
 "deliveredTo": "button.button.schedule__button",
+"error": null,
 "geometry": {
 "coordScaleX": 1.076475155279503,
 "coordScaleY": 1.0764499121265378,
@@ -820,6 +841,7 @@
 ],
 "apiStopReason": null,
 "elapsedMs": null,
+"error": null,
 "finalText": "",
 "from": "https://www.lesschwab.com/wheels",
 "geometry": {
@@ -856,6 +878,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#pet-name-1",
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -898,6 +921,7 @@
 "cssCoord": null,
 "delivered": false,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -940,6 +964,7 @@
 ],
 "delivered": null,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -977,6 +1002,7 @@
 ],
 "apiStopReason": null,
 "elapsedMs": null,
+"error": null,
 "finalText": "",
 "from": "https://www.healthypawspetinsurance.com",
 "geometry": {
@@ -1013,6 +1039,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#pet-name-1",
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1055,6 +1082,7 @@
 "cssCoord": null,
 "delivered": false,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1097,6 +1125,7 @@
 ],
 "delivered": null,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1142,6 +1171,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#select2-petBreed-container",
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1187,6 +1217,7 @@
 ],
 "delivered": false,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1232,6 +1263,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#petBirthYear",
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1277,6 +1309,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#petBirthYear",
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1322,6 +1355,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#petBirthYear",
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1367,6 +1401,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#petBirthYear",
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1412,6 +1447,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#petBirthYear",
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1449,6 +1485,7 @@
 ],
 "apiStopReason": null,
 "elapsedMs": 42882,
+"error": null,
 "finalText": "",
 "from": "https://www.healthypawspetinsurance.com/",
 "geometry": {
@@ -1485,6 +1522,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#pet-name-1",
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1527,6 +1565,7 @@
 "cssCoord": null,
 "delivered": false,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1569,6 +1608,7 @@
 ],
 "delivered": null,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1614,6 +1654,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#select2-petBreed-container",
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1659,6 +1700,7 @@
 ],
 "delivered": false,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1726,6 +1768,7 @@
 ],
 "delivered": false,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1779,6 +1822,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#email",
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1821,6 +1865,7 @@
 "cssCoord": null,
 "delivered": false,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1863,6 +1908,7 @@
 ],
 "delivered": true,
 "deliveredTo": "#zipCode",
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1905,6 +1951,7 @@
 "cssCoord": null,
 "delivered": false,
 "deliveredTo": null,
+"error": null,
 "geometry": {
 "coordScaleX": 1.1960835901106366,
 "coordScaleY": 1.196055541348583,
@@ -1939,6 +1986,7 @@
 ],
 "apiStopReason": null,
 "elapsedMs": 38691,
+"error": null,
 "finalText": "",
 "from": "https://www.healthypawspetinsurance.com",
 "geometry": {
@@ -1954,6 +2002,714 @@
 "stopReason": "budget",
 "summary": "Ran out of budget after 10 step(s) without reaching https://www.healthypawspetinsurance.com/quote/step3; the page was still changing, so raising the step budget may get further.",
 "to": "https://www.healthypawspetinsurance.com/quote/step3"
+}
+],
+"status": "ran"
+},
+"1789752263211": {
+"error": null,
+"reachedEnd": false,
+"segments": [
+{
+"actions": [
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1226,
+836
+],
+"delivered": true,
+"deliveredTo": "#pet-name-1",
+"error": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#pet-name-1"
+},
+"modelCoord": [
+1025,
+699
+],
+"modelMs": 3330,
+"ms": 1240,
+"mutations": 6,
+"outOfRange": false,
+"page": {
+"textLen": 6005,
+"url": "https://www.healthypawspetinsurance.com/"
+},
+"step": 1,
+"structuralMutations": 4
+},
+{
+"action": "type",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"position": null,
+"top": null
+},
+"modelCoord": null,
+"modelMs": 2364,
+"ms": 15,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 6005,
+"url": "https://www.healthypawspetinsurance.com/"
+},
+"step": 2,
+"structuralMutations": 0
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1969,
+837
+],
+"delivered": null,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "span.cta-title"
+},
+"modelCoord": [
+1646,
+700
+],
+"modelMs": 2821,
+"ms": 2814,
+"mutations": null,
+"outOfRange": false,
+"page": {
+"textLen": 12102,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 3,
+"structuralMutations": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1399,
+626
+],
+"delivered": true,
+"deliveredTo": "#select2-petBreed-container",
+"error": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#select2-petBreed-container"
+},
+"modelCoord": [
+1170,
+523
+],
+"modelMs": 2230,
+"ms": 1258,
+"mutations": 1224,
+"outOfRange": false,
+"page": {
+"textLen": 21951,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 4,
+"structuralMutations": 6
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1312,
+902
+],
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#select2-petBreed-result-dfx1-103"
+},
+"modelCoord": [
+1097,
+754
+],
+"modelMs": 2212,
+"ms": 1231,
+"mutations": 26,
+"outOfRange": false,
+"page": {
+"textLen": 12179,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 5,
+"structuralMutations": 5
+},
+{
+"action": "left_click",
+"choice": {
+"applied": true,
+"chosenIndex": 6,
+"chosenText": "5 years",
+"chosenValue": "5",
+"error": null,
+"id": "petBirthYear",
+"name": null,
+"optionCount": 15,
+"previousText": "Pet's Age",
+"repeat": false,
+"sampleOptions": [
+"Pet's Age",
+"Under 1 year",
+"1 year",
+"2 years",
+"3 years",
+"4 years",
+"5 years",
+"6 years"
+],
+"usableCount": 14
+},
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1825,
+626
+],
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": {
+"id": "petBirthYear",
+"kind": "select",
+"multiple": false,
+"name": null,
+"optionCount": 15,
+"selectedIndex": 0,
+"usable": 14
+},
+"coversPct": 0,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#petBirthYear"
+},
+"modelCoord": [
+1526,
+523
+],
+"modelMs": 2487,
+"ms": 445,
+"mutations": 8,
+"outOfRange": false,
+"page": {
+"textLen": 12179,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 6,
+"structuralMutations": 2
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1399,
+751
+],
+"delivered": true,
+"deliveredTo": "#email",
+"error": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#email"
+},
+"modelCoord": [
+1170,
+628
+],
+"modelMs": 2114,
+"ms": 1237,
+"mutations": 14,
+"outOfRange": false,
+"page": {
+"textLen": 12179,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 7,
+"structuralMutations": 7
+},
+{
+"action": "type",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"position": null,
+"top": null
+},
+"modelCoord": null,
+"modelMs": 3136,
+"ms": 51,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 12179,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 8,
+"structuralMutations": 0
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1825,
+751
+],
+"delivered": true,
+"deliveredTo": "#zipCode",
+"error": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1361,
+"innerW": 3081,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "#zipCode"
+},
+"modelCoord": [
+1526,
+628
+],
+"modelMs": 2438,
+"ms": 1240,
+"mutations": 17,
+"outOfRange": false,
+"page": {
+"textLen": 12179,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 9,
+"structuralMutations": 8
+},
+{
+"action": "type",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"position": null,
+"top": null
+},
+"modelCoord": null,
+"modelMs": 1927,
+"ms": 24,
+"mutations": 1,
+"outOfRange": false,
+"page": {
+"textLen": 12179,
+"url": "https://www.healthypawspetinsurance.com/quote/step1"
+},
+"step": 10,
+"structuralMutations": 0
+}
+],
+"apiStopReason": "end_turn",
+"elapsedMs": 48084,
+"error": null,
+"finalText": "I've reached a point in the funnel where all the form fields are filled in (Pet Name: Buddy, Dog, Boy, Breed: Mixed Breed Medium, Age: 5 years, Email: qa-test@example.com, ZIP: 98101), but the page displays a Cloudflare \"Verify you are human\" bot-check checkbox that must be checked before proceeding to \"Next: Select a Plan.\"\n\nPer my instructions, I must not attempt to solve, bypass, or trick any CAPTCHA or bot-check mechanism, and no test credentials/bypass method was provided for this challenge.\n\n**Result: Blocked.** I was able to progress from the homepage through the initial \"See My Rates\" pet name entry and fully complete the Step 1 \"Pet Details\" form (name, type, breed, age, email, ZIP). However, the funnel path to Step 2 (\"Select a Plan\") and onward to `/quote/step3` is gated behind a Cloudflare \"Verify you are human\" bot-check checkbox on the Pet Details page. Since I'm instructed never to interact with CAPTCHA/bot-check challenges, I cannot proceed further through the legitimate on-page UI path at this time.\n\nIf you have valid test credentials, a known bypass token, or guidance on how QA typically clears this Cloudflare check in your test environment, please advise and I can continue the crawl toward step3.",
+"from": "https://www.healthypawspetinsurance.com",
+"geometry": {
+"coordScaleX": 1.1960835901106366,
+"coordScaleY": 1.196055541348583,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1361.1112060546875,
+"viewportW": 3081.111328125
+},
+"reached": false,
+"steps": 11,
+"stopReason": "agent-stopped",
+"summary": "The agent stopped after 11 step(s) and reported a CAPTCHA / bot check, which it is instructed not to attempt (matched \"Verify you are human\"). In its own words: \"I've reached a point in the funnel where all the form fields are filled in (Pet Name: Buddy, Dog, Boy, Breed: Mixed Breed Medium, Age: 5 years, Email: qa-test@example.com, ZIP: 98101), but the page displays a Cloudflare \"Verify you are huma\"",
+"to": "https://www.healthypawspetinsurance.com/quote/step3"
+}
+],
+"status": "ran"
+},
+"1789754996870": {
+"error": null,
+"reachedEnd": false,
+"segments": [
+{
+"actions": [
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1483,
+20
+],
+"delivered": true,
+"deliveredTo": "a.link-sZR.link--default-outline-rJR",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 2,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "absolute",
+"top": "a.link-sZR.link--default-outline-rJR"
+},
+"modelCoord": [
+1378,
+19
+],
+"modelMs": 4562,
+"ms": 1298,
+"mutations": 617,
+"outOfRange": false,
+"page": {
+"textLen": 2488,
+"url": "https://www.toryburch.com/en-us/shoes/boots-booties/"
+},
+"step": 1,
+"structuralMutations": 316
+},
+{
+"action": "screenshot",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"position": null,
+"top": null
+},
+"modelCoord": null,
+"modelMs": 7562,
+"ms": 3,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 2603,
+"url": "https://www.toryburch.com/en-us/shoes/boots-booties/"
+},
+"step": 2,
+"structuralMutations": 0
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1734,
+382
+],
+"delivered": true,
+"deliveredTo": "use",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "use"
+},
+"modelCoord": [
+1611,
+355
+],
+"modelMs": 3203,
+"ms": 1249,
+"mutations": 20,
+"outOfRange": false,
+"page": {
+"textLen": 2501,
+"url": "https://www.toryburch.com/en-us/shoes/boots-booties/"
+},
+"step": 3,
+"structuralMutations": 6
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+70,
+75
+],
+"delivered": true,
+"deliveredTo": "div.element__text-S1H.element__text--capitalized-CMQ",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"position": "static",
+"top": "div.element__text-S1H.element__text--capitalized-CMQ"
+},
+"modelCoord": [
+65,
+70
+],
+"modelMs": 3676,
+"ms": 1258,
+"mutations": 10,
+"outOfRange": false,
+"page": {
+"textLen": 2716,
+"url": "https://www.toryburch.com/en-us/shoes/boots-booties/"
+},
+"step": 4,
+"structuralMutations": 2
+}
+],
+"apiStopReason": null,
+"elapsedMs": 25014,
+"error": "Failed to fetch",
+"finalText": "",
+"from": "http://toryburch.com/",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"reached": false,
+"steps": 4,
+"stopReason": "api-error",
+"summary": "The crawl could not run: Failed to fetch (after 4 agent step(s)). This is a Selenite or API failure, not a finding about the site.",
+"to": "https://www.toryburch.com/es-us/sale/categories/sport-sale/"
 }
 ],
 "status": "ran"

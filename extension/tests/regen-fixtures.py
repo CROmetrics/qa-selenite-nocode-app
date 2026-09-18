@@ -330,6 +330,9 @@ def gen_funnel():
                 "steps": s.get('steps'),
                 "stopReason": s.get('stopReason'),
                 "apiStopReason": s.get('apiStopReason'),
+                # The detail behind an api-error/exception stop. `stopReason`
+                # says WHICH class of failure; only this says which failure.
+                "error": s.get('error'),
                 "finalText": s.get('finalText'),
                 # The sentence production ACTUALLY emitted. Frozen in the log, so
                 # pinning it is stable across wording changes -- and it is the
@@ -341,6 +344,10 @@ def gen_funnel():
                 "actions": [{
                     "step": a.get('step'),
                     "action": a.get('action'),
+                    # Read by fnCountsForProgress: an errored action is excluded
+                    # from the no-progress streak entirely, so its absence here
+                    # would make the fixture disagree with the predicate.
+                    "error": a.get('error'),
                     "modelCoord": a.get('modelCoord'),
                     "cssCoord": a.get('cssCoord'),
                     "coordConverted": a.get('coordConverted'),   # TRAP 5

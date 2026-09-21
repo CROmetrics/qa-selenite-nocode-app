@@ -14,7 +14,7 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - Tab targeting: run on the **active tab** or open a **new tab**
 - Console log with live output and INFO / WARN / ERR filtering, plus a live browser-console mirror with a CRO (`[PJS]`/`[cro]`) filter
 - Visual Regression — full-page screenshot baselines per URL with pixel diffing, ignore regions, and a mismatch threshold (Functional Testing tab)
-- **Test Agent** tab — run WCAG, Cross-Variant Accessibility, or Performance one at a time, batch any of them together with A/B and Funnel Crawl via **Also Run**, and get a single combined report with an optional AI-written summary
+- **Test Agent** tab — run WCAG, Cross-Variant Accessibility, Performance, or Funnel Crawl one at a time, batch the first three together via **Also Run**, and get a single combined report with an optional AI-written summary
 - **A/B** tab — load each experiment variant once and diff page state, metric fires, and tagged console output against control, with an optional per-variant interaction heatmap and an AI-powered full-page visual diff
 - WCAG / Accessibility mode — full WCAG 2.2 audit (heuristics + axe-core) with region scoping, check presets, click-to-highlight findings, JSON export, and per-URL run history
 - Cross-Variant Accessibility mode — run the WCAG audit against every experiment variant and diff findings vs control (introduced / resolved / pre-existing)
@@ -76,7 +76,7 @@ Screenshots are captured over CDP (`Page.captureScreenshot` with `captureBeyondV
 
 The **Test Agent** tab runs one testing mode at a time: pick it from the **Test Mode** dropdown, configure its settings, and click **Execute Test**. Every automated mode (everything except Funnel Crawl) can also be batched together via **Also Run** — check any additional modes and they run in sequence after the primary one, each skipped automatically if it isn't configured. Once at least one mode has run, Selenite compiles a single report (opened in a new tab) covering every mode that ran, optionally with an AI-written plain-English summary.
 
-A/B Variant Comparison is configured and run from its own **A/B** tab rather than here — selecting it in the **Test Mode** dropdown shows a pointer back to that tab instead of its settings, but it still runs and reports exactly like any other mode when batched via **Also Run**.
+A/B Variant Comparison is not a Test Agent mode. It is configured, run and reported entirely from its own **A/B** tab, and appears neither in the **Test Mode** dropdown nor in the **Also Run** list.
 
 - **Agentic Testing** (Sonnet) — lets a mode capture a screenshot per page/variant and asks Claude to judge whether a visual difference looks like an intended change or a likely bug. Off by default.
 - **Agentic Analysis** (Opus) — summarizes the full set of results in the report. On by default.
@@ -130,12 +130,12 @@ An AI agent (Sonnet) clicks through the live page to verify a funnel actually co
 
 ### A/B Variant Comparison
 
-The **A/B** tab QAs an A/B experiment (Optimizely, Convert, or similar) by loading the same page once per variant and diffing the captures — no interaction steps, just load and compare. Differences are shown neutrally (a variant is *supposed* to differ from control); only JS errors and load failures are styled as errors. It can also be batched from the **Test Agent** tab via **Also Run** — see above.
+The **A/B** tab QAs an A/B experiment (Optimizely, Convert, or similar) by loading the same page once per variant and diffing the captures — no interaction steps, just load and compare. Differences are shown neutrally (a variant is *supposed* to differ from control); only JS errors and load failures are styled as errors.
 
 1. Set the **Base URL** the variants share (each target can override it with its own URL).
 2. Define at least two **Variant Targets**. The first is the baseline (typically Control). Each target has a label and an **Override** — the query string that forces the variant, e.g. Optimizely's `optimizely_x=<variationId>`.
 3. Optionally add **Watched Selectors** (use `🎯` to pick them from the page) — each is compared across variants for existence, visibility, text, and key computed styles.
-4. Optional settings: **QA Mode** appends `cro_mode=qa` to every variant URL; **Settle** waits after load so experiment scripts can apply changes (default 3s); **Keep tabs open** leaves each variant tab open for manual inspection; **Agentic Testing (Sonnet)** takes a viewport screenshot per variant and asks Claude to judge whether a visual difference looks intended or like a bug (also available from Test Agent's own toggle when batched from there); **Visual Diff (AI)** does a full-page, region-level AI visual comparison against Control, requires an active reviewed ticket context.
+4. Optional settings: **QA Mode** appends `cro_mode=qa` to every variant URL; **Settle** waits after load so experiment scripts can apply changes (default 3s); **Keep tabs open** leaves each variant tab open for manual inspection; **Agentic Testing (Sonnet)** takes a viewport screenshot per variant and asks Claude to judge whether a visual difference looks intended or like a bug; **Visual Diff (AI)** does a full-page, region-level AI visual comparison against Control, requires an active reviewed ticket context.
 5. Click **Run Comparison**. Each variant loads sequentially in its own tab; captures include page title/URL, `[PJS]`/`[cro]`-tagged console lines, Metrics fires (from the Functional Testing tab's Metrics list), JS errors, and watched-selector state.
 6. Results are grouped diffs vs the baseline — identical facts are greyed and collapsed, deltas are highlighted, and errors are always flagged red.
 

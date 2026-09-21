@@ -909,7 +909,6 @@
       <div class="card-title">Test Mode</div>
       <select id="ta-primary-select" style="width:100%">
         <option value="" selected disabled>— Select a mode —</option>
-        <option value="2">A/B Variant Comparison</option>
         <option value="4">WCAG / Accessibility</option>
         <option value="5">Cross-Variant Accessibility</option>
         <option value="6">Performance / Load</option>
@@ -922,10 +921,10 @@
     <!-- Permanent hosts for the reparented mode settings bodies (WCAG,
          Cross-Variant Accessibility, Performance) — the Test Modes tab that
          used to own these was retired; Test Agent is now their only home.
-         A/B Variant Comparison used to be parked here too (as tm2-body) but
-         now lives permanently in its own tab (#panel-abtest) — see ab-body
-         there and TA_MODES['2'].renderSlot in popup.js for how Test Agent
-         still batches it without owning its settings UI. -->
+         A/B Variant Comparison is not among them. It was parked here as
+         tm2-body, then moved to its own tab (#panel-abtest — see ab-body
+         there), and is no longer a Test Agent mode at all: it is configured,
+         run and reported from that tab only. -->
     <div id="ta-mode-homes" style="display:none">
 <div class="card" id="tm4-body">
       <div class="row-spread" style="margin-bottom:10px">
@@ -1180,9 +1179,9 @@
   </div>
 
   <!-- A/B Variant Comparison panel — used to be reparented into Test Agent's
-       slot as tm2-body; now lives permanently here. TA_MODES['2'] in popup.js
-       still lets Test Agent run and batch it via renderSlot, without owning
-       this markup. -->
+       slot as tm2-body, then moved here permanently. Test Agent no longer
+       offers it as a mode at all (see the note at the top of TA_MODES in
+       popup.js), so this is its only home. -->
   <div class="panel" id="panel-abtest">
     <div class="card" id="ab-body">
       <div class="row-spread" style="margin-bottom:10px">

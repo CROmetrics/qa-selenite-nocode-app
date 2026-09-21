@@ -2,6 +2,18 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-09-21
+
+### Removed
+
+**A/B Variant Comparison is no longer a Test Agent mode.** It is gone from the **Test Mode** dropdown and from the **Also Run** list; the **A/B** tab is the only place it is configured, run, or reported from. The tab itself is untouched — same engine, same standalone report, same Recent Runs.
+
+The mode had already stopped being a mode. When A/B moved into its own tab, `TA_MODES['2']` lost its settings body and became a pointer card reading *"Settings and results live in the A/B tab now"* plus a button that navigated away — one feature with two run buttons, two report shapes, and a `fromTestAgent` flag existing only to stop the queued path opening a second report tab for one run. Removing the entry point removes the fork.
+
+**Test Agent's Stop no longer reaches into an A/B run.** `stopTestAgent` set `_abVisualDiffStopRequested` because "runAbComparison also runs as a Test Agent mode." It doesn't, so that line could only ever have halted a Visual Diff started from the A/B tab in another panel — interference, not a stop.
+
+**What was deliberately left in place.** The queued path's plumbing is now unreached but still wired: `fromTestAgent` (always false — every run takes the standalone branch), the metadata-only `_abLastRun.visualDiff` mirror, and the `visualDiffFull || visualDiff` fallback its three consumers read through. That mirror is where `f529775`'s false-PASS guards live on the queued side, along with `notServed`/`notVerified`, the `notWalked` counters, and `gradingFailed` — all of it pinned by `qa-report.test.js`. Tearing it out is a separate change with its own verification, not a side effect of deleting a dropdown option. Each comment now says the path is unreached rather than describing a caller that no longer exists.
+
 ## 2026-09-18
 
 ### Fixed

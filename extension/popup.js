@@ -384,31 +384,10 @@ function taAgenticTestingEnabled() {
 }
 
 const TA_MODES = {
-  '2': {
-    label: 'A/B Variant Comparison',
-    // No bodyId/homeParentId — its settings card lives permanently in its
-    // own tab (#panel-abtest) now, not parked here for reparenting. A DOM
-    // node can't be in two places, so this renders a pointer instead of the
-    // real settings — same shape Funnel Crawl has always used (it has never
-    // had a parked body either). run/isConfigured/getData are unchanged, so
-    // "Also Run" batching and the combined report still work exactly as before.
-    renderSlot: (slot) => {
-      slot.innerHTML = `
-        <div class="card">
-          <div class="card-title">A/B Variant Comparison</div>
-          <div style="font-size:11px;color:var(--fg2);margin-bottom:8px">Settings and results live in the A/B tab now. Running from here uses whatever is configured there, and the findings still land in this combined report.</div>
-          <button class="btn sm" data-ta-open-abtest type="button">Open the A/B tab</button>
-        </div>`;
-      slot.querySelector('[data-ta-open-abtest]').addEventListener('click', () => showTab('abtest'));
-    },
-    // fromTestAgent: true — runTestAgent() opens its own single combined
-    // report once the whole queued sequence finishes (getData() below feeds
-    // rptAbSection there); this run must not ALSO pop its own report tab, or
-    // queuing A/B in Test Agent would open two tabs for one run.
-    run: () => runAbComparison({ agenticTesting: taAgenticTestingEnabled(), fromTestAgent: true }),
-    isConfigured: () => (abState ? abState.targets.map(t => abComposeUrl(t)).filter(Boolean) : []).length >= 2,
-    getData: () => _abLastRun,
-  },
+  // A/B Variant Comparison is deliberately NOT a mode here. It lives
+  // entirely in its own tab (#panel-abtest): Test Agent used to offer it as
+  // a pointer card that ran whatever that tab had configured, which meant
+  // one feature with two run buttons and two report shapes. Run it there.
   '4': {
     label: 'WCAG / Accessibility', bodyId: 'tm4-body', homeParentId: 'ta-mode-homes',
     run: () => runWcagAudit({ agenticTesting: taAgenticTestingEnabled() }),
@@ -440,7 +419,7 @@ const TA_MODES = {
     getData: () => _funnelLastRun,
   },
 };
-let _taActiveBody = null;        // '2' | '4' | '6' | 'funnel' | null — which mode currently owns #ta-settings-slot
+let _taActiveBody = null;        // '4' | '5' | '6' | 'funnel' | null — which mode currently owns #ta-settings-slot
 const taQueuedExtra = new Set(); // mode ids checked in the "Also Run" list, not persisted across popup reopen
 let _taStopRequested = false;
 
@@ -745,11 +724,10 @@ function taShowPrimary() {
   } else if (TA_MODES[val]) {
     slot.innerHTML = '';
     const mode = TA_MODES[val];
-    // bodyId modes (WCAG/CVA/Perf) reparent their settings in; A/B has no
-    // bodyId anymore (see TA_MODES['2']'s own comment) and renders a
-    // pointer instead via renderSlot.
+    // Every remaining mode parks its settings body in #ta-mode-homes and has
+    // it reparented in here (WCAG/CVA/Perf); funnel is handled above and owns
+    // no parked body of its own.
     if (mode.bodyId) slot.appendChild(document.getElementById(mode.bodyId));
-    else if (mode.renderSlot) mode.renderSlot(slot);
     _taActiveBody = val;
     runBtn.disabled = false;
   } else {
@@ -844,7 +822,6 @@ async function runTestAgent() {
 
 function stopTestAgent() {
   _taStopRequested = true;
-  _abVisualDiffStopRequested = true;   // runAbComparison also runs as a Test Agent mode
   chrome.runtime.sendMessage({ action: 'stop' });
 }
 
@@ -2794,8 +2771,8 @@ async function initWcagMode() {
   await renderWcagHistoryList();
 }
 
-// ── A/B Variant Comparison (its own tab, #ab-body — also batchable from Test
-// Agent via TA_MODES['2'], which has no bodyId of its own; see renderSlot) ──
+// ── A/B Variant Comparison (its own tab, #ab-body — run from there only; it
+// is not a Test Agent mode, see the note at the top of TA_MODES) ────────────
 // Static load-and-compare mode: opens each variant target once (background owns
 // the tab lifecycle and capture), then diffs every variant against the first
 // target — the baseline, typically Control. Differences are surfaced neutrally:
@@ -3570,11 +3547,11 @@ async function runAbComparison(opts = {}) {
   // Test Agent passes this explicitly, from its own shared checkbox — a
   // standalone run from the A/B tab falls back to that tab's own toggle.
   const agenticTesting = opts.agenticTesting !== undefined ? !!opts.agenticTesting : !!abState.agenticTesting;
-  // TA_MODES['2'].run sets this true: runTestAgent() opens its OWN single
-  // combined report at the end of the whole queued sequence (getData() below
-  // feeds rptAbSection there, same as always) — this run must not ALSO pop
-  // its own separate report tab, or queuing A/B in Test Agent would open two
-  // tabs for one run.
+  // Nothing sets this any more: A/B stopped being a Test Agent mode, so every
+  // run is standalone and opens its own report below. The path it guarded —
+  // one combined report at the end of a queued batch, fed by getData() and the
+  // _abLastRun.visualDiff mirror instead of visualDiffFull — is still wired end
+  // to end; only its entry point is gone.
   const fromTestAgent = !!opts.fromTestAgent;
 
   btn.disabled = true;
@@ -3622,10 +3599,12 @@ async function runAbComparison(opts = {}) {
     const visualDiffResult = await runVisualDiffPipeline(captures, {
       ctx, resumeCheckpoint, onStatus: (text) => setAbStatus(text),
     });
-    // Metadata-only mirror on _abLastRun (no crops) — this is what
-    // getData()/rptAbSection see via the Test-Agent-queued path, and what
-    // the AI summarize-results prompt reads; a crop's base64 data URL has no
-    // business in a text-summarization prompt or that combined report.
+    // Metadata-only mirror on _abLastRun (no crops) — what getData()/
+    // rptAbSection read on the Test-Agent-queued path; a crop's base64 data
+    // URL has no business in a text-summarization prompt or that combined
+    // report. Unreached since A/B stopped being a Test Agent mode — every
+    // consumer is `visualDiffFull || visualDiff` and the standalone path
+    // always sets the former — but still built on every run.
     if (visualDiffResult) {
       _abLastRun.visualDiff = visualDiffResult.skipped
         ? { skipped: true, reason: visualDiffResult.reason }

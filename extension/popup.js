@@ -336,6 +336,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-bc-reconnect')?.addEventListener('click', reconnectBcFeed);
   document.getElementById('bc-tag-filter-enabled')?.addEventListener('change', onBcTagFilterToggle);
   document.getElementById('bc-eval-input')?.addEventListener('keydown', onBcEvalKeydown);
+  document.getElementById('bc-quick-btns')?.addEventListener('click', onBcQuickClick);
+  document.getElementById('btn-bc-quick-add')?.addEventListener('click', openBcQuickForm);
+  document.getElementById('btn-bc-quick-cancel')?.addEventListener('click', closeBcQuickForm);
+  document.getElementById('btn-bc-quick-save')?.addEventListener('click', saveBcQuick);
+  loadBcQuick().catch(e => console.warn('Quick Commands load failed:', e));
   document.getElementById('bc-log-out')?.addEventListener('click', onBcLogClick);
 
   // Console capture pause/resume toggle — capture itself is automatic and
@@ -1197,6 +1202,7 @@ async function syncBcStatus() {
     input.disabled = !attached;
     input.placeholder = attached ? '> Type a JS expression and press Enter…' : '> Not attached';
   }
+  if (bcQuickAttached !== attached) { bcQuickAttached = attached; renderBcQuick(); }
   const el = document.getElementById('bc-status');
   const reconnectBtn = document.getElementById('btn-bc-reconnect');
   if (!el) return;
@@ -1252,9 +1258,15 @@ async function sendBcEval() {
   const input = document.getElementById('bc-eval-input');
   const expr = input.value.trim();
   if (!expr) return;
+  input.value = '';
+  await runBcExpression(expr);
+}
+
+// Shared by the REPL input and the Quick Commands buttons, so both land in the
+// same ArrowUp history and go through background's $click/$hover handling.
+async function runBcExpression(expr) {
   bcEvalHistory.push(expr);
   bcEvalHistoryIdx = bcEvalHistory.length;
-  input.value = '';
   await chrome.runtime.sendMessage({ action: 'bcEval', expression: expr, winId: WIN_ID });
   await syncBcLogs();
 }
@@ -1273,6 +1285,191 @@ function onBcEvalKeydown(e) {
     e.target.value = bcEvalHistory[bcEvalHistoryIdx] || '';
   }
 }
+
+// ── Browser Console Quick Commands ─────────────────────────────────────────
+// Sourced from the team's "QA - Console Commands and Parameters" reference
+// (TextExpander group). Grouped by platform, in the doc's own order.
+//
+// Two entries the source doc listed are deliberately left out:
+//  - `;abtdebug` ("Activate debug to view logs") holds the identical command
+//    as `;abtresults` (ABTasty.results) — the doc itself flags this as
+//    probably the wrong command copy-pasted, not a real second inspection.
+//  - `;monfilter` (the [PJS]|[cro]|[MT_PJS] console regex) duplicates the
+//    existing "CRO" tag-filter toggle next to the filter box above.
+//
+// `template: true` entries need a value filled in (an experiment ID, a
+// selector, a URL) before they mean anything — clicking one drops the
+// snippet into the eval input for editing instead of running it blind.
+//
+// The opt-out/debug-flag rows are URL params/hashes in the source doc (meant
+// to be hand-typed into the address bar); here they're one-click JS that
+// rewrites the URL and navigates. All of them are the *opt-out*/debug-enable
+// direction only — nothing here forces a variation or registers a tracked
+// exposure, which is what would make it a real-world action against a
+// client's live account.
+const BC_QUICK_GROUPS = [
+  { name: 'AB Tasty', items: [
+    { label: 'Experiments on page', expr: 'ABTasty.getTestsOnPage()' },
+    { label: 'Campaigns (results)', expr: 'ABTasty.results' },
+    { label: 'Opt out', expr: "(function(){ location.hash = 'abtastyoptout=1'; return 'Set hash: #abtastyoptout=1 — reload to apply'; })()" },
+  ]},
+  { name: 'Convert', items: [
+    { label: 'Metrics triggered', expr: 'convert.currentData.goals' },
+    { label: 'Experiment states', expr: 'convert.currentData' },
+    { label: 'Opt out', expr: "(function(){ var u = new URL(location.href); u.searchParams.set('convert_optout', '1'); location.href = u.toString(); })()" },
+  ]},
+  { name: 'Dynamic Yield', items: [
+    { label: 'User objects & variations', expr: 'DYO.getUserObjectsAndVariations()' },
+    { label: 'Rendered objects on page', expr: 'DYO.getRenderedObjectsOnPage()' },
+  ]},
+  { name: 'Google Optimize', items: [
+    { label: 'Get bucket', expr: "google_optimize.get('EXPERIMENT_ID')", template: true },
+  ]},
+  { name: 'Optimizely Web', items: [
+    { label: 'Audiences', expr: 'optimizely.get("state").getExperimentStates()["EXPERIMENT_ID"].audiences', template: true },
+    { label: 'Campaigns', expr: 'optimizely.get("state").getCampaignStates()' },
+    { label: 'Experiments', expr: 'window.optimizely.get("state").getExperimentStates()' },
+    { label: 'Visitor', expr: 'optimizely.get("visitor").custom' },
+    { label: 'Variations (table)', expr: "console.table(optimizely.get('state').getVariationMap())" },
+    { label: 'Metrics listener', expr: "(function(){ window.optimizely.push({ type: 'addListener', filter: { type: 'analytics', name: 'trackEvent' }, handler: function(event){ console.log('Optimizely event fired:', event); } }); return 'Listener attached — trigger the event and watch the log'; })()" },
+    { label: 'Opt out', expr: "(function(){ var u = new URL(location.href); u.searchParams.set('optimizely_opt_out', 'true'); location.href = u.toString(); })()" },
+  ]},
+  { name: 'Optimizely Edge', items: [
+    { label: 'Active experiments', expr: "window.optimizelyEdge.get('state').getActiveExperiments()" },
+    { label: 'Opt out', expr: "(function(){ window.optimizelyEdge.push({ type: 'optOut', isOptOut: true }); return 'Opted out'; })()" },
+  ]},
+  { name: 'VWO', items: [
+    { label: 'Opt out', expr: "(function(){ var u = new URL(location.href); u.searchParams.set('vwo_opt_out', '1'); location.href = u.toString(); })()" },
+  ]},
+  { name: 'CRO / PJS / General QA', items: [
+    { label: 'Set QA cookie', expr: "(function(){ document.cookie = 'cro_mode=qa'; return 'cro_mode=qa set'; })()" },
+    { label: 'Check QA cookie', expr: "document.cookie.indexOf('cro_mode') >= 0" },
+    { label: 'LocalStorage debug flag', expr: "(function(){ localStorage.setItem('cro-debug', true); return 'cro-debug=true set'; })()" },
+    { label: 'IE support flag', expr: 'CRO_PJS.supportsIE' },
+    { label: 'ARIC361 product types', expr: "window.localStorage.getItem('pjs_product_types')" },
+    { label: 'Open URL (BrowserStack)', expr: "window.location.href = 'URL_HERE'", template: true },
+    { label: 'Query selector', expr: 'document.querySelectorAll("")', template: true },
+    { label: 'Enable CRO logs', expr: "(function(){ var u = new URL(location.href); u.searchParams.set('cro_mode', 'log'); location.href = u.toString(); })()" },
+    { label: 'Cro-debug param', expr: "(function(){ var u = new URL(location.href); u.searchParams.set('cro-debug', 'true'); location.href = u.toString(); })()" },
+  ]},
+];
+// Flattened once, in group order, so data-idx can index straight into it —
+// the groups array only exists to drive the header rendering.
+const BC_QUICK_BUILTINS = BC_QUICK_GROUPS.flatMap(g => g.items.map(it => ({ ...it, group: g.name })));
+let bcQuickCustom = [];
+let bcQuickAttached = false;
+let bcQuickPendingDelete = -1;
+
+function normalizeBcQuick(list) {
+  return (Array.isArray(list) ? list : [])
+    .filter(c => c && typeof c.label === 'string' && typeof c.expr === 'string' && c.label.trim() && c.expr.trim())
+    .map(c => ({ label: c.label.trim(), expr: c.expr.trim() }));
+}
+
+async function loadBcQuick() {
+  const { bcQuickCommands } = await chrome.storage.local.get('bcQuickCommands');
+  bcQuickCustom = normalizeBcQuick(bcQuickCommands);
+  renderBcQuick();
+}
+
+function renderBcQuick() {
+  const wrap = document.getElementById('bc-quick-btns');
+  if (!wrap) return;
+  const dis = bcQuickAttached ? '' : ' disabled';
+  const chip = (c, custom, i) =>
+    `<span class="bc-quick-chip${custom ? ' custom' : ''}${c.template ? ' template' : ''}">` +
+      `<button class="bc-quick-run" data-kind="${custom ? 'custom' : 'builtin'}" data-idx="${i}" title="${esc(c.expr).replace(/"/g, '&quot;')}"${dis}>${c.template ? '✎ ' : ''}${esc(c.label)}</button>` +
+      (custom ? `<button class="bc-quick-del${bcQuickPendingDelete === i ? ' confirm' : ''}" data-idx="${i}" title="${bcQuickPendingDelete === i ? 'Click again to remove' : 'Remove'}">${bcQuickPendingDelete === i ? 'Remove?' : '×'}</button>` : '') +
+    `</span>`;
+  let lastGroup = null;
+  const builtinHtml = BC_QUICK_BUILTINS.map((c, i) => {
+    const header = c.group !== lastGroup ? `<span class="bc-quick-group">${esc(c.group)}</span>` : '';
+    lastGroup = c.group;
+    return header + chip(c, false, i);
+  }).join('');
+  const customHtml = bcQuickCustom.length
+    ? `<span class="bc-quick-group">Custom</span>` + bcQuickCustom.map((c, i) => chip(c, true, i)).join('')
+    : '';
+  wrap.innerHTML = builtinHtml + customHtml;
+}
+
+// A template needs a value filled in before it means anything (an experiment
+// ID, a selector, a URL) — populate the eval input instead of running it, and
+// put the cursor where that value goes so the user can just start typing.
+function fillBcTemplate(expr) {
+  const input = document.getElementById('bc-eval-input');
+  if (!input || input.disabled) return;
+  input.value = expr;
+  input.focus();
+  // A named placeholder gets selected whole, so typing replaces it outright.
+  // A pair of empty quotes has nothing to select — put the caret between
+  // them instead, so typing lands inside the quotes rather than deleting them.
+  const named = expr.match(/EXPERIMENT_ID|URL_HERE/);
+  if (named) { input.setSelectionRange(named.index, named.index + named[0].length); return; }
+  const quotes = expr.match(/(['"])\1/);
+  if (quotes) input.setSelectionRange(quotes.index + 1, quotes.index + 1);
+}
+
+async function onBcQuickClick(e) {
+  const run = e.target.closest('.bc-quick-run');
+  if (run) {
+    if (run.disabled) return;
+    const list = run.dataset.kind === 'custom' ? bcQuickCustom : BC_QUICK_BUILTINS;
+    const cmd = list[+run.dataset.idx];
+    if (!cmd) return;
+    if (cmd.template) fillBcTemplate(cmd.expr);
+    else await runBcExpression(cmd.expr);
+    return;
+  }
+  const del = e.target.closest('.bc-quick-del');
+  if (!del) return;
+  const i = +del.dataset.idx;
+  // Two clicks to remove — a saved command has no other copy.
+  if (bcQuickPendingDelete !== i) { bcQuickPendingDelete = i; renderBcQuick(); return; }
+  bcQuickPendingDelete = -1;
+  bcQuickCustom.splice(i, 1);
+  await chrome.storage.local.set({ bcQuickCommands: bcQuickCustom });
+  renderBcQuick();
+}
+
+function openBcQuickForm(e) {
+  // The button sits inside <summary>; stop it toggling the <details>.
+  e.preventDefault();
+  e.stopPropagation();
+  document.getElementById('bc-quick').open = true;
+  const form = document.getElementById('bc-quick-form');
+  form.classList.add('open');
+  document.getElementById('bc-quick-form-err').textContent = '';
+  const evalVal = document.getElementById('bc-eval-input')?.value.trim();
+  const exprEl = document.getElementById('bc-quick-expr');
+  if (evalVal && !exprEl.value.trim()) exprEl.value = evalVal;
+  document.getElementById('bc-quick-label').focus();
+}
+
+function closeBcQuickForm() {
+  document.getElementById('bc-quick-form').classList.remove('open');
+  document.getElementById('bc-quick-label').value = '';
+  document.getElementById('bc-quick-expr').value = '';
+}
+
+async function saveBcQuick() {
+  const label = document.getElementById('bc-quick-label').value.trim();
+  const expr = document.getElementById('bc-quick-expr').value.trim();
+  const err = document.getElementById('bc-quick-form-err');
+  if (!label || !expr) { err.textContent = 'Label and expression are both required'; return; }
+  bcQuickCustom.push({ label, expr });
+  await chrome.storage.local.set({ bcQuickCommands: bcQuickCustom });
+  closeBcQuickForm();
+  renderBcQuick();
+}
+
+// popup.html and sidepanel.html can be open at once — keep both in step.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.bcQuickCommands) return;
+  bcQuickCustom = normalizeBcQuick(changes.bcQuickCommands.newValue);
+  bcQuickPendingDelete = -1;
+  renderBcQuick();
+});
 
 function showConsoleSubtab(name) {
   document.querySelectorAll('.console-subtab').forEach(b => {

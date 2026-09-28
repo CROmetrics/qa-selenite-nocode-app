@@ -209,6 +209,35 @@
   .bc-CMD .bc-text{font-weight:600}
   #bc-eval-input:disabled{opacity:.5}
 
+  /* Quick Commands — one-click presets + saved expressions, run through bcEval */
+  #bc-quick{border:1px solid var(--stroke);border-radius:4px;padding:4px 6px;background:var(--card)}
+  #bc-quick>summary{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;
+    color:var(--fg2);font-weight:600;list-style:none;user-select:none}
+  #bc-quick>summary::-webkit-details-marker{display:none}
+  #bc-quick>summary::before{content:'\25B8';font-size:9px;transition:transform .1s}
+  #bc-quick[open]>summary::before{transform:rotate(90deg)}
+  #btn-bc-quick-add{margin-left:auto}
+  #bc-quick-btns{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;max-height:150px;overflow-y:auto}
+  .bc-quick-chip{display:inline-flex;align-items:center;border:1px solid var(--stroke);border-radius:3px;
+    background:var(--overlay);overflow:hidden}
+  .bc-quick-chip.custom{border-color:var(--brand)}
+  .bc-quick-chip.template{border-style:dashed}
+  .bc-quick-group{flex-basis:100%;font-size:9px;font-weight:700;letter-spacing:.3px;
+    text-transform:uppercase;color:var(--fg3);margin-top:4px}
+  .bc-quick-group:first-child{margin-top:0}
+  .bc-quick-run,.bc-quick-del{background:transparent;border:none;color:var(--fg1);cursor:pointer;
+    font-size:11px;padding:3px 7px;line-height:1.3}
+  .bc-quick-run:hover:not(:disabled){background:var(--brand);color:#fff}
+  .bc-quick-run:disabled{opacity:.45;cursor:default}
+  .bc-quick-del{color:var(--fg3);padding:3px 5px;border-left:1px solid var(--stroke)}
+  .bc-quick-del:hover,.bc-quick-del.confirm{color:#fff;background:var(--err)}
+  #bc-quick-form{display:none;flex-direction:column;gap:4px;margin-top:6px}
+  #bc-quick-form.open{display:flex}
+  #bc-quick-form input,#bc-quick-form textarea{font-size:11px;padding:4px 7px;width:100%;box-sizing:border-box}
+  #bc-quick-form textarea{font-family:'Cascadia Code','Menlo',monospace;min-height:48px;resize:vertical}
+  #bc-quick-form-btns{display:flex;gap:4px;justify-content:flex-end;align-items:center}
+  #bc-quick-form-err{flex:1;font-size:10px;color:var(--err)}
+
   /* Expandable object/array values (Runtime.getProperties drill-down) */
   .bc-expand-toggle{background:transparent;border:none;color:var(--fg2);cursor:pointer;
     font-size:9px;padding:0 2px;flex-shrink:0;line-height:1.6;margin-top:1px}
@@ -890,6 +919,21 @@
           </div>
         </div>
         <div id="bc-log-out"></div>
+        <details id="bc-quick">
+          <summary>Quick Commands
+            <button class="btn ghost btn-icon" id="btn-bc-quick-add" title="Save an expression as a one-click button">+ Add</button>
+          </summary>
+          <div id="bc-quick-btns"></div>
+          <div id="bc-quick-form">
+            <input type="text" id="bc-quick-label" placeholder="Button label" maxlength="40">
+            <textarea id="bc-quick-expr" placeholder="JS expression, or $click('selector') / $hover('selector')"></textarea>
+            <div id="bc-quick-form-btns">
+              <span id="bc-quick-form-err"></span>
+              <button class="btn ghost btn-icon" id="btn-bc-quick-cancel">Cancel</button>
+              <button class="btn btn-icon" id="btn-bc-quick-save">Save</button>
+            </div>
+          </div>
+        </details>
         <input type="text" id="bc-eval-input" placeholder="> Not attached" disabled
           title="JS expressions, or $click('selector') / $hover('selector') for a trusted click/hover (opens native <select> dropdowns and menus gated on real input)"
           style="width:100%;font-family:'Cascadia Code','Menlo',monospace;font-size:11px;padding:7px 10px">

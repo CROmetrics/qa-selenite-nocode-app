@@ -8,7 +8,7 @@ let logData = [];
 let filterLevel = null;
 let bcLogData = [];
 let bcFilterLevel = null;
-let bcTagOnly = false;   // Browser Console "CRO" toggle: narrow the live mirror to [PjS]/[cro] tagged lines
+let bcTagOnly = false;   // Browser Console "CRO" toggle: narrow the live mirror to [PjS]/[cro] tagged lines + the user's own commands (isBcUserEntry)
 let metrics = [];        // User-defined metric values (Build tab → Metrics), persisted in storage.local
 let autofillProfiles = []; // Named { id, name, firstName, lastName, phone, address, zip, country, email } sets for Autofill Form, persisted in storage.local
 let logOffset = 0;
@@ -136,6 +136,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await syncBcLogs();
   await syncBcStatus();
   await loadMetrics();
+  sizeBcFeed();
 
   // Poll for log updates and running state. Test Results and Browser Console
   // are polled independently so one panel's updates never block the other's.
@@ -144,6 +145,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(syncBcStatus, 800);
   setInterval(syncRunState, 800);
   setInterval(syncCaptureStatus, 800);
+  // Self-heals the feed's size against anything that could change the
+  // subpanel's available space without a more targeted hook already covering
+  // it (a resize fires its own listener below; a Console subtab switch is
+  // handled in showConsoleSubtab) — cheap, and consistent with how every
+  // other piece of Console-tab state here is kept in sync, by polling.
+  setInterval(sizeBcFeed, 800);
+  window.addEventListener('resize', sizeBcFeed);
   setInterval(mtSync, 600);          // Metric Tracker counts + recent-fires feed
   setInterval(mtSyncStatus, 800);    // Metric Tracker capture-health line + tracking dot
   setInterval(expSync, 1000);        // Experiment status card — poll + heartbeat, see its header comment
@@ -336,6 +344,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-bc-reconnect')?.addEventListener('click', reconnectBcFeed);
   document.getElementById('bc-tag-filter-enabled')?.addEventListener('change', onBcTagFilterToggle);
   document.getElementById('bc-eval-input')?.addEventListener('keydown', onBcEvalKeydown);
+  document.getElementById('bc-quick-tabs')?.addEventListener('click', onBcQuickTabClick);
   document.getElementById('bc-quick-btns')?.addEventListener('click', onBcQuickClick);
   document.getElementById('btn-bc-quick-add')?.addEventListener('click', openBcQuickForm);
   document.getElementById('btn-bc-quick-cancel')?.addEventListener('click', closeBcQuickForm);
@@ -1035,6 +1044,19 @@ async function syncBcLogs() {
   }
 }
 
+// Entries the user caused themselves: the command echo (level CMD) and what it
+// returned or threw. Background's 'bcEval' handler writes both, for the REPL
+// input and the Quick Commands buttons alike (both go through runBcExpression),
+// and nothing else writes these two sources. `source` is the discriminator, not
+// `level` — a result can be BROWSER or ERROR. The CRO filter keeps these next to
+// the [PJS]/[cro] lines: they are never noise (the user just asked for them),
+// and without them a button press looks like it did nothing while the filter is
+// on. Console output a command merely *triggers* in the page (a console.table, a
+// listener's later console.log) is page-originated and is not matched here.
+function isBcUserEntry(e) {
+  return e.source === 'eval-input' || e.source === 'eval-result';
+}
+
 function renderBcLog() {
   const needle = (document.getElementById('bc-filter-input')?.value || '').trim().toLowerCase();
   const out = document.getElementById('bc-log-out');
@@ -1043,7 +1065,7 @@ function renderBcLog() {
   out.innerHTML = bcLogData
     .filter(e => (!bcFilterLevel || e.level === bcFilterLevel)
               && (!needle || e.text.toLowerCase().includes(needle))
-              && (!bcTagOnly || e.tagged))
+              && (!bcTagOnly || e.tagged || isBcUserEntry(e)))
     .map(e => {
       const badge  = e.level === 'CMD' ? '&gt;' : (e.source === 'eval-result' ? '&#8626;' : e.level);
       const toggle = e.expandable ? `<button class="bc-expand-toggle" data-object-id="${e.objectId}">&#9656;</button>` : '';
@@ -1264,11 +1286,18 @@ async function sendBcEval() {
 
 // Shared by the REPL input and the Quick Commands buttons, so both land in the
 // same ArrowUp history and go through background's $click/$hover handling.
+// Returns the raw sendMessage result so a caller can tell a transport-level
+// rejection (e.g. background says "Not attached") from a normal run — the
+// REPL input ignores it (a failure there already surfaces as the page's own
+// eval-result/ERROR log line), but Quick Commands buttons use it, since
+// background's 'bcEval' handler returns {ok:false} *before* logging anything
+// at all when rec.attached is false — otherwise that failure is silent.
 async function runBcExpression(expr) {
   bcEvalHistory.push(expr);
   bcEvalHistoryIdx = bcEvalHistory.length;
-  await chrome.runtime.sendMessage({ action: 'bcEval', expression: expr, winId: WIN_ID });
+  const res = await chrome.runtime.sendMessage({ action: 'bcEval', expression: expr, winId: WIN_ID });
   await syncBcLogs();
+  return res;
 }
 
 function onBcEvalKeydown(e) {
@@ -1294,8 +1323,11 @@ function onBcEvalKeydown(e) {
 //  - `;abtdebug` ("Activate debug to view logs") holds the identical command
 //    as `;abtresults` (ABTasty.results) — the doc itself flags this as
 //    probably the wrong command copy-pasted, not a real second inspection.
-//  - `;monfilter` (the [PJS]|[cro]|[MT_PJS] console regex) duplicates the
-//    existing "CRO" tag-filter toggle next to the filter box above.
+//  - `;monfilter` (the [PJS]|[cro]|[MT_PJS] console regex) is a filter, not a
+//    command, and the "CRO" toggle next to the filter box is that filter — for
+//    two of its three tags. The toggle matches [PJS] and [cro] (MT_TAGS in
+//    metric-match.js, which also drives metric capture) but NOT [MT_PJS], so
+//    lines carrying only that tag are not covered.
 //
 // `template: true` entries need a value filled in (an experiment ID, a
 // selector, a URL) before they mean anything — clicking one drops the
@@ -1307,25 +1339,32 @@ function onBcEvalKeydown(e) {
 // direction only — nothing here forces a variation or registers a tracked
 // exposure, which is what would make it a real-world action against a
 // client's live account.
+// Each group carries the top-level tab it lives under — Optimizely Web/Edge
+// both fall under "Optimizely" (by far the most-used platform in this team's
+// corpus — every real run on file is Optimizely); Dynamic Yield, Google
+// Optimize, VWO, and the general QA utilities are all low-item-count or
+// platform-agnostic, so they share "General" rather than each getting a
+// single-item tab of their own.
+const BC_QUICK_TABS = ['Optimizely', 'Convert', 'AB Tasty', 'General'];
 const BC_QUICK_GROUPS = [
-  { name: 'AB Tasty', items: [
+  { name: 'AB Tasty', tab: 'AB Tasty', items: [
     { label: 'Experiments on page', expr: 'ABTasty.getTestsOnPage()' },
     { label: 'Campaigns (results)', expr: 'ABTasty.results' },
     { label: 'Opt out', expr: "(function(){ location.hash = 'abtastyoptout=1'; return 'Set hash: #abtastyoptout=1 — reload to apply'; })()" },
   ]},
-  { name: 'Convert', items: [
+  { name: 'Convert', tab: 'Convert', items: [
     { label: 'Metrics triggered', expr: 'convert.currentData.goals' },
     { label: 'Experiment states', expr: 'convert.currentData' },
     { label: 'Opt out', expr: "(function(){ var u = new URL(location.href); u.searchParams.set('convert_optout', '1'); location.href = u.toString(); })()" },
   ]},
-  { name: 'Dynamic Yield', items: [
+  { name: 'Dynamic Yield', tab: 'General', items: [
     { label: 'User objects & variations', expr: 'DYO.getUserObjectsAndVariations()' },
     { label: 'Rendered objects on page', expr: 'DYO.getRenderedObjectsOnPage()' },
   ]},
-  { name: 'Google Optimize', items: [
+  { name: 'Google Optimize', tab: 'General', items: [
     { label: 'Get bucket', expr: "google_optimize.get('EXPERIMENT_ID')", template: true },
   ]},
-  { name: 'Optimizely Web', items: [
+  { name: 'Optimizely Web', tab: 'Optimizely', items: [
     { label: 'Audiences', expr: 'optimizely.get("state").getExperimentStates()["EXPERIMENT_ID"].audiences', template: true },
     { label: 'Campaigns', expr: 'optimizely.get("state").getCampaignStates()' },
     { label: 'Experiments', expr: 'window.optimizely.get("state").getExperimentStates()' },
@@ -1334,14 +1373,14 @@ const BC_QUICK_GROUPS = [
     { label: 'Metrics listener', expr: "(function(){ window.optimizely.push({ type: 'addListener', filter: { type: 'analytics', name: 'trackEvent' }, handler: function(event){ console.log('Optimizely event fired:', event); } }); return 'Listener attached — trigger the event and watch the log'; })()" },
     { label: 'Opt out', expr: "(function(){ var u = new URL(location.href); u.searchParams.set('optimizely_opt_out', 'true'); location.href = u.toString(); })()" },
   ]},
-  { name: 'Optimizely Edge', items: [
+  { name: 'Optimizely Edge', tab: 'Optimizely', items: [
     { label: 'Active experiments', expr: "window.optimizelyEdge.get('state').getActiveExperiments()" },
     { label: 'Opt out', expr: "(function(){ window.optimizelyEdge.push({ type: 'optOut', isOptOut: true }); return 'Opted out'; })()" },
   ]},
-  { name: 'VWO', items: [
+  { name: 'VWO', tab: 'General', items: [
     { label: 'Opt out', expr: "(function(){ var u = new URL(location.href); u.searchParams.set('vwo_opt_out', '1'); location.href = u.toString(); })()" },
   ]},
-  { name: 'CRO / PJS / General QA', items: [
+  { name: 'CRO / PJS / General QA', tab: 'General', items: [
     { label: 'Set QA cookie', expr: "(function(){ document.cookie = 'cro_mode=qa'; return 'cro_mode=qa set'; })()" },
     { label: 'Check QA cookie', expr: "document.cookie.indexOf('cro_mode') >= 0" },
     { label: 'LocalStorage debug flag', expr: "(function(){ localStorage.setItem('cro-debug', true); return 'cro-debug=true set'; })()" },
@@ -1354,9 +1393,10 @@ const BC_QUICK_GROUPS = [
   ]},
 ];
 // Flattened once, in group order, so data-idx can index straight into it —
-// the groups array only exists to drive the header rendering.
-const BC_QUICK_BUILTINS = BC_QUICK_GROUPS.flatMap(g => g.items.map(it => ({ ...it, group: g.name })));
+// the groups array only exists to drive the tab and sub-header assignment.
+const BC_QUICK_BUILTINS = BC_QUICK_GROUPS.flatMap(g => g.items.map(it => ({ ...it, group: g.name, tab: g.tab })));
 let bcQuickCustom = [];
+let bcQuickActiveTab = BC_QUICK_TABS[0];
 let bcQuickAttached = false;
 let bcQuickPendingDelete = -1;
 
@@ -1367,23 +1407,40 @@ function normalizeBcQuick(list) {
 }
 
 async function loadBcQuick() {
-  const { bcQuickCommands } = await chrome.storage.local.get('bcQuickCommands');
+  const { bcQuickCommands, bcQuickActiveTab: storedTab } = await chrome.storage.local.get(['bcQuickCommands', 'bcQuickActiveTab']);
   bcQuickCustom = normalizeBcQuick(bcQuickCommands);
+  if (BC_QUICK_TABS.includes(storedTab)) bcQuickActiveTab = storedTab;
   renderBcQuick();
 }
 
 function renderBcQuick() {
+  const tabsEl = document.getElementById('bc-quick-tabs');
   const wrap = document.getElementById('bc-quick-btns');
   if (!wrap) return;
+  if (tabsEl) {
+    tabsEl.innerHTML = BC_QUICK_TABS.map(t => {
+      const active = t === bcQuickActiveTab;
+      return `<button class="bc-quick-tab${active ? ' active' : ''}" data-tab="${esc(t)}">${esc(t)}</button>`;
+    }).join('');
+  }
   const dis = bcQuickAttached ? '' : ' disabled';
   const chip = (c, custom, i) =>
     `<span class="bc-quick-chip${custom ? ' custom' : ''}${c.template ? ' template' : ''}">` +
       `<button class="bc-quick-run" data-kind="${custom ? 'custom' : 'builtin'}" data-idx="${i}" title="${esc(c.expr).replace(/"/g, '&quot;')}"${dis}>${c.template ? '✎ ' : ''}${esc(c.label)}</button>` +
       (custom ? `<button class="bc-quick-del${bcQuickPendingDelete === i ? ' confirm' : ''}" data-idx="${i}" title="${bcQuickPendingDelete === i ? 'Click again to remove' : 'Remove'}">${bcQuickPendingDelete === i ? 'Remove?' : '×'}</button>` : '') +
     `</span>`;
+  // Only the active tab's builtins render here — data-idx still indexes the
+  // full, unfiltered BC_QUICK_BUILTINS array, so it stays stable across tabs.
+  const tabItems = BC_QUICK_BUILTINS
+    .map((c, i) => ({ c, i }))
+    .filter(({ c }) => c.tab === bcQuickActiveTab);
+  // A tab fed by a single source group (Convert, AB Tasty) repeats the tab's
+  // own name as a sub-header, so suppress it there; "Optimizely" and
+  // "General" each fold in several source groups and keep the distinction.
+  const distinctGroups = new Set(tabItems.map(({ c }) => c.group));
   let lastGroup = null;
-  const builtinHtml = BC_QUICK_BUILTINS.map((c, i) => {
-    const header = c.group !== lastGroup ? `<span class="bc-quick-group">${esc(c.group)}</span>` : '';
+  const builtinHtml = tabItems.map(({ c, i }) => {
+    const header = distinctGroups.size > 1 && c.group !== lastGroup ? `<span class="bc-quick-group">${esc(c.group)}</span>` : '';
     lastGroup = c.group;
     return header + chip(c, false, i);
   }).join('');
@@ -1391,6 +1448,34 @@ function renderBcQuick() {
     ? `<span class="bc-quick-group">Custom</span>` + bcQuickCustom.map((c, i) => chip(c, true, i)).join('')
     : '';
   wrap.innerHTML = builtinHtml + customHtml;
+}
+
+async function onBcQuickTabClick(e) {
+  const btn = e.target.closest('.bc-quick-tab');
+  if (!btn) return;
+  const tab = btn.dataset.tab;
+  if (tab === bcQuickActiveTab) return;
+  bcQuickActiveTab = tab;
+  bcQuickPendingDelete = -1;
+  renderBcQuick();
+  await chrome.storage.local.set({ bcQuickActiveTab: tab });
+}
+
+// Momentary feedback on the clicked button itself — independent of the log
+// feed, which may be compressed down to just a couple of px while Quick
+// Commands is open (see #bc-log-out's sizing rule above) and easy to miss a
+// new line in. Doubles as the only visible sign of a transport-level failure
+// (background's 'bcEval' returns {ok:false} *before* logging anything at all
+// when the console isn't actually attached — e.g. it detached between polls
+// right before the click — which would otherwise fail completely silently).
+function flashBcQuickButton(btn, ok, errMsg) {
+  const original = btn.textContent;
+  btn.classList.add(ok ? 'bc-quick-ok' : 'bc-quick-err');
+  btn.textContent = ok ? '✓ Ran' : '✕ ' + (errMsg || 'Failed');
+  setTimeout(() => {
+    btn.classList.remove('bc-quick-ok', 'bc-quick-err');
+    btn.textContent = original;
+  }, ok ? 700 : 2200);
 }
 
 // A template needs a value filled in before it means anything (an experiment
@@ -1417,8 +1502,14 @@ async function onBcQuickClick(e) {
     const list = run.dataset.kind === 'custom' ? bcQuickCustom : BC_QUICK_BUILTINS;
     const cmd = list[+run.dataset.idx];
     if (!cmd) return;
-    if (cmd.template) fillBcTemplate(cmd.expr);
-    else await runBcExpression(cmd.expr);
+    if (cmd.template) { fillBcTemplate(cmd.expr); return; }
+    run.disabled = true;
+    try {
+      const res = await runBcExpression(cmd.expr);
+      flashBcQuickButton(run, res?.ok !== false, res?.error);
+    } finally {
+      run.disabled = false;
+    }
     return;
   }
   const del = e.target.closest('.bc-quick-del');
@@ -1432,13 +1523,12 @@ async function onBcQuickClick(e) {
   renderBcQuick();
 }
 
-function openBcQuickForm(e) {
-  // The button sits inside <summary>; stop it toggling the <details>.
-  e.preventDefault();
-  e.stopPropagation();
-  document.getElementById('bc-quick').open = true;
+function openBcQuickForm() {
   const form = document.getElementById('bc-quick-form');
   form.classList.add('open');
+  // Swaps the tabs and buttons out for the form (see #bc-quick.adding in the
+  // stylesheet) rather than stacking it under them.
+  document.getElementById('bc-quick').classList.add('adding');
   document.getElementById('bc-quick-form-err').textContent = '';
   const evalVal = document.getElementById('bc-eval-input')?.value.trim();
   const exprEl = document.getElementById('bc-quick-expr');
@@ -1448,6 +1538,7 @@ function openBcQuickForm(e) {
 
 function closeBcQuickForm() {
   document.getElementById('bc-quick-form').classList.remove('open');
+  document.getElementById('bc-quick').classList.remove('adding');
   document.getElementById('bc-quick-label').value = '';
   document.getElementById('bc-quick-expr').value = '';
 }
@@ -1465,9 +1556,14 @@ async function saveBcQuick() {
 
 // popup.html and sidepanel.html can be open at once — keep both in step.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local' || !changes.bcQuickCommands) return;
-  bcQuickCustom = normalizeBcQuick(changes.bcQuickCommands.newValue);
-  bcQuickPendingDelete = -1;
+  if (area !== 'local' || !(changes.bcQuickCommands || changes.bcQuickActiveTab)) return;
+  if (changes.bcQuickCommands) {
+    bcQuickCustom = normalizeBcQuick(changes.bcQuickCommands.newValue);
+    bcQuickPendingDelete = -1;
+  }
+  if (changes.bcQuickActiveTab && BC_QUICK_TABS.includes(changes.bcQuickActiveTab.newValue)) {
+    bcQuickActiveTab = changes.bcQuickActiveTab.newValue;
+  }
   renderBcQuick();
 });
 
@@ -1479,6 +1575,35 @@ function showConsoleSubtab(name) {
   });
   document.getElementById('subpanel-test-results')?.classList.toggle('active', name === 'test-results');
   document.getElementById('subpanel-browser-console')?.classList.toggle('active', name === 'browser-console');
+  // The subpanel goes from display:none to visible right here, which is
+  // exactly when its rendered height (0 a moment ago) becomes real — recompute
+  // the feed's share of it immediately rather than waiting for the next poll.
+  sizeBcFeed();
+}
+
+// Feed height is 60% of the Browser Console subpanel's real available space —
+// not a CSS `height:60%`, because that doesn't reliably resolve here: this
+// app's popup sizes its body via min/max-height rather than a single,
+// explicit height, and per CSS's percentage-resolution rules that leaves it
+// "auto" rather than definite — which poisons percentage-height resolution
+// for every descendant below it, no matter how many flex:1 levels sit in
+// between (confirmed directly: an isolated two-level flex test resolves a
+// child's height:60% correctly against an explicit-height ancestor, but
+// identically structured against a min/max-height one instead, the same
+// child computes to 0 — a real, confirmed browser behavior here, not
+// something configured wrong). JS sidesteps it entirely: measure the real
+// available space and set a real px value — self-adjusting to the popup's
+// actual rendered height (bounded by html,body's own min/max-height, see
+// that rule's comment) and to a resized side panel alike, without depending
+// on either one. #subpanel-browser-console's own height doesn't depend on
+// the feed's, so reading it first and sizing the feed off it does not
+// self-reference.
+function sizeBcFeed() {
+  const sub = document.getElementById('subpanel-browser-console');
+  const logOut = document.getElementById('bc-log-out');
+  if (!sub || !logOut) return;
+  const subH = sub.getBoundingClientRect().height;
+  if (subH > 0) logOut.style.height = Math.round(subH * 0.6) + 'px';
 }
 
 // ── Console capture ───────────────────────────────────────────────────────
@@ -4929,19 +5054,28 @@ let _idb = null;
 function idb() {
   if (_idb) return Promise.resolve(_idb);
   return new Promise((resolve, reject) => {
-    // v2 added the `figma` store for downscaled comp images. Both creates are
-    // guarded by contains(), so an install at v1 gains only `figma` and an
-    // install from scratch gets both — onupgradeneeded runs for every version
-    // it steps through, and `sessions` must survive untouched either way.
-    const req = indexedDB.open(IDB_NAME, 2);
+    // v2 added the `figma` store for downscaled comp images, v3 the `reports`
+    // store (see openReportTab). Every create is guarded by contains(), so an
+    // older install gains only what it lacks and an install from scratch gets
+    // all three — onupgradeneeded runs for every version it steps through, and
+    // `sessions` must survive untouched either way.
+    const req = indexedDB.open(IDB_NAME, 3);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('sessions')) db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
       // Out-of-line keys: the caller supplies the ticket key, so a re-extract
       // of the same ticket replaces its comp rather than accumulating copies.
       if (!db.objectStoreNames.contains('figma')) db.createObjectStore('figma');
+      // Out-of-line keys: the report id, which qa-report.html gets as ?k=.
+      if (!db.objectStoreNames.contains('reports')) db.createObjectStore('reports');
     };
-    req.onsuccess = () => { _idb = req.result; resolve(_idb); };
+    req.onsuccess = () => {
+      _idb = req.result;
+      // A later version opened by another panel must not wait on this cached
+      // connection forever — step aside and reopen on next use.
+      _idb.onversionchange = () => { _idb.close(); _idb = null; };
+      resolve(_idb);
+    };
     req.onerror = () => reject(req.error);
   });
 }
@@ -6873,8 +7007,8 @@ function rptAbVisualDiffSection(vd) {
         : ''}
       </details>` : ''}
       ${regionGaps.map(x => `<div class="ab-cline ab-warn">The spec's "${q(x.heading)}" section describes a ${q(x.words)} region, but no
-        ${q(x.words)} elements were found on either page — fixed/sticky elements are excluded from this comparison, so a
-        sticky header can read this way even when it renders correctly.</div>`).join('')}`;
+        ${q(x.words)} elements were found on either page — fixed elements are excluded from this comparison, so a
+        fixed header can read this way even when it renders correctly.</div>`).join('')}`;
 
     const summaryHtml = gradeFailHtml + reqHtml + coverageHtml + (v.overallSummary ? `<p>${q(v.overallSummary)}</p>` : '');
 
@@ -7510,9 +7644,15 @@ function vdCollectProblems(sections) {
             + 'whatever changed inside them will not be reported.');
         }
         if (side('fixedOrSticky')) {
+          // Sticky elements anchored by top/left are walked now (see walk() in
+          // background.js); this counts fixed ones and bottom/right-anchored
+          // sticky ones. The second clause is the costlier half: on STRZ-1658 a
+          // dropped variant subtree turned Control's whole plan picker into
+          // "removed" findings, not merely into silence.
           add('warn', at, `${side('fixedOrSticky')} fixed or sticky element(s)${detail('fixedOrSticky')} were excluded from`
-            + ' this comparison — a sticky header is exactly this shape, so a spec\'d change inside one will produce no'
-            + ' findings even when it renders correctly.');
+            + ' this comparison — fixed elements and bottom-anchored sticky bars (a chat widget, a cookie banner, a'
+            + ' sticky footer CTA) are this shape. A spec\'d change inside one produces no findings even when it renders'
+            + ' correctly, and whatever it replaced on the other page can show up as removed.');
         }
       }
       // Neither of these is about the debug blob, so neither may be gated on it
@@ -7593,7 +7733,7 @@ function vdCollectProblems(sections) {
           if (!empty.length) return;
           const words = empty.join('/');
           add('warn', at, `The spec's "${h.heading}" section describes a ${words} region, but no ${words} elements were`
-            + ' found on either page — note that fixed/sticky elements are excluded from this comparison, so a sticky'
+            + ' found on either page — note that fixed elements are excluded from this comparison, so a fixed'
             + ' header can read this way even when it renders correctly.');
         });
       } else if (rq && !v.noSpecText) {
@@ -8066,20 +8206,25 @@ function buildDebugLog(sections) {
   };
 }
 
-// Stash the rendered report body under a fresh id in session storage (a
-// non-namespaced key so the bundled qa-report.html page, which has no window
-// id, can read it — mirrors mxOpenReport), prune to the newest few, then open
-// the bundled page pointed at that id.
+// Stash the rendered report under a fresh id in IndexedDB (the extension's
+// origin, so the bundled qa-report.html page, which has no window id, can read
+// it), prune to the newest few, then open the bundled page pointed at that id.
+//
+// NOT chrome.storage.session, where this lived until a real run outgrew it:
+// that store is capped at 10 MB for the WHOLE extension, and the body inlines
+// every Visual Diff crop as a base64 PNG of up to 1024x800. STRZ-1658 (Control
+// + three variants, two full redesigns at 41 findings each) finished its whole
+// pipeline and then lost the report to "Session storage quota bytes exceeded"
+// on this one set. openImageInTab's 6 MB budget shares that same 10 MB.
 async function openReportTab(sections) {
   const id = 'r_' + Date.now();
-  const { taReports = {} } = await chrome.storage.session.get('taReports');
   let debugLog = null;
   // Never let a debug-log failure cost the user the actual report.
   try { debugLog = buildDebugLog(sections); } catch (e) { debugLog = { error: 'Could not assemble debug log: ' + e.message }; }
-  taReports[id] = { title: 'Selenite QA Report', bodyHtml: buildReportBody(sections), debugLog };
-  const ids = Object.keys(taReports).sort();
-  while (ids.length > 5) delete taReports[ids.shift()];
-  await chrome.storage.session.set({ taReports });
+  await idbPut('reports', { title: 'Selenite QA Report', bodyHtml: buildReportBody(sections), debugLog }, id);
+  // Ids are 'r_' + a 13-digit ms timestamp, so they sort chronologically.
+  const ids = (await idbReq((await idb()).transaction('reports').objectStore('reports').getAllKeys())).sort();
+  while (ids.length > 5) await idbDelete('reports', ids.shift());
   chrome.tabs.create({ url: chrome.runtime.getURL('qa-report.html') + '?k=' + id });
 }
 

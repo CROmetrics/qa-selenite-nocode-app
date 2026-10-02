@@ -2106,12 +2106,14 @@ function domCandidateWalkFn(maxCandidates, pageW, capturedH, extendedCapture) {
   //
   // fixedOrSticky IS counted here, at the position check below, because that
   // rejection fires before emit() ever runs -- and because it is the one most
-  // likely to explain a real gap: a sticky site header is exactly this shape,
-  // and its exclusion is the actual, measured cause of "the spec's new header
-  // never produced a single finding" on every recorded run of one real page.
-  // Counted once per subtree root, not per descendant, since walk() returns
-  // before visiting children -- this is a count of dropped SUBTREES.
+  // likely to explain a real gap. Counted once per subtree root, not per
+  // descendant, since walk() returns before visiting children -- this is a
+  // count of dropped SUBTREES. Since the sticky rule below narrowed, it counts
+  // fixed elements plus only the sticky ones that can still be displaced.
   const notWalked = { shadowHosts: 0, iframes: 0, fixedOrSticky: 0 };
+  // Read once: the sticky rule below is only sound at the scroll origin, which
+  // is where stabilizeForCapture leaves the page before the capture and walk.
+  const atScrollOrigin = window.scrollX === 0 && window.scrollY === 0;
 
   // Falls back to a plain, DOM-independent implementation if vd-diff.js
   // somehow wasn't injected first (e.g. a future ad-hoc caller) — degrades
@@ -2250,16 +2252,40 @@ function domCandidateWalkFn(maxCandidates, pageW, capturedH, extendedCapture) {
     if (SKIP_TAGS.has(el.tagName)) return;
     const cs = getComputedStyle(el);
     if (cs.display === 'none' || cs.visibility === 'hidden') return;
-    // Sticky headers, cookie banners, chat widgets: their rect is
+    // Fixed elements (cookie banners, chat widgets, drawers): their rect is
     // viewport-relative, so in a full-page beyond-viewport capture it lands
     // at the wrong document position (and CDP only paints them once, at
     // their normal viewport position, not repeated down the page) — same
     // problem for any descendant, so the whole subtree is dropped rather
-    // than just the element itself. v1 scope: exclude, don't try to record
-    // a viewportRelative flag + scroll position yet. Counted once per subtree
-    // root (see notWalked's declaration) — this is the actual, measured cause
-    // of a spec'd new header producing zero findings on a real page.
-    if (cs.position === 'fixed' || cs.position === 'sticky') { notWalked.fixedOrSticky++; return; }
+    // than just the element itself. Counted once per subtree root (see
+    // notWalked's declaration).
+    //
+    // Sticky is NOT the same case, and dropping it with fixed was the more
+    // expensive mistake. A sticky element is in normal flow: at the scroll
+    // origin, one anchored by top/left sits where it would sit anyway, and
+    // captureBeyondViewport only makes the viewport BIGGER, which can loosen a
+    // top/left constraint but never tighten it — so the rect read here is
+    // where the screenshot paints it. Anchored by bottom/right it is the other
+    // way round: the normal viewport can pin it to its far edge while the
+    // enlarged capture viewport leaves it in flow, so those stay excluded.
+    // (A top offset in vh would still resolve differently in the two — rare,
+    // and a wrong crop is a far smaller cost than the one below.)
+    //
+    // Measured on STRZ-1658 (starz.com buy page): the New UI hero — headline,
+    // both plan cards, the badge, both Select Plan buttons — is one sticky
+    // div, and the site header carrying the spec'd GET STARTED button is
+    // another. Dropped, the diff saw nothing in the variant's top 2157px:
+    // Control's plan picker came back "removed" (graded unexpected six times),
+    // 9 of v2's 14 "absent" spec strings were on the page, and v2 and v3 —
+    // which differ only inside that div — produced byte-identical crops. (This
+    // exclusion was already recorded as why a spec'd new header on another
+    // real page never produced a finding; that only changes here if that
+    // header is sticky rather than fixed.)
+    if (cs.position === 'fixed') { notWalked.fixedOrSticky++; return; }
+    if (cs.position === 'sticky' && !(atScrollOrigin && cs.bottom === 'auto' && cs.right === 'auto')) {
+      notWalked.fixedOrSticky++;
+      return;
+    }
 
     const role = el.getAttribute('role');
     const liveHere = inLiveRegion || isLiveRegionSignal(el.getAttribute('aria-live'), role);

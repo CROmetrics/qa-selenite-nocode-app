@@ -12,7 +12,7 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - Universal delay override — set a single delay across all steps
 - Two execution modes: **close after run** or **loop continuously**
 - Tab targeting: run on the **active tab** or open a **new tab**
-- Console log with live output and INFO / WARN / ERR filtering, plus a live browser-console mirror with a CRO (`[PJS]`/`[cro]`) filter
+- Console tab — a live step-execution log with INFO / WARN / ERR filtering, plus a live mirror of the captured tab's browser console with a CRO (`[PJS]`/`[cro]`) filter, a JavaScript command input, and **Quick Commands**: one-click buttons for the Optimizely, Convert, AB Tasty and other platform debugging commands QA runs all day
 - Visual Regression — full-page screenshot baselines per URL with pixel diffing, ignore regions, and a mismatch threshold (Functional Testing tab)
 - **Test Agent** tab — run WCAG, Cross-Variant Accessibility, Performance, or Funnel Crawl one at a time, batch the first three together via **Also Run**, and get a single combined report with an optional AI-written summary
 - **A/B** tab — load each experiment variant once and diff page state, metric fires, and tagged console output against control, with an optional per-variant interaction heatmap and an AI-powered full-page visual diff
@@ -22,6 +22,36 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - Funnel Crawl — an AI agent clicks through Start → Middle waypoint(s) → End to verify a funnel actually connects
 - Agentic Testing (Sonnet) and Agentic Analysis (Opus) — optional AI-powered vision judgment and result summaries via Anthropic's API
 - Stop execution at any time
+
+## Version History
+
+Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
+
+### 0.7.0 — 2026-10-02
+
+One big update: the Console gets Quick Commands and a layout that holds still, the QA report stops being lost to a storage quota, and Visual Diff stops discarding sticky blocks.
+
+**Browser Console**
+- **Quick Commands** — 28 one-click buttons in four tabs (Optimizely, Convert, AB Tasty, General) for the commands the team otherwise pastes from a text expander. Buttons that need a value fill the command input for you to finish instead of running blind, opt-out and debug-flag buttons rewrite the URL in one click, a button reports `✓ Ran` or the reason it failed, and **+ Add** saves your own commands. See [Console](#console).
+- **The CRO filter keeps your own commands.** With CRO on, the feed shows `[PJS]`/`[cro]` lines *and* every command you ran and what it returned, so a button press no longer looks like it did nothing.
+- **The tab holds still.** The command input now sits directly under the feed, the feed is 60% of the panel and scrolls inside itself, Quick Commands is the same size on every tab, and nothing else in the Console tab scrolls.
+- The popup's height cap is raised from 600px to 720px (Chrome may clamp extension popups below that; the side panel is unaffected).
+
+**QA report**
+- Reports are stored in IndexedDB instead of session storage. A large multi-variant Visual Diff report used to be lost to `Session storage quota bytes exceeded` after a run had already finished. The five most recent reports are kept; a report tab left open from before the upgrade shows "Report data not found".
+
+**Visual Diff**
+- Sticky elements anchored at the top or left are now compared instead of skipped. A page whose whole hero or header is one sticky block used to read as missing content in the variant, with identical crops for variants that differ only inside it. Fixed and bottom/right-anchored sticky elements are still excluded, and the run's notes say so.
+
+### 0.6.6.2 — 2026-09-21
+
+- **A/B Variant Comparison is no longer a Test Agent mode.** It is gone from the **Test Mode** dropdown and the **Also Run** list; the **A/B** tab is the only place it is configured, run and reported from.
+
+### 0.6.6.1 — 2026-09-18
+
+- **Funnel Crawl hardening.** A failed segment now names what stopped the agent (a consent or CAPTCHA wall, a login or payment gate, a truncated or refused model call) instead of reporting only that it did not arrive; clicks are converted from screenshot to page coordinates correctly and the viewport is allowed to settle before the first capture; native `<select>` dropdowns are handled; the step budget was replaced by time bounds; every Anthropic call shares one retry.
+
+Earlier versions: see [`CHANGELOG.md`](CHANGELOG.md) and `git log`. The version number first appeared in the panel footer at 0.5.0.
 
 ## Installation
 
@@ -59,6 +89,21 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - Enter a name in the **Script name** field and click **Save** to store the queue.
 - Open the **Load Script** accordion to load or delete a saved script.
 - Scripts are saved to Chrome sync storage and persist across sessions.
+
+### Console
+
+The **Console** tab has two views, switched by the buttons under the **Capture** toggle. **Test Results** is the step-execution log for queue runs. **Browser Console** is a live mirror of the captured tab's own console. Capture follows whichever tab is focused in the window; the **Capture** toggle only pauses and resumes it, and the status line under the buttons says whether the feed is attached.
+
+In **Browser Console**, top to bottom:
+
+- **Filter row** — a text filter, **INFO / WARN / ERR** level buttons, **Clear**, and the **CRO** toggle. With CRO on, the feed shows only `[PJS]`/`[cro]`-tagged lines plus the commands you run and what they return. Console output that a command merely *triggers* in the page (a `console.table`, a listener's later `console.log`) is not tagged and stays hidden while CRO is on.
+- **Feed** — newest line last, and the only thing in the tab that scrolls. Object and array results expand in place.
+- **Command input** — type a JavaScript expression and press Enter; ↑ / ↓ recall earlier commands. `$click('selector')` and `$hover('selector')` send a *trusted* click or hover, which is what opens native `<select>` dropdowns and menus gated on real input. The input and the Quick Commands buttons are disabled until the console is attached.
+- **Quick Commands** — one-click buttons for platform debugging commands, in four tabs: **Optimizely** (Web and Edge), **Convert**, **AB Tasty** and **General** (Dynamic Yield, Google Optimize, VWO, and CRO/PJS QA helpers such as setting the `cro_mode=qa` cookie). The active tab is remembered.
+  - A plain button runs on click and flashes `✓ Ran`, or `✕` with the reason if it could not run (for example, the console is not attached). The result lands in the feed.
+  - A button marked `✎` with a dashed border needs a value from you (an experiment ID, a selector, a URL). It fills the command input with the cursor on the placeholder instead of running; edit it and press Enter.
+  - Opt-out and debug-flag buttons (the Convert, Optimizely, VWO and AB Tasty opt-outs, **Enable CRO logs**, **Cro-debug param**) set the matching URL parameter or hash for you. AB Tasty uses a hash, so reload to apply; the others navigate. (Optimizely Edge's opt-out calls its API instead.) None of the built-in buttons force a variation or register a tracked exposure.
+  - **+ Add** saves your own command: a label and a JavaScript expression (or `$click(...)` / `$hover(...)`). Saved commands appear under every tab, are stored in Chrome local storage, and are removed with a two-click **×**. While the form is open it replaces the tabs and buttons.
 
 ### Visual Regression
 

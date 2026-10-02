@@ -2,6 +2,45 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-02 — 0.7.0
+
+One big update, released as one version: the Browser Console gets Quick Commands and a layout that holds still, the QA report stops being lost to a storage quota, and the Visual Diff stops discarding sticky blocks. The three share a release, not a cause.
+
+### Added
+
+**Quick Commands in the Browser Console.** One-click buttons for the commands the team otherwise pastes from a text expander (the "QA - Console Commands and Parameters" reference): 28 of them in four tabs — Optimizely (Web and Edge), Convert, AB Tasty, and General (Dynamic Yield, Google Optimize, VWO, and the CRO/PJS QA helpers). They run through the same `bcEval` path as the command input, so a command lands in ArrowUp history, and a saved `$click(...)` or `$hover(...)` works from a button exactly as it does typed. Two rows of the reference are left out on purpose. `;abtdebug` holds the identical command as `;abtresults`, which the reference itself flags as likely needing its real debug command. `;monfilter` is the `[PJS]|[cro]|[MT_PJS]` console regex, a filter rather than a command: the CRO toggle is that filter for two of its three tags. It matches `[PJS]` and `[cro]` (`MT_TAGS`, which also drives metric capture) but not `[MT_PJS]`, so a line carrying only that tag is still not covered.
+
+**Commands that need a value fill the input instead of running.** Optimizely's Audiences, Google Optimize's Get bucket, Open URL (BrowserStack) and Query selector each need an experiment ID, a selector or a URL, so clicking one writes the snippet into the command input with the caret on the placeholder (or between empty quotes) rather than executing something meaningless. They carry a ✎ and a dashed border so the difference is visible before the click.
+
+**The reference's URL-parameter rows became one-click buttons, and only in the opt-out direction.** The reference lists `?convert_optout=1`, `optimizely_opt_out=true`, `?vwo_opt_out=1`, `#abtastyoptout=1`, `cro_mode=log` and `cro-debug=true` as things to type into the address bar. Each is now a button that rewrites the URL (AB Tasty sets a hash, so reload to apply). None of the built-ins force a variation or set tracking parameters: that registers a real exposure in a client's live account, which is a different class of action from opting out.
+
+**+ Add saves your own commands.** A label and an expression, stored in `chrome.storage.local`, shown under every tab, removed with a two-click ×, and kept in step between the popup and the side panel. The save form takes the place of the tabs and buttons while it is open. It first stacked under a grid that already filled the card, so Save and Cancel landed outside the card and the whole tab started scrolling.
+
+### Changed
+
+**The CRO filter keeps what you ran.** With CRO on, a button press looked like it did nothing: `bcEval` writes the command echo and its result with `source` `eval-input` and `eval-result` and no `tagged` flag, so the filter hid them with everything else. It now passes `tagged` lines and entries from those two sources. `source` is the discriminator rather than `level` (a result can be BROWSER or ERROR) or the text (a page line can read like a command). What this does not cover: console output a command merely *triggers* in the page, such as a `console.table` or the Metrics listener's later `console.log`, is page-originated and untagged and stays hidden under CRO. Covering it would take a change in `background.js`, for instance marking output produced while an eval is in flight.
+
+**A click now answers on the button.** `bcEval` returns `{ok:false}` before logging anything when the console is not attached, and the caller ignored the reply, so a failed click was indistinguishable from a successful one. Buttons now flash `✓ Ran` or `✕ <reason>`, which also covers a result landing in a feed squeezed to a few pixels.
+
+**The Console tab holds still.** The command input moved from below Quick Commands to directly under the feed. The feed is 60% of the Browser Console panel and scrolls inside itself, Quick Commands is `flex:1` (the complement of the feed) and the same size on every tab, and nothing else in the tab scrolls. Three approaches did not work and are worth recording. A fixed pixel height per box can only be right for one popup height, and left the feed at 2px once Quick Commands got a real size. Two independent explicit sizes asked for more room than the panel has, which is what made the whole tab scroll. And CSS `height:60%` does not resolve here at all: `html,body` is sized with `min-height`/`max-height` rather than a single `height`, which leaves it `auto` for percentage purposes and makes every descendant percentage compute to 0 however many `flex:1` levels sit in between (reproduced in an isolated two-level flex test, not assumed). `sizeBcFeed()` measures the subpanel and sets pixels instead, on init, on resize, on a subtab switch and on an 800ms poll.
+
+**The popup's height cap is 720px, up from 600px.** Unverified against a real popup: Chrome may cap extension popups lower, which a plain browser tab cannot show, and the bottom of the tab would be clipped rather than scrolled.
+
+**`sidepanel.html` gains two rules `popup.html` already had:** `min-height:0` on `#panel-console` and `#console-wrap`. Harmless while every box had a fixed pixel height; it broke the moment Quick Commands became `flex:1`, because `min-height:auto` lets an item refuse to shrink below its content.
+
+### Fixed
+
+**A finished run could lose its report.** The report body inlines every Visual Diff crop as a base64 PNG of up to 1024×800, and `chrome.storage.session` is capped at 10 MB for the whole extension. STRZ-1658 (Control and three variants, two full redesigns at 41 findings each) completed its entire pipeline and then lost the report to `Session storage quota bytes exceeded` on the one set that stored it. `openImageInTab`'s 6 MB budget shares that same 10 MB. `openReportTab` now writes to a new `reports` object store (IndexedDB schema v3; existing installs upgrade from v2 in place and `sessions` and `figma` are untouched) and prunes to the newest five exactly as before. `qa-report.js` reads it back, opening the database with no version because `popup.js` owns the schema and has upgraded it before that tab exists, and closing straight after so an open report can never block a later upgrade. A report tab left open from before the upgrade says "Report data not found"; nothing is migrated.
+
+**The Visual Diff dropped every sticky element, not only fixed ones.** A sticky element is in normal flow. At the scroll origin one anchored by top or left sits where it would sit anyway, and `captureBeyondViewport` only makes the viewport bigger, which can loosen a top/left constraint but never tighten it, so the rect the walk reads is where the screenshot paints it. Anchored by bottom or right it is the other way round (the normal viewport can pin it to its far edge while the enlarged capture viewport leaves it in flow), so those stay excluded along with `position:fixed`. On STRZ-1658 the New UI hero (headline, both plan cards, the badge, both Select Plan buttons) is one sticky div and the site header carrying the spec'd GET STARTED button is another. Dropped, the diff saw nothing in the variant's top 2157px: Control's plan picker came back "removed" (graded unexpected six times), 9 of v2's 14 "absent" spec strings were on the page, and v2 and v3, which differ only inside that div, produced byte-identical crops. The rule is only sound at the scroll origin, which is where `stabilizeForCapture` leaves the page, so that is read once (`atScrollOrigin`) and a walk that starts anywhere else keeps excluding sticky as before. The three user-facing notes no longer name a sticky header as the example of what is excluded, and say what the exclusion costs: whatever it replaced on the other page can show up as removed.
+
+### Verification
+
+- **Report storage** was exercised in a browser harness (seven 30 MB reports pruned to the newest five, existing v2 data surviving the upgrade) and then in the field on 2026-09-29: two real STRZ-1658 reports, about 45 MB each on disk against a 10 MB session-storage quota, stored and opened.
+- **The sticky walk** was measured on a fixture page, old and new walk side by side (5 to 14 candidates, every new rect equal to its live rect), not on a live run. It still needs STRZ-1658 and ENOC-97 reruns, ENOC-97 as the regression check. All six CI suites pass, but none of them runs the walk itself, which needs a real DOM.
+- **The 720px popup** has not been checked in a loaded extension.
+- **Quick Commands and the Console layout** were verified in a browser harness that slices the real functions out of `popup.js` and runs them against the real markup of both UI files, and by the CI suites; not in a loaded extension. No committed test covers the Console UI, since CI names its suites explicitly and nothing here has one yet.
+
 ## 2026-09-21
 
 ### Removed

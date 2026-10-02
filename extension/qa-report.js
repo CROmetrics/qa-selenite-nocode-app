@@ -1,10 +1,29 @@
 // Renders the Test Agent "Selenite QA Report" in its own bundled extension page.
-// runTestAgent stashes the report body under chrome.storage.session['taReports'][id]
-// and opens qa-report.html?k=<id>; this script reads it back and injects it.
+// openReportTab (popup.js) stores the report in IndexedDB 'selenite', store
+// 'reports', key <id>, and opens qa-report.html?k=<id>; this script reads it
+// back and injects it.
 // Bundled (script-src 'self') so it satisfies the MV3 extension-page CSP — an
 // inline <script>, an inline onclick, or a blob: page would not. Deliberately a
 // sibling of report.js (Matrix Auditor) rather than shared: the two reports
 // have distinct .rpt-* CSS shells living in their own HTML files.
+
+// Opened with NO version: popup.js owns the schema (idb() there) and has
+// already upgraded it before this tab exists. Closed straight after the read,
+// so an open report tab can never block a later schema upgrade.
+function readReport(id) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('selenite');
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('reports')) { db.close(); resolve(null); return; }
+      const get = db.transaction('reports').objectStore('reports').get(id);
+      get.onsuccess = () => { db.close(); resolve(get.result || null); };
+      get.onerror = () => { db.close(); reject(get.error); };
+    };
+  });
+}
+
 (async () => {
   const content = document.getElementById('qa-report-content');
   const printBtn = document.getElementById('qa-print-btn');
@@ -44,8 +63,7 @@
     return;
   }
   try {
-    const { taReports = {} } = await chrome.storage.session.get('taReports');
-    const report = taReports[id];
+    const report = await readReport(id);
     if (!report) {
       content.innerHTML = '<p class="rpt-muted">Report data not found — it may have expired (only the most recent few are kept). Re-run the Test Agent to generate a fresh report.</p>';
       return;

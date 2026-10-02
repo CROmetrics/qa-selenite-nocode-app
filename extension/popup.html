@@ -13,7 +13,7 @@
     --radius:7px;
   }
   html,body{
-    width:420px;min-height:560px;max-height:600px;
+    width:420px;min-height:560px;max-height:720px;
     background:var(--canvas);color:var(--fg1);
     font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:13px;
     display:flex;flex-direction:column;overflow:hidden;
@@ -165,7 +165,7 @@
      sidepanel.html already used, scoped to this one panel since popup's
      other tabs still rely on #panels scrolling the whole panel. */
   #panel-console{flex:1;min-height:0}
-  #console-wrap{display:flex;flex-direction:column;gap:5px;flex:1;min-height:0}
+  #console-wrap{display:flex;flex-direction:column;gap:4px;flex:1;min-height:0}
   #con-hdr,#bc-hdr{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
   #filter-btns,#bc-filter-btns{display:flex;gap:2px;margin-left:auto}
   #log-out{flex:1;min-height:200px;overflow-y:auto;background:#111;border-radius:4px;
@@ -176,15 +176,25 @@
 
   /* Console subtabs */
   .console-subtabs{display:flex;gap:4px}
-  .console-subpanel{display:none;flex-direction:column;gap:5px;flex:1;min-height:0}
+  .console-subpanel{display:none;flex-direction:column;gap:4px;flex:1;min-height:0}
   .console-subpanel.active{display:flex}
 
   /* Browser Console — structured log rows, not a terminal */
-  /* No fixed floor (unlike #log-out's 200px) — Quick Commands' built-in list
-     alone can run to ~220px, and the feed must be the only thing in this tab
-     that scrolls, so it has to be free to compress arbitrarily far to make
-     room rather than pushing #panels into scrolling instead. */
-  #bc-log-out{flex:1;min-height:0;overflow-y:auto;background:var(--card);border-radius:4px;
+  /* Firm height, same reasoning as before (flex:1 hands the feed whatever
+     its siblings don't claim — once Quick Commands got a real size, the feed
+     was left with ~2px regardless of its own content). This 250px is only a
+     fallback for the instant before popup.js's sizeBcFeed() runs (same
+     DOMContentLoaded tick, so in practice imperceptible) — the real, live
+     height is 60% of the Browser Console subpanel's actual available space,
+     set in JS. A plain CSS `height:60%` does NOT work here: it needs a
+     definite ancestor height to resolve against, and html,body above is
+     sized via min/max-height rather than a single explicit height, which
+     leaves it "auto" rather than definite for percentage-resolution
+     purposes — confirmed directly (an isolated two-level flex test resolves
+     a percentage height correctly against an explicit-height ancestor, but
+     identically structured against a min/max-height one, it computes to 0)
+     — see sizeBcFeed() in popup.js for why JS, not CSS, does this. */
+  #bc-log-out{height:250px;flex-shrink:0;overflow-y:auto;background:var(--card);border-radius:4px;
     border:1px solid var(--stroke);font-size:12px}
   .bc-entry{display:flex;align-items:flex-start;gap:7px;padding:5px 8px;
     border-bottom:1px solid var(--stroke);line-height:1.5}
@@ -208,34 +218,67 @@
   .bc-CMD .bc-text{font-weight:600}
   #bc-eval-input:disabled{opacity:.5}
 
-  /* Quick Commands — one-click presets + saved expressions, run through bcEval */
-  #bc-quick{border:1px solid var(--stroke);border-radius:4px;padding:4px 6px;background:var(--card)}
-  #bc-quick>summary{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;
-    color:var(--fg2);font-weight:600;list-style:none;user-select:none}
-  #bc-quick>summary::-webkit-details-marker{display:none}
-  #bc-quick>summary::before{content:'\25B8';font-size:9px;transition:transform .1s}
-  #bc-quick[open]>summary::before{transform:rotate(90deg)}
+  /* Quick Commands — one-click presets + saved expressions, run through bcEval.
+     Always open (not a <details> — the team wants it visible at all times,
+     not something to re-expand every time the popup opens), so this is a
+     plain header row, not a <summary>. Chips are deliberately large: this
+     list is short per-tab (at most 13 builtins, on General) specifically so
+     big, easy-to-hit buttons fit without reviving the scroll problem the
+     previous two passes fixed. */
+  /* flex:1, not a fixed height — the feed now claims an explicit 60% of
+     .console-subpanel (see sizeBcFeed() in popup.js), so this has to be a
+     true complement ("whatever's left"), not a second independent guess:
+     two explicit sizes that don't add up to the subpanel's actual height is
+     exactly what caused the whole-tab scroll a few rounds back. */
+  #bc-quick{display:flex;flex-direction:column;flex:1;min-height:0;
+    border:1px solid var(--stroke);border-radius:4px;padding:4px 6px;background:var(--card)}
+  .bc-quick-header{display:flex;align-items:center;gap:6px;font-size:11px;
+    color:var(--fg2);font-weight:600}
   #btn-bc-quick-add{margin-left:auto}
-  #bc-quick-btns{display:flex;flex-wrap:wrap;align-items:center;gap:3px;margin-top:5px}
-  .bc-quick-chip{display:inline-flex;align-items:center;border:1px solid var(--stroke);border-radius:3px;
+  #bc-quick-tabs{display:flex;gap:4px;margin-top:5px}
+  .bc-quick-tab{flex:1;background:transparent;border:1px solid var(--stroke);color:var(--fg2);
+    border-radius:4px;font-size:13px;font-weight:600;padding:9px 0;cursor:pointer}
+  .bc-quick-tab.active{background:var(--brand);color:#fff;border-color:var(--brand)}
+  /* flex:1 within #bc-quick — not a fixed height (see that rule's comment).
+     Still effectively constant across tabs despite not being a literal
+     constant: switching tabs doesn't change the feed's size or the header/
+     tabs/eval-input rows around it, so "what's left" is the same regardless
+     of which tab is active — Optimizely (9 buttons), Convert/AB Tasty (3
+     each) and General (13) all get the identical box. A short tab's buttons
+     sit at the top with empty space below (align-content flex-start, not
+     the flex-wrap default of stretch, which would otherwise stretch a
+     single row to fill the whole height); a tab whose buttons don't fit
+     scrolls internally instead of resizing the box. */
+  #bc-quick-btns{display:flex;flex-wrap:wrap;align-content:flex-start;align-items:center;
+    gap:6px;margin-top:5px;flex:1;min-height:0;overflow-y:auto}
+  .bc-quick-run.bc-quick-ok{background:var(--ok);color:#111}
+  .bc-quick-run.bc-quick-err{background:var(--err);color:#fff}
+  .bc-quick-chip{display:inline-flex;align-items:center;border:1px solid var(--stroke);border-radius:5px;
     background:var(--overlay);overflow:hidden}
   .bc-quick-chip.custom{border-color:var(--brand)}
   .bc-quick-chip.template{border-style:dashed}
-  /* Inline, not a forced line break — with 8 platform groups, a full-width
-     header row per group cost ~120px on its own and was most of why the
-     grid needed its own scrollbar. */
-  .bc-quick-group{font-size:9px;font-weight:700;letter-spacing:.3px;
-    text-transform:uppercase;color:var(--fg3);align-self:center;
-    margin-left:2px}
-  .bc-quick-group:first-child{margin-left:0}
+  /* Own line, not inline with the chips — a full-width header row per group
+     costs real height (this is why #bc-quick-btns' 200px box below scrolls
+     internally on the busier tabs), but a sub-category label sitting next to
+     a button it doesn't belong to read as unclear. */
+  .bc-quick-group{flex-basis:100%;font-size:9px;font-weight:700;letter-spacing:.3px;
+    text-transform:uppercase;color:var(--fg3);margin-top:6px}
+  .bc-quick-group:first-child{margin-top:0}
   .bc-quick-run,.bc-quick-del{background:transparent;border:none;color:var(--fg1);cursor:pointer;
-    font-size:11px;padding:2px 6px;line-height:1.2}
+    font-size:15px;padding:11px 16px;line-height:1.2}
   .bc-quick-run:hover:not(:disabled){background:var(--brand);color:#fff}
   .bc-quick-run:disabled{opacity:.45;cursor:default}
-  .bc-quick-del{color:var(--fg3);padding:3px 5px;border-left:1px solid var(--stroke)}
+  .bc-quick-del{color:var(--fg3);padding:11px 14px;font-size:17px;border-left:1px solid var(--stroke)}
   .bc-quick-del:hover,.bc-quick-del.confirm{color:#fff;background:var(--err)}
+  /* While the save form is open it takes the place of the tabs and buttons
+     instead of stacking under them. The card is a fixed share of the panel
+     (flex:1 above), so a form added on top of a grid that already fills it
+     simply spilled out of the card: Save/Cancel landed below its border and
+     the whole tab started scrolling. overflow-y:auto is the backstop if the
+     card is ever smaller than the form (e.g. a shorter popup than assumed). */
+  #bc-quick.adding #bc-quick-tabs,#bc-quick.adding #bc-quick-btns{display:none}
   #bc-quick-form{display:none;flex-direction:column;gap:4px;margin-top:6px}
-  #bc-quick-form.open{display:flex}
+  #bc-quick-form.open{display:flex;flex:1;min-height:0;overflow-y:auto}
   #bc-quick-form input,#bc-quick-form textarea{font-size:11px;padding:4px 7px;width:100%;box-sizing:border-box}
   #bc-quick-form textarea{font-family:'Cascadia Code','Menlo',monospace;min-height:48px;resize:vertical}
   #bc-quick-form-btns{display:flex;gap:4px;justify-content:flex-end;align-items:center}
@@ -918,7 +961,7 @@
         <div id="bc-hdr">
           <input type="text" id="bc-filter-input" placeholder="Filter…"
             style="flex:1;max-width:110px;padding:4px 7px;font-size:11px">
-          <label class="toggle-wrap" title="Show only [PjS]/[cro] tagged messages">
+          <label class="toggle-wrap" title="Show only [PjS]/[cro] tagged messages, plus the commands you run and their results">
             <input type="checkbox" id="bc-tag-filter-enabled">
             <span class="toggle-track"><span class="toggle-thumb"></span></span>
           </label>
@@ -932,10 +975,14 @@
           </div>
         </div>
         <div id="bc-log-out"></div>
-        <details id="bc-quick">
-          <summary>Quick Commands
+        <input type="text" id="bc-eval-input" placeholder="> Not attached" disabled
+          title="JS expressions, or $click('selector') / $hover('selector') for a trusted click/hover (opens native <select> dropdowns and menus gated on real input)"
+          style="width:100%;font-family:'Cascadia Code','Menlo',monospace;font-size:11px;padding:6px 8px">
+        <div id="bc-quick">
+          <div class="bc-quick-header">Quick Commands
             <button class="btn ghost btn-icon" id="btn-bc-quick-add" title="Save an expression as a one-click button">+ Add</button>
-          </summary>
+          </div>
+          <div id="bc-quick-tabs"></div>
           <div id="bc-quick-btns"></div>
           <div id="bc-quick-form">
             <input type="text" id="bc-quick-label" placeholder="Button label" maxlength="40">
@@ -946,10 +993,7 @@
               <button class="btn btn-icon" id="btn-bc-quick-save">Save</button>
             </div>
           </div>
-        </details>
-        <input type="text" id="bc-eval-input" placeholder="> Not attached" disabled
-          title="JS expressions, or $click('selector') / $hover('selector') for a trusted click/hover (opens native <select> dropdowns and menus gated on real input)"
-          style="width:100%;font-family:'Cascadia Code','Menlo',monospace;font-size:11px;padding:6px 8px">
+        </div>
       </div>
     </div>
   </div>

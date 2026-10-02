@@ -2262,8 +2262,12 @@ function capture(label, o) {
   ok('  naming the count and per-side split, and why it matters',
      stickyLine.length && /1 fixed or sticky element/.test(stickyLine[0].detail)
        && /0 in Control, 1 in Variant/.test(stickyLine[0].detail)
-       && /sticky header/.test(stickyLine[0].detail),
+       && /show up as removed/.test(stickyLine[0].detail),
      stickyLine[0]);
+  // A top-anchored sticky element is walked now, so the line must not name a
+  // sticky header as the example of what it excludes (STRZ-1658).
+  ok('  and no longer offers a sticky header as an example of what is excluded',
+     stickyLine.length && !/sticky header/.test(stickyLine[0].detail), stickyLine[0]);
 
   var onlyShadow = probsFor({ notWalked: { control: { iframes: 0, shadowHosts: 2, fixedOrSticky: 0 }, variant: null } });
   eq('a category present on only one side, with the other absent entirely, still reports',

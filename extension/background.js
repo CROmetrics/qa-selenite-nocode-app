@@ -2109,7 +2109,8 @@ function domCandidateWalkFn(maxCandidates, pageW, capturedH, extendedCapture) {
   // likely to explain a real gap. Counted once per subtree root, not per
   // descendant, since walk() returns before visiting children -- this is a
   // count of dropped SUBTREES. Since the sticky rule below narrowed, it counts
-  // fixed elements plus only the sticky ones that can still be displaced.
+  // fixed elements, plus sticky ones only when the walk did not start at the
+  // scroll origin.
   const notWalked = { shadowHosts: 0, iframes: 0, fixedOrSticky: 0 };
   // Read once: the sticky rule below is only sound at the scroll origin, which
   // is where stabilizeForCapture leaves the page before the capture and walk.
@@ -2252,40 +2253,39 @@ function domCandidateWalkFn(maxCandidates, pageW, capturedH, extendedCapture) {
     if (SKIP_TAGS.has(el.tagName)) return;
     const cs = getComputedStyle(el);
     if (cs.display === 'none' || cs.visibility === 'hidden') return;
-    // Fixed elements (cookie banners, chat widgets, drawers): their rect is
-    // viewport-relative, so in a full-page beyond-viewport capture it lands
-    // at the wrong document position (and CDP only paints them once, at
-    // their normal viewport position, not repeated down the page) — same
-    // problem for any descendant, so the whole subtree is dropped rather
-    // than just the element itself. Counted once per subtree root (see
-    // notWalked's declaration).
+    // Fixed elements (cookie banners, chat widgets, drawers) are dropped, whole
+    // subtree, counted once per subtree root (see notWalked's declaration).
+    // Not for geometry: the capture paints one exactly where its scroll-0 rect
+    // says (measured, below), once, not repeated down the page. They are
+    // overlays rather than page content, and whether a banner or a chat bubble
+    // is showing depends on consent and load timing, not on the experiment.
     //
-    // Sticky is NOT the same case, and dropping it with fixed was the more
-    // expensive mistake. A sticky element is in normal flow: at the scroll
-    // origin, one anchored by top/left sits where it would sit anyway, and
-    // captureBeyondViewport only makes the viewport BIGGER, which can loosen a
-    // top/left constraint but never tighten it — so the rect read here is
-    // where the screenshot paints it. Anchored by bottom/right it is the other
-    // way round: the normal viewport can pin it to its far edge while the
-    // enlarged capture viewport leaves it in flow, so those stay excluded.
-    // (A top offset in vh would still resolve differently in the two — rare,
-    // and a wrong crop is a far smaller cost than the one below.)
+    // Sticky elements are walked, whichever edge anchors them, when the walk
+    // starts at the scroll origin (where stabilizeForCapture leaves the page).
+    // captureBeyondViewport does NOT lay the page out again at full height: it
+    // paints the current layout, so a sticky element sits exactly where its
+    // scroll-0 rect says, pinned to the fold or not. Measured 2026-10-02 on
+    // Chrome 154, headless, windowed and under the pin's
+    // setDeviceMetricsOverride, by checking each rect against the painted
+    // pixels: top-, bottom- and right-anchored sticky and a bottom-anchored
+    // fixed bar all matched, and 50vh stayed half the real viewport.
     //
-    // Measured on STRZ-1658 (starz.com buy page): the New UI hero — headline,
-    // both plan cards, the badge, both Select Plan buttons — is one sticky
-    // div, and the site header carrying the spec'd GET STARTED button is
-    // another. Dropped, the diff saw nothing in the variant's top 2157px:
-    // Control's plan picker came back "removed" (graded unexpected six times),
-    // 9 of v2's 14 "absent" spec strings were on the page, and v2 and v3 —
-    // which differ only inside that div — produced byte-identical crops. (This
-    // exclusion was already recorded as why a spec'd new header on another
-    // real page never produced a finding; that only changes here if that
-    // header is sticky rather than fixed.)
+    // 0.7.0 walked only top/left-anchored sticky, on the opposite assumption
+    // (an enlarged capture viewport, modeled by resizing a fixture rather than
+    // by capturing one), and STRZ-1658 stayed broken: its New UI hero —
+    // headline, both plan cards, the badge, both Select Plan buttons — is one
+    // `position:sticky; bottom:32px` div. Dropped, the diff saw nothing between
+    // the variant's header and y=2174, Control's plan picker came back
+    // "removed" and graded unexpected, most of v2's "absent" spec strings were
+    // on the page, and v2 and v3, which differ only inside that div, produced
+    // byte-identical crops. (ENOC-97's header, the other real page this
+    // exclusion silenced, is Bootstrap `sticky-top` on the live page, which
+    // 0.7.0 already walks.) A pinned element does move with the viewport
+    // height, so two captures of different heights disagree about it; the
+    // geometry pin holds every capture to the first one's height, and
+    // validateVisualDiffGeometry reports a capture where that failed.
     if (cs.position === 'fixed') { notWalked.fixedOrSticky++; return; }
-    if (cs.position === 'sticky' && !(atScrollOrigin && cs.bottom === 'auto' && cs.right === 'auto')) {
-      notWalked.fixedOrSticky++;
-      return;
-    }
+    if (cs.position === 'sticky' && !atScrollOrigin) { notWalked.fixedOrSticky++; return; }
 
     const role = el.getAttribute('role');
     const liveHere = inLiveRegion || isLiveRegionSignal(el.getAttribute('aria-live'), role);

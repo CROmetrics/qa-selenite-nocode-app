@@ -6981,7 +6981,7 @@ function rptAbVisualDiffSection(vd) {
       ${unmet.map(x => `<div class="ab-cline">${
         x.status === 'near'
           ? `Spec says ${q(JSON.stringify(x.required))} — page has ${q(JSON.stringify(x.foundText))}.`
-          : `Not found on the page: ${q(JSON.stringify(x.required))}.${x.inControl ? ' Still present in Control, so the old copy did not change.' : ''}`
+          : `Not found on the page: ${q(JSON.stringify(x.required))}.${x.inControl ? ' Control has it, so this may be the old copy the spec says to replace; if so, its absence is correct.' : ''}`
       }</div>`).join('')}`;
 
     // Same three-state gating as reqHtml above: only worth showing once a
@@ -7644,15 +7644,16 @@ function vdCollectProblems(sections) {
             + 'whatever changed inside them will not be reported.');
         }
         if (side('fixedOrSticky')) {
-          // Sticky elements anchored by top/left are walked now (see walk() in
-          // background.js); this counts fixed ones and bottom/right-anchored
-          // sticky ones. The second clause is the costlier half: on STRZ-1658 a
-          // dropped variant subtree turned Control's whole plan picker into
-          // "removed" findings, not merely into silence.
+          // Sticky elements are walked now whichever edge anchors them (see
+          // walk() in background.js), so this counts fixed ones, plus sticky
+          // ones only from a walk that did not start at the scroll origin. The
+          // second clause is the costlier half: on STRZ-1658 a dropped variant
+          // subtree turned Control's whole plan picker into "removed"
+          // findings, not merely into silence.
           add('warn', at, `${side('fixedOrSticky')} fixed or sticky element(s)${detail('fixedOrSticky')} were excluded from`
-            + ' this comparison — fixed elements and bottom-anchored sticky bars (a chat widget, a cookie banner, a'
-            + ' sticky footer CTA) are this shape. A spec\'d change inside one produces no findings even when it renders'
-            + ' correctly, and whatever it replaced on the other page can show up as removed.');
+            + ' this comparison — fixed elements (a chat widget, a cookie banner, a slide-out menu) are this shape, and'
+            + ' sticky ones only when the page was not scrolled to the top. A spec\'d change inside one produces no'
+            + ' findings even when it renders correctly, and whatever it replaced on the other page can show up as removed.');
         }
       }
       // Neither of these is about the debug blob, so neither may be gated on it

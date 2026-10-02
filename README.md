@@ -27,6 +27,17 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.1 — 2026-10-02
+
+Three fixes found on STRZ-1658: two in Visual Diff, one in the QA report.
+
+**Visual Diff**
+- **Sticky elements are compared whichever edge they are anchored to**, not only top or left. 0.7.0 still skipped bottom-anchored ones on the belief that a full-page capture paints them somewhere else; measured, it paints every sticky element exactly where the comparison reads it. STRZ-1658's hero and plan picker are one bottom-anchored sticky block, so on 0.7.0 they still read as missing from the variant and Control's plan picker as "removed". Fixed elements (chat widgets, cookie banners, slide-out menus) are still excluded, and the run's notes say so.
+- **A spec section written for two variants is checked against both.** A ticket section headed "V2 and V3:" used to count for v2 only, so v3 was checked against almost none of its copy. A line that lists each variant's copy ("v2: … v3: …") now gives each variant only its own.
+
+**QA report**
+- **A required string that Control has and the variant correctly dropped is no longer called unchanged.** When the spec quotes the copy it replaces, the copy line now says so instead of "the old copy did not change".
+
 ### 0.7.0 — 2026-10-02
 
 One big update: the Console gets Quick Commands and a layout that holds still, the QA report stops being lost to a storage quota, and Visual Diff stops discarding sticky blocks.

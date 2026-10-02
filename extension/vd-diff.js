@@ -1266,6 +1266,55 @@
   // the label belongs to it, not just the first.
   var VD_SPEC_VARIANT_HEADER = /^(v\d+)\b[ \t]*(?:\([^)\n]*\))?[ \t]*:/;
 
+  // A header can name MORE than one variant. STRZ-1658's ticket heads its shared
+  // block "V2 and V3:", splitVariantBlocks takes the leading V2 as the id, and
+  // the summary carries `v2: and V3:` -- so the plan picker, countdown, library
+  // and footer the spec marks "v2 & v3 — shared structure" were scoped to v2
+  // alone, and v3 was checked against ONE string while 27 were reported as
+  // "stated for other variants". Only a tail made of nothing but further labels
+  // and connectors counts (`and V3:`, `& v3`, `, v3, v4:`), so `v2: Same as v1,
+  // plus a new CTA` stays v2's alone. Measured over every spec on record,
+  // `v2: and V3:` is the only header that names a second variant.
+  var VD_SPEC_MORE_LABELS = /^[ \t]*((?:(?:and|&|\+|,|\/)[ \t]*v\d+\b[ \t]*)+)(?::|$)/i;
+  function vdSpecHeaderLabels(line) {
+    var m = VD_SPEC_VARIANT_HEADER.exec(line);
+    if (!m) return null;
+    var labels = [m[1]], end = m[0].length;
+    var more = VD_SPEC_MORE_LABELS.exec(line.slice(end));
+    if (more) {
+      var re = /v(\d+)/gi, x;
+      while ((x = re.exec(more[1]))) labels.push('v' + x[1]);
+      end += more[0].length;
+    }
+    return { labels: labels, end: end };
+  }
+
+  // A line can also divide itself between variants. The same shared block says
+  // `Badge (emphasis): v2: "Most Popular" badge on the Monthly card. v3: "Best
+  // Value" badge on the Annual card`, and scoped by section alone each badge is
+  // required of both variants, so each reports the other's badge absent. A
+  // quoted string belongs to the nearest inline `vN:` before it on its line, but
+  // ONLY when that line names two or more different variants inline, which is
+  // what makes it an enumeration: a single inline label (`Same as v1: "Start
+  // now"`) says nothing about ownership and changes nothing. A header's own
+  // labels are not inline labels. Measured over every spec on record, that badge
+  // line is the only line this touches. Returns the owning label or null.
+  function vdSpecInlineOwner(text, offset) {
+    var start = text.lastIndexOf('\n', offset - 1) + 1;
+    var stop = text.indexOf('\n', offset);
+    var line = text.slice(start, stop === -1 ? text.length : stop);
+    var h = vdSpecHeaderLabels(line);
+    var from = h ? h.end : 0;
+    var body = line.slice(from), at = offset - start - from;
+    var re = /(?:^|[^\p{L}\p{N}])v(\d+)[ \t]*:/giu, x, seenLabel = {}, distinct = 0, owner = null;
+    while ((x = re.exec(body))) {
+      var label = 'v' + x[1];
+      if (!seenLabel[label]) { seenLabel[label] = true; distinct++; }
+      if (x.index + x[0].length <= at) owner = label;
+    }
+    return distinct >= 2 ? owner : null;
+  }
+
   // Text before the first header belongs to no variant and is given to all of
   // them: a preamble is the author addressing the whole test.
   function vdSpecScopeToVariant(text, label) {
@@ -1273,10 +1322,10 @@
     var lines = String(text || '').split('\n');
     var pre = [], keep = [], cur = null, sawHeader = false, matched = false;
     for (var i = 0; i < lines.length; i++) {
-      var m = VD_SPEC_VARIANT_HEADER.exec(lines[i]);
-      if (m) { sawHeader = true; cur = m[1]; if (cur === label) matched = true; }
+      var h = vdSpecHeaderLabels(lines[i]);
+      if (h) { sawHeader = true; cur = h.labels; if (cur.indexOf(label) !== -1) matched = true; }
       if (!sawHeader) pre.push(lines[i]);
-      else if (cur === label) keep.push(lines[i]);
+      else if (cur && cur.indexOf(label) !== -1) keep.push(lines[i]);
     }
     // Two fallbacks, both deliberate. A spec with no headers at all is a
     // hand-typed one and every requirement in it applies. A label with no
@@ -1323,6 +1372,13 @@
       // Subsumes the old `if (!norm)` punctuation-only check.
       if (norm.length < VD_REQ_MIN_CHARS) return;
       if (vdLooksLikeMarkup(raw)) return;
+      // Another variant's entry in an inline enumeration (see vdSpecInlineOwner).
+      // Before the dedupe, so the same string stated unlabeled elsewhere still
+      // counts. Unscoped extraction keeps everything: it is the whole-spec count.
+      if (variantLabel && offset != null) {
+        var owner = vdSpecInlineOwner(text, offset);
+        if (owner && owner !== variantLabel) return;
+      }
       if (seen.has(norm)) return;
       seen.add(norm);
       var line = offset == null ? null : text.slice(0, offset).split('\n').length - 1;
@@ -1568,8 +1624,12 @@
           if (sc > bestScore) { bestScore = sc; best = pool[i]; }
         }
       }
-      // Present in the control but not the variant separates "the spec asked
-      // for new copy and the old copy is still there" from "never shipped".
+      // Present in the control but not the variant. That is one of two things
+      // and this flag cannot say which: the spec quoted the copy it REPLACES, so
+      // the absence is the change working (STRZ-1658 v1: `"BEST DEAL" badge
+      // moves off the Annual card`), or the variant lost copy the spec wanted
+      // kept. The report names both rather than guessing; until 2026-10-02 it
+      // said "the old copy did not change", which is true of neither.
       var inControl = !!(controlPool.length &&
         (containedIn(controlPool, r.norm) || controlPool.some(function (c) { return c.textNorm === r.norm; })));
       if (best && bestScore >= nearMinSim) {

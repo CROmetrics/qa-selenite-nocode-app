@@ -574,6 +574,23 @@ function item(status, required, opts) {
      { iReq: iReq, iSum: iSum });
 })();
 
+(function absentCopyThatControlHasIsNotCalledUnchanged() {
+  // STRZ-1658 v1, real: the spec says `"BEST DEAL" badge moves off the Annual
+  // card`, so the extractor requires BEST DEAL, the variant correctly drops it,
+  // and Control still has it (inControl). The line used to read "Still present
+  // in Control, so the old copy did not change", telling a client the opposite
+  // of what happened.
+  var h = withReq(reqSet([
+    item('verbatim', 'Most Popular'),
+    item('absent', 'BEST DEAL', { inControl: true }),
+  ]));
+  ok('an absent string Control has is not reported as unchanged copy', !/did not change/.test(h), h.slice(0, 600));
+  ok('  it says the spec may be quoting the copy it replaces',
+     /may be the old copy the spec says to replace/.test(h), h.slice(0, 600));
+  var g = withReq(reqSet([item('absent', 'Brand New Line', { inControl: false })]));
+  ok('  and says nothing of the kind when Control lacks it too', !/old copy/.test(g), g.slice(0, 600));
+})();
+
 (function fragmentsDoNotCountAsUnmet() {
   // A prefix relationship means the wording did not change — only how much of
   // it one element carries. Three of five near-matches on the real ENOC-97 data

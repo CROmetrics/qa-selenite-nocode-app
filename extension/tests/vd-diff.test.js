@@ -814,6 +814,56 @@ function reqCand(text) {
      vdSpecRequirements(spec, 'v9').length, 3);
 })();
 
+(function sharedSectionsAndInlineEnumerationsScopeToEveryVariantTheyName() {
+  // STRZ-1658, real lines. The ticket heads its shared block "V2 and V3:", the
+  // Jira parse takes the leading V2 as the id, and the summary carries
+  // `v2: and V3:`. Scoped by the first label alone, v3 was checked against ONE
+  // string and every shared-structure line went to v2 -- along with v3's badge,
+  // which v2 then reported absent. Three field runs on 2026-10-02 carry it.
+  if (typeof vdSpecRequirements !== 'function') return;
+  var spec = [
+    'v2: New UI — Monthly Emphasis',
+    'Hero headline: "Don’t Miss Another Moment" (differs from Control’s "Limited Time Offer")',
+    'v3: New UI — Annual Emphasis',
+    'Redesigned plan-picker cards and expanded content library — with the badge emphasis flipped to Annual ("Best Value").',
+    'v2: and V3:',
+    'New UI plan-picker cards (v2 & v3 — shared structure)',
+    'Monthly card: "Monthly" label / $4.99/mo (struck-through $11.99/mo) / "Save 58% for the first 3 months" / Select Plan CTA',
+    'Badge (emphasis): v2: "Most Popular" badge on the Monthly card. v3: "Best Value" badge on the Annual card (teal pill, top-right corner of the card).',
+  ].join('\n');
+  function reqs(label) { return vdSpecRequirements(spec, label).map(function (r) { return r.required; }); }
+  var v2 = reqs('v2'), v3 = reqs('v3'), all = reqs();
+
+  ok('a `v2: and V3:` section belongs to v3 as well',
+     v3.indexOf('Monthly') !== -1 && v3.indexOf('Save 58% for the first 3 months') !== -1, v3);
+  ok('  and still to v2', v2.indexOf('Monthly') !== -1 && v2.indexOf('Save 58% for the first 3 months') !== -1, v2);
+  eq('  but v2’s own section stays v2’s', v3.indexOf('Don’t Miss Another Moment'), -1);
+  ok('  so the scoped text carries the shared lines', /Monthly card/.test(vdSpecScopeToVariant(spec, 'v3')));
+
+  // The badge line enumerates per variant inline.
+  ok('an inline `v2: … v3: …` enumeration gives v2 its own badge', v2.indexOf('Most Popular') !== -1, v2);
+  eq('  and not v3’s', v2.indexOf('Best Value'), -1);
+  ok('  gives v3 its own badge', v3.indexOf('Best Value') !== -1, v3);
+  eq('  and not v2’s', v3.indexOf('Most Popular'), -1);
+  ok('unscoped extraction still counts both badges (it is the whole-spec total)',
+     all.indexOf('Most Popular') !== -1 && all.indexOf('Best Value') !== -1, all);
+
+  // What must NOT change. A header whose tail is prose names no second
+  // variant, a lone inline label is not an enumeration, and a header's own
+  // labels are not inline labels.
+  var prose = [
+    'v1: First', 'Headline: "ONE"',
+    'v2: Same as v1, plus a new CTA', 'CTA: "Go Now"', 'Same as v1: "Start now"',
+  ].join('\n');
+  eq('`v2: Same as v1, …` does not share v2’s section with v1',
+     vdSpecRequirements(prose, 'v1').map(function (r) { return r.required; }).join('|'), 'ONE');
+  ok('a single inline label does not take copy away from the section it sits in',
+     vdSpecRequirements(prose, 'v2').map(function (r) { return r.required; }).indexOf('Start now') !== -1);
+  var onHeader = 'v2: and V3: "Shared Line"';
+  ok('copy on a multi-label header line belongs to every label it names',
+     vdSpecRequirements(onHeader, 'v2').length === 1 && vdSpecRequirements(onHeader, 'v3').length === 1);
+})();
+
 (function embedCodeIsNotCopy() {
   // A spec that pastes its form embed code makes pass 1 harvest the markup as
   // if it were copy. Run 1789419453332 (unicefusa.org): UUSAF-250 ends each
@@ -2268,6 +2318,11 @@ function capture(label, o) {
   // sticky header as the example of what it excludes (STRZ-1658).
   ok('  and no longer offers a sticky header as an example of what is excluded',
      stickyLine.length && !/sticky header/.test(stickyLine[0].detail), stickyLine[0]);
+  // Nor a bottom-anchored sticky bar: 0.7.0 still excluded those, on an
+  // unmeasured premise, and STRZ-1658's hero is `position:sticky; bottom:32px`.
+  // Sticky of any anchoring is walked at the scroll origin now.
+  ok('  nor a bottom-anchored sticky bar, which is walked now as well',
+     stickyLine.length && !/bottom-anchored|sticky (bars?|footer)/.test(stickyLine[0].detail), stickyLine[0]);
 
   var onlyShadow = probsFor({ notWalked: { control: { iframes: 0, shadowHosts: 2, fixedOrSticky: 0 }, variant: null } });
   eq('a category present on only one side, with the other absent entirely, still reports',

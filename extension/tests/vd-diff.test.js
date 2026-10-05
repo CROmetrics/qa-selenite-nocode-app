@@ -50,7 +50,7 @@ eval(_pu.slice(_pu.indexOf('function vdCollectProblems(sections)'),
                 _pu.indexOf('function buildDebugLog(sections)')));
 // buildDebugLog carries the findings projection that becomes the exported JSON.
 eval(_pu.slice(_pu.indexOf('function buildDebugLog(sections)'),
-                _pu.indexOf('\n// Stash the rendered report body')));
+                _pu.indexOf('\n// Stash the rendered report under a fresh id')));
 // Control-vs-Control detectors and shared-finding extraction, sliced from the
 // pipeline they guard.
 eval(_pu.slice(_pu.indexOf('function vdFindingIdentity(f)'),
@@ -4502,6 +4502,166 @@ eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
     // it is the same input as the `budget` entry above, not a distinct cause.
   ];
   eq('every distinct cause produces a distinct sentence', new Set(sentences).size, sentences.length);
+})();
+
+// ── debug log: the Test Agent modes ────────────────────────────────────────
+section('debug log: a Test Agent run records the mode that ran');
+(function testAgentModesAreInTheLog() {
+  // r_1790970413550 (0.7.1, 2026-10-02) is a WCAG-only Test Agent run. Its log
+  // held `problems: []`, `captures: []`, `pageUrls: []` and A/B's settings, and
+  // nothing about WCAG at all: buildDebugLog read only mode 2 and the funnel,
+  // and A/B has not been a Test Agent mode since 838cb35. That log is
+  // indistinguishable from one that audited nothing, and its "nothing degraded
+  // this run" would have been printed over an axe-core failure too.
+  //
+  // The Cross-Variant section runs the real diffCvaRuns and the Performance
+  // problems name pages with the real shortUrl, so both are sliced in here --
+  // by INDIRECT eval, because taDebugSection and taModeProblems were eval'd at
+  // file scope and resolve these names there, not in this function.
+  var slice = function (from, to) {
+    var a = _pu.indexOf(from), b = _pu.indexOf(to, a + 1);
+    if (a === -1 || b === -1) throw new Error('slice marker missing: ' + from);
+    return _pu.slice(a, b);
+  };
+  (0, eval)(slice('function diffCvaRuns(runs, checkKeys) {', '\nfunction '));
+  (0, eval)(slice('function shortUrl(u) {', '\nfunction '));
+
+  var at = Date.UTC(2026, 9, 2, 19, 46, 53, 549);
+  var wcag = { mode: 4, name: 'WCAG / Accessibility', status: 'ran', data: {
+    url: 'https://shop.example/', ts: at - 9000, tabId: 3, checks: ['contrast', 'newcheck'], scope: '.hero',
+    results: { contrast: { label: 'Colour contrast', wcag: '1.4.3',
+                           issues: ['axe · Elements must meet minimum color contrast ratio thresholds — .btn'] } },
+    axeError: 'axe-core failed to inject',
+    scopeError: 'Scope selector matched nothing — audited the full page instead: .hero',
+    agenticNote: 'Agentic Testing unavailable: No API key configured',
+  } };
+  var log = buildDebugLog({ ts: at, pageUrls: ['https://shop.example/'], modes: [wcag] });
+  ok('a WCAG run has a wcag section', !!log.wcag, log.wcag);
+  eq('  naming the page it audited', log.wcag.url, 'https://shop.example/');
+  eq('  and when the audit finished, so its age against generatedAt shows', log.wcag.completedAt, '2026-10-02T19:46:44.549Z');
+  eq('  the scope failure', log.wcag.scopeError, wcag.data.scopeError);
+  eq('  the axe-core failure', log.wcag.axeError, 'axe-core failed to inject');
+  eq('  per-check counts', log.wcag.checks[0].issueCount, 1);
+  eq('  the issues themselves', log.wcag.checks[0].issues[0], wcag.data.results.contrast.issues[0]);
+  eq('  and a selected check with no result, kept as missing', log.wcag.checks[1].missing, true);
+  eq('the other two Test Agent sections are null', log.crossVariant === null && log.performance === null, true);
+  eq('the A/B tab\'s settings are not printed over a run without A/B', log.run.settings, null);
+  ok('Visual Diff\'s absence says where it runs', /runs from the A\/B tab/.test(log.visualDiff.reason), log.visualDiff);
+
+  var has = function (lg, sev, re) {
+    return lg.problems.some(function (p) { return p.severity === sev && re.test(p.detail); });
+  };
+  ok('problems: the scope failure', has(log, 'warn', /matched nothing.*whole page/));
+  ok('problems: the axe-core failure', has(log, 'warn', /axe-core could not run \(axe-core failed to inject\)/));
+  ok('problems: the check that returned nothing, named', has(log, 'warn', /missing from the report: newcheck/));
+  ok('problems: the vision call that failed', has(log, 'warn', /^Agentic Testing unavailable: No API key/));
+  // A clean audit really is clean: nothing above fires on it.
+  var clean = buildDebugLog({ ts: at, pageUrls: [], modes: [{ mode: 4, name: 'WCAG / Accessibility', status: 'ran',
+    data: { url: 'https://shop.example/', ts: at, checks: ['contrast'], scope: '',
+            results: { contrast: { label: 'Colour contrast', issues: [] } } } }] });
+  eq('a clean audit raises no problems', clean.problems.length, 0);
+
+  // A mode that failed: an error, and a section with nothing invented in it.
+  var failed = buildDebugLog({ ts: at, pageUrls: [], modes: [
+    { mode: 4, name: 'WCAG / Accessibility', status: 'failed', reason: 'No active tab' }] });
+  ok('a failed mode is an error in problems', has(failed, 'error', /Did not complete — No active tab/), failed.problems);
+  eq('  and its section carries only status and reason', JSON.stringify(failed.wcag),
+     JSON.stringify({ status: 'failed', reason: 'No active tab' }));
+
+  // Cross-Variant: a subtraction between two audits taken differently is the
+  // failure that still produces tidy numbers.
+  var cvaRun = function (label, o) {
+    return Object.assign({ label: label, url: 'https://shop.example/?optimizely_x=' + label, finalUrl: 'https://shop.example/',
+      loadError: null, axeError: null, scopeError: null,
+      results: { contrast: { label: 'Colour contrast', issues: [label + ' issue'] } } }, o || {});
+  };
+  var cvaLog = function (runs) {
+    return buildDebugLog({ ts: at, pageUrls: [], modes: [{ mode: 5, name: 'Cross-Variant Accessibility', status: 'ran',
+      data: { ts: at, scope: '.hero', autoChecks: ['contrast'], includeManual: false, runs: runs } }] });
+  };
+  var mixedAxe = cvaLog([cvaRun('Control'), cvaRun('v1', { axeError: 'axe failed to load' })]);
+  ok('cross-variant: axe-core on one side only is an error', has(mixedAxe, 'error', /ran on "Control" but not on "v1"/), mixedAxe.problems);
+  eq('  and the section carries both runs and the diff counts', mixedAxe.crossVariant.variants[0].introduced, 1);
+  eq('  with each run\'s finalUrl', mixedAxe.crossVariant.runs[1].finalUrl, 'https://shop.example/');
+  var allAxe = cvaLog([cvaRun('Control', { axeError: 'x' }), cvaRun('v1', { axeError: 'x' })]);
+  ok('cross-variant: axe-core failing everywhere is only a warning', has(allAxe, 'warn', /could not run on any variant/)
+     && !has(allAxe, 'error', /axe-core/), allAxe.problems);
+  var mixedScope = cvaLog([cvaRun('Control'), cvaRun('v1', { scopeError: 'Scope selector matched nothing — audited the full page instead: .hero' })]);
+  ok('cross-variant: a scope that matched on one side only is an error',
+     has(mixedScope, 'error', /matched nothing on "v1", so it was audited across the whole page while "Control" was/), mixedScope.problems);
+  var noBase = cvaLog([cvaRun('Control', { loadError: 'net::ERR_NAME_NOT_RESOLVED', results: null }), cvaRun('v1')]);
+  ok('cross-variant: a baseline that did not load is an error', has(noBase, 'error', /baseline failed to load/), noBase.problems);
+
+  // Performance: a page that never measured cannot have met its budgets.
+  var perfLog = buildDebugLog({ ts: at, pageUrls: [], modes: [{ mode: 6, name: 'Performance / Load', status: 'ran',
+    data: { ts: at, budgets: { lcpMs: 2500 }, disableCache: true, pages: [
+      { url: 'https://shop.example/a', skipped: false, partial: false, runs: [{ error: 'timeout' }, { error: 'timeout' }],
+        summary: { runCount: 0, runErrors: ['timeout', 'timeout'], medians: {}, verdicts: {}, jsErrors: [] } },
+      { url: 'https://shop.example/b', skipped: false, partial: false, runs: [{ error: 'timeout' }, { lcp: 900 }, { lcp: 1100 }],
+        summary: { runCount: 2, runErrors: ['timeout'], medians: { lcpMs: 1000 }, verdicts: { lcpMs: 'ok' }, jsErrors: [] } },
+    ] } }] });
+  ok('performance: no successful run is an error', has(perfLog, 'error', /No successful run \(timeout\)/), perfLog.problems);
+  ok('performance: some failed runs is a warning naming the count', has(perfLog, 'warn', /1 of 3 runs failed/), perfLog.problems);
+  eq('  and the section keeps every attempt', perfLog.performance.pages[1].runs.length, 3);
+
+  // An A/B log keeps its shape: settings present, the new sections null.
+  var abLog = buildDebugLog(abSections([capture('v0', { fullPage: null })], []));
+  ok('an A/B log still carries the A/B settings', abLog.run.settings && abLog.run.settings.visualDiff === true, abLog.run.settings);
+  eq('  and none of the Test Agent sections', [abLog.wcag, abLog.crossVariant, abLog.performance].every(function (x) { return x === null; }), true);
+})();
+
+// ── Agentic Testing screenshot: one debugger client per tab ────────────────
+section('agentic screenshot reuses the console mirror\'s session');
+(function screenshotReusesTheMirrorSession() {
+  // r_1790972328425's one problem: "Agentic Testing unavailable: Could not
+  // attach for screenshot (is DevTools open?): Another debugger is already
+  // attached to the tab with id: 1884846406." Chrome raises that when THIS
+  // extension already holds the tab, and doFollow attaches the console mirror
+  // to the focused tab by default -- the tab WCAG audits. captureViewportScreenshot
+  // attached a second client instead of going through withVariantDebugger, the
+  // helper full-page capture already used.
+  var slice = function (from, to) {
+    var a = _bg.indexOf(from), b = _bg.indexOf(to, a + 1);
+    if (a === -1 || b === -1) throw new Error('slice marker missing: ' + from);
+    return _bg.slice(a, b);
+  };
+  var winFollow = new Map(), tabToWin = new Map(), CDP_VERSION = '1.3';
+  var restoreFollowState = function () { return Promise.resolve(); };
+  var held = new Set(), calls = [];
+  chrome.debugger = {
+    attach: function (t) {
+      calls.push('attach');
+      if (held.has(t.tabId)) {
+        return Promise.reject(new Error('Another debugger is already attached to the tab with id: ' + t.tabId + '.'));
+      }
+      held.add(t.tabId);
+      return Promise.resolve();
+    },
+    detach: function (t) { calls.push('detach'); held.delete(t.tabId); return Promise.resolve(); },
+    sendCommand: function (t, method) { calls.push(method); return Promise.resolve({ data: 'AAAA' }); },
+  };
+  eval(slice('async function withVariantDebugger(tabId, fn) {', '\n// Visual Diff scrape (Stage 1)'));
+  eval(slice('async function captureViewportScreenshot(tabId) {', '\n// ── Funnel Crawl: screenshot'));
+  var shoot = function (tabId) {
+    var out = {};
+    captureViewportScreenshot(tabId).then(function (v) { out.v = v; }, function (e) { out.e = String(e); });
+    drainMicrotasks();
+    return out;
+  };
+
+  // The mirror holds tab 7, as doFollow leaves the tab a panel is following.
+  held.add(7); winFollow.set(1, { tabId: 7, attached: true }); tabToWin.set(7, 1);
+  var r = shoot(7);
+  eq('a tab the console mirror holds is screenshotted', r.v, 'data:image/png;base64,AAAA');
+  eq('  over the mirror\'s session: no second attach, no detach', calls.join(','), 'Page.captureScreenshot');
+  ok('  so the mirror is still attached afterwards', held.has(7));
+
+  // A tab nobody holds: attach, capture, detach, as before.
+  calls = [];
+  r = shoot(8);
+  eq('an unheld tab is screenshotted', r.v, 'data:image/png;base64,AAAA');
+  eq('  by attaching and detaching around it', calls.join(','), 'attach,Page.captureScreenshot,detach');
+  delete chrome.debugger;
 })();
 
 // ── report ─────────────────────────────────────────────────────────────────

@@ -800,11 +800,27 @@ async function runTestAgent() {
         continue;
       }
       status.textContent = `Running ${m.label}…`;
-      await m.run();
-      modeResults.push({ mode: modeKey, name: m.label, status: 'ran', data: m.getData() });
+      // A mode that fails says so in its own panel and leaves its last result
+      // where it was, so getData() still answers: with the PREVIOUS run, or
+      // null. Recorded as 'ran', the first put an earlier audit, of whatever
+      // page it was, into this report as if it had just happened, and the
+      // second crashed the report after the status line said it had opened.
+      // Every run record is stamped when it completes, so one older than this
+      // mode's start was not produced by it.
+      const startedAt = Date.now();
+      const outcome = await Promise.resolve(m.run()).catch(e => ({ ok: false, error: e.message }));
+      const data = m.getData();
+      if (!(data?.ts >= startedAt)) {
+        modeResults.push(_taStopRequested
+          ? { mode: modeKey, name: m.label, status: 'skipped', reason: 'Stopped before it finished.' }
+          : { mode: modeKey, name: m.label, status: 'failed', reason: outcome?.error || 'It finished without producing a result.' });
+        continue;
+      }
+      modeResults.push({ mode: modeKey, name: m.label, status: 'ran', data });
     }
 
     const anyRan = modeResults.some(r => r.status === 'ran');
+    const failed = modeResults.filter(r => r.status === 'failed');
     if (anyRan) {
       const analysisEnabled = !!document.getElementById('ta-agentic-analysis')?.checked;
       let aiSectionHtml;
@@ -823,10 +839,18 @@ async function runTestAgent() {
       } else {
         aiSectionHtml = rptAiSummarySection(null, 'Agentic Analysis is off — enable it in Test Controls for an AI-written summary.');
       }
-      status.textContent = 'Done — report opened in a new tab.';
-      await openReportTab({ ts: Date.now(), pageUrls: abPageUrls(modeResults), modes: modeResults, extraHtml: aiSectionHtml });
+      // Set once the tab has opened, not before it: this line used to read
+      // "report opened" when building the report had thrown.
+      try {
+        await openReportTab({ ts: Date.now(), pageUrls: abPageUrls(modeResults), modes: modeResults, extraHtml: aiSectionHtml });
+        status.textContent = 'Done — report opened in a new tab.';
+      } catch (e) {
+        status.textContent = 'The report could not be built: ' + e.message;
+      }
     } else {
-      status.textContent = 'Done — nothing configured to run.';
+      status.textContent = failed.length
+        ? failed.map(r => `${r.name} failed: ${r.reason}`).join(' · ')
+        : 'Done — nothing configured to run.';
     }
   } finally {
     runBtn.disabled = false;
@@ -2889,7 +2913,7 @@ async function runWcagAudit(opts = {}) {
   const checks = wcagCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
   if (!checks.length) {
     resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Select at least one check.</div>';
-    return;
+    return { ok: false, error: 'No checks selected.' };
   }
   const scope = (document.getElementById('wcag-scope')?.value || '').trim();
 
@@ -2911,6 +2935,8 @@ async function runWcagAudit(opts = {}) {
     await renderWcagHistoryList();
   } catch (e) {
     resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
+    // For Test Agent, which otherwise has only the panel to learn this from.
+    return { ok: false, error: e.message };
   } finally {
     btn.disabled = false;
     btn.textContent = 'Run Audit';
@@ -5322,12 +5348,12 @@ async function runCvaAudit() {
     .filter(t => t.url);
   if (targets.length < 2) {
     resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Define at least two variant targets with a URL (or set a base URL). The first target is the baseline.</div>';
-    return;
+    return { ok: false, error: 'Fewer than two variant targets have a URL.' };
   }
   const autoChecks = cvaState.checks.filter(k => WCAG_CHECKS.some(c => c.key === k && !c.manual));
   if (!autoChecks.length) {
     resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Select at least one check.</div>';
-    return;
+    return { ok: false, error: 'No automated checks selected.' };
   }
   const checks = cvaState.includeManual ? [...autoChecks, ...WCAG_MANUAL_KEYS] : autoChecks;
   const scope = (cvaState.scope || '').trim();
@@ -5353,12 +5379,13 @@ async function runCvaAudit() {
     const runs = (res.results || []).filter(r => !r.skipped);
     if (runs.length < 2) {
       resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Stopped before two variants were audited — nothing to compare.</div>';
-      return;
+      return { ok: false, error: 'Fewer than two variants were audited, so there was nothing to compare.' };
     }
     _cvaLastRun = { ts: Date.now(), scope, autoChecks, includeManual: cvaState.includeManual, runs };
     renderCvaResults(_cvaLastRun);
   } catch (e) {
     resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
+    return { ok: false, error: e.message };
   } finally {
     clearInterval(_cvaProgressPoller);
     _cvaProgressPoller = null;
@@ -5402,6 +5429,21 @@ function diffCvaRuns(runs, checkKeys) {
   return { base, variants };
 }
 
+// The notes over a cross-variant result, shared by the live panel and the
+// report so the two cannot say different things. The report used to print none
+// of them, so a variant audited without axe-core, or across its whole page
+// because the scope matched nothing there, was diffed against a baseline
+// audited the other way with nothing on the page saying so.
+function cvaRunNotes(run) {
+  const notes = [];
+  for (const r of run.runs) {
+    if (r.scopeError) notes.push(`${r.label}: ${r.scopeError}`);
+    if (r.axeError)   notes.push(`${r.label}: axe-core could not run (${r.axeError}) — heuristics only.`);
+  }
+  if (run.scope && !notes.length) notes.push('Scoped to: ' + run.scope);
+  return notes;
+}
+
 // Highlight an issue's element in the variant tab it was found in (kept open
 // via keep-tabs), falling back to the active tab; degrades with an inline note.
 async function cvaHighlight(selector, tabId, rowEl) {
@@ -5434,12 +5476,7 @@ function renderCvaResults(run) {
   };
 
   const blocks = [];
-  const notes = [];
-  for (const r of run.runs) {
-    if (r.scopeError) notes.push(`${r.label}: ${r.scopeError}`);
-    if (r.axeError)   notes.push(`${r.label}: axe-core could not run (${r.axeError}) — heuristics only.`);
-  }
-  if (run.scope && !notes.length) notes.push('Scoped to: ' + run.scope);
+  const notes = cvaRunNotes(run);
 
   // Baseline block — its findings as-is (everything here is "pre-existing" by
   // definition; the interesting buckets live on the variants below).
@@ -5675,7 +5712,7 @@ async function runPerfMode(opts = {}) {
   const pages = tmPagesFor('6');
   if (!pages.length) {
     resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Add at least one page URL above. Tip: add the same page twice with different override params to compare experiment variants.</div>';
-    return;
+    return { ok: false, error: 'No page URLs.' };
   }
 
   btn.disabled = true;
@@ -5711,6 +5748,7 @@ async function runPerfMode(opts = {}) {
     await savePerfHistory(summarized);
   } catch (e) {
     resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
+    return { ok: false, error: e.message };
   } finally {
     clearInterval(_perfProgressPoller);
     _perfProgressPoller = null;
@@ -5927,6 +5965,13 @@ function rptSection(title, badgeHtml, summaryText, bodyHtml) {
 
 function rptSkipped(title, reason) {
   return rptSection(title, rptBadge('skip', 'SKIPPED'), reason || 'Not configured.', '');
+}
+
+// A mode that started and produced nothing. Its own panel shows the error; the
+// report says so instead of rendering an earlier run in its place.
+function rptFailed(title, reason) {
+  const why = String(reason || 'It produced no result').replace(/\.\s*$/, '');
+  return rptSection(title, rptBadge('fail', 'FAILED'), `${why}. Nothing from this mode is in the report.`, '');
 }
 
 // Test Agent: LLM-written verdict over the modeResults already collected —
@@ -6464,8 +6509,19 @@ function vdVerdictSummary(vv) {
 //
 // Putting that on the cover of a document that gets shared with a client
 // publishes the preview token, and it is unreadable besides. finalUrl is the
-// clean post-redirect address and is normally identical across variants, so the
-// deduplicated list is usually one line.
+// post-redirect address.
+//
+// And never a query string, because finalUrl is only clean where the site
+// redirects the forcing parameters away. Starz does not, so every STRZ-1658
+// cover listed one link per variant of the form
+//
+//   https://www.starz.com/us/en/buy?optimizely_x=4780302780858368
+//     &optimizely_force_tracking=true&cro_mode=qa
+//
+// each of which registers a real tracked exposure for anyone who pastes it.
+// The cover lists pages, not links, so every URL here loses its query and
+// fragment, whichever mode it came from. The Page Basics table and each
+// section's body still give the exact URL.
 //
 // This is the OPPOSITE of vdForcedVariationId, which must read cap.url precisely
 // because the redirect strips optimizely_x. Different purpose, different field —
@@ -6512,12 +6568,13 @@ function abCaptureWidths(modes) {
 
 function abPageUrls(modes) {
   const seen = new Set(), out = [];
+  const add = (u) => {
+    u = String(u || '').trim().split(/[?#]/)[0];
+    if (u && !seen.has(u)) { seen.add(u); out.push(u); }
+  };
   for (const m of (modes || [])) {
     for (const c of (m?.data?.captures || [])) {
-      if (c.skipped) continue;
-      const u = (c.finalUrl || '').trim();
-      if (!u || seen.has(u)) continue;
-      seen.add(u); out.push(u);
+      if (!c.skipped) add(c.finalUrl);
     }
     // Funnel Crawl has no .captures (a different data shape entirely — see
     // buildDebugLog's own funnel section) — its pages are the waypoint chain
@@ -6525,11 +6582,21 @@ function abPageUrls(modes) {
     // every page actually reached, not just the ones in a completed segment.
     if (m?.mode === 'funnel') {
       const segs = m?.data?.segments || [];
-      if (segs[0]?.from) { const u = segs[0].from.trim(); if (u && !seen.has(u)) { seen.add(u); out.push(u); } }
-      for (const s of segs) {
-        const u = (s.to || '').trim();
-        if (!u || seen.has(u)) continue;
-        seen.add(u); out.push(u);
+      if (segs[0]?.from) add(segs[0].from);
+      for (const s of segs) add(s.to);
+    }
+    // The Test Agent modes. Since A/B left the Test Agent (838cb35) they are
+    // all a Test Agent report can hold, and every such cover read "No page URLs
+    // recorded." above a section naming the page. Cross-Variant records
+    // finalUrl per variant, read for the reason above. WCAG and Performance
+    // keep only the URL as the user loaded or typed it, which is routinely the
+    // forcing link itself (the first real WCAG cover, r_1790972328425); `add`
+    // drops the query from all of them alike.
+    if (m?.mode === 4) add(m.data?.url);
+    if (m?.mode === 5) for (const r of m.data?.runs || []) add(r.finalUrl);
+    if (m?.mode === 6) {
+      for (const p of m.data?.pages || []) {
+        if (!p.skipped) add(p.url);
       }
     }
   }
@@ -7118,7 +7185,10 @@ function rptWcagSection(entry) {
   const badge = rptBadge(withIssues ? 'issues' : 'pass', withIssues ? 'ISSUES FOUND' : 'PASS');
   const summary = `${passed} passed · ${withIssues} with issues · ${manual} manual review${totalIssues ? ` · ${totalIssues} total issue(s)` : ''}`;
   const notes = [];
-  if (run.scope) notes.push('Scoped to: ' + run.scope);
+  // The live panel's precedence. A scope that failed means the WHOLE page was
+  // audited, so "Scoped to" would state the opposite of what ran.
+  if (run.scopeError) notes.push(run.scopeError);
+  else if (run.scope) notes.push('Scoped to: ' + run.scope);
   if (run.axeError) notes.push('axe-core could not run (' + run.axeError + ') — heuristic checks were used instead.');
   if (run.url) notes.push('Audited ' + run.url);
   const body = (notes.length ? `<p class="rpt-muted">${notes.map(esc).join(' · ')}</p>` : '') +
@@ -7155,7 +7225,9 @@ function rptCvaSection(entry) {
   const baseNote = baseFailed
     ? '<p class="ab-warn">Variants below are shown against an empty baseline — every issue counts as introduced. Re-run once Control loads to see which are actually regressions.</p>'
     : '';
-  const body = baseNote + `<table class="rpt-table"><thead><tr><th>Variant</th><th>Summary</th><th>${
+  const notes = cvaRunNotes(run);
+  const notesHtml = notes.length ? `<p class="rpt-muted">${notes.map(esc).join(' · ')}</p>` : '';
+  const body = notesHtml + baseNote + `<table class="rpt-table"><thead><tr><th>Variant</th><th>Summary</th><th>${
     baseFailed ? 'Checks with issues' : 'Introduced checks'}</th></tr></thead><tbody>${rows}</tbody></table>`;
   return rptSection(entry.name, badge, summary, body);
 }
@@ -7262,7 +7334,12 @@ function buildReportBody(sections) {
   };
   let diagnosticsHtml = '';
   try { diagnosticsHtml = rptDiagnosticsSection(vdCollectProblems(sections)); } catch (_) {}
-  const body = (extraHtml || '') + modes.map(entry => (builders[entry.mode] || (() => ''))(entry)).join('') + diagnosticsHtml;
+  // 'failed' is decided here once rather than in every builder: each of them
+  // reads entry.data unguarded, and a failed mode has none.
+  const section = entry => entry.status === 'failed'
+    ? rptFailed(entry.name, entry.reason)
+    : (builders[entry.mode] || (() => ''))(entry);
+  const body = (extraHtml || '') + modes.map(section).join('') + diagnosticsHtml;
   const urlsHtml = pageUrls.length
     ? pageUrls.map(u => `<li>${esc(u)}</li>`).join('')
     : '<li>No page URLs recorded.</li>';
@@ -7492,7 +7569,12 @@ function vdCollectProblems(sections) {
 
   for (const entry of sections.modes || []) {
     if (entry.status === 'skipped') add('info', entry.name || `mode ${entry.mode}`, `Skipped — ${entry.reason || 'no reason recorded'}`);
+    if (entry.status === 'failed') {
+      add('error', entry.name || `mode ${entry.mode}`,
+        `Did not complete — ${entry.reason || 'no reason recorded'}. Nothing from it is in the report.`);
+    }
     if (entry.error) add('error', entry.name || `mode ${entry.mode}`, entry.error);
+    if (entry.data && (entry.mode === 4 || entry.mode === 5 || entry.mode === 6)) taModeProblems(entry, add);
     if (entry.mode !== 2 || !entry.data) continue;
 
     // Geometry mismatch invalidates the whole comparison, so it is checked
@@ -7955,6 +8037,152 @@ function vdCollectProblems(sections) {
   return problems;
 }
 
+// What degraded a WCAG (4), Cross-Variant (5) or Performance (6) run. The mode
+// loop above only ever looked inside mode 2, so a log over any of these said
+// "nothing degraded this run" whatever happened, including an axe-core failure
+// the report's own section mentions.
+function taModeProblems(entry, add) {
+  const d = entry.data;
+  const agenticFailed = (note) => typeof note === 'string' && /^Agentic Testing unavailable:/.test(note);
+  const names = (runs) => runs.map(r => `"${r.label}"`).join(', ');
+
+  if (entry.mode === 4) {
+    if (d.scopeError) {
+      add('warn', 'wcag', `${d.scopeError}. Every count in the report covers the whole page, not the region asked for.`);
+    }
+    if (d.axeError) {
+      add('warn', 'wcag', `axe-core could not run (${d.axeError}), so only Selenite's own heuristic checks ran. `
+        + 'Anything only axe-core detects is missing from every check.');
+    }
+    // The report renders only checks that have a result, so one the worker
+    // did not answer vanishes from it without a word.
+    const missing = (d.checks || []).filter(k => !d.results?.[k]);
+    if (missing.length) {
+      add('warn', 'wcag', `${missing.length} selected check(s) returned no result and are missing from the report: `
+        + `${missing.join(', ')}. The usual cause is a popup newer than its service worker: reload the extension and re-run.`);
+    }
+    if (agenticFailed(d.agenticNote)) add('warn', 'wcag', d.agenticNote);
+  }
+
+  if (entry.mode === 5) {
+    const runs = d.runs || [];
+    const base = runs[0];
+    if (base?.loadError) {
+      add('error', `cross-variant/${base.label}`, `The baseline failed to load (${base.loadError}), so every issue on `
+        + 'every variant counts as introduced. None of those counts is a measured regression.');
+    }
+    for (const r of runs.slice(1)) {
+      if (r.loadError) add('error', `cross-variant/${r.label}`, `Failed to load (${r.loadError}), so it was not compared.`);
+    }
+    // Each audit's own count is real either way. What stops meaning anything is
+    // the subtraction, when the two sides were audited differently.
+    const loaded = runs.filter(r => !r.loadError);
+    const noAxe = loaded.filter(r => r.axeError);
+    if (noAxe.length && noAxe.length < loaded.length) {
+      add('error', 'cross-variant', `axe-core ran on ${names(loaded.filter(r => !r.axeError))} but not on ${names(noAxe)}, `
+        + 'so introduced and resolved there compare an axe-core audit with a heuristics-only one. They are not regressions or fixes.');
+    } else if (noAxe.length) {
+      add('warn', 'cross-variant', `axe-core could not run on any variant (${noAxe[0].axeError}). The comparison is like for `
+        + 'like, but anything only axe-core detects is missing from both sides.');
+    }
+    const unscoped = loaded.filter(r => r.scopeError);
+    if (unscoped.length && unscoped.length < loaded.length) {
+      add('error', 'cross-variant', `The scope selector matched nothing on ${names(unscoped)}, so ${unscoped.length === 1 ? 'it was' : 'they were'} `
+        + `audited across the whole page while ${names(loaded.filter(r => !r.scopeError))} ${loaded.length - unscoped.length === 1 ? 'was' : 'were'} `
+        + 'audited inside the region. Introduced and resolved there compare two different areas.');
+    } else if (unscoped.length) {
+      add('warn', 'cross-variant', `${unscoped[0].scopeError}, on every variant. The comparison is like for like, but covers `
+        + 'the whole page rather than the region asked for.');
+    }
+  }
+
+  if (entry.mode === 6) {
+    for (const p of d.pages || []) {
+      const where = `performance/${shortUrl(p.url)}`;
+      const n = (p.runs || []).length;
+      const good = p.summary?.runCount || 0;
+      if (p.skipped) { add('info', where, 'Not measured: the run was stopped before this page.'); continue; }
+      if (!good) {
+        add('error', where, `No successful run (${(p.summary?.runErrors || [])[0] || 'every attempt failed'}), so nothing `
+          + 'was measured and no budget was checked.');
+      } else if (good < n) {
+        add('warn', where, `${n - good} of ${n} runs failed (${p.summary.runErrors[0]}); the medians are over the other ${good}.`);
+      }
+      if (p.partial) add('warn', where, `Stopped after ${n} run(s), so the medians are over fewer runs than configured.`);
+      if (agenticFailed(p.agenticNote)) add('warn', where, p.agenticNote);
+    }
+  }
+}
+
+// The debug-log section for a WCAG (4), Cross-Variant (5) or Performance (6)
+// entry: the raw per-check and per-run numbers rather than the rendered
+// verdicts, so two logs of the same page can be compared directly. Same
+// convention as `funnel`: null when the mode was not in the run, and only
+// status and reason when it was but did not produce a result.
+function taDebugSection(entry) {
+  if (!entry) return null;
+  const out = { status: entry.status, reason: entry.reason || null };
+  const d = entry.data;
+  if (!d) return out;
+  // When the mode's own result was produced. Test Agent records a mode as
+  // 'ran' only when this is newer than the mode's start, so it also says how
+  // old the result was when the report was built (generatedAt).
+  out.completedAt = d.ts ? new Date(d.ts).toISOString() : null;
+  // A selected check with no result is dropped from the report without a
+  // word; here it stays, as missing.
+  const checkRows = (results, keys) => (keys || []).map(k => {
+    const c = results?.[k];
+    return c
+      ? { key: k, label: c.label || k, wcag: c.wcag || null, manual: !!c.infoOnly,
+          issueCount: (c.issues || []).length, issues: c.issues || [] }
+      : { key: k, missing: true };
+  });
+
+  if (entry.mode === 4) {
+    Object.assign(out, {
+      url: d.url || null, scope: d.scope || null, scopeError: d.scopeError || null,
+      axeError: d.axeError || null,
+      // null when Agentic Testing was off; the worker's own sentence when the
+      // vision call failed, which `problems` flags.
+      agenticNote: d.agenticNote || null,
+      checks: checkRows(d.results, d.checks),
+    });
+  } else if (entry.mode === 5) {
+    const diff = diffCvaRuns(d.runs || [], d.autoChecks || []);
+    Object.assign(out, {
+      scope: d.scope || null, includeManual: !!d.includeManual, autoChecks: d.autoChecks || [],
+      runs: (d.runs || []).map(r => ({
+        label: r.label, url: r.url || null, finalUrl: r.finalUrl || null, loadError: r.loadError || null,
+        axeError: r.axeError || null, scopeError: r.scopeError || null,
+        checks: r.results ? checkRows(r.results, Object.keys(r.results)) : [],
+      })),
+      // Counts only. The issue strings behind them are in `runs`.
+      variants: diff.variants.map(v => ({
+        label: v.label, loadError: v.loadError || null,
+        introduced: v.introduced, resolved: v.resolved, preexisting: v.preexisting,
+        perCheck: v.perCheck.map(pc => ({
+          key: pc.key, introduced: pc.introduced.length, resolved: pc.resolved.length, preexisting: pc.preexisting.length,
+        })),
+      })),
+    });
+  } else if (entry.mode === 6) {
+    Object.assign(out, {
+      budgets: d.budgets || null, disableCache: !!d.disableCache,
+      pages: (d.pages || []).map(p => ({
+        url: p.url, skipped: !!p.skipped, partial: !!p.partial,
+        runCount: p.summary?.runCount ?? 0, runErrors: p.summary?.runErrors || [],
+        medians: p.summary?.medians || null, verdicts: p.summary?.verdicts || null,
+        jsErrors: p.summary?.jsErrors || [],
+        // Every attempt, failed ones included: the medians are only checkable
+        // against these.
+        runs: p.runs || [],
+        agenticNote: p.agenticNote || null,
+      })),
+    });
+  }
+  return out;
+}
+
 // ONE projection for a finding in the debug log. It was two: the per-variant
 // list carried all twenty fields while the shared list carried seven, so a run
 // whose findings are ALL shared exported almost nothing diagnosable. Run
@@ -8022,16 +8250,20 @@ function vdExportFinding(f) {
 }
 
 function buildDebugLog(sections) {
-  const abEntry = (sections.modes || []).find(m => m.mode === 2);
+  const modeEntry = (n) => (sections.modes || []).find(m => m.mode === n);
+  const abEntry = modeEntry(2);
   const vd = abEntry?.data?.visualDiffFull || abEntry?.data?.visualDiff;
-  const funnelEntry = (sections.modes || []).find(m => m.mode === 'funnel');
+  const funnelEntry = modeEntry('funnel');
 
   return {
     readme: 'Selenite QA debug log. `problems` lists everything that degraded this run — start there. '
       + 'For Visual Diff, cross-reference each variant\'s `movesByDelta` against its `shiftClusters`: a shift amount '
       + 'that appears repeatedly among reported moves but has no trusted cluster means reflow suppression is '
       + 'under-matching and those findings are cascade, not real changes. A starved `path` entry in `matchTierCounts` '
-      + 'means structural identity is not surviving this page\'s experiment JS.',
+      + 'means structural identity is not surviving this page\'s experiment JS. '
+      + '`captures`, `visualDiff` and `run.settings` are A/B-only; a Test Agent run of WCAG, Cross-Variant '
+      + 'Accessibility or Performance has its own section (`wcag`, `crossVariant`, `performance`), null when '
+      + 'that mode was not in the run.',
     generatedAt: new Date(sections.ts).toISOString(),
     extensionVersion: chrome.runtime.getManifest().version,
     userAgent: navigator.userAgent,
@@ -8040,7 +8272,10 @@ function buildDebugLog(sections) {
     run: {
       pageUrls: sections.pageUrls || [],
       modes: (sections.modes || []).map(m => ({ mode: m.mode, name: m.name, status: m.status, reason: m.reason || null })),
-      settings: {
+      // The A/B tab's settings, so null on a run without A/B in it. Printed on
+      // a WCAG run they read visualDiff:true and agenticTesting:true, both of
+      // them that tab's toggles and neither describing what ran.
+      settings: !abEntry ? null : {
         qaMode: abState?.qaMode, settleSec: abState?.settleSec, keepTabs: abState?.keepTabs,
         visualDiff: abState?.visualDiff, visualDiffCrops: abState?.visualDiffCrops,
         agenticTesting: abState?.agenticTesting, hasSummaryOfChanges: !!(abState?.summaryOfChanges || '').trim(),
@@ -8072,10 +8307,13 @@ function buildDebugLog(sections) {
     // no `modes` row for it and this is the only place its absence is recorded.
     // The fallback wording matters: "not run" read like a decision Visual Diff
     // made, when it only means there was no mode-2 entry to read a reason off.
+    // Since 838cb35 a log without one is a Test Agent log, which can never
+    // contain A/B, so the reason says where Visual Diff runs instead of
+    // sounding like something here failed to.
     // (`settings.visualDiff` above is live abState at report time, not a record
-    // of this run — it reads true on every log.)
+    // of this run — it reads true on every A/B log.)
     visualDiff: !vd || vd.skipped
-      ? { skipped: true, reason: vd?.reason || (abEntry ? 'not run' : 'A/B Variant Comparison did not run, and Visual Diff is a step within it') }
+      ? { skipped: true, reason: vd?.reason || (abEntry ? 'not run' : 'Not part of this run: Visual Diff is a step of A/B Variant Comparison, which runs from the A/B tab') }
       : {
       baselineLabel: vd.baselineLabel, baselineWarning: vd.baselineWarning || null,
       // Lifted out of the per-variant lists — without these the debug log would
@@ -8204,6 +8442,14 @@ function buildDebugLog(sections) {
         })),
       })),
     },
+    // The Test Agent modes. Since A/B left the Test Agent (838cb35) a Test Agent
+    // log has nothing in `captures` or `visualDiff` by construction, and until
+    // these existed it had nothing about the modes that did run either:
+    // r_1790970413550 is a WCAG run whose log cannot be told apart from one
+    // that audited nothing.
+    wcag: taDebugSection(modeEntry(4)),
+    crossVariant: taDebugSection(modeEntry(5)),
+    performance: taDebugSection(modeEntry(6)),
   };
 }
 

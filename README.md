@@ -27,6 +27,21 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.2 — 2026-10-05
+
+Test Agent reports and debug logs say what actually ran, and no report cover prints a forcing link.
+
+**Test Agent**
+- **A mode that fails is reported as FAILED.** A WCAG, Cross-Variant or Performance run that failed used to be reported with that mode's previous result, of whatever page it covered, as if it had just run, or, with no earlier result, lost the report while the status line said it had opened. The report now shows the mode as FAILED with its error, and the status line says what happened.
+- **Agentic Testing works on WCAG.** Its screenshot clashed with the Browser Console's own connection to the tab, so it failed whenever the console was following that tab (the default), with a message blaming DevTools.
+
+**QA report**
+- **The cover lists pages, not links.** On five of the six sites tested so far the forcing parameters stay in the URL, so covers printed one link per variant carrying `optimizely_force_tracking=true`, which registers a tracked visit for anyone who pastes it. The cover now shows each page once, without its query string; the Page Basics table still has every variant's exact URL. WCAG, Cross-Variant and Performance reports now list their pages at all, instead of "No page URLs recorded."
+- **WCAG and Cross-Variant say how the audit ran.** A scope that matched nothing no longer reads "Scoped to …" (the whole page was audited), and a Cross-Variant variant audited without axe-core or across the whole page is noted, as in the panel.
+
+**Debug log**
+- **WCAG, Cross-Variant and Performance runs are in it.** Each has its own section with the page, every check or measurement, and when it finished, and `problems` names what degraded the run. The A/B tab's settings appear only on A/B runs.
+
 ### 0.7.1 — 2026-10-02
 
 Three fixes found on STRZ-1658: two in Visual Diff, one in the QA report.

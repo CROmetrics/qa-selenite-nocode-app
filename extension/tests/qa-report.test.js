@@ -73,6 +73,9 @@ var WCAG_CHECKS = [{ key: 'contrast', label: 'Colour contrast' }, { key: 'alt', 
 eval(slicePopup('function shortUrl(u) {', '\nfunction '));
 eval(slicePopup('function fmtMetric(v, m) {', '\nfunction '));
 eval(slicePopup('function diffCvaRuns(runs, checkKeys) {', '\nfunction '));
+// Shared by the live panel and rptCvaSection, so the report prints the same
+// axe-core and scope notes the panel does.
+eval(slicePopup('function cvaRunNotes(run) {', '\nfunction '));
 eval(slicePopup('function rptCvaSection(entry) {', '\nfunction rptPerfSection'));
 eval(slicePopup('function rptPerfSection(entry) {', '\nfunction rptFunnelSection'));
 
@@ -1013,7 +1016,8 @@ section('the cover page says what was tested');
   ] } }];
   var got = abPageUrls(modes);
   eq('both variants resolved to one page, so one entry', got.length, 1);
-  eq('  and it is the clean post-redirect URL', got[0], clean);
+  // Without its query: the cover lists pages, not links (see the Starz case below).
+  eq('  and it is the post-redirect page, without its query', got[0], 'https://www.ondeck.com/soc/b');
 
   // The one that matters: cap.url is the forced-variation PREVIEW url and
   // carries the token. Publishing it on a client-facing cover page leaks it.
@@ -1046,6 +1050,26 @@ section('the cover page says what was tested');
   eq('captures are found on any mode that has them', multi.join(','), 'https://c.example/z');
   eq('no modes at all', abPageUrls([]).length, 0);
   eq('undefined', abPageUrls(undefined).length, 0);
+
+  // finalUrl is only clean where the site redirects the forcing parameters
+  // away. Starz does not: these are the four finalUrls of r_1791216757295
+  // (STRZ-1658, 2026-10-05), and every STRZ-1658 cover printed them as four
+  // links, each registering a real tracked exposure for anyone who pastes it.
+  var starz = ['6219568484450304', '4911923798474752', '4780302780858368', '4816449225621504']
+    .map(function (x, i) {
+      return { label: 'v' + i, url: 'https://www.starz.com/us/en/buy?optimizely_x=' + x,
+               finalUrl: 'https://www.starz.com/us/en/buy?optimizely_x=' + x + '&optimizely_force_tracking=true&cro_mode=qa' };
+    });
+  var cover = abPageUrls([{ mode: 2, data: { captures: starz } }]);
+  eq('a site that keeps the forcing parameters still gets ONE cover line', JSON.stringify(cover),
+     JSON.stringify(['https://www.starz.com/us/en/buy']));
+  ok('  with no optimizely_ parameter in it', !/optimizely_/.test(cover.join(' ')), cover);
+
+  // One rule for every source the cover reads, the funnel's waypoints included.
+  eq('a funnel waypoint loses its query too',
+     abPageUrls([{ mode: 'funnel', data: { segments: [
+       { from: 'https://shop.example/lp?optimizely_x=1&optimizely_force_tracking=true', to: 'https://shop.example/cart#top' }] } }]).join(','),
+     'https://shop.example/lp,https://shop.example/cart');
 })();
 
 // ── the two badges must agree ──────────────────────────────────────────────
@@ -2158,6 +2182,172 @@ section('the copy check must not call itself an exact string comparison');
   ok('the cover derives the width itself', /abCaptureWidths\(modes\)/.test(body), body.slice(0, 300));
   ok('  and renders it', /\$\{widthHtml\}/.test(body));
   ok('  labelled, so a bare number cannot be misread', /Captured at \$\{esc\(widths\)\}/.test(body));
+})();
+
+// ── Test Agent: a mode that fails is reported as failed ────────────────────
+section('Test Agent: a failed mode is FAILED, never its previous run');
+(function () {
+  // Found from r_1790970413550, a WCAG-only Test Agent run whose debug log
+  // carried nothing about WCAG. Driving the code behind it showed that a failed
+  // audit leaves _wcagCurrentRun where it was, and runTestAgent recorded the
+  // mode 'ran' with whatever that was: an hour-old audit of another page went
+  // into the report as this run's result, and with nothing in memory the
+  // report crashed after the status line had said it opened.
+  //
+  // The real runTestAgent, TA_MODES and runWcagAudit against a worker stub.
+  // TA_MODES is a `const`, re-declared as a var so it survives the eval (the
+  // trap noted at PERF_METRICS above). Everything the slices reach for that
+  // this suite does not otherwise define goes on globalThis for this block only.
+  var els = {};
+  var el = function (id) {
+    return els[id] || (els[id] = { textContent: '', disabled: false, style: {}, innerHTML: '', checked: false, value: '' });
+  };
+  var reply = null, opened = null, openThrows = null, perfRun = null;
+  var stubs = {
+    document: { getElementById: el },
+    chrome: { runtime: { sendMessage: function (msg) {
+      return Promise.resolve(msg.action === 'runWcagAudit' ? reply : { ok: false, error: 'stub' });
+    } } },
+    wcagCheckboxes: function () { return [{ checked: true, value: 'contrast' }]; },
+    taAgenticTestingEnabled: function () { return false; },
+    renderWcagRun: function () {},
+    saveWcagHistory: function () { return Promise.resolve(); },
+    renderWcagHistoryList: function () { return Promise.resolve(); },
+    getActiveContext: function () { return Promise.resolve(null); },
+    rptAiSummarySection: function () { return ''; },
+    openReportTab: function (sections) {
+      if (openThrows) return Promise.reject(new Error(openThrows));
+      opened = sections;
+      return Promise.resolve();
+    },
+    rptAbSection: function () { return ''; },
+    rptFunnelSection: function () { return ''; },
+    _wcagCurrentRun: null, _taActiveBody: '4', taQueuedExtra: new Set(), _taStopRequested: false,
+  };
+  Object.keys(stubs).forEach(function (k) { globalThis[k] = stubs[k]; });
+  eval(slicePopup('async function runWcagAudit(opts = {}) {', '\nfunction renderWcagRun('));
+  eval(slicePopup('const TA_MODES = {', '\nlet _taActiveBody').replace(/^const TA_MODES/, 'var TA_MODES'));
+  eval(slicePopup('async function runTestAgent() {', '\nfunction stopTestAgent('));
+  eval(slicePopup('function rptAgenticNoteHtml(note, label) {', '\n// ── the run'));
+  eval(slicePopup('function rptWcagSection(entry) {', '\nfunction rptCvaSection('));
+  eval(slicePopup('function buildReportBody(sections) {', '\n// ── Debug log'));
+
+  var status = function () { return el('ta-status').textContent; };
+  var run = function () {
+    var out = { done: false, threw: null };
+    runTestAgent().then(function () { out.done = true; }, function (e) { out.threw = e; out.done = true; });
+    drainMicrotasks();
+    return out;
+  };
+  var okResults = { contrast: { label: 'Colour contrast', issues: [] } };
+
+  // 1. Nothing in memory, the audit fails.
+  reply = { ok: false, error: 'No active tab' };
+  var r = run();
+  ok('the run settles without throwing', r.done && !r.threw, r.threw && String(r.threw));
+  eq('nothing ran, so no report was opened', opened, null);
+  eq('  and the status line names the failure instead of "report opened"', status(),
+     'WCAG / Accessibility failed: No active tab');
+
+  // 2. An hour-old audit of another page in memory, the audit fails again.
+  // Batched with a mode that does run, so a report opens and its modes are
+  // visible.
+  var hourAgo = Date.now() - 3600e3;
+  _wcagCurrentRun = { url: 'https://old.example/', ts: hourAgo, checks: ['contrast'], scope: '',
+                      results: { contrast: { label: 'Colour contrast', issues: ['an hour-old issue'] } } };
+  TA_MODES['6'] = { label: 'Performance / Load', isConfigured: function () { return true; },
+                    run: function () { perfRun = { ts: Date.now(), budgets: {}, pages: [] }; return Promise.resolve(); },
+                    getData: function () { return perfRun; } };
+  taQueuedExtra.add('6');
+  r = run();
+  var w = opened && opened.modes[0];
+  ok('the batch settles', r.done && !r.threw, r.threw && String(r.threw));
+  eq('the failed audit is recorded as failed', w && w.status, 'failed');
+  eq('  with the worker\'s reason', w && w.reason, 'No active tab');
+  ok('  and without the hour-old run', w && w.data === undefined, w && w.data);
+  eq('the mode that did run is still reported', opened && opened.modes[1].status, 'ran');
+  eq('the old page is not on the cover', opened && JSON.stringify(opened.pageUrls), '[]');
+  var body = opened ? buildReportBody(opened) : '';
+  ok('the report shows the audit as FAILED', /FAILED/.test(body) && /No active tab/.test(body), body.slice(0, 400));
+  ok('  and nothing from the hour-old run', !/hour-old issue|old\.example/.test(body));
+
+  // 3. The audit succeeds: recorded as ran, with the result it just produced.
+  taQueuedExtra.clear();
+  opened = null;
+  reply = { ok: true, url: 'https://new.example/', tabId: 9, results: okResults };
+  r = run();
+  w = opened && opened.modes[0];
+  eq('a completed audit is recorded as ran', w && w.status, 'ran');
+  eq('  with its own result', w && w.data && w.data.url, 'https://new.example/');
+  eq('  its page on the cover', opened && JSON.stringify(opened.pageUrls), '["https://new.example/"]');
+  eq('  and the status line says the report opened', status(), 'Done — report opened in a new tab.');
+
+  // 4. The report cannot be built: the status line says so.
+  openThrows = 'quota exceeded';
+  r = run();
+  ok('a report that throws still settles the run', r.done && !r.threw, r.threw && String(r.threw));
+  eq('  and the status line says it was not built', status(), 'The report could not be built: quota exceeded');
+  openThrows = null;
+
+  Object.keys(stubs).forEach(function (k) { delete globalThis[k]; });
+})();
+
+section('Report: WCAG and Cross-Variant say how the audit ran');
+(function () {
+  eval(slicePopup('function rptAgenticNoteHtml(note, label) {', '\n// ── the run'));
+  eval(slicePopup('function rptWcagSection(entry) {', '\nfunction rptCvaSection('));
+  var data = {
+    url: 'https://p.example/', checks: ['contrast'], results: { contrast: { label: 'Colour contrast', issues: [] } },
+    scope: '.hero', scopeError: 'Scope selector matched nothing — audited the full page instead: .hero',
+  };
+  var entry = { mode: 4, name: 'WCAG / Accessibility', status: 'ran', data: data };
+  var html = rptWcagSection(entry);
+  // The live panel always gave the scope error precedence; the report printed
+  // "Scoped to" from the setting alone.
+  ok('a scope that matched nothing is not reported as "Scoped to"', !/Scoped to/.test(html), html);
+  ok('  the report says the whole page was audited', /audited the full page instead: \.hero/.test(html), html);
+  data.scopeError = null;
+  ok('a scope that matched still reads "Scoped to"', /Scoped to: \.hero/.test(rptWcagSection(entry)));
+
+  // One variant audited without axe-core: the panel said so, the report did not.
+  var cva = { scope: '', autoChecks: ['contrast'], includeManual: false, runs: [
+    { label: 'Control', finalUrl: 'https://p.example/', results: { contrast: { label: 'Colour contrast', issues: ['axe · contrast — .a'] } } },
+    { label: 'v1', finalUrl: 'https://p.example/', axeError: 'axe failed to load',
+      results: { contrast: { label: 'Colour contrast', issues: ['heuristic contrast — .a'] } } },
+  ] };
+  html = rptCvaSection({ mode: 5, name: 'Cross-Variant Accessibility', status: 'ran', data: cva });
+  ok('the Cross-Variant report says which variant ran without axe-core',
+     /v1: axe-core could not run \(axe failed to load\)/.test(html), html.slice(0, 500));
+  eq('  in the same words as the live panel', cvaRunNotes(cva)[0], 'v1: axe-core could not run (axe failed to load) — heuristics only.');
+  var live = slicePopup('function renderCvaResults(', '\nfunction ');
+  ok('  because the live panel uses the same function', /const notes = cvaRunNotes\(run\);/.test(live));
+})();
+
+section('Cover: the Test Agent modes name their pages');
+(function () {
+  // WCAG's url is the tab as the user loaded it. The first real WCAG cover,
+  // r_1790972328425 (STRZ-1658 v2), printed this one whole: a forcing link that
+  // registers a real tracked exposure for anyone who pastes it.
+  var forcing = 'https://www.starz.com/us/en/buy?currentTime=1791259200001'
+    + '&optimizely_x=4780302780858368&optimizely_force_tracking=true&cro_mode=qa';
+  eq('a WCAG cover gets the page, not the forcing link',
+     JSON.stringify(abPageUrls([{ mode: 4, status: 'ran', data: { url: forcing } }])),
+     JSON.stringify(['https://www.starz.com/us/en/buy']));
+  var urls = abPageUrls([
+    { mode: 4, status: 'ran', data: { url: 'https://shop.example/cart?optimizely_x=9#reviews' } },
+    { mode: 5, status: 'ran', data: { runs: [
+      { label: 'Control', url: 'https://shop.example/?optimizely_x=1&optimizely_token=SECRET', finalUrl: 'https://shop.example/' },
+      { label: 'v1', url: 'https://shop.example/?optimizely_x=2&optimizely_token=SECRET', finalUrl: 'https://shop.example/' },
+    ] } },
+    { mode: 6, status: 'ran', data: { pages: [
+      { url: 'https://shop.example/pdp?optimizely_token=SECRET#top', skipped: false },
+      { url: 'https://shop.example/never-reached', skipped: true },
+    ] } },
+    { mode: 4, status: 'failed', reason: 'No active tab' },
+  ]);
+  eq('WCAG, Cross-Variant and Performance each name their page, once', JSON.stringify(urls),
+     JSON.stringify(['https://shop.example/cart', 'https://shop.example/', 'https://shop.example/pdp']));
+  ok('no preview token or forcing parameter reaches the cover', !/SECRET|optimizely_/.test(JSON.stringify(urls)), urls);
 })();
 
 // ── report ─────────────────────────────────────────────────────────────────

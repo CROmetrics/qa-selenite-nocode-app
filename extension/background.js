@@ -4372,20 +4372,17 @@ async function runMatrixFetchBatch({ pageUrl, urls = [], batchSize = 4, pauseMs 
 }
 
 // Agentic Testing: a plain viewport screenshot (no full-page stitching) for
-// vision commentary — short-lived attach/capture/detach.
+// vision commentary. Through withVariantDebugger, like the full-page capture.
+// WCAG audits the tab the user is on, and with console capture on (the
+// default) doFollow has already attached the mirror to it, so attaching a
+// second client here threw "Another debugger is already attached to the tab"
+// (r_1790972328425) under a message that blamed DevTools. That Chrome error
+// means this extension already holds the tab.
 async function captureViewportScreenshot(tabId) {
-  const target = { tabId };
-  try {
-    await chrome.debugger.attach(target, CDP_VERSION);
-  } catch (e) {
-    throw new Error(`Could not attach for screenshot (is DevTools open?): ${e.message}`);
-  }
-  try {
+  return withVariantDebugger(tabId, async (target) => {
     const shot = await chrome.debugger.sendCommand(target, 'Page.captureScreenshot', { format: 'png' });
     return 'data:image/png;base64,' + shot.data;
-  } finally {
-    try { await chrome.debugger.detach(target); } catch (_) {}
-  }
+  });
 }
 
 // ── Funnel Crawl: screenshot ⇄ click coordinate space ───────────────────────
@@ -5695,6 +5692,9 @@ function mtRenderNotice(d) {
 // blow up the request.
 function buildTestAgentSummaryPrompt(modeResults, ticketContext) {
   const parts = modeResults.map(entry => {
+    if (entry.status === 'failed') {
+      return `${entry.name}: failed (${entry.reason || 'no reason recorded'}) — no results from this mode`;
+    }
     if (entry.status !== 'ran') {
       return `${entry.name}: skipped (${entry.reason || 'not configured'})`;
     }

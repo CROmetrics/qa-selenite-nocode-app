@@ -2,6 +2,27 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-06 — 0.7.4
+
+Esc in the element picker never reached the panel. picker.js sends `pickerCancel` on Esc, but the worker handled only `pickerResult`, so the panel's poller never saw the cancel. The 🎯 button stayed disabled, showing "…", and the poller kept running until Selenite was reopened.
+
+### Fixed
+
+- **A `pickerCancel` branch beside `pickerResult`** writes `{ cancelled: true }` as the picker result into the owner window's namespace, with the same `restoreWins` recovery after a worker restart. popup.js already had the `cancelled` branch that re-enables the button, but nothing wrote it.
+
+### Verification
+
+- **The fixing session's harness**, with the whole worker in jsc, covered Esc, a worker restart mid-pick, the normal click path and two windows. 22 checks passed with the fix; on 0.7.2, 9 failed.
+- **Real Chrome on 0.7.3's code:** system Chrome 154, with the extension loaded through `Extensions.loadUnpacked`.
+  - **Esc:** the real `startPicker`, run in the floating window, injected the picker into the browser window's page. A CDP Escape on the page closed it and gave the 🎯 button back, with nothing filled in.
+  - **Click:** a click on the page still picked `h1`.
+  - **Without the fix**, the same run left the button showing "…".
+- **Tests:** all seven CI suites pass.
+- **Still open:**
+  - **Keyboard focus.** Esc reaches the picker only when the page has keyboard focus. After 🎯 is clicked in Selenite, focus stays in Selenite, so a real Esc probably doesn't reach the page. The CDP Escape above was sent to the page directly, so it couldn't show this.
+  - **A second 🎯 mid-pick** leaves a poller running, which takes the next pick for the wrong step (reproduced by the fixing session).
+  - **Navigating mid-pick** destroys the picker without a message, so the button sticks. This was read from the code, not tested.
+
 ## 2026-10-06 — 0.7.3
 
 Accessibility is now part of the A/B run. Auditing an experiment's variants used to mean configuring them twice: once in the A/B tab, and again in Test Agent's Cross-Variant Accessibility mode, which had its own target list, saved sets and "Fill from ticket", and loaded every page a second time. 838cb35 removed A/B from Test Agent for the same reason, one feature with two run buttons.

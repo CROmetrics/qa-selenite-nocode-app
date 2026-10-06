@@ -26,6 +26,13 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.4 — 2026-10-06
+
+Esc cancels the element picker.
+
+**Element picker**
+- **Esc gives the 🎯 button back.** Pressing Esc closed the picker on the page, but the step's 🎯 button stayed disabled, showing "…", until Selenite was reopened. Esc now cancels the pick and the button comes back. The page has to have keyboard focus for Esc to reach the picker.
+
 ### 0.7.3 — 2026-10-06
 
 Accessibility moved into the A/B run, and Selenite can be unpinned to float over the page instead of docking beside it.

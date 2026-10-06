@@ -6722,6 +6722,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     sendResponse({ ok: true });
 
+  } else if (msg.action === 'pickerCancel') {
+    // Esc in the picker. Written to the same owner-window slot as a result, so
+    // that panel's poller stops and re-enables its 🎯 button.
+    (async () => {
+      if (_pickWin == null) await restoreWins();
+      await ns(_pickWin).set({ pickerResult: { cancelled: true, ts: Date.now() } });
+    })();
+    sendResponse({ ok: true });
+
   } else if (msg.action === 'figmaVerifyToken') {
     // Figma PAT round-trip check. Lives in the worker for the same reason
     // every future Figma call will: api.figma.com is not same-origin with

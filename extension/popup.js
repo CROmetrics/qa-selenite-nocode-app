@@ -183,6 +183,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initWcagMode();
   // A/B Variant Comparison mode
   await initAbCompare();
+  // BrowserStack Live: the A/B tab's Devices section and Functional Testing's
+  // Target. In its own try/catch: a storage fault in it must not take every
+  // binding below it down too.
+  try {
+    await initBsLive();
+  } catch (e) {
+    console.error('Selenite: BrowserStack Live failed to initialize —', e);
+  }
 
   await initTestModePages();
   // Performance (a no-op if its host markup is absent).
@@ -2829,6 +2837,9 @@ function persistQueue() {
       groupId: s.groupId || null, groupName: s.groupName || null,
     }))
   });
+  // Target's BrowserStack Live buttons open the Open URL step's URL, and every
+  // edit to it (URL, parameters, QA Mode, a loaded script) lands here.
+  renderBsLiveGrid('ft');
 }
 
 // ── WCAG results renderer ─────────────────────────────────────────────────────
@@ -3417,7 +3428,7 @@ async function initAbCompare() {
 
   applyAbStateToInputs();
 
-  document.getElementById('ab-base-url').addEventListener('input',   e => { abState.baseUrl  = e.target.value;   persistAbState(); });
+  document.getElementById('ab-base-url').addEventListener('input',   e => { abState.baseUrl  = e.target.value;   persistAbState(); renderBsLiveGrid('ab'); });
   document.getElementById('ab-qa-mode').addEventListener('change',   e => { abState.qaMode   = e.target.checked; persistAbState(); });
   document.getElementById('ab-settle').addEventListener('input',     e => { abState.settleSec = e.target.value;  persistAbState(); });
   document.getElementById('ab-keep-tabs').addEventListener('change', e => {
@@ -3549,6 +3560,9 @@ function renderAbTargets() {
       inp.addEventListener('input', () => {
         abState.targets[i][inp.dataset.abField] = inp.value;
         persistAbState();
+        // A label names a Devices button; a URL or override decides whether
+        // that button can open anything.
+        renderBsLiveGrid('ab');
       });
     });
     block.querySelector('[data-ab-rm-target]').addEventListener('click', () => {
@@ -3557,6 +3571,9 @@ function renderAbTargets() {
       persistAbState();
     });
   });
+  // Every path that changes the target list comes through here: add, remove,
+  // load a saved set, Fill from ticket.
+  renderBsLiveGrid('ab');
 }
 
 function renderAbSelectors() {
@@ -3661,6 +3678,299 @@ function composeVariantUrl(target, baseUrl, qaMode) {
 
 function abComposeUrl(target) {
   return composeVariantUrl(target, abState.baseUrl, abState.qaMode);
+}
+
+// ── BrowserStack Live (A/B Devices, Functional Testing Target) ────────────────
+// Opens a page on a real phone or tablet, or another desktop browser, in
+// BrowserStack Live, in the user's own logged-in Live session. QA covers those
+// device columns today by pasting each preview URL into a Live session's
+// console (the "Open URL (BrowserStack)" Quick Command). The link and the
+// device presets live in browserstack.js; this is the UI, the one fetch to the
+// BrowserStack Local console, and the tab.
+//
+// The same section appears in two places. Each is a root marked data-bs-live,
+// with its parts marked data-bs-role:
+//   ab: the A/B tab's Devices section. A row per device, a button per variant.
+//   ft: Functional Testing's Target. A button per device that opens the
+//       queue's start URL. Live cannot run the steps; the tester walks them by
+//       hand on the device.
+// Both share one device selection, the two Local toggles, and one Live tab
+// per window. Each has its own status line. The selection is a preference,
+// not test state: it is saved as bsLivePrefs in chrome.storage.local and
+// shared by every window, where abState is per window and per session.
+const BS_LIVE_PREFS_KEY = 'bsLivePrefs';
+let bsLive = null;            // { devices: [presetId], local, forceLocal } once initBsLive has run
+const _bsLivePending = {};    // place -> { url, what } that "Open anyway" opens after a failed tunnel check
+
+const BS_LIVE_SURFACES = {
+  ab: {
+    layout: 'rows',
+    targets: () => (abState?.targets || []).map((t, i) => {
+      const label = (t.label || '').trim() || ('v' + i);
+      return { key: String(i), label, url: abComposeUrl(t), noUrl: `${label} has no URL. Set its URL or the Base URL.` };
+    }),
+  },
+  ft: {
+    layout: 'chips',
+    targets: () => [{
+      key: 'start', label: 'the start URL', url: queueStartUrl(queueOpenUrlStep()?.inputs),
+      noUrl: "Set a URL in the queue's Open URL step.",
+    }],
+  },
+};
+
+function bsRoot(key) { return document.querySelector(`[data-bs-live="${key}"]`); }
+function bsRole(key, role) { return bsRoot(key)?.querySelector(`[data-bs-role="${role}"]`) || null; }
+function bsLiveKeys() { return Object.keys(BS_LIVE_SURFACES).filter(k => bsRoot(k)); }
+
+// The URL the queue's Open URL step opens, built by the same rules as the
+// worker's ACTIONS.open_url (background.js), which does the real navigation:
+// each parameter trimmed and blanks dropped (a legacy step stores them as one
+// newline-joined string), and with QA Mode any cro_mode= replaced by
+// cro_mode=qa as the LAST parameter. bsLiveUrl then adds https:// the way the
+// worker's normalizeUrl does. The worker is not changed for this, so
+// browserstack.test.js slices both and checks that they agree.
+function queueStartUrl(inputs) {
+  let url = (inputs?.url || '').trim();
+  if (!url) return '';
+  const params = inputs.params;
+  let list = Array.isArray(params)
+    ? params.map(p => String(p).trim()).filter(Boolean)
+    : String(params || '').split('\n').map(p => p.trim()).filter(Boolean);
+  if (inputs.qa_mode) {
+    list = list.filter(p => !p.toLowerCase().startsWith('cro_mode='));
+    list.push('cro_mode=qa');
+  }
+  if (list.length) url += (url.includes('?') ? '&' : '?') + list.join('&');
+  return url;
+}
+
+function bsLiveDefaultPrefs() {
+  // Local and force-local default ON: the pages this is for are staging,
+  // VPN or allowlisted ones, and experiments whose QA audience is our IP.
+  return { devices: BS_LIVE_DEFAULT_DEVICES.slice(), local: true, forceLocal: true };
+}
+
+function persistBsLive() {
+  chrome.storage.local.set({ [BS_LIVE_PREFS_KEY]: bsLive }).catch(() => {});
+}
+
+async function initBsLive() {
+  const keys = bsLiveKeys();
+  if (!keys.length) return;
+  const { [BS_LIVE_PREFS_KEY]: saved } = await chrome.storage.local.get(BS_LIVE_PREFS_KEY);
+  bsLive = { ...bsLiveDefaultPrefs(), ...(saved || {}) };
+  if (!Array.isArray(bsLive.devices)) bsLive.devices = bsLiveDefaultPrefs().devices;
+
+  for (const key of keys) {
+    bsRole(key, 'local')?.addEventListener('change', e => {
+      bsLive.local = e.target.checked;
+      persistBsLive();
+      renderBsLiveAll();
+    });
+    bsRole(key, 'force-local')?.addEventListener('change', e => {
+      bsLive.forceLocal = e.target.checked;
+      persistBsLive();
+      renderBsLiveAll();
+    });
+    bsRole(key, 'check')?.addEventListener('click', () => checkBsLocal(key));
+    // Delegated, because the checklist and the buttons are re-rendered wholesale.
+    bsRole(key, 'devices')?.addEventListener('change', e => {
+      const id = e.target?.dataset?.bsDev;
+      if (!id) return;
+      const ids = new Set(bsLive.devices);
+      if (e.target.checked) ids.add(id); else ids.delete(id);
+      bsLive.devices = bsSelectedPresets([...ids]).map(p => p.id);
+      persistBsLive();
+      renderBsLiveAll();
+    });
+    bsRole(key, 'grid')?.addEventListener('click', e => {
+      const btn = e.target.closest('[data-bs-open]');
+      if (!btn || btn.disabled) return;
+      openBsLive(key, btn.dataset.bsOpen, btn.dataset.bsTarget);
+    });
+    bsRole(key, 'status')?.addEventListener('click', e => {
+      if (!e.target.closest('[data-bs-open-anyway]') || !_bsLivePending[key]) return;
+      const pending = _bsLivePending[key];
+      delete _bsLivePending[key];
+      launchBsLiveTab(key, pending.url, pending.what, { unconfirmed: true });
+    });
+  }
+  renderBsLiveAll();
+}
+
+// Every place shows the same selection and toggles, so a change made in one
+// is redrawn in all of them.
+function renderBsLiveAll() {
+  if (!bsLive) return;
+  for (const key of bsLiveKeys()) {
+    const local = bsRole(key, 'local');
+    const force = bsRole(key, 'force-local');
+    const wrap = bsRole(key, 'force-local-wrap');
+    if (local) local.checked = !!bsLive.local;
+    if (force) {
+      force.checked = !!bsLive.forceLocal;
+      // force-local only means something through the tunnel (bsLiveUrl never
+      // sends it without local), so its toggle goes inert while Local is off
+      // rather than looking like it still does something.
+      force.disabled = !bsLive.local;
+    }
+    if (wrap) wrap.style.opacity = bsLive.local ? '' : '.5';
+    renderBsLiveDevices(key);
+    renderBsLiveGrid(key);
+  }
+}
+
+// Grouped Desktop / Mobile / Tablet (BS_LIVE_KINDS), each group its own
+// two-column grid.
+function renderBsLiveDevices(key) {
+  const el = bsRole(key, 'devices');
+  if (!el || !bsLive) return;
+  const q = s => esc(s || '').replace(/"/g, '&quot;');
+  const on = new Set(bsLive.devices);
+  el.innerHTML = BS_LIVE_KINDS.map(k => {
+    const group = BS_LIVE_PRESETS.filter(p => p.kind === k.kind);
+    if (!group.length) return '';
+    return `
+      <div data-bs-kind="${q(k.kind)}" style="margin-bottom:6px">
+        <div style="font-size:10px;font-weight:600;color:var(--fg2);margin-bottom:3px">${esc(k.label)}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px">${group.map(p => `
+          <label class="suite-check" style="font-size:11px">
+            <input type="checkbox" data-bs-dev="${q(p.id)}"${on.has(p.id) ? ' checked' : ''}>
+            <span>${esc(p.label)} <span style="font-size:10px;color:var(--fg3)">${esc(p.detail)}</span></span>
+          </label>`).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// The buttons: in A/B a row per ticked device with a button per variant, in
+// Functional Testing one button per ticked device. A no-op until initBsLive
+// has run, because renderAbTargets and persistQueue both call it during
+// startup, before this section exists.
+function renderBsLiveGrid(key) {
+  const el = bsRole(key, 'grid');
+  const surface = BS_LIVE_SURFACES[key];
+  if (!el || !bsLive || !surface) return;
+  const presets = bsSelectedPresets(bsLive.devices);
+  const count = bsRole(key, 'count');
+  if (count) count.textContent = presets.length ? `${presets.length} device${presets.length !== 1 ? 's' : ''}` : '';
+  if (!presets.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--fg3)">Tick a device above.</div>';
+    return;
+  }
+  const q = s => esc(s || '').replace(/"/g, '&quot;');
+  const targets = surface.targets();
+  const button = (p, t, text) => `<button class="btn sm" data-bs-open="${q(p.id)}" data-bs-target="${q(t.key)}"${t.url ? '' : ' disabled'}
+    title="${q(t.url ? `Open ${t.label} on ${p.label} (${p.detail}) in BrowserStack Live` : t.noUrl)}">${esc(text)}</button>`;
+  if (surface.layout === 'chips') {
+    el.innerHTML = `<div class="row" style="gap:5px;flex-wrap:wrap">${presets.map(p => button(p, targets[0], p.label)).join('')}</div>`;
+    return;
+  }
+  el.innerHTML = presets.map(p => `
+    <div class="row" style="gap:5px;flex-wrap:wrap;margin-bottom:5px">
+      <span style="font-size:11px;color:var(--fg1);width:96px;flex-shrink:0" title="${q(p.detail)}">${esc(p.label)}</span>
+      ${targets.map(t => button(p, t, t.label)).join('')}
+    </div>`).join('');
+}
+
+function setBsLiveStatus(key, html, color) {
+  const el = bsRole(key, 'status');
+  if (!el) return;
+  el.style.color = color || 'var(--fg3)';
+  el.innerHTML = html;
+}
+
+// The one network call in this section. The BrowserStack Local app serves a
+// console on localhost:45454, and GET /status answers {status, token, userId}
+// with no auth. bsLocalStatusFrom reads only `status`, so the token goes no
+// further than this function's local variable. 1.5 s is ample for a local
+// socket, and short enough that a click with the app closed fails fast.
+async function bsLocalStatus() {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 1500);
+  try {
+    const res = await fetch(BS_LOCAL_CONSOLE + '/status', { cache: 'no-store', credentials: 'omit', signal: ctl.signal });
+    const body = await res.json().catch(() => null);
+    return bsLocalStatusFrom(res.ok ? body : null, true);
+  } catch (_) {
+    return bsLocalStatusFrom(null, false);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function showBsLocalStatus(key, st) {
+  if (st.running && st.signedIn) {
+    setBsLiveStatus(key, '✓ BrowserStack Local is running on this Mac and signed in. Live connects to it when a session starts.', 'var(--ok)');
+  } else if (st.running) {
+    setBsLiveStatus(key, 'BrowserStack Local is open but not signed in. Sign in in the app, then Check again.', 'var(--warn)');
+  } else {
+    setBsLiveStatus(key, `BrowserStack Local isn't running on this Mac. Open the BrowserStack Local app (in Applications), then Check again. <a href="${BS_LOCAL_DOWNLOAD}" target="_blank" rel="noopener">Get the app</a>`, 'var(--err)');
+  }
+}
+
+async function checkBsLocal(key) {
+  setBsLiveStatus(key, 'Checking BrowserStack Local…');
+  const st = await bsLocalStatus();
+  showBsLocalStatus(key, st);
+  return st;
+}
+
+async function openBsLive(key, presetId, targetKey) {
+  const preset = bsPresetById(presetId);
+  const target = BS_LIVE_SURFACES[key]?.targets().find(t => t.key === targetKey);
+  if (!preset || !target || !bsLive) return;
+  const what = `${target.label} on ${preset.label}`;
+  const url = bsLiveUrl(preset, target.url, { local: bsLive.local, forceLocal: bsLive.forceLocal });
+  if (!url) {
+    setBsLiveStatus(key, esc(target.noUrl), 'var(--err)');
+    return;
+  }
+  delete _bsLivePending[key];
+  if (bsLive.local) {
+    // Checked before every launch, not once: the app can be quit or signed
+    // out between clicks, and Live given local=true without a tunnel starts a
+    // session that cannot reach the pages this is for.
+    setBsLiveStatus(key, 'Checking BrowserStack Local…');
+    const st = await bsLocalStatus();
+    if (!(st.running && st.signedIn)) {
+      showBsLocalStatus(key, st);
+      _bsLivePending[key] = { url, what };
+      bsRole(key, 'status')?.insertAdjacentHTML('beforeend',
+        ` <button class="btn sm" data-bs-open-anyway title="Open ${esc(what).replace(/"/g, '&quot;')} in Live without a confirmed tunnel">Open anyway</button>`);
+      return;
+    }
+  }
+  await launchBsLiveTab(key, url, what);
+}
+
+// Live runs one session at a time, and a second dashboard tab would contend
+// with the first for it. So the Live tab Selenite opened last, from either
+// place, is closed first, but only while it is still on the dashboard: a tab
+// the user has since taken somewhere else is theirs.
+async function launchBsLiveTab(key, url, what, { unconfirmed = false } = {}) {
+  try {
+    const { bsLiveTabId } = await sessionNS.get('bsLiveTabId');
+    if (bsLiveTabId != null) {
+      const old = await chrome.tabs.get(bsLiveTabId).catch(() => null);
+      if (old && bsIsLiveUrl(old.url)) await chrome.tabs.remove(old.id).catch(() => {});
+    }
+    const tab = await chrome.tabs.create({ url, active: true, ...(WIN_ID != null ? { windowId: WIN_ID } : {}) });
+    await sessionNS.set({ bsLiveTabId: tab.id });
+    if (unconfirmed) {
+      // "Open anyway": the link still asks Live for the tunnel, but nothing
+      // confirmed one, so don't report the session as routed through it.
+      setBsLiveStatus(key, `Opened ${esc(what)} in BrowserStack Live without a confirmed BrowserStack Local tunnel. Live will report the tunnel's state itself.`, 'var(--warn)');
+      return;
+    }
+    const route = !bsLive.local ? '' : bsLive.forceLocal
+      ? ', through BrowserStack Local, with all traffic through this Mac'
+      : ', through BrowserStack Local';
+    setBsLiveStatus(key, `Opened ${esc(what)} in BrowserStack Live${route}.`, 'var(--ok)');
+  } catch (e) {
+    setBsLiveStatus(key, 'Could not open BrowserStack Live: ' + esc(e?.message || String(e)), 'var(--err)');
+  }
 }
 
 let _abProgressPoller = null;

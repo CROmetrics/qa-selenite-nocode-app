@@ -542,6 +542,49 @@
             <label for="tt-new">New tab</label>
           </div>
         </div>
+        <!-- BrowserStack Live — opens the queue's start URL (its Open URL
+             step, with that step's parameters and QA Mode) on another browser
+             or a real device, in the user's own logged-in Live session. Shares
+             its device selection and both toggles with the A/B tab's Devices
+             section; rendered by popup.js (initBsLive). Execute is unaffected:
+             the queue still runs in this browser. -->
+        <div class="accordion" id="acc-ft-bs-live" data-bs-live="ft">
+          <div class="acc-hdr" data-acc="acc-ft-bs-live">
+            <span>Cross-browser — BrowserStack Live <span data-bs-role="count" style="font-weight:400;color:var(--fg2);font-size:11px"></span></span>
+            <span class="acc-chevron">›</span>
+          </div>
+          <div class="acc-body">
+            <div style="font-size:10px;color:var(--fg3);line-height:1.5">Opens the queue's start URL (the Open URL step, with its parameters and QA Mode) on another browser or a real device in BrowserStack Live, signed in as you. Live can't run the steps: walk them by hand on the device. The device selection and both toggles are shared with the A/B tab.</div>
+            <div class="row" style="gap:14px;flex-wrap:wrap">
+              <span class="row" style="gap:5px">
+                <label class="toggle-wrap" title="Route the session through BrowserStack Local, so the device can reach staging, VPN and allowlisted pages. Needs the BrowserStack Local app running on this Mac.">
+                  <input type="checkbox" data-bs-role="local">
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </label>
+                <span style="font-size:11px;color:var(--fg2)">Use BrowserStack Local</span>
+              </span>
+              <span class="row" style="gap:5px" data-bs-role="force-local-wrap">
+                <label class="toggle-wrap" title="Send all of the session's traffic through this Mac (Live's &quot;Resolve all URLs through my network&quot;), so the device's visits come from your IP, as an IP-targeted QA audience needs. Needs BrowserStack Local on.">
+                  <input type="checkbox" data-bs-role="force-local">
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </label>
+                <span style="font-size:11px;color:var(--fg2)">All traffic through this Mac</span>
+              </span>
+            </div>
+            <div class="row" style="gap:6px;align-items:flex-start">
+              <button class="btn sm" data-bs-role="check" title="Ask the BrowserStack Local app on this Mac whether it is running and signed in">Check</button>
+              <div data-bs-role="status" style="font-size:10px;color:var(--fg3);line-height:1.5;flex:1;min-height:12px"></div>
+            </div>
+            <div>
+              <label class="cap">Browsers &amp; devices</label>
+              <div data-bs-role="devices"></div>
+            </div>
+            <div>
+              <label class="cap">Open the start URL on</label>
+              <div data-bs-role="grid"></div>
+            </div>
+          </div>
+        </div>
         <div class="queue-bar">
           <input type="text" id="save-name" placeholder="Script name…" style="flex:1;min-width:70px">
           <button class="btn sm" id="btn-save-script">Save</button>
@@ -1304,6 +1347,48 @@
 
       <div id="ab-results"></div>
     </div>
+    <!-- BrowserStack Live — opens an A/B target on a real phone or tablet, or
+         another desktop browser, in the user's own logged-in Live session,
+         optionally through BrowserStack Local. The device checklist and the
+         rows of buttons are rendered by popup.js (initBsLive), which also
+         drives the same section in Functional Testing's Target. -->
+    <div class="accordion" id="acc-ab-devices" data-bs-live="ab">
+      <div class="acc-hdr" data-acc="acc-ab-devices">
+        <span>Devices — BrowserStack Live <span data-bs-role="count" style="font-weight:400;color:var(--fg2);font-size:11px"></span></span>
+        <span class="acc-chevron">›</span>
+      </div>
+      <div class="acc-body">
+        <div style="font-size:10px;color:var(--fg3);line-height:1.5">Opens a variant on a real phone, tablet or another desktop browser in BrowserStack Live, signed in as you. Each button opens that variant's URL with its override and QA Mode, as the comparison would.</div>
+        <div class="row" style="gap:14px;flex-wrap:wrap">
+          <span class="row" style="gap:5px">
+            <label class="toggle-wrap" title="Route the session through BrowserStack Local, so the device can reach staging, VPN and allowlisted pages. Needs the BrowserStack Local app running on this Mac.">
+              <input type="checkbox" data-bs-role="local">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <span style="font-size:11px;color:var(--fg2)">Use BrowserStack Local</span>
+          </span>
+          <span class="row" style="gap:5px" data-bs-role="force-local-wrap">
+            <label class="toggle-wrap" title="Send all of the session's traffic through this Mac (Live's &quot;Resolve all URLs through my network&quot;), so the device's visits come from your IP, as an IP-targeted QA audience needs. Needs BrowserStack Local on.">
+              <input type="checkbox" data-bs-role="force-local">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <span style="font-size:11px;color:var(--fg2)">All traffic through this Mac</span>
+          </span>
+        </div>
+        <div class="row" style="gap:6px;align-items:flex-start">
+          <button class="btn sm" data-bs-role="check" title="Ask the BrowserStack Local app on this Mac whether it is running and signed in">Check</button>
+          <div data-bs-role="status" style="font-size:10px;color:var(--fg3);line-height:1.5;flex:1;min-height:12px"></div>
+        </div>
+        <div>
+          <label class="cap">Devices</label>
+          <div data-bs-role="devices"></div>
+        </div>
+        <div>
+          <label class="cap">Open a variant</label>
+          <div data-bs-role="grid"></div>
+        </div>
+      </div>
+    </div>
   </div>
 
 </div><!-- /panels -->
@@ -1358,6 +1443,7 @@
 <script src="vd-config.js"></script>
 <script src="vd-diff.js"></script>
 <script src="figma.js"></script>
+<script src="browserstack.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>

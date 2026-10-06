@@ -2,6 +2,70 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-06 — 0.7.7
+
+The A/B tab can open any variant, and Functional Testing's Target section a queue's start URL, on a real phone, tablet or another desktop browser in BrowserStack Live. Until now QA covered those device columns by pasting each preview URL into a Live session's console (the "Open URL (BrowserStack)" Quick Command). This is the first BrowserStack milestone: Live only, through BrowserStack Local. Automate comes later.
+
+### Added
+
+- **Devices — BrowserStack Live, in the A/B tab.** A collapsed section under the A/B card: a checklist of ten device presets in three groups, Desktop, Mobile and Tablet, and for each ticked device a row with a button per variant target. The rows come out in the same groups. A button builds the variant's URL exactly as the comparison does (`abComposeUrl`: the target's URL or the Base URL, the override, `cro_mode=qa`), wraps it in a Live link, and opens it in a new tab.
+  - **The link** is Live's documented integration URL: `live.browserstack.com/dashboard#os=…&os_version=…`, then `device=…&device_browser=…` (mobile) or `browser=…&browser_version=…` (desktop), `url=…`, `start=true`, and `local=true` / `force-local=true` when they are on. Values are form-encoded, so a preview URL's own `?`, `&` and `#` stay inside `url=`. A forcing query cut off at its first `&` would open the page un-forced, which looks like the variant failing on that device.
+  - **Presets** are pinned from BrowserStack's Live catalogue as of 2026-10-06, spelled exactly as it lists them, because the dashboard matches on those strings. Desktop: Safari 27 on macOS Golden Gate, and Edge 154, Chrome 154 and Firefox 157 on Windows 11. Mobile: iPhone 18 Pro, iPhone 17, Galaxy S26, Pixel 10. Tablet: iPad Pro 13, Galaxy Tab S11. `browserstack.js` has the one-liner that refreshes them.
+  - **One Live session at a time.** Live runs one session per user, so before opening a new tab Selenite closes the Live tab it opened last, but only while that tab is still on the dashboard.
+  - **No credentials.** The links open in the user's own logged-in Live session.
+- **Cross-browser — BrowserStack Live, in Functional Testing's Target.** A collapsed block between Tab Target and Save/Execute, with one button per ticked device. A button opens the queue's start URL on that device: the Open URL step's URL, with its parameters and QA Mode.
+  - **The start URL** is built by `queueStartUrl`, by the same rules the worker's `ACTIONS.open_url` uses to navigate: parameters trimmed and blanks dropped, and with QA Mode any `cro_mode=` replaced by `cro_mode=qa`, last. The worker is unchanged. The test suite slices the worker's lines out of background.js and checks that the two agree.
+  - **A blank Open URL step** (locally, "use the active tab") gives Live nothing to open, so the buttons are disabled and say why.
+  - **Live can't run the steps.** The tester walks them by hand on the device, and Execute still runs the queue in this browser.
+  - **One selection, two places.** The device checklist and both Local toggles are shared with the A/B tab: one `bsLivePrefs` record, and a change made in either place is redrawn in both. Each place has its own status line. They also share the one Live tab per window: a launch from either place closes the Live tab Selenite opened last.
+  - The two places are one component in popup.js: each section is a root marked `data-bs-live` (`ab`, `ft`), with its parts marked `data-bs-role`.
+- **A BrowserStack Local check before every launch.** With **Use BrowserStack Local** on (the default), Selenite first asks the BrowserStack Local app on this Mac whether it is running: `GET http://localhost:45454/status`, the app's own console API, which needs no auth. In the console's own code `status: true` means running and signed in. If it isn't, Selenite says what to do and offers **Open anyway** instead of opening a session that could not reach the page. That response also carries a session token and a user id. Only `status` is read, and nothing else from the response is kept.
+- **All traffic through this Mac** (`force-local`, on by default, needs Local). Every request from the session goes through this Mac, so an experiment whose QA audience is our IP counts the device's visits as ours.
+- **`browserstack.js`.** Pure: no DOM, no network, no URL/URLSearchParams, the figma.js convention. It is loaded before popup.js in both UIs, and uses nothing panel-only, so the Automate milestone can `importScripts` it into the worker.
+- **`tests/browserstack.test.js`**, added to CI. 156 assertions:
+  - exact links
+  - preview URLs round-tripping (query, fragment, a space, a literal `+`, non-ASCII)
+  - force-local never sent without local
+  - https normalization
+  - every preset well-formed, and listed group by group, so the rows of buttons can't interleave the groups
+  - the status reader returning only its two booleans
+  - the queue's start URL, against explicit expectations and against the worker's own `open_url` lines, sliced from background.js
+
+### Not changed
+
+- No new permissions: `<all_urls>` already covers the console and the dashboard.
+- No service-worker change. Everything runs in the panel.
+
+### Verification
+
+- **jsc:** the new suite passes. It fails named cases against five broken copies of browserstack.js:
+  - spaces not written as `+`
+  - force-local sent without local
+  - the token leaking into the status result
+  - `encodeURI` in place of `encodeURIComponent`
+  - a desktop preset listed after the tablets
+
+  It also fails against a popup.js without the `cro_mode=` filter, and against a background.js whose `open_url` stops trimming parameters.
+
+  All eight CI suites pass.
+- **Real Chrome:** system Chrome 154, headless, with the real unpacked extension. The real `sidepanel.html` was driven over CDP, with `live.browserstack.com` mapped to localhost so no launch reached BrowserStack. 46 checks pass, covering:
+  - both places rendering with the same grouped defaults; the Functional Testing block inside Target, before Save/Execute
+  - one selection: a device ticked in Functional Testing appears in A/B, one unticked in A/B disappears from Functional Testing, and the Local toggles follow both ways
+  - Functional Testing's buttons disabled while the Open URL step is blank, enabled once its URL, a parameter and QA Mode are set, and disabled again when it's cleared
+  - a Functional Testing launch opening exactly the start-URL link (https added, `cro_mode=qa` last), with its status in Functional Testing's line only
+  - the A/B grid following the Base URL, overrides, relabels, and added or removed variants
+  - an A/B launch, override included, closing the Live tab a Functional Testing launch opened
+  - with Local off, an exact link carrying neither `local` nor `force-local`
+  - the extension page reaching the running BrowserStack Local app (`running`, `signedIn`)
+  - a closed console port blocking a Functional Testing launch, Open anyway opening the same link without claiming a tunnel, and the A/B line left alone
+  - one shared preferences record
+  - the token and user id absent from every storage area and from the page
+  - the init chain still running, with Execute and A/B Run still holding their click listeners (read with `DOMDebugger.getEventListeners`)
+
+  It fails named checks against a build without the `persistQueue` hook and against one that redraws only the place a change was made in. On 0.7.6 it fails at its first check.
+- **Isolation:** with `browserstack.js` removed, both Live sections stay empty, and everything else still works: Execute and A/B Run keep their listeners, Settings opens, Open URL edits save, and Add Variant renders. 10 checks pass.
+- **Not yet verified:** a real Live session. Whether `start=true` auto-starts the session, the lowercase `ios`/`android`, `device_browser` and `force-local=true` all need a launch from a logged-in BrowserStack account.
+
 ## 2026-10-06 — 0.7.6
 
 The two picker bugs that predate 0.7.5 are fixed. The session that took the poller-race task found both.

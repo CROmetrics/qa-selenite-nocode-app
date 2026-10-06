@@ -16,6 +16,7 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - Visual Regression — full-page screenshot baselines per URL with pixel diffing, ignore regions, and a mismatch threshold (Functional Testing tab)
 - **Test Agent** tab — run WCAG, Performance, or Funnel Crawl one at a time, batch the first two together via **Also Run**, and get a single combined report with an optional AI-written summary
 - **A/B** tab — load each experiment variant once and diff page state, metric fires, and tagged console output against control, with an optional per-variant interaction heatmap, an AI-powered full-page visual diff, and a WCAG audit of every variant diffed against control (introduced / resolved / pre-existing)
+- **BrowserStack Live** (A/B tab and Functional Testing's Target) — open any variant, or a queue's start URL, on a real iPhone, iPad or Android device, or in Safari, Edge or Firefox, in your own BrowserStack Live session, through BrowserStack Local so the device can reach staging pages and its visits come from your IP
 - WCAG / Accessibility mode — full WCAG 2.2 audit (heuristics + axe-core) with region scoping, check presets, click-to-highlight findings, JSON export, and per-URL run history
 - Performance/Load mode — median page-load metrics (TTFB, FCP, LCP, CLS, long tasks, resources) over N runs, checked against Core Web Vitals budgets, with per-URL history
 - Funnel Crawl — an AI agent clicks through Start → Middle waypoint(s) → End to verify a funnel actually connects
@@ -25,6 +26,19 @@ A Chrome extension for building and running QA test scripts directly in your bro
 ## Version History
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
+
+### 0.7.7 — 2026-10-06
+
+Open an A/B variant, or a queue's start URL, on a real phone, tablet or another desktop browser in BrowserStack Live, through BrowserStack Local.
+
+**A/B**
+- **Devices — BrowserStack Live.** A new section under the A/B card. Tick the browsers and devices you QA on, grouped Desktop, Mobile and Tablet, and each gets a button per variant that opens that variant's URL in your own BrowserStack Live session. No more pasting preview links into a Live session's console.
+
+**Functional Testing**
+- **Cross-browser — BrowserStack Live**, in the Target section. A button per ticked device opens the queue's start URL (the Open URL step, with its parameters and QA Mode) in Live, so you can walk the steps on that device. Execute still runs the queue here. The device selection is the same one the A/B tab uses.
+
+**BrowserStack Local**
+- **Through your Mac.** On by default, so the device can reach staging, VPN and allowlisted pages. With **All traffic through this Mac**, its visits also come from your IP, as an IP-targeted QA audience needs. You start the BrowserStack Local app, and Selenite checks it's running and signed in before each launch.
 
 ### 0.7.6 — 2026-10-06
 
@@ -141,6 +155,8 @@ Earlier versions: see [`CHANGELOG.md`](CHANGELOG.md) and `git log`. The version 
    - Use the checkbox to enable/disable individual steps.
 6. Click **Execute** to run the queue.
 
+**Cross-browser (BrowserStack Live)** — the Target section's **Cross-browser — BrowserStack Live** block opens the queue's start URL on another browser or a real device in BrowserStack Live. The start URL is the Open URL step's URL, with its parameters and QA Mode. Tick the browsers and devices you QA on (Desktop, Mobile, Tablet) and click one to open it. Live can't run the steps, so walk them by hand on the device; **Execute** still runs the queue here. A device can't be opened while the Open URL step's URL is blank. The selection, the BrowserStack Local check and both toggles work as in the A/B tab's Devices section (see [A/B Variant Comparison](#ab-variant-comparison)), and are shared with it.
+
 ### Tracking Metrics
 
 1. Open the **Metrics** section at the top of the Functional Testing tab and click **+ Add Metric** for each console value you want to track (e.g. `Tagging: hero_cta_click`). Metrics persist across sessions.
@@ -245,6 +261,11 @@ A variant the experiment platform says was not served its variation is marked no
 
 **Optional: interaction heatmap** — with **Keep tabs open** checked, also check **Record interaction heatmap**. After the comparison, each variant's kept-open tab gets a small recorder control: click **Record walk**, interact with that tab the way a real visitor would, then **Stop Recording**; **Show heatmap overlay** draws click-density dots, a mouse-trail line, and a scroll-depth gutter onto that tab. Only one variant can record at a time, and recordings are kept in memory only for the current run (nothing is saved to disk, and nothing ever leaves the browser — keystrokes and typed values are never captured). Off by default; a normal A/B run is unaffected.
 
+**Devices (BrowserStack Live)** — the **Devices — BrowserStack Live** section under the A/B card opens a variant on a real phone or tablet, or in another desktop browser, in BrowserStack Live. Tick the devices you QA on, grouped as **Desktop** (Safari on macOS; Edge, Chrome and Firefox on Windows 11), **Mobile** (iPhone 18 Pro, iPhone 17, Galaxy S26, Pixel 10) and **Tablet** (iPad Pro 13, Galaxy Tab S11). Each ticked device gets a row with a button per variant target. A button opens that variant's URL, with its override and QA Mode as the comparison would use them, in a new tab, and starts the Live session. You need to be signed in to BrowserStack in Chrome; Selenite needs no BrowserStack username or access key. Live runs one session at a time, so a new launch closes the Live tab Selenite opened before.
+- **Use BrowserStack Local** (on by default) routes the session through BrowserStack Local, so the device can reach staging, VPN and allowlisted pages. You start the BrowserStack Local app on your Mac. Before every launch Selenite asks the app (on `localhost:45454`) whether it is running and signed in. If it isn't, Selenite says so and offers **Open anyway** instead of opening. **Check** asks on demand.
+- **All traffic through this Mac** (on by default; needs Local) sends all of the session's traffic through your Mac, Live's "Resolve all URLs through my network", so the device's visits come from your IP, as an IP-targeted QA audience needs.
+- Your device choices and both toggles are remembered, and shared with the Functional Testing tab's Target section.
+
 ## Available Functions
 
 | Function | Description |
@@ -273,6 +294,7 @@ extension/
 ├── sidepanel.html      # Panel UI (Chrome's side panel, or the floating window when unpinned)
 ├── popup.html          # Popup UI (same layout as the side panel)
 ├── popup.js            # Queue builder, Metrics section, UI logic (shared by both UIs)
+├── browserstack.js     # BrowserStack Live links, device presets and Local status (A/B tab's Devices section)
 ├── background.js       # Service worker (queue execution, console capture, metrics)
 ├── picker.js           # In-page element picker (injected on demand)
 ├── selector.js         # Shared CSS-selector builder (used by picker.js and recorder.js)

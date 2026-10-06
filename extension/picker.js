@@ -95,7 +95,9 @@
     if (!el) return cleanup();
     const sel = buildSelector(el);
     cleanup();
-    chrome.runtime.sendMessage({ action: 'pickerResult', selector: sel });
+    // winId: the window whose Selenite started this picker (background.js
+    // startPicker sets it), so the result goes back to that panel.
+    chrome.runtime.sendMessage({ action: 'pickerResult', selector: sel, winId: window.__selenitePickWin });
   });
 
   document.addEventListener('keydown', onKey, true);
@@ -103,7 +105,7 @@
     if (e.key === 'Escape') {
       e.preventDefault();
       cleanup();
-      chrome.runtime.sendMessage({ action: 'pickerCancel' });
+      chrome.runtime.sendMessage({ action: 'pickerCancel', winId: window.__selenitePickWin });
     }
   }
 

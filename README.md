@@ -26,6 +26,14 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.6 — 2026-10-06
+
+Two Selenite windows can pick elements at the same time, and closing the tab you're picking in ends the pick.
+
+**Element picker**
+- **Picking in two windows at once.** Each window's pick now fills its own step. Before, a click in one window's page could fill the other window's step and leave the first stuck on "…". This holds even if you drag the tab to another window mid-pick. It needs the extension reloaded in `chrome://extensions` after you update.
+- **Closing the tab during a pick** gives the 🎯 button back.
+
 ### 0.7.5 — 2026-10-06
 
 Esc cancels the element picker from Selenite, and a pick no longer gets stuck.

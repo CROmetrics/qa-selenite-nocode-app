@@ -2,6 +2,34 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-06 — 0.7.6
+
+The two picker bugs that predate 0.7.5 are fixed. The session that took the poller-race task found both.
+
+### Fixed
+
+- **Two Selenite windows picking at once.** The worker kept a single owner pointer, `_pickWin`, the window of whichever panel started a pick last. A result or an Esc from window 1's page went to window 2's namespace: it filled window 2's step and left window 1 stuck on "…". On 0.7.5 in a real Chrome, window 1's click filled window 2's step, and Esc on window 1's page cancelled window 2's pick.
+  - **The owner now travels with the picker.** `startPicker` stores the starting window in the page's isolated world (`window.__selenitePickWin`) before injecting picker.js. picker.js sends it back with `pickerResult` and `pickerCancel`, and `pickOwner` writes to that window's namespace.
+  - **Not the sender tab's window:** that would send a click in a tab dragged to another window mid-pick to the wrong panel. The owner stays with the page, so a moved tab's result still reaches the window that started it, and so does one sent after a worker restart.
+  - **A picker injected by an older worker** sends no owner, so `pickOwner` falls back to `_pickWin` as before. The fix needs the extension reloaded: until then the old worker doesn't record an owner.
+- **Closing the tab mid-pick** takes picker.js with it, without a message, which left the button on "…" until Esc in Selenite. popup.js now ends the pick on `chrome.tabs.onRemoved` for the picker's tab.
+
+### Verification
+
+- **jsc harness:** real picker.js and selector.js on fake pages, one per tab, the whole background.js, and one popup.js picker block and Esc handler per Selenite window. Its 29 checks cover:
+  - 0.7.5's cases.
+  - A closed tab, and another tab closing.
+  - Two windows picking, with Esc on one page, with a tab moved between windows, and with a worker restart.
+  - A picker with no owner.
+  - **Results:** all 29 pass. On 0.7.5, 8 fail. With the 0.7.6 panel on a 0.7.5 worker (the extension not reloaded), the closed tab passes and the 7 two-window checks fail, as expected.
+- **Real Chrome:** system Chrome 154, two browser windows, each with its own floating Selenite, and 🎯 clicked with real mouse events inside each Selenite.
+  - **Two picks at once:** both windows picked, and each click filled its own window's step.
+  - **Esc** on window 1's page cancelled window 1's pick only.
+  - **A closed tab** gave 🎯 back by itself.
+  - **A tab dragged** from window 1 to window 2 mid-pick still sent its click to window 1.
+  - **Results:** all 10 checks pass. On 0.7.5, 6 fail. 0.7.5's own 21 real-Chrome checks still pass.
+- **Tests:** all seven CI suites pass.
+
 ## 2026-10-06 — 0.7.5
 
 Esc now cancels a pick from Selenite, where the keyboard actually is. 0.7.4 made Esc on the page give the 🎯 button back, but clicking 🎯 leaves keyboard focus in Selenite, so a real Esc went to Selenite and did nothing. This release also closes the other two ways 0.7.4 listed for a pick to get stuck.

@@ -2580,6 +2580,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, info) => {
   if (_pick === pick && doc?.documentId !== pick.docId) cancelPick();
 });
 
+// A closed tab takes its picker with it, and says nothing either.
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (_pick && tabId === _pick.tabId) endPick(_pick);
+});
+
 function applyPickerToMethod(selector, stepEl, step) {
   const method = selector.idValue ? 'id' : 'css';
   const value  = selector.idValue || selector.css;

@@ -224,6 +224,15 @@ async function restoreWins() {
   if (_srWin   == null) _srWin   = _wins.sr   ?? null;
   if (_pickWin == null) _pickWin = _wins.pick ?? null;
 }
+// The window whose panel started the picker that sent msg. Each page keeps the
+// owner it was injected for (startPicker) and picker.js sends it back, so two
+// windows can pick at once. A picker from an older worker sends none, so fall
+// back to the last starter.
+async function pickOwner(msg) {
+  if (msg.winId != null) return msg.winId;
+  if (_pickWin == null) await restoreWins();
+  return _pickWin;
+}
 // winFollow/tabToWin specifically are rebuilt lazily (only once, only if
 // empty) since they're keyed by every window+tab pair, not a handful of
 // scalars — see restoreFollowState().
@@ -6704,6 +6713,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const tabId = tab?.id;
       if (!tabId) { sendResponse({ ok: false, error: 'No active tab' }); return; }
       try {
+        // The page keeps its owner window for picker.js to send back (pickOwner).
+        await chrome.scripting.executeScript({ target: { tabId }, func: (w) => { window.__selenitePickWin = w; }, args: [msg.winId ?? null] });
         await chrome.scripting.executeScript({ target: { tabId }, files: ['selector.js', 'picker.js'] });
         sendResponse({ ok: true, tabId });   // where the panel closes it on its own Esc
       } catch (e) {
@@ -6714,11 +6725,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   } else if (msg.action === 'pickerResult') {
     // Content script sends result → store in the picker-owner window's namespace
-    // so only that panel polls it up. (The content script carries no winId, so
-    // recover the owner pointer if a worker restart cleared it.)
+    // so only the panel that started this picker polls it up.
     (async () => {
-      if (_pickWin == null) await restoreWins();
-      await ns(_pickWin).set({ pickerResult: { selector: msg.selector, ts: Date.now() } });
+      await ns(await pickOwner(msg)).set({ pickerResult: { selector: msg.selector, ts: Date.now() } });
     })();
     sendResponse({ ok: true });
 
@@ -6726,8 +6735,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // Esc in the picker. Written to the same owner-window slot as a result, so
     // that panel's poller stops and re-enables its 🎯 button.
     (async () => {
-      if (_pickWin == null) await restoreWins();
-      await ns(_pickWin).set({ pickerResult: { cancelled: true, ts: Date.now() } });
+      await ns(await pickOwner(msg)).set({ pickerResult: { cancelled: true, ts: Date.now() } });
     })();
     sendResponse({ ok: true });
 

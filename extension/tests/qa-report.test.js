@@ -60,7 +60,7 @@ eval(slicePopup('function rptAbVisualDiffSection(vd) {', '\nfunction rptWcagSect
 eval(slicePopup('function abFiredMetricRows(metricRows) {', '\nfunction rptAbSection('));
 var abState = { qaMode: false };
 
-// The Performance and Cross-Variant Accessibility report sections. PERF_METRICS
+// The Performance and A/B accessibility report sections. PERF_METRICS
 // and WCAG_CHECKS are `const` arrays and so do not survive eval-slicing (the
 // same trap that cost VIS_REPORT_RETRIES and VD_GRADES a test); stubbed here as
 // `var` before the slices, because the sliced functions resolve globals at call
@@ -73,9 +73,12 @@ var WCAG_CHECKS = [{ key: 'contrast', label: 'Colour contrast' }, { key: 'alt', 
 eval(slicePopup('function shortUrl(u) {', '\nfunction '));
 eval(slicePopup('function fmtMetric(v, m) {', '\nfunction '));
 eval(slicePopup('function diffCvaRuns(runs, checkKeys) {', '\nfunction '));
-// Shared by the live panel and rptCvaSection, so the report prints the same
-// axe-core and scope notes the panel does.
+// The axe-core and scope notes rptCvaSection prints over an A/B accessibility
+// entry, and the builder that turns an A/B run's captures into that entry.
 eval(slicePopup('function cvaRunNotes(run) {', '\nfunction '));
+eval(slicePopup('function abA11yEntry(captures, perVariant, autoChecks, ts, workerAck, manualChecks) {', '\n// ═══'));
+// rptCvaSection prints the accessibility review through it, as rptWcagSection does.
+eval(slicePopup('function rptAgenticNoteHtml(note, label) {', '\n// ── the run'));
 eval(slicePopup('function rptCvaSection(entry) {', '\nfunction rptPerfSection'));
 eval(slicePopup('function rptPerfSection(entry) {', '\nfunction rptFunnelSection'));
 
@@ -2101,10 +2104,11 @@ section('Cross-Variant Accessibility must not blame the variant for the whole si
      /not regressions introduced by them/.test(broken), broken.slice(0, 600));
   ok('  it does not badge ISSUES FOUND as though they were introduced',
      !/>ISSUES FOUND</.test(broken), broken.slice(0, 300));
-  ok('  it carries the same sentence the live renderer uses',
+  ok('  it carries the empty-baseline sentence',
      /shown against an empty baseline/.test(broken), broken.slice(0, 800));
-  ok('  and relabels the column away from "Introduced"',
-     /Checks with issues/.test(broken) && !/>Introduced checks</.test(broken), broken);
+  ok('  and never labels those issues "Introduced" or marks them worse',
+     /<th>Issues<\/th>/.test(broken) && !/<th>Introduced<\/th>/.test(broken) && !/worse<\/span>/.test(broken), broken);
+  ok('  listing each of them in full', /contrast: #e4 has insufficient ratio/.test(broken), broken);
 
   // A healthy baseline must be completely unchanged.
   var fine = cva(null);
@@ -2112,7 +2116,7 @@ section('Cross-Variant Accessibility must not blame the variant for the whole si
      />ISSUES FOUND</.test(fine), fine.slice(0, 300));
   ok('  with the original summary wording',
      /introduced issue\(s\) across/.test(fine), fine.slice(0, 300));
-  ok('  the original column header', /Introduced checks/.test(fine));
+  ok('  under an Introduced column', /<th>Introduced<\/th>/.test(fine));
   ok('  and no empty-baseline warning', !/empty baseline/.test(fine));
 })();
 
@@ -2202,10 +2206,11 @@ section('Test Agent: a failed mode is FAILED, never its previous run');
   var el = function (id) {
     return els[id] || (els[id] = { textContent: '', disabled: false, style: {}, innerHTML: '', checked: false, value: '' });
   };
-  var reply = null, opened = null, openThrows = null, perfRun = null;
+  var reply = null, opened = null, openThrows = null, perfRun = null, wcagMsg = null;
   var stubs = {
     document: { getElementById: el },
     chrome: { runtime: { sendMessage: function (msg) {
+      if (msg.action === 'runWcagAudit') wcagMsg = msg;
       return Promise.resolve(msg.action === 'runWcagAudit' ? reply : { ok: false, error: 'stub' });
     } } },
     wcagCheckboxes: function () { return [{ checked: true, value: 'contrast' }]; },
@@ -2223,6 +2228,9 @@ section('Test Agent: a failed mode is FAILED, never its previous run');
     rptAbSection: function () { return ''; },
     rptFunnelSection: function () { return ''; },
     _wcagCurrentRun: null, _taActiveBody: '4', taQueuedExtra: new Set(), _taStopRequested: false,
+    // The panel's browser window id, which runWcagAudit sends so the worker
+    // audits that window's tab and not the floating window's own.
+    WIN_ID: 7,
   };
   Object.keys(stubs).forEach(function (k) { globalThis[k] = stubs[k]; });
   eval(slicePopup('async function runWcagAudit(opts = {}) {', '\nfunction renderWcagRun('));
@@ -2248,6 +2256,7 @@ section('Test Agent: a failed mode is FAILED, never its previous run');
   eq('nothing ran, so no report was opened', opened, null);
   eq('  and the status line names the failure instead of "report opened"', status(),
      'WCAG / Accessibility failed: No active tab');
+  eq('  and the audit was asked for the panel\'s own browser window', wcagMsg && wcagMsg.winId, 7);
 
   // 2. An hour-old audit of another page in memory, the audit fails again.
   // Batched with a mode that does run, so a report opens and its modes are
@@ -2318,9 +2327,278 @@ section('Report: WCAG and Cross-Variant say how the audit ran');
   html = rptCvaSection({ mode: 5, name: 'Cross-Variant Accessibility', status: 'ran', data: cva });
   ok('the Cross-Variant report says which variant ran without axe-core',
      /v1: axe-core could not run \(axe failed to load\)/.test(html), html.slice(0, 500));
-  eq('  in the same words as the live panel', cvaRunNotes(cva)[0], 'v1: axe-core could not run (axe failed to load) — heuristics only.');
-  var live = slicePopup('function renderCvaResults(', '\nfunction ');
-  ok('  because the live panel uses the same function', /const notes = cvaRunNotes\(run\);/.test(live));
+  eq('  in cvaRunNotes\' words', cvaRunNotes(cva)[0], 'v1: axe-core could not run (axe failed to load) — heuristics only.');
+})();
+
+section('A/B: the accessibility audit is its own section, built from the captures');
+(function () {
+  // Captures as runVariantComparison returns them (background.js
+  // captureVariant), Control first after runAbComparison's reorder; `a11y` is
+  // performWcagAudit's { results, axeError, scopeError } for that same load.
+  var at = Date.UTC(2026, 9, 5, 17, 0, 0);
+  var auto = ['contrast', 'alt'];
+  var audit = function (contrast, alt) {
+    return { results: {
+      contrast: { label: 'Colour contrast', wcag: '1.4.3, 1.4.11', issues: contrast },
+      alt:      { label: 'Image alt text', wcag: '1.1.1', issues: alt || [] },
+    }, axeError: null, scopeError: null };
+  };
+  var cap = function (label, o) {
+    return Object.assign({ label: label, url: 'https://shop.example/?optimizely_x=' + label, finalUrl: 'https://shop.example/',
+      title: 'Shop', loadError: null, console: [], errors: [], selectors: [], tabId: null, screenshot: null,
+      fullPage: { pageW: 1280, pageH: 4000, capturedH: 4000, truncated: false }, expProbe: null }, o || {});
+  };
+  var control = cap('Control', { a11y: audit(['axe · contrast — .promo']) });
+  var v1 = cap('v1', { a11y: audit(['axe · contrast — .promo', 'axe · contrast — .new-badge'], ['img.hero has no alt']) });
+
+  var entry = abA11yEntry([control, v1], [{ label: 'v1', notServed: false }], auto, at);
+  eq('an audited run is a mode-5 entry that ran', entry.mode + '/' + entry.status, '5/ran');
+  eq('  named for the A/B report', entry.name, 'Accessibility (WCAG)');
+  eq('  Control is the baseline', entry.data.runs[0].label, 'Control');
+  eq('  timestamped by the caller', entry.data.ts, at);
+  eq('  with no scope and no manual checks', entry.data.scope + '|' + entry.data.includeManual, '|false');
+  eq('  each run keeps its finalUrl for the cover', entry.data.runs[1].finalUrl, 'https://shop.example/');
+  var html = rptCvaSection(entry);
+  ok('  and renders what v1 introduced', />ISSUES FOUND</.test(html) && /2 introduced · 0 resolved · 1 pre-existing/.test(html), html.slice(0, 700));
+  ok('  under its own title', /Accessibility \(WCAG\)/.test(html));
+
+  // The worker sets `a11y` only when asked. None on any loaded capture means
+  // the request went unanswered — not "no issues". WHY is the worker's own
+  // acknowledgement: run r_1791221055240 got "the service worker is older" on
+  // a log whose version stamp showed the extension reloaded after the worker
+  // change, so the reason may not be guessed from the captures alone.
+  var stale = abA11yEntry([cap('Control'), cap('v1')], [], auto, at);
+  eq('no audit on any loaded capture is a FAILED mode', stale.status, 'failed');
+  ok('  with no acknowledgement, it is a stale worker and a reload fixes it',
+     /did not acknowledge/.test(stale.reason) && /Reload the extension/.test(stale.reason), stale.reason);
+  var acked = abA11yEntry([cap('Control'), cap('v1')], [], auto, at, 2);
+  eq('an acknowledged request with no audit is still FAILED', acked.status, 'failed');
+  ok('  but is not blamed on a stale worker', !/older|Reload/.test(acked.reason) && /received 2 of the 2 requested check/.test(acked.reason), acked.reason);
+  ok('  a worker that received nothing says so', /received 0 of the 2/.test(abA11yEntry([cap('Control'), cap('v1')], [], auto, at, 0).reason));
+  eq('  and an audited run ignores the acknowledgement', abA11yEntry([control, v1], [], auto, at, 2).status, 'ran');
+
+  // A page that never loaded has no audit either, and that is its load error,
+  // not a stale worker.
+  var noLoad = abA11yEntry([control, cap('v1', { loadError: 'net::ERR_NAME_NOT_RESOLVED' })], [], auto, at);
+  eq('a variant that did not load is not mistaken for a stale worker', noLoad.status, 'ran');
+  eq('  it carries its load error', noLoad.data.runs[1].loadError, 'net::ERR_NAME_NOT_RESOLVED');
+  html = rptCvaSection(noLoad);
+  ok('  and the section cannot PASS on it', !/>PASS</.test(html) && />NOT COMPARED</.test(html), html.slice(0, 500));
+
+  // A failed audit is best-effort in the worker; here it is that run's error.
+  var threw = abA11yEntry([control, cap('v1', { a11y: { error: 'Cannot access contents of the page' } })], [], auto, at);
+  ok('an audit that threw is that variant\'s error', /accessibility audit failed \(Cannot access contents of the page\)/.test(threw.data.runs[1].loadError),
+     threw.data.runs[1]);
+  eq('  with no results', threw.data.runs[1].results, null);
+
+  var stopped = abA11yEntry([control, { label: 'v1', url: 'https://shop.example/?v=1', skipped: true }], [], auto, at);
+  eq('a run stopped before a second capture is skipped', stopped.status, 'skipped');
+
+  // A variant the platform says was not served is Control audited twice.
+  var ns = abA11yEntry([control, cap('v1', { a11y: audit(['axe · contrast — .promo']) })], [{ label: 'v1', notServed: true }], auto, at);
+  eq('notServed comes from Visual Diff\'s perVariant', ns.data.runs[1].notServed, true);
+  html = rptCvaSection(ns);
+  ok('a not-served variant never reads PASS', !/>PASS</.test(html) && />NOT COMPARED</.test(html), html.slice(0, 500));
+  ok('  its row says why', /was not served its own variation/.test(html), html);
+  ok('  and the summary counts it out', /0 introduced issue\(s\) across 0 variant\(s\) · 1 not compared/.test(html), html.slice(0, 500));
+
+  // A served variant's regression still outranks another variant's void pair,
+  // the A/B ladder's order (comparedUnmetCopy above notCompared).
+  var v2 = cap('v2', { a11y: audit(['axe · contrast — .promo']) });
+  var mixed = abA11yEntry([control, v1, v2], [{ label: 'v1', notServed: false }, { label: 'v2', notServed: true }], auto, at);
+  html = rptCvaSection(mixed);
+  ok('a served variant\'s regression outranks a not-served one', />ISSUES FOUND</.test(html), html.slice(0, 500));
+  ok('  and only the served variant is counted', /2 introduced issue\(s\) across 1 variant\(s\) · 1 not compared/.test(html), html.slice(0, 500));
+
+  var clean = abA11yEntry([control, cap('v1', { a11y: audit(['axe · contrast — .promo']) })], [{ label: 'v1', notServed: false }], auto, at);
+  ok('an identical, served, audited variant still earns PASS', />PASS</.test(rptCvaSection(clean)));
+  // Without Visual Diff there is no perVariant at all; nothing is invented.
+  eq('no perVariant means nothing is marked not served', abA11yEntry([control, v1], undefined, auto, at).data.runs[1].notServed, false);
+
+  // The wiring: the run asks for every automated check, and the entry joins the
+  // report after the A/B section only when it asked.
+  var run = slicePopup('async function runAbComparison(opts = {}) {', '\n// ── Diffing');
+  ok('the run sends every check to the worker, automated and manual',
+     /const a11yChecks = abState\.a11yAudit !== false \? \[\.\.\.a11yAuto, \.\.\.a11yManual\] : null;/.test(run) && /a11yChecks,\s*\n?\s*\}/.test(run), run.length);
+  ok('  and adds the section only when the option was on, comparing the automated checks only',
+     /if \(a11yChecks\) \{\s*const a11yEntry = abA11yEntry\(captures, visualDiffResult\?\.perVariant, a11yAuto, Date\.now\(\), res\.a11yRequested, a11yManual\);/.test(run));
+  ok('  the visual review runs only on an audited run with Agentic Testing on',
+     /if \(a11yEntry\.status === 'ran' && agenticTesting && !_abVisualDiffStopRequested\) \{[\s\S]{0,120}a11yEntry\.data\.agenticNote = await abA11yReview\(captures, a11yEntry\.data\);/.test(run));
+
+  // The audit must run BEFORE the capture: stabilizeForCapture clears
+  // video.autoplay, after which the motion check passes every page.
+  var bg = readFile('../background.js');
+  var cv = bg.slice(bg.indexOf('async function captureVariant('), bg.indexOf('async function runVariantComparison('));
+  var ia = cv.indexOf('performWcagAudit('), ic = cv.indexOf('captureFullPageAndViewport(');
+  ok('captureVariant audits before it captures', ia > 0 && ic > 0 && ia < ic, { audit: ia, capture: ic });
+  ok('  and runVariantComparison passes the checks through',
+     /a11yChecks: Array\.isArray\(a11yChecks\) \? a11yChecks : null/.test(bg));
+  ok('the Cross-Variant mode\'s worker entry point is gone', bg.indexOf('runCrossVariantAudit') === -1);
+  ok('the worker answers the visual review with the vision call',
+     /msg\.action === 'a11yVisionReview'[\s\S]{0,700}sendResponse\(await callClaudeVision\(\{ images, prompt, maxTokens: 700 \}\)\)/.test(bg));
+  // The acknowledgement must reach the popup on every run, asked or not:
+  // its absence is what identifies an older worker.
+  ok('the worker returns how many checks it received, unconditionally',
+     /const a11yRequested = Array\.isArray\(a11yChecks\) \? a11yChecks\.length : 0;\s*return \{ results, agenticNote, a11yRequested \};/.test(bg));
+  ok('  and the message handler passes it back', /sendResponse\(\{ ok: true, results, agenticNote, a11yRequested \}\)/.test(bg));
+})();
+
+section('A/B: the accessibility section is as detailed as the standalone WCAG report');
+(function () {
+  // r_1791222173138 (STRZ-1658, 0.7.3, first audited A/B run) printed three
+  // counts per variant: "10 introduced" with not one of the ten named. The
+  // standalone WCAG report on the same page (r_1790972743184) listed every
+  // check with its criteria and status, every issue, the manual checks and an
+  // Agentic Testing note. These pin each of those back, from real issue
+  // strings of that run.
+  var at = Date.UTC(2026, 9, 5, 17, 42, 53);
+  var alt1 = 'axe · Images must have alternative text — .strz1658__active_H0WoI.strz1658__rfmPage_H0WoI[data-key="Trending Now"] > .strz1658__rfmCard_H0WoI[data-id="74649"] > img';
+  var alt2 = 'axe · Images must have alternative text — div[data-id="74363"] > img';
+  var logoName = 'a.Logo_logo-link__4rJsy.d-flex — control has no accessible name (4.1.2)';
+  var nav = 'No <nav> / role="navigation" landmark found';
+  var manualModal = 'No modal/dialog in the current DOM. Open each modal and confirm Escape (or a visible close control) exits it without trapping keyboard focus.';
+  var res = function (screenreader, modal) {
+    return {
+      screenreader: { label: 'Screen Reader Announcements', wcag: '1.1.1, 4.1.3, 4.1.2', issues: screenreader },
+      navconsistency: { label: 'Navigation Consistency', wcag: '3.2.3, 3.2.4, 3.2.6', issues: [nav] },
+      titles: { label: 'Page Identity & Titles', wcag: '2.4.2', issues: [] },
+      modalescape: { label: 'Modal & Dialog Escape', wcag: '2.1.2', infoOnly: true, issues: [modal || manualModal] },
+    };
+  };
+  var cap = function (label, results, o) {
+    return Object.assign({ label: label, url: 'https://www.starz.com/us/en/buy?optimizely_x=' + label, finalUrl: 'https://www.starz.com/us/en/buy',
+      loadError: null, a11y: { results: results, axeError: null, scopeError: null } }, o || {});
+  };
+  var caps = [cap('v0', res([logoName])), cap('v1', res([logoName])), cap('v2', res([alt1, alt2]))];
+  var auto = ['screenreader', 'navconsistency', 'titles'];
+  var entry = abA11yEntry(caps, [], auto, at, 4, ['modalescape']);
+  eq('manual checks ride along but are not compared', entry.data.includeManual + '|' + entry.data.autoChecks.join(','), 'true|screenreader,navconsistency,titles');
+  var html = rptCvaSection(entry);
+
+  ok('every automated check has a row, with its success criteria',
+     /Page Identity &amp; Titles<br><span class="rpt-muted">2\.4\.2<\/span>/.test(html) && /Navigation Consistency/.test(html), html.slice(0, 1500));
+  ok('  and each page\'s own status', /<td>Pass<\/td>/.test(html) && /<td>1 issue\(s\)<\/td>/.test(html));
+  ok('  marking what a variant made worse and better', /2 issue\(s\)<br><span class="ab-err">\+2 worse<\/span> <span class="rpt-muted">−1 better<\/span>/.test(html), html);
+  ok('every introduced issue is written out', html.indexOf('data-id=&quot;74649&quot;') !== -1 || html.indexOf('data-id="74649"') !== -1, html);
+  ok('  under its variant', /v2 compared with v0/.test(html));
+  ok('  with what it resolved', html.split(logoName).length - 1 >= 2, html);
+  ok('a variant that changed nothing says so', /v1 compared with v0<\/h3><p class="rpt-muted">0 introduced · 0 resolved · 2 pre-existing\. No issue was added or removed on any check\./.test(html), html);
+  ok('Control\'s own audit is laid out as the WCAG report lays out a page',
+     /v0 \(Control\): full audit/.test(html) && /2 passed · 2 with issues · 2 total issue\(s\)/.test(html) === false && /1 passed · 2 with issues · 2 total issue\(s\)/.test(html), html);
+  ok('  listing the issues every variant inherits', html.indexOf(esc(nav)) !== -1, html);
+  ok('the manual checks are reported once', /<h3>Manual review<\/h3>/.test(html) && html.split(esc(manualModal)).length - 1 === 1, html);
+  ok('  and never counted as issues', !/Modal &amp; Dialog Escape<br><span class="rpt-muted">2\.1\.2<\/span><\/td><td>Pass/.test(html) && entry.data.autoChecks.indexOf('modalescape') === -1);
+  var caps2 = [cap('v0', res([logoName])), cap('v1', res([logoName], 'A dialog is open: confirm Escape closes it.'))];
+  var html2 = rptCvaSection(abA11yEntry(caps2, [], auto, at, 4, ['modalescape']));
+  ok('  a page whose manual guidance differs is named under it', /On v1:<\/p><ul><li>A dialog is open: confirm Escape closes it\.<\/li><\/ul>/.test(html2), html2);
+
+  entry.data.agenticNote = 'v2 adds a row of poster images with no visible titles.';
+  html = rptCvaSection(entry);
+  ok('the Agentic accessibility review is printed, labelled', /Agentic Accessibility Review \(Sonnet\):<\/strong> v2 adds a row of poster images/.test(html), html.slice(-400));
+
+  // What the model is told: the screenshots' order, Control, and the actual
+  // new issues rather than counts.
+  var prompt = abA11yReviewPrompt(entry.data, ['v0', 'v1', 'v2']);
+  ok('the review prompt names the screenshot order and Control', /in this order: v0, v1, v2\. v0 is Control\./.test(prompt), prompt);
+  var ctl = abA11yEntry([cap('Control', res([logoName])), cap('v1', res([logoName]))], [], auto, at, 4, []);
+  var ctlHtml = rptCvaSection(ctl);
+  ok('a target labelled Control is not called "Control (Control)"', !/Control \(Control\)/.test(ctlHtml) && /<h3>Control: full audit<\/h3>/.test(ctlHtml), ctlHtml.slice(0, 600));
+  ok('  nor "Control is Control" to the model', /Control is the baseline\./.test(abA11yReviewPrompt(ctl.data, ['Control', 'v1'])) && !/Control is Control/.test(abA11yReviewPrompt(ctl.data, ['Control', 'v1'])));
+  ok('  gives Control\'s own issues by check', /v0 \(Control\): Screen Reader Announcements \(1\), Navigation Consistency \(1\)\./.test(prompt), prompt);
+  ok('  says when a variant changed nothing', /v1: no change from v0 on any automated check\./.test(prompt), prompt);
+  ok('  and quotes what a variant introduced', prompt.indexOf('Screen Reader Announcements: 2 worse (e.g. ' + alt1) !== -1 && /, 1 better\./.test(prompt), prompt);
+  var nsPrompt = abA11yReviewPrompt(abA11yEntry(caps, [{ label: 'v2', notServed: true }], auto, at, 4, []).data, ['v0', 'v1', 'v2']);
+  ok('  and that a not-served variant was not compared', /v2: not compared — the experiment platform reports it was not served its variation\./.test(nsPrompt), nsPrompt);
+})();
+
+section('A/B accessibility: a count that moved is one changed issue, not a fix and a new one');
+(function () {
+  // r_1791222173138, STRZ-1658 v2 and v3: Control's heuristic line read
+  // "2 <img> missing an alt attribute", the variants' "43 <img> …". Matched as
+  // exact strings that is one resolved and one introduced, and the report
+  // printed "−1 fixed" for a page with 41 more images missing alt text.
+  var two = '2 <img> missing an alt attribute — no text alternative to announce (1.1.1)';
+  var many = '43 <img> missing an alt attribute — no text alternative to announce (1.1.1)';
+  var logo = 'a.Logo_logo-link__4rJsy.d-flex — control has no accessible name (4.1.2)';
+  var alt = 'axe · Images must have alternative text — div[data-id="74363"] > img';
+  var runs = function (variantIssues) {
+    return [
+      { label: 'v0', results: { screenreader: { label: 'Screen Reader Announcements', wcag: '1.1.1', issues: [two, logo] } } },
+      { label: 'v2', results: { screenreader: { label: 'Screen Reader Announcements', wcag: '1.1.1', issues: variantIssues } } },
+    ];
+  };
+  var d = diffCvaRuns(runs([alt, many, logo]), ['screenreader']);
+  var pc = d.variants[0].perCheck[0];
+  eq('the moved count is paired, not resolved', pc.resolved.length + '|' + pc.introduced.length + '|' + pc.changed.length, '0|1|1');
+  eq('  as worse, from 2 to 43', JSON.stringify(pc.changed[0]), JSON.stringify({ from: two, to: many, worse: true }));
+  eq('  and counted as one introduced, nothing resolved', d.variants[0].introduced + '/' + d.variants[0].resolved, '2/0');
+  var fewer = diffCvaRuns(runs([logo, '1 <img> missing an alt attribute — no text alternative to announce (1.1.1)']), ['screenreader']);
+  eq('a count that fell is better, counted as resolved', fewer.variants[0].introduced + '/' + fewer.variants[0].resolved + '/' + (fewer.variants[0].perCheck[0].changed[0] || {}).worse, '0/1/false');
+  // Only a LEADING count pairs: two different elements are still two issues.
+  var els = diffCvaRuns(runs([logo, alt.replace('74363', '1'), two]), ['screenreader']);
+  eq('different elements are not paired by their digits', els.variants[0].perCheck[0].changed.length + '|' + els.variants[0].perCheck[0].introduced.length, '0|1');
+
+  var html = rptCvaSection({ mode: 5, name: 'Accessibility (WCAG)', status: 'ran', data: { scope: '', autoChecks: ['screenreader'], runs: runs([alt, many, logo]) } });
+  ok('the report shows the change with what Control had', html.indexOf(esc(many) + ' (v0 had 2)') !== -1, html);
+  ok('  and does not call the 2 fixed', !/better<\/span>/.test(html) && /\+2 worse<\/span>/.test(html), html);
+})();
+
+section('A/B accessibility: a variant with the same changes as an earlier one says so');
+(function () {
+  // STRZ-1658's v2 and v3 share the new UI. r_1791225305511 printed their
+  // identical ten introduced issues twice, a page each.
+  var two = '2 <img> missing an alt attribute — no text alternative to announce (1.1.1)';
+  var many = '43 <img> missing an alt attribute — no text alternative to announce (1.1.1)';
+  var logo = 'a.Logo_logo-link__4rJsy.d-flex — control has no accessible name (4.1.2)';
+  var alt = 'axe · Images must have alternative text — .strz1658__watchAnywhereLogos_H0WoI';
+  var other = 'axe · Images must have alternative text — div[data-id="74363"] > img';
+  var page = function (label, issues) {
+    return { label: label, results: { screenreader: { label: 'Screen Reader Announcements', wcag: '1.1.1, 4.1.3, 4.1.2', issues: issues } } };
+  };
+  var data = function (pages) { return { mode: 5, name: 'Accessibility (WCAG)', status: 'ran', data: { scope: '', autoChecks: ['screenreader'], runs: pages } }; };
+  var html = rptCvaSection(data([page('v0', [two, logo]), page('v1', [two, logo]), page('v2', [alt, many, logo]), page('v3', [alt, many, logo])]));
+  ok('v3 points at v2 instead of repeating its table',
+     /<h3>v3 compared with v0<\/h3><p class="rpt-muted">2 introduced · 0 resolved · 1 pre-existing\. Same changes as v2\.<\/p>/.test(html), html.slice(-700));
+  eq('  so each issue is listed once', html.split(esc(alt)).length - 1, 1);
+  eq('  and only one change table is printed', (html.match(/<th>Introduced<\/th>/g) || []).length, 1);
+  ok('  v1, which changed nothing, still says so rather than "same as"', /v1 compared with v0<\/h3><p class="rpt-muted">0 introduced · 0 resolved · 2 pre-existing\. No issue was added or removed on any check\./.test(html), html);
+  var diffr = rptCvaSection(data([page('v0', [two, logo]), page('v2', [alt, many, logo]), page('v3', [other, many, logo])]));
+  ok('variants whose changes differ each get their own table', (diffr.match(/<th>Introduced<\/th>/g) || []).length === 2 && !/Same changes as/.test(diffr), diffr.slice(-600));
+  var noBase = rptCvaSection(data([Object.assign(page('v0', []), { loadError: 'Navigation timeout', results: null }), page('v2', [alt, logo]), page('v3', [alt, logo])]));
+  ok('without a baseline it says "Same issues as"', /<h3>v3: every issue \(no baseline\)<\/h3><p class="rpt-muted">2 issue\(s\) on this page\. Same issues as v2\.<\/p>/.test(noBase), noBase.slice(-500));
+  var ns = rptCvaSection(data([page('v0', [two, logo]), Object.assign(page('v2', [alt, many, logo]), { notServed: true }), page('v3', [alt, many, logo])]));
+  ok('a not-compared variant is never the one pointed at', !/Same changes as v2/.test(ns) && (ns.match(/<th>Introduced<\/th>/g) || []).length === 1, ns.slice(-600));
+  var prompt = abA11yReviewPrompt(data([page('v0', [two, logo]), page('v1', [two, logo]), page('v2', [alt, many, logo]), page('v3', [alt, many, logo])]).data, ['v0', 'v1', 'v2', 'v3']);
+  ok('the review prompt says the same', /\nv3: the same changes as v2\.$/.test(prompt) && prompt.split(alt).length - 1 === 1, prompt.slice(-400));
+})();
+
+section('Agentic notes print as paragraphs, not one block with asterisks');
+(function () {
+  // The accessibility review of r_1791225305511, verbatim: four **bold**-led
+  // paragraphs that the report printed as one run-on block, asterisks and all.
+  var note = "**v0 (Control) \u2013 Pricing page:** The plan cards rely on a radio button plus color-fill (teal) to show selection, but the radio circle is small and low-contrast against the dark card; users scanning quickly may miss which plan is \"selected\" vs. the \"BEST DEAL\" badge, creating competing visual signals for which option is recommended.\n\n**v1 \u2013 Pricing page:** \"BEST DEAL\" badge swapped for \"MOST POPULAR\" on the Monthly card instead of Annual. This creates a logical conflict: the cheaper per-month effective price (Annual, $2.50/mo) is visually de-emphasized while the costlier Monthly plan gets the attention badge \u2014 confusing hierarchy for decision-making, not just a copy change.\n\n**v2 \u2013 Hero/pricing page:** Background collage images (show stills) sit directly behind white/light headline text (\"Don't Miss Another Moment\") with insufficient dedicated scrim, so contrast varies by region of the busy photo collage even if a single color-contrast check passes on average. Also CTA buttons became text links \"SELECT PLAN\" in bright yellow boxes \u2014 good target size, but the \"Most Popular\" tag now floats oddly clipped at the card's top-right corner, overlapping the card border, looking visually broken.\n\n**v3 \u2013 Hero/pricing page:** Same image/text contrast concern as v2. Additionally \"Best Deal\" tag shifted to Annual card, which is clearer logically, but the tag again appears clipped/overlapping the rounded card edge, an alignment/visual-polish issue not caught by automated tools.";
+  var html = rptAgenticNoteHtml(note, 'Agentic Accessibility Review (Sonnet)');
+  eq('one paragraph per paragraph of the note', (html.match(/<p class="rpt-muted">/g) || []).length, 4);
+  ok('  the label leads the first', /^<p class="rpt-muted"><strong>Agentic Accessibility Review \(Sonnet\):<\/strong> <strong>v0 \(Control\) – Pricing page:<\/strong>/.test(html), html.slice(0, 200));
+  ok('  bold is bold, no asterisks left', !/\*\*/.test(html) && /<strong>v3 – Hero\/pricing page:<\/strong>/.test(html), html);
+  ok('  and the text is still escaped', /&quot;BEST DEAL&quot;|"BEST DEAL"/.test(html) && !/<script/.test(rptAgenticNoteHtml('**x** <script>alert(1)</script>')), html.slice(0, 300));
+  eq('a one-line note renders as before', rptAgenticNoteHtml('Looks fine.'), '<p class="rpt-muted"><strong>Agentic Testing Note (Sonnet):</strong> Looks fine.</p>');
+  ok('markup inside bold stays escaped', rptAgenticNoteHtml('**<b>x</b>**').indexOf('<strong>&lt;b&gt;x&lt;/b&gt;</strong>') !== -1, rptAgenticNoteHtml('**<b>x</b>**'));
+})();
+
+section('The accessibility review is asked for barriers, not opinions on the experiment');
+(function () {
+  // The same review argued v1 badged the wrong plan and that a tag's corner
+  // overlapped its card. The prompt now rules both out.
+  var data = { autoChecks: ['contrast'], runs: [
+    { label: 'v0', results: { contrast: { label: 'Color Contrast', wcag: '1.4.3', issues: [] } } },
+    { label: 'v1', results: { contrast: { label: 'Color Contrast', wcag: '1.4.3', issues: [] } } },
+  ] };
+  var prompt = abA11yReviewPrompt(data, ['v0', 'v1']);
+  ok('it names who the barriers are for', /screen reader, a keyboard or zoom, or with low vision, colour blindness or a cognitive disability/.test(prompt), prompt);
+  ok('  rules out judging the experiment', /design, copy, pricing and which option they emphasise are the experiment's intended changes: do not judge them/.test(prompt), prompt);
+  ok('  and polish that does not affect use', /do not report visual polish unless it affects perceiving or operating the page/.test(prompt), prompt);
+  ok('  asks for a paragraph per page', /one short paragraph per page, starting with its label in bold/.test(prompt), prompt);
 })();
 
 section('Cover: the Test Agent modes name their pages');

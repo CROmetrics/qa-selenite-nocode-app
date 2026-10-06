@@ -52,7 +52,7 @@ jobs:
         run: |
           set -o pipefail
           rc=0
-          for t in jira-extract figma vd-diff qa-report real-runs matrix; do
+          for t in jira-extract figma vd-diff qa-report real-runs matrix floating; do
             echo "::group::$t"
             if "$JSC" "$t.test.js"; then
               echo "$t OK"

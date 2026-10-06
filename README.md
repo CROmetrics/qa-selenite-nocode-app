@@ -1,10 +1,10 @@
 # Selenite — No-Code QA Runner
 
-A Chrome extension for building and running QA test scripts directly in your browser — no code required. Selenite lets you build a queue of browser automation steps via a side panel UI, save and reload scripts, and watch execution logs in real time.
+A Chrome extension for building and running QA test scripts directly in your browser — no code required. Selenite lets you build a queue of browser automation steps in a side panel, or in a window floating over the page, save and reload scripts, and watch execution logs in real time.
 
 ## Features
 
-- Side panel UI — build and run test queues without leaving the page
+- Side panel or floating window — build and run test queues beside the page, or unpin Selenite to float over it so the page keeps its full width
 - Visual step builder — add, reorder, and remove automation steps
 - Element picker — click any element on the page to capture its CSS selector
 - Metrics section — define the metric values that fire in the browser output (often prefixed `[PJS]` or `[cro]`) and assert them during runs with the **Track Metric** step
@@ -14,10 +14,9 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - Tab targeting: run on the **active tab** or open a **new tab**
 - Console tab — a live step-execution log with INFO / WARN / ERR filtering, plus a live mirror of the captured tab's browser console with a CRO (`[PJS]`/`[cro]`) filter, a JavaScript command input, and **Quick Commands**: one-click buttons for the Optimizely, Convert, AB Tasty and other platform debugging commands QA runs all day
 - Visual Regression — full-page screenshot baselines per URL with pixel diffing, ignore regions, and a mismatch threshold (Functional Testing tab)
-- **Test Agent** tab — run WCAG, Cross-Variant Accessibility, Performance, or Funnel Crawl one at a time, batch the first three together via **Also Run**, and get a single combined report with an optional AI-written summary
-- **A/B** tab — load each experiment variant once and diff page state, metric fires, and tagged console output against control, with an optional per-variant interaction heatmap and an AI-powered full-page visual diff
+- **Test Agent** tab — run WCAG, Performance, or Funnel Crawl one at a time, batch the first two together via **Also Run**, and get a single combined report with an optional AI-written summary
+- **A/B** tab — load each experiment variant once and diff page state, metric fires, and tagged console output against control, with an optional per-variant interaction heatmap, an AI-powered full-page visual diff, and a WCAG audit of every variant diffed against control (introduced / resolved / pre-existing)
 - WCAG / Accessibility mode — full WCAG 2.2 audit (heuristics + axe-core) with region scoping, check presets, click-to-highlight findings, JSON export, and per-URL run history
-- Cross-Variant Accessibility mode — run the WCAG audit against every experiment variant and diff findings vs control (introduced / resolved / pre-existing)
 - Performance/Load mode — median page-load metrics (TTFB, FCP, LCP, CLS, long tasks, resources) over N runs, checked against Core Web Vitals budgets, with per-URL history
 - Funnel Crawl — an AI agent clicks through Start → Middle waypoint(s) → End to verify a funnel actually connects
 - Agentic Testing (Sonnet) and Agentic Analysis (Opus) — optional AI-powered vision judgment and result summaries via Anthropic's API
@@ -26,6 +25,20 @@ A Chrome extension for building and running QA test scripts directly in your bro
 ## Version History
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
+
+### 0.7.3 — 2026-10-06
+
+Accessibility moved into the A/B run, and Selenite can be unpinned to float over the page instead of docking beside it.
+
+**Window**
+- **📌 unpins Selenite into a floating window.** Selenite still opens docked in Chrome's side panel. Press 📌 to unpin it into its own window over the right side of Chrome; the toolbar icon (or Alt+Shift+S) then opens it there until you press 📌 again. The docked panel takes its width out of the page, so pages reflow while it's open and are captured narrower than their window. While Selenite floats, the page keeps its full width and captures are taken at the window's width, so they will differ in width from earlier runs. Move or resize the floating window and the next one opens the same way.
+- **Switching reloads Selenite**, so 📌 waits until a run has finished, and Selenite reopens on the tab you were on.
+
+**A/B**
+- **Accessibility audit.** A new option, on by default, runs the WCAG audit (all 19 checks plus axe-core) on each variant in the same page load as its capture. The report gains an **Accessibility (WCAG)** section after Visual Diff with the detail of a standalone WCAG report: every check with its criteria and each page's status, every issue each variant introduced or resolved, Control's full audit, the manual review items, and an Agentic accessibility review of the screenshots. A variant the platform says was not served its variation is marked not compared, and the section cannot PASS while one is.
+
+**Test Agent**
+- **Cross-Variant Accessibility is gone.** It ran the same audit against the same variants, with its own target list and a second load of every page. The WCAG / Accessibility mode is unchanged and still audits a single page.
 
 ### 0.7.2 — 2026-10-05
 
@@ -85,13 +98,13 @@ Earlier versions: see [`CHANGELOG.md`](CHANGELOG.md) and `git log`. The version 
 2. Open Chrome and go to `chrome://extensions`.
 3. Enable **Developer mode** (top right toggle).
 4. Click **Load unpacked** and select the `extension/` folder.
-5. Click the Selenite icon in the toolbar to open the side panel.
+5. Click the Selenite icon in the toolbar (or press Alt+Shift+S) to open Selenite in Chrome's side panel. 📌 in its header unpins it into a floating window, which leaves the page its full width.
 
 ## Usage
 
 ### Building a Queue
 
-1. Open the Selenite side panel by clicking the extension icon.
+1. Open Selenite by clicking the extension icon.
 2. In the **Target** section:
    - Choose an execution mode: **Close after run** or **Loop continuously**.
    - Choose a tab target: **Active tab** or **New tab**.
@@ -147,7 +160,7 @@ Screenshots are captured over CDP (`Page.captureScreenshot` with `captureBeyondV
 
 The **Test Agent** tab runs one testing mode at a time: pick it from the **Test Mode** dropdown, configure its settings, and click **Execute Test**. Every automated mode (everything except Funnel Crawl) can also be batched together via **Also Run** — check any additional modes and they run in sequence after the primary one, each skipped automatically if it isn't configured. Once at least one mode has run, Selenite compiles a single report (opened in a new tab) covering every mode that ran, optionally with an AI-written plain-English summary.
 
-A/B Variant Comparison is not a Test Agent mode. It is configured, run and reported entirely from its own **A/B** tab, and appears neither in the **Test Mode** dropdown nor in the **Also Run** list.
+A/B Variant Comparison is not a Test Agent mode. It is configured, run and reported entirely from its own **A/B** tab, and appears neither in the **Test Mode** dropdown nor in the **Also Run** list. The same goes for auditing an experiment's variants for accessibility: that is the A/B tab's **Accessibility audit** option. The WCAG mode here audits one page.
 
 - **Agentic Testing** (Sonnet) — lets a mode capture a screenshot per page/variant and asks Claude to judge whether a visual difference looks like an intended change or a likely bug. Off by default.
 - **Agentic Analysis** (Opus) — summarizes the full set of results in the report. On by default.
@@ -162,21 +175,6 @@ Runs a WCAG 2.2 accessibility audit (19 heuristic check suites plus axe-core as 
 - **Highlighting** — clicking an issue row that references a page element scrolls to and flashes that element in the audited tab.
 - **Export** — the **Export** button in the results header downloads the run as a JSON file (per check: label, WCAG SCs, status, issues).
 - **Run history** — the last 5 runs per page URL are kept in local storage; pick one under **Recent Runs** and click **View** to re-view its results.
-
-#### Cross-Variant Accessibility Mode
-
-Answers the question the standalone WCAG audit can't: **did an experiment variant introduce (or fix) accessibility issues relative to control?** It reuses the WCAG mode's audit engine and the A/B tab's variant-loading machinery.
-
-1. Configure variant targets exactly like the A/B tab (base URL, per-variant label + override query string, QA Mode, settle, keep-tabs-open). The first target is the baseline, typically Control. Target sets save/load by name (namespaced separately from the A/B tab's sets).
-2. Pick the automated checks to run (all on by default). Manual checks produce identical guidance on every variant, so they sit behind an **Include manual checks** toggle (off by default) and render once, not per variant.
-3. Optionally **scope** the audit to the region the experiment modifies (CSS selector or `🎯`) — the expected usage, since it cuts shared-page noise dramatically.
-4. Click **Run Cross-Variant Audit**. Each variant loads sequentially and gets the same audit; findings are diffed against the baseline per check:
-   - **Introduced** — issues in a variant but not in baseline: the headline signal, expanded and styled as errors.
-   - **Resolved** — issues in baseline but absent in a variant: shown positively.
-   - **Pre-existing** — issues identical in both: collapsed and greyed, visible on expand.
-5. With keep-tabs-open enabled, clicking an issue highlights its element in that variant's tab. **Export** downloads per-variant, per-check, per-bucket JSON.
-
-Issue matching is exact (normalized whitespace) within each check — axe node-target strings can differ across runs for the same underlying issue, a known v1 limitation.
 
 #### Performance/Load Mode
 
@@ -206,11 +204,20 @@ The **A/B** tab QAs an A/B experiment (Optimizely, Convert, or similar) by loadi
 1. Set the **Base URL** the variants share (each target can override it with its own URL).
 2. Define at least two **Variant Targets**. The first is the baseline (typically Control). Each target has a label and an **Override** — the query string that forces the variant, e.g. Optimizely's `optimizely_x=<variationId>`.
 3. Optionally add **Watched Selectors** (use `🎯` to pick them from the page) — each is compared across variants for existence, visibility, text, and key computed styles.
-4. Optional settings: **QA Mode** appends `cro_mode=qa` to every variant URL; **Settle** waits after load so experiment scripts can apply changes (default 3s); **Keep tabs open** leaves each variant tab open for manual inspection; **Agentic Testing (Sonnet)** takes a viewport screenshot per variant and asks Claude to judge whether a visual difference looks intended or like a bug; **Visual Diff (AI)** does a full-page, region-level AI visual comparison against Control, requires an active reviewed ticket context.
+4. Optional settings: **QA Mode** appends `cro_mode=qa` to every variant URL; **Settle** waits after load so experiment scripts can apply changes (default 3s); **Keep tabs open** leaves each variant tab open for manual inspection; **Accessibility audit** (on by default) runs the WCAG audit on each variant, described below; **Agentic Testing (Sonnet)** takes a viewport screenshot per variant and asks Claude to judge whether a visual difference looks intended or like a bug; **Visual Diff (AI)** does a full-page, region-level AI visual comparison against Control, requires an active reviewed ticket context.
 5. Click **Run Comparison**. Each variant loads sequentially in its own tab; captures include page title/URL, `[PJS]`/`[cro]`-tagged console lines, Metrics fires (from the Functional Testing tab's Metrics list), JS errors, and watched-selector state.
 6. Results are grouped diffs vs the baseline — identical facts are greyed and collapsed, deltas are highlighted, and errors are always flagged red.
 
 Variant target sets can be saved by name (stored in Chrome sync storage) and re-run in one click. The comparison never touches the Functional Testing tab's queue.
+
+**Accessibility audit** — answers the question the standalone WCAG audit can't: did a variant introduce, or fix, accessibility issues compared with Control? Each variant is audited in the same page load as its capture, before the screenshot, using the WCAG mode's engine: all 19 checks plus axe-core, on the whole page. The report's **Accessibility (WCAG)** section has the same depth as a standalone WCAG report, for every page:
+- **By check** — every automated check, with its WCAG success criteria, and each page's status: Pass, or its issue count, with what a variant made worse or better than Control.
+- **Each variant compared with Control** — every issue it introduced and every issue it resolved, written out in full. A variant that changed exactly what an earlier one did says "Same changes as v2" instead of repeating the list.
+- **Control's full audit** — every check and every issue on Control: the issues every variant starts from.
+- **Manual review** — the five checks no script can settle, once, with any page whose guidance differs named under it.
+- **Agentic Accessibility Review** — with Agentic Testing on, Claude looks at each page's screenshot alongside these findings and flags barriers the automated checks can't see, one paragraph per page. It is told not to judge the experiment's design, copy or emphasis, which are the test's intended changes.
+
+A variant the experiment platform says was not served its variation is marked not compared rather than counted, and the section never badges PASS while any variant was not compared. Issue matching is exact (normalized whitespace) within each check, so an axe node-target string that differs between runs for the same issue counts as introduced on one side and resolved on the other. The exception is a summary line that leads with a count ("2 <img> missing an alt attribute"): when only the count moved, it is one issue that got worse or better, not one fixed and one new. Untick the option for a visual-only run, a few seconds per variant faster.
 
 **Optional: interaction heatmap** — with **Keep tabs open** checked, also check **Record interaction heatmap**. After the comparison, each variant's kept-open tab gets a small recorder control: click **Record walk**, interact with that tab the way a real visitor would, then **Stop Recording**; **Show heatmap overlay** draws click-density dots, a mouse-trail line, and a scroll-depth gutter onto that tab. Only one variant can record at a time, and recordings are kept in memory only for the current run (nothing is saved to disk, and nothing ever leaves the browser — keystrokes and typed values are never captured). Off by default; a normal A/B run is unaffected.
 
@@ -237,7 +244,9 @@ Variant target sets can be saved by name (stored in Chrome sync storage) and re-
 ```
 extension/
 ├── manifest.json       # Chrome extension manifest (MV3)
-├── sidepanel.html      # Side panel UI
+├── floating.html       # Floating window the toolbar icon opens when Selenite is unpinned; holds sidepanel.html in a frame
+├── floating.js         # Floating window: hosts the UI; the toolbar icon brings it back
+├── sidepanel.html      # Panel UI (Chrome's side panel, or the floating window when unpinned)
 ├── popup.html          # Popup UI (same layout as the side panel)
 ├── popup.js            # Queue builder, Metrics section, UI logic (shared by both UIs)
 ├── background.js       # Service worker (queue execution, console capture, metrics)

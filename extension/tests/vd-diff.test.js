@@ -4608,6 +4608,43 @@ section('debug log: a Test Agent run records the mode that ran');
   var abLog = buildDebugLog(abSections([capture('v0', { fullPage: null })], []));
   ok('an A/B log still carries the A/B settings', abLog.run.settings && abLog.run.settings.visualDiff === true, abLog.run.settings);
   eq('  and none of the Test Agent sections', [abLog.wcag, abLog.crossVariant, abLog.performance].every(function (x) { return x === null; }), true);
+
+  // With its Accessibility audit option on, an A/B report carries a second,
+  // mode-5 entry (abA11yEntry) and its log fills `crossVariant` beside the A/B
+  // settings. A pair the platform says was not served is said so in problems.
+  var abA11y = abSections([capture('v0', { fullPage: null }), capture('v1', { fullPage: null })], []);
+  abA11y.modes.push({ mode: 5, name: 'Accessibility (WCAG)', status: 'ran',
+    data: { ts: at, scope: '', autoChecks: ['contrast'], includeManual: false,
+            runs: [cvaRun('v0'), cvaRun('v1', { notServed: true })] } });
+  var abA11yLog = buildDebugLog(abA11y);
+  ok('an A/B run with the audit fills crossVariant', !!abA11yLog.crossVariant && abA11yLog.crossVariant.status === 'ran', abA11yLog.crossVariant);
+  eq('  alongside the A/B settings', !!abA11yLog.run.settings, true);
+  eq('  and each run says whether it was served', abA11yLog.crossVariant.runs[1].notServed, true);
+  ok('problems: a not-served variant is named under accessibility',
+     abA11yLog.problems.some(function (p) { return p.severity === 'warn' && p.where === 'accessibility/v1' && /was not served its own variation/.test(p.detail); }),
+     abA11yLog.problems);
+  // The visual review's failure is a warning under accessibility, and the note
+  // itself rides in the section either way.
+  var abReview = abSections([capture('v0', { fullPage: null }), capture('v1', { fullPage: null })], []);
+  abReview.modes.push({ mode: 5, name: 'Accessibility (WCAG)', status: 'ran',
+    data: { ts: at, scope: '', autoChecks: ['contrast'], includeManual: true, agenticNote: 'Agentic Testing unavailable: No API key configured',
+            runs: [cvaRun('v0'), cvaRun('v1')] } });
+  var abReviewLog = buildDebugLog(abReview);
+  eq('the accessibility section carries the review note', abReviewLog.crossVariant.agenticNote, 'Agentic Testing unavailable: No API key configured');
+  eq('  and whether the manual checks ran', abReviewLog.crossVariant.includeManual, true);
+  ok('problems: a failed accessibility review is a warning under accessibility',
+     abReviewLog.problems.some(function (p) { return p.severity === 'warn' && p.where === 'accessibility' && /^Agentic Testing unavailable: No API key/.test(p.detail); }),
+     abReviewLog.problems);
+  ok('  and a successful one raises nothing', !buildDebugLog((function () {
+       var x = abSections([capture('v0', { fullPage: null })], []);
+       x.modes.push({ mode: 5, name: 'Accessibility (WCAG)', status: 'ran', data: { ts: at, scope: '', autoChecks: ['contrast'],
+         agenticNote: 'v1 adds poster art with no visible titles.', runs: [cvaRun('v0'), cvaRun('v1')] } });
+       return x;
+     })()).problems.some(function (p) { return p.where === 'accessibility'; }));
+  ok('  and the mode\'s problems no longer say cross-variant',
+     ![mixedAxe, allAxe, mixedScope, noBase, abA11yLog].some(function (lg) {
+       return lg.problems.some(function (p) { return /cross-variant/.test(p.where || ''); });
+     }));
 })();
 
 // ── Agentic Testing screenshot: one debugger client per tab ────────────────

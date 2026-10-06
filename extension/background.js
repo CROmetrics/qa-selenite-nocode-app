@@ -20,10 +20,127 @@
 // own header comment for why.
 importScripts('metric-match.js', 'pixelmatch.js', 'vd-config.js', 'vd-diff.js', 'figma.js');
 
-// ── Open side panel when toolbar icon is clicked ──────────────────────────
-chrome.sidePanel
-  .setPanelBehavior({ openPanelOnActionClick: true })
-  .catch(() => {});
+// ── Toolbar icon: the side panel, or the floating window when unpinned ────
+// Pinned, the default, Selenite docks in Chrome's side panel: with
+// openPanelOnActionClick on, Chrome opens the panel itself and
+// action.onClicked does not fire. The docked panel shrinks the page's
+// viewport, so the page under test reflows while it is open and is captured
+// narrower than its window. Unpinning (📌 in the UI, popup.js
+// unpinToFloating) stores selenitePinned: false, and the icon then opens
+// floating.html instead, a popup window of its own over the browser window,
+// which leaves the page its full width.
+async function applyPanelBehavior() {
+  const { selenitePinned } = await chrome.storage.local.get('selenitePinned');
+  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: selenitePinned !== false });
+}
+applyPanelBehavior().catch(() => {});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && 'selenitePinned' in changes) applyPanelBehavior().catch(() => {});
+});
+
+chrome.action.onClicked.addListener((tab) => {
+  openFloating(tab.windowId).catch(e => console.warn('[Selenite] Could not open the floating window:', e));
+});
+
+// Where a new floating window goes: the user's last position and size when
+// there is one, otherwise against the right edge of the browser window it
+// serves, below that window's toolbar. Pure (floating.test.js slices it out
+// of this file), so its constants stay inside it.
+function floatDefaultBounds(browser, saved) {
+  if (saved && [saved.left, saved.top, saved.width, saved.height].every(Number.isFinite)) {
+    return { left: saved.left, top: saved.top, width: saved.width, height: saved.height };
+  }
+  const width = Math.min(440, Math.max(320, browser.width - 24));
+  const height = Math.max(400, browser.height - 120);
+  return {
+    left: browser.left + Math.max(0, browser.width - width - 12),
+    top: browser.top + 96,
+    width,
+    height,
+  };
+}
+
+// browser window id -> its floating window's id, in session storage so a
+// restarted worker still knows which windows are Selenite's.
+async function getFloatWins() {
+  const { floatWins = {} } = await chrome.storage.session.get('floatWins');
+  return floatWins;
+}
+
+const _floatOpening = new Map();   // browser window id -> in-flight openFloating, so a double click opens one window
+
+function openFloating(browserWinId) {
+  if (browserWinId == null) return Promise.resolve();
+  if (!_floatOpening.has(browserWinId)) {
+    _floatOpening.set(browserWinId, doOpenFloating(browserWinId).finally(() => _floatOpening.delete(browserWinId)));
+  }
+  return _floatOpening.get(browserWinId);
+}
+
+async function doOpenFloating(browserWinId) {
+  const wins = await getFloatWins();
+  const existing = wins[browserWinId];
+  if (existing != null) {
+    let alive = false;
+    try { await chrome.windows.get(existing); alive = true; } catch (_) {}
+    if (alive) {
+      // floating.js brings its window back: Chrome covers it whenever the
+      // page is clicked.
+      chrome.runtime.sendMessage({ action: 'floatFocus', winId: browserWinId }).catch(() => {});
+      return;
+    }
+  }
+  const browser = await chrome.windows.get(browserWinId);
+  const { floatBounds } = await chrome.storage.local.get('floatBounds');
+  const w = await chrome.windows.create({
+    url: chrome.runtime.getURL('floating.html') + '?win=' + browserWinId,
+    type: 'popup',
+    focused: true,
+    ...floatDefaultBounds(browser, floatBounds),
+  });
+  wins[browserWinId] = w.id;
+  await chrome.storage.session.set({ floatWins: wins });
+  // One Selenite per browser window: the floating window replaces a docked
+  // side panel (unpinning, or the icon after the panel was opened from
+  // Chrome's side panel menu). A no-op when the panel is closed.
+  try { await chrome.sidePanel.close?.({ windowId: browserWinId }); } catch (_) {}
+}
+
+async function closeFloating(browserWinId) {
+  const wins = await getFloatWins();
+  const floatWinId = wins[browserWinId];
+  if (floatWinId == null) return;
+  try { await chrome.windows.remove(floatWinId); } catch (_) {}
+}
+
+// A closed browser window takes its floating Selenite with it; a closed
+// floating window just drops out of the map.
+chrome.windows.onRemoved.addListener(async (winId) => {
+  const wins = await getFloatWins();
+  let changed = false;
+  if (wins[winId] != null) {
+    chrome.windows.remove(wins[winId]).catch(() => {});
+    delete wins[winId];
+    changed = true;
+  }
+  for (const [browserWinId, floatWinId] of Object.entries(wins)) {
+    if (floatWinId === winId) { delete wins[browserWinId]; changed = true; }
+  }
+  if (changed) await chrome.storage.session.set({ floatWins: wins });
+});
+
+// Remembers where the user put the floating window and how big they made it,
+// for the next one. Minimized (pinned) and maximized states are not a size.
+let _floatBoundsTimer = null;
+chrome.windows.onBoundsChanged.addListener(async (w) => {
+  if (w.state !== 'normal') return;
+  const wins = await getFloatWins();
+  if (!Object.values(wins).includes(w.id)) return;
+  clearTimeout(_floatBoundsTimer);
+  _floatBoundsTimer = setTimeout(() => {
+    chrome.storage.local.set({ floatBounds: { left: w.left, top: w.top, width: w.width, height: w.height } }).catch(() => {});
+  }, 400);
+});
 
 // ── Per-window state isolation ──────────────────────────────────────────────
 // Each browser window's side panel is its own instance (like a DevTools
@@ -40,6 +157,13 @@ chrome.sidePanel
 let _runWin  = null;   // logs, running, metricsLog, *Progress (falls back to the following window's capture — see resolveFeedWin)
 let _srWin   = null;   // srStatus, srFinishedSession
 let _pickWin = null;   // pickerResult
+
+// tabs.create options that open a run's new tab in the run's own browser
+// window. Without a windowId Chrome picks the last-focused window, which with
+// Selenite floating is Selenite's own window, not the one the run belongs to.
+function runTabWindow() {
+  return _runWin != null ? { windowId: _runWin } : {};
+}
 
 // Namespaced facade over chrome.storage.session for a given window id. Mirrors
 // the get/set/remove surface (string key, array of keys, or object literal),
@@ -1216,10 +1340,29 @@ chrome.runtime.onConnect.addListener((port) => {
   });
   port.onDisconnect.addListener(async () => {
     if (boundWinId == null) return;
+    // A newer panel for this window has already said hello (pinning and
+    // unpinning open the side panel or the floating window before closing the
+    // other), so this port going away is not the window's panel closing.
+    if (connectedPanels.get(boundWinId) !== port) return;
     connectedPanels.delete(boundWinId);
     await unfollowTab(boundWinId);
   });
 });
+
+// The active tab of the browser window a panel serves. From a service worker,
+// `currentWindow` means the last-FOCUSED window, and with Selenite in its own
+// floating window that is usually Selenite itself, whose only tab is an
+// extension page nothing can be injected into. Panel messages carry the
+// window id; the old query is only for a sender that sends none.
+async function activeTabFor(winId) {
+  const q = winId != null ? { active: true, windowId: winId } : { active: true, currentWindow: true };
+  try {
+    const [tab] = await chrome.tabs.query(q);
+    return tab || null;
+  } catch (_) {
+    return null;
+  }
+}
 
 // ── Logging ───────────────────────────────────────────────────────────────
 async function addLog(winId, level, text, meta) {
@@ -1783,7 +1926,7 @@ async function runQueue({ queue, mode, targetTabId, universalDelay, winId, track
   // The queue's own leading "Open URL" step navigates it to the target URL.
   let tabId = targetTabId;
   if (!tabId) {
-    const tab = await chrome.tabs.create({ url: 'about:blank', active: true });
+    const tab = await chrome.tabs.create({ url: 'about:blank', active: true, ...runTabWindow() });
     tabId = tab.id;
     await waitForLoad(tabId);
   }
@@ -3404,7 +3547,7 @@ async function injectAbErrorCollector(tabId) {
   });
 }
 
-async function captureVariant(target, { settleMs, selectors, keepTabs, captureForVision, captureFullPage, winId }) {
+async function captureVariant(target, { settleMs, selectors, keepTabs, captureForVision, captureFullPage, a11yChecks, winId }) {
   const out = {
     label: target.label, url: target.url,
     finalUrl: '', title: '', loadError: null,
@@ -3414,10 +3557,14 @@ async function captureVariant(target, { settleMs, selectors, keepTabs, captureFo
     // See vdVariantVerification for why a QA run that cannot answer that has
     // nothing trustworthy to say about anything downstream.
     expProbe: null,
+    // Set ONLY when the popup asked for an audit (a11yChecks), so a popup that
+    // finds it missing on every capture knows the worker predates the request
+    // instead of reading "no audit" as "no issues".
+    // { results, axeError, scopeError } | { error }
   };
   let tab = null;
   try {
-    tab = await chrome.tabs.create({ url: normalizeUrl(target.url), active: true });
+    tab = await chrome.tabs.create({ url: normalizeUrl(target.url), active: true, ...runTabWindow() });
     _abCapture = { tabId: tab.id, lines: [] };
     // Inject as early as possible, then again after load — both scripts are
     // idempotent, and experiment scripts typically log after DOMContentLoaded,
@@ -3469,6 +3616,23 @@ async function captureVariant(target, { settleMs, selectors, keepTabs, captureFo
           return { selector: s, exists: false, visible: false, text: '', styles: null, rect: null, error: e.message };
         }
       }), [selectors]);
+    }
+
+    // Accessibility audit, in this same page load, so it audits the bucketed
+    // page the screenshot below shows. It must run BEFORE the capture:
+    // stabilizeForCapture pauses video by clearing `autoplay` and injects a
+    // freeze stylesheet, after which the motion check (video[autoplay]) would
+    // pass every page. The audit only reads the page (heuristics in an
+    // isolated-world exec, axe-core in the isolated world too), so all it
+    // costs the capture is time. Best-effort, like the capture: a failed audit
+    // must never become this variant's loadError.
+    if (Array.isArray(a11yChecks) && a11yChecks.length) {
+      try {
+        const audit = await performWcagAudit(tab.id, a11yChecks, '');
+        out.a11y = { results: audit.results, axeError: audit.axeError, scopeError: audit.scopeError };
+      } catch (e) {
+        out.a11y = { error: e.message };
+      }
     }
 
     if (captureFullPage) {
@@ -3527,7 +3691,7 @@ async function captureVariant(target, { settleMs, selectors, keepTabs, captureFo
   return out;
 }
 
-async function runVariantComparison({ targets = [], settleSeconds, keepTabs, selectors = [], agenticTesting, visualDiff, winId }) {
+async function runVariantComparison({ targets = [], settleSeconds, keepTabs, selectors = [], agenticTesting, visualDiff, a11yChecks, winId }) {
   _abStopRequested = false;
   vdResetState(winId);   // fresh per run — never diff against a stale capture
   const settleMs = Math.max(0, (parseFloat(settleSeconds) || 0) * 1000);
@@ -3542,7 +3706,8 @@ async function runVariantComparison({ targets = [], settleSeconds, keepTabs, sel
       await setAbProgress({ running: true, index: i, total: targets.length, label: targets[i].label });
       results.push(await captureVariant(targets[i], {
         settleMs, selectors: sels, keepTabs: !!keepTabs,
-        captureForVision: !!agenticTesting, captureFullPage: !!visualDiff, winId,
+        captureForVision: !!agenticTesting, captureFullPage: !!visualDiff,
+        a11yChecks: Array.isArray(a11yChecks) ? a11yChecks : null, winId,
       }));
     }
   } finally {
@@ -3565,7 +3730,13 @@ async function runVariantComparison({ targets = [], settleSeconds, keepTabs, sel
     agenticNote = vision.ok ? vision.text : `Agentic Testing unavailable: ${vision.error}`;
   }
 
-  return { results, agenticNote };
+  // How many accessibility checks this worker received, sent back whether or
+  // not any were. Its ABSENCE is the only conclusive sign of a worker older
+  // than the panel: a missing `a11y` on the captures alone could not tell that
+  // apart from a request that never arrived, and run r_1791221055240 blamed a
+  // stale worker on a build its own log showed had been reloaded.
+  const a11yRequested = Array.isArray(a11yChecks) ? a11yChecks.length : 0;
+  return { results, agenticNote, a11yRequested };
 }
 
 // ── Arg name map (mirrors functions.py signatures) ─────────────────────────
@@ -3642,8 +3813,9 @@ const DISPLAY_NAMES = {
 // ── WCAG audit engine (shared) ──────────────────────────────────────────────
 // Runs the heuristic check suites + the axe-core merge against one tab and
 // returns { results, axeError, scopeError }. Extracted from the runWcagAudit
-// handler so the Cross-Variant Accessibility mode can run the exact same audit
-// against variant tabs — both modes get byte-for-byte identical audit behavior.
+// handler so an A/B run can audit each variant tab with the exact same routine
+// (captureVariant) — the standalone mode and the A/B section get byte-for-byte
+// identical audit behavior.
 async function performWcagAudit(tabId, checks, scope, { captureForVision } = {}) {
   const results = await exec(tabId, function(checks, scope) {
 
@@ -4078,7 +4250,7 @@ async function performWcagAudit(tabId, checks, scope, { captureForVision } = {})
 
 // ── Test Modes shared orchestration ─────────────────────────────────────────
 // One stop flag covers every batch-style Test Mode run (visual regression,
-// cross-variant accessibility, performance) — the popup's Stop buttons all
+// performance) — the popup's Stop buttons all
 // send the same 'stop' action, mirroring the A/B mode.
 let _tmStopRequested = false;
 
@@ -4086,7 +4258,7 @@ async function setTmProgress(key, p) {
   await ns(_runWin).set({ [key]: p });
 }
 
-// Test-Mode runs (variant / visual / cross-variant / performance) write their
+// Test-Mode runs (variant / visual / performance) write their
 // progress and tagged-console feeds (via setTmProgress / setAbProgress / addLog
 // / addMetric, all keyed on resolveFeedWin() → _runWin) into the panel window
 // that started them. They create their own scratch tabs and attach the CDP
@@ -4116,7 +4288,7 @@ async function endTmRun() {
 // Loads are active-tab and strictly sequential: background tabs get throttled
 // timers and skip paint, which would corrupt audits and performance metrics.
 async function openSettledTab(url, settleMs, timeoutMs = 30000) {
-  const tab = await chrome.tabs.create({ url: normalizeUrl(url), active: true });
+  const tab = await chrome.tabs.create({ url: normalizeUrl(url), active: true, ...runTabWindow() });
   try {
     await waitForLoadTimeout(tab.id, timeoutMs);
   } catch (e) {
@@ -4131,49 +4303,10 @@ async function openSettledTab(url, settleMs, timeoutMs = 30000) {
   return tab.id;
 }
 
-// ── Cross-Variant Accessibility (Test Modes tab) ────────────────────────────
-// Loads each experiment variant sequentially and runs the exact audit routine
-// the standalone WCAG mode uses (performWcagAudit). Diffing and rendering live
-// in popup.js. Fully independent of the Build tab queue.
-async function runCrossVariantAudit({ targets = [], settleSeconds, keepTabs, checks = [], scope = '' }) {
-  _tmStopRequested = false;
-  const settleMs = Math.max(0, (parseFloat(settleSeconds) || 0) * 1000);
-  const results = [];
-  try {
-    for (let i = 0; i < targets.length; i++) {
-      const t = targets[i];
-      if (_tmStopRequested) { results.push({ label: t.label, url: t.url, skipped: true }); continue; }
-      await setTmProgress('cvaProgress', { running: true, index: i, total: targets.length, label: t.label });
-      const out = { label: t.label, url: t.url, finalUrl: '', tabId: null, loadError: null, results: null, axeError: null, scopeError: null };
-      let tabId = null;
-      try {
-        tabId = await openSettledTab(t.url, settleMs);
-        const tab = await chrome.tabs.get(tabId);
-        out.finalUrl = tab.url || '';
-        const audit = await performWcagAudit(tabId, checks, scope);
-        out.results    = audit.results;
-        out.axeError   = audit.axeError;
-        out.scopeError = audit.scopeError;
-      } catch (e) {
-        out.loadError = e.message;
-      } finally {
-        if (tabId) {
-          if (keepTabs) out.tabId = tabId;
-          else { try { await chrome.tabs.remove(tabId); } catch (_) {} }
-        }
-      }
-      results.push(out);
-    }
-  } finally {
-    await setTmProgress('cvaProgress', { running: false });
-  }
-  return results;
-}
-
 // ── Matrix Auditor (Matrix Auditor tab) ─────────────────────────────────────
 // Batch element inspection across many URLs, one URL per call so the popup's
 // manual "Next URL" button maps directly onto one bounded message round trip
-// — no progress polling needed, unlike the unattended CVA/Perf loops
+// — no progress polling needed, unlike the unattended Perf loop
 // above. Each call audits ONE url for a caller-resolved list of
 // {id, selector, checkSettings} entries — the popup already merged
 // global/per-selector settings before sending, so this stays a dumb executor,
@@ -5336,7 +5469,7 @@ function collectPerfMetrics() {
 }
 
 async function measurePageOnce(url, settleMs, disableCache) {
-  const tab = await chrome.tabs.create({ url: 'about:blank', active: true });
+  const tab = await chrome.tabs.create({ url: 'about:blank', active: true, ...runTabWindow() });
   const target = { tabId: tab.id };
   const run = { error: null, jsErrors: [] };
   _perfErrCapture = { tabId: tab.id, errors: run.jsErrors };
@@ -5377,7 +5510,7 @@ async function measurePageOnce(url, settleMs, disableCache) {
 // only: fixed frame count/interval, no attempt to synchronize with the real
 // load event.
 async function observePerceivedPerf(url) {
-  const tab = await chrome.tabs.create({ url: 'about:blank', active: true });
+  const tab = await chrome.tabs.create({ url: 'about:blank', active: true, ...runTabWindow() });
   const target = { tabId: tab.id };
   const screenshots = [];
   try {
@@ -6339,7 +6472,7 @@ async function runFunnelCrawl({ waypoints = [], supplementalPrompt = '' }) {
   const segments = [];
   let tab = null;
   try {
-    tab = await chrome.tabs.create({ url: normalizeUrl(clean[0]), active: true });
+    tab = await chrome.tabs.create({ url: normalizeUrl(clean[0]), active: true, ...runTabWindow() });
     await waitForLoadTimeout(tab.id, 30000);
 
     let fromUrl = clean[0];
@@ -6383,13 +6516,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   } else if (msg.action === 'stop') {
     _stopRequested = true;
     _abStopRequested = true;   // shared stop: also halts a variant comparison run
-    _tmStopRequested = true;   // …and any visual/cross-variant/performance run
+    _tmStopRequested = true;   // …and any visual/performance run
     _funnelStopRequested = true;   // …and any funnel crawl
     _visionAbortController?.abort();   // …and any in-flight Agentic Testing / funnel vision call
     sendResponse({ ok: true });
 
   } else if (msg.action === 'status') {
     sendResponse({ running: _running });
+
+  } else if (msg.action === 'openFloating') {
+    // Unpinning from the side panel (popup.js unpinToFloating).
+    openFloating(msg.winId).then(() => sendResponse({ ok: true }), e => sendResponse({ ok: false, error: e.message }));
+    return true;
+
+  } else if (msg.action === 'closeFloating') {
+    // A side panel loaded for this browser window (popup.js initPinButton).
+    closeFloating(msg.winId).then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+    return true;
 
   } else if (msg.action === 'getFunctions') {
     const data = {};
@@ -6556,9 +6699,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // The picked selector belongs to the panel that started the picker.
     _pickWin = msg.winId ?? null;
     persistWins();
-    // Inject picker into the active tab
-    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-      const tabId = tabs[0]?.id;
+    // Inject picker into the active tab of the panel's window
+    activeTabFor(msg.winId).then(async (tab) => {
+      const tabId = tab?.id;
       if (!tabId) { sendResponse({ ok: false, error: 'No active tab' }); return; }
       try {
         await chrome.scripting.executeScript({ target: { tabId }, files: ['selector.js', 'picker.js'] });
@@ -6804,8 +6947,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // startPicker's file-injection shape; seeds data via the same
     // exec()-then-files pattern srInjectRecorder already uses
     // (window.__seleniteRecMove) since files-based injection takes no args.
-    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-      const tabId = tabs[0]?.id;
+    activeTabFor(msg.winId).then(async (tab) => {
+      const tabId = tab?.id;
       if (!tabId) { sendResponse({ ok: false, error: 'No active tab' }); return; }
       try {
         await chrome.scripting.executeScript({ target: { tabId }, files: ['vd-diff.js'] });
@@ -6824,14 +6967,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       await beginTmRun(msg.payload);
       try {
-        const { results, agenticNote } = await runVariantComparison(msg.payload || {});
-        sendResponse({ ok: true, results, agenticNote });
+        const { results, agenticNote, a11yRequested } = await runVariantComparison(msg.payload || {});
+        sendResponse({ ok: true, results, agenticNote, a11yRequested });
       } catch (e) {
         try { await setAbProgress({ running: false }); } catch (_) {}
         sendResponse({ ok: false, error: e.message });
       } finally {
         await endTmRun();
       }
+    })();
+    return true;
+
+  } else if (msg.action === 'a11yVisionReview') {
+    // The A/B accessibility section's Agentic Testing note (abA11yReview in
+    // popup.js): the popup builds the prompt from its own diff of the audits
+    // and sends the screenshots this worker already took. callClaudeVision
+    // never throws, and Stop reaches it through _visionAbortController.
+    (async () => {
+      const { images = [], prompt = '' } = msg.payload || {};
+      sendResponse(await callClaudeVision({ images, prompt, maxTokens: 700 }));
     })();
     return true;
 
@@ -6992,29 +7146,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       const checks = msg.checks || [];
       const scope  = (msg.scope || '').trim();
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      const tabId = tabs[0]?.id;
+      const tab = await activeTabFor(msg.winId);
+      const tabId = tab?.id;
       if (!tabId) { sendResponse({ ok: false, error: 'No active tab' }); return; }
       try {
         const { results, axeError, scopeError, agenticNote } = await performWcagAudit(tabId, checks, scope, { captureForVision: !!msg.agenticTesting });
-        sendResponse({ ok: true, results, axeError, scopeError, agenticNote, tabId, url: tabs[0]?.url || '' });
+        sendResponse({ ok: true, results, axeError, scopeError, agenticNote, tabId, url: tab.url || '' });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
-      }
-    })();
-    return true;
-
-  } else if (msg.action === 'runCrossVariantAudit') {
-    (async () => {
-      await beginTmRun(msg.payload);
-      try {
-        const results = await runCrossVariantAudit(msg.payload || {});
-        sendResponse({ ok: true, results });
-      } catch (e) {
-        try { await setTmProgress('cvaProgress', { running: false }); } catch (_) {}
-        sendResponse({ ok: false, error: e.message });
-      } finally {
-        await endTmRun();
       }
     })();
     return true;
@@ -7162,7 +7301,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // The recording status/handoff belong to the panel window that started it.
       _srWin = msg.winId ?? null;
       await persistWins();
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tab = await activeTabFor(msg.winId);
       if (!tab?.id || !/^https?:/i.test(tab.url || '')) {
         sendResponse({ ok: false, error: 'Open a regular webpage in the active tab first' });
         return;
@@ -7211,7 +7350,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   } else if (msg.action === 'sessionShowOverlay') {
     (async () => {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tab = await activeTabFor(msg.winId);
       if (!tab?.id) { sendResponse({ ok: false, error: 'No active tab' }); return; }
       try {
         await exec(tab.id, renderSessionOverlay, [msg.payload || {}]);
@@ -7224,7 +7363,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   } else if (msg.action === 'sessionHideOverlay') {
     (async () => {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tab = await activeTabFor(msg.winId);
       if (!tab?.id) { sendResponse({ ok: false, error: 'No active tab' }); return; }
       try {
         await exec(tab.id, () => {
@@ -7244,10 +7383,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // same per-window mtQueue chain mtObserve uses, so a fire landing
     // mid-reset can't resurrect the counts a direct panel-side
     // sessionNS.set({mtCounts:{}}) would race. Also clears the on-page
-    // notice stack — uses winFollow, NOT chrome.tabs.query({currentWindow})
-    // like sessionShowOverlay/sessionHideOverlay above, since from a service
-    // worker currentWindow means the last-FOCUSED window, which is
-    // frequently not msg.winId and would clear the wrong window's page.
+    // notice stack — uses winFollow (the tab msg.winId's capture follows),
+    // never chrome.tabs.query({currentWindow}): from a service worker that
+    // means the last-FOCUSED window, which is frequently not msg.winId and
+    // would clear the wrong window's page (see activeTabFor).
     (async () => {
       await mtQueue(msg.winId, () => ns(msg.winId).set({ mtCounts: {} }));
       await restoreFollowState();
@@ -7298,7 +7437,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         try { await chrome.tabs.get(tabId); } catch (_) { tabId = null; }
       }
       if (!tabId) {
-        const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const t = await activeTabFor(msg.winId);
         tabId = t?.id || null;
       }
       if (!tabId) { sendResponse({ ok: false, found: false, error: 'No tab available' }); return; }

@@ -2,6 +2,106 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-06 — 0.7.3
+
+Accessibility is now part of the A/B run. Auditing an experiment's variants used to mean configuring them twice: once in the A/B tab, and again in Test Agent's Cross-Variant Accessibility mode, which had its own target list, saved sets and "Fill from ticket", and loaded every page a second time. 838cb35 removed A/B from Test Agent for the same reason, one feature with two run buttons.
+
+Selenite can also stop narrowing the page it tests. The docked side panel takes its width out of the tab's viewport, so pages reflow while it is open and are captured narrower than their window: STRZ-1658's report reads "Captured at 1084 px". Unpinned, Selenite now floats over the page instead.
+
+### Added
+
+**A floating window for an unpinned Selenite.** `openFloating` opens `floating.html` as a popup window of its own over the right edge of the browser window (`floatDefaultBounds`). It holds the real UI, `sidepanel.html` with `popup.js`, in a frame bound to that browser window by `?win=`. Nothing is added to the page, so the page keeps its full width and captures are taken at the window's width.
+- **📌 switches between Chrome's side panel and the floating window. Pinned, in the side panel, is the default**, so the icon opens Selenite docked, as before.
+  - **Unpinning** (`unpinToFloating`) stores `selenitePinned: false`, opens the floating window and closes the panel with `chrome.sidePanel.close`. `applyPanelBehavior` then turns `openPanelOnActionClick` off, so the icon opens the floating window.
+  - **Pinning** (`pinToSidePanel`) calls `chrome.sidePanel.open` first thing in the click, because it needs the user's gesture, and stores `true`.
+  - **Pinned means the side panel**, not an always-on-top floating window, because Will wants a pinned Selenite to behave as a browser sidebar.
+- **One Selenite per browser window.** A side panel that loads closes its window's floating window (`closeFloating`), however the panel was opened, and opening the floating window closes the side panel.
+- **Pinning reloads the UI**, since the UI moves to another document. So 📌 refuses while a run is in progress: the A/B, Perf, Funnel, Matrix and Test Agent loops live in that document.
+- **Capture stays attached through a pin.** The newcomer says hello before the other closes, and the worker now ignores a disconnect from a port that is no longer the window's registered panel. Before, any disconnect released the window's capture.
+- **Remembered placement.** Where the window is moved and how big it is made is saved (`floatBounds`) for the next one. Closing the browser window closes its floating window. Alt+Shift+S does what the icon does, which brings the window back after Chrome covers it.
+- **The panel reopens on its last tab** and Console subtab, since a pin, unpin or reopen reloads it.
+- **Why not an overlay drawn inside the page:** the run loops above live in the panel document, and the worker opens each run page as a new active tab. A frame inside the page would be torn down by those tab switches and by every navigation, and it would be in every CDP screenshot.
+
+**An "Accessibility audit" option on the A/B tab, on by default.** `captureVariant` runs `performWcagAudit`, the standalone WCAG mode's own routine, on each variant tab in the page load it already makes. The audit runs all 19 checks plus axe-core on the whole page. The 14 automated checks are compared across the variants; the five manual ones are reported once.
+- **It runs before the full-page capture.** `stabilizeForCapture` pauses video by clearing `autoplay` and injects a freeze stylesheet, after which the `motion` check would pass every page.
+- **It does not change the capture.** The audit only reads the page: the heuristics run in an isolated-world exec, and so does axe-core.
+- **A failed audit is best-effort**, like the capture: it is recorded as that variant's audit error and never becomes the capture's `loadError`.
+
+**An "Accessibility (WCAG)" section in the A/B report**, after Visual Diff and before Run Diagnostics. It is never folded into the A/B badge, which is the Visual Diff verdict.
+- **What it shows:** the depth of a standalone WCAG report, for every page. The first field run (`r_1791222173138`) printed three counts per variant, "10 introduced" with none of the ten named, where the WCAG report on the same page (`r_1790972743184`) listed every check, every issue, the manual checks and an Agentic Testing note. The section now has five parts:
+  - **By check:** every automated check with its success criteria, each page's status, and a variant's "+N worse" / "−N better" against Control.
+  - **Each variant compared with Control:** every introduced and resolved issue written out, or a line saying nothing changed. A variant whose changes are identical to an earlier variant's reads "Same changes as v2" (or "Same issues as" without a baseline) instead of repeating the table, because STRZ-1658's v2 and v3 share the new UI and `r_1791225305511` printed the same ten issues twice, a page each. The review prompt says the same, so the model sees each finding once.
+  - **Control's full audit:** laid out as the WCAG report lays out a page.
+  - **Manual review:** once, with a page whose guidance differs named under it.
+  - **Agentic Accessibility Review (Sonnet):** with Agentic Testing on, one vision call over every page's viewport screenshot, already taken for Agentic Testing in the same load. The prompt (`abA11yReviewPrompt`, pure) gives the screenshot order, Control, Control's own issues by check, and each variant's actual new issues. A failed call is a warning in `problems`, and the note is in the debug log's `crossVariant.agenticNote`.
+    - **Scoped to barriers.** The prompt says who the barriers are for (screen reader, keyboard, zoom, low vision, colour blindness, cognitive). It rules out judging the experiment's design, copy, pricing or emphasis, and visual polish that doesn't affect use. The first real review (`r_1791225305511`) spent its v1 paragraph arguing the badge sat on the wrong plan, which is the experiment's intended change, and two more on a tag's corner overlapping its card.
+    - **Readable.** `rptAgenticNoteHtml`, shared by every Agentic note in the report, now prints a note's paragraphs as paragraphs and its `**bold**` as bold. It escapes first, so nothing in a note can become markup. That review had printed as one block with the asterisks showing.
+- **A count that moved is one changed issue.** Five heuristic lines lead with a count ("2 <img> missing an alt attribute …"). Matched as exact strings, STRZ-1658 v2's "43 <img> …" against Control's "2 <img> …" read as one fixed and one new, and the report printed "−1 fixed" for a page with 41 more images missing alt text. `diffCvaRuns` now pairs a resolved and an introduced line that differ only in a leading count into `changed` (`{ from, to, worse }`). A rise counts as introduced and a fall as resolved, and the report shows "43 <img> … (v0 had 2)". Only a leading count pairs, so two different elements whose selectors contain different digits are still two issues.
+- **How it is built:** `abA11yEntry` shapes the run's captures as the old mode's report entry (mode 5). So the renderer (`rptCvaSection`), `problems`, the debug log's `crossVariant` section, and the cover URLs (deduplicated against the captures' own) all carry over.
+- **Variants that weren't served their variation.** When Visual Diff's `notServed` says a pair was not served its variations, the variant's audit is Control's page audited twice, and "0 introduced" would be a PASS nobody earned. Such a variant is shown as not compared, left out of the total, and warned about in `problems`.
+- **The badge order follows the A/B ladder.** A regression on a served variant still reads ISSUES FOUND; otherwise any not-compared, unloaded or unaudited variant makes it NOT COMPARED, never PASS. The last case, a variant with no audit reading as PASS, was already a hole in the Cross-Variant report.
+- **An unanswered request is reported, not mistaken for a clean page.** The worker sets `a11y` only when asked, and it also returns how many checks it received (`a11yRequested`), every time. If no capture that loaded carries an audit, the section is FAILED, and the acknowledgement names the cause:
+  - **No acknowledgement:** the worker predates the request, so reload the extension.
+  - **An acknowledgement:** the worker had the request and still audited nothing, which a reload will not fix.
+
+### Removed
+
+**Cross-Variant Accessibility as a Test Agent mode**, which also leaves the Also Run list.
+- **Gone:** its markup in both `popup.html` and `sidepanel.html`, its state, saved sets, live panel, highlight, export, and fill-target entry, and the worker's `runCrossVariantAudit` and its handler.
+- **Kept:** `diffCvaRuns`, `cvaRunNotes` and `rptCvaSection`, which A/B now uses.
+- **Old storage:** `cvaModeState`, `cvaVariantSets` and `cvaProgress` are left in storage, unread.
+- **The WCAG / Accessibility mode is unchanged**, for auditing a single page.
+
+### Changed
+
+- **The toolbar icon follows the pin.** `openPanelOnActionClick` is on unless `selenitePinned` is `false`, so the icon opens the side panel, as before, until Selenite is unpinned.
+- **Captures are taken at the full window width** while Selenite is unpinned, so they are wider than runs captured beside the panel.
+- **The worker no longer uses the last-focused window.** In a service worker `currentWindow` means the last-focused window, which is now often Selenite's own. The picker, WCAG audit, issue highlight, candidate overlay and session overlay and recording now use the panel's window (`activeTabFor`), and every one of those messages carries it. Run tabs open in the run's window (`runTabWindow`), and reports open in the panel's (`reportTabWindow`).
+- **`autofillAbSummary` runs one pass at a time.** Init and a restored A/B tab can both start one on the same load, and the Figma half makes paid calls.
+- `problems` entries for the accessibility section are filed under `accessibility/<label>` (were `cross-variant/<label>`).
+- The debug log's `crossVariant` section now comes from an A/B run, and each run in it carries `notServed`. The readme says so.
+
+### Verification
+
+- **The real worker on real pages.** Chrome 154 loaded the unpacked extension (via CDP `Extensions.loadUnpacked`, because branded Chrome ignores `--load-extension`). `runVariantComparison` ran on W3C's accessibility demo pair, with the fixed "after" page as Control and the inaccessible "before" page as v1.
+  - Both captures came back with the audit (14 checks, axe-core ran) and with their full-page capture.
+  - v1 showed what the demo was built to show: screen reader 28 issues vs 1, ARIA 8 vs 0, link purpose 9 vs 0, contrast 2 vs 0.
+- **The audit leaves the capture alone.** Four runs alternated the audit off, on, off, on. Every variant's DOM candidates were byte-identical in all four, and v1's screenshot was identical in all four. Control's screenshot also differed between two audit-off runs, so that variation is the page's own noise. The audit added about 0.1 s per variant on these pages.
+- **The UI**, in the Browser pane with a chrome stub over the real `popup.html` and `sidepanel.html`:
+  - The option shows in both files, ticked by default, and survives a reload when unticked.
+  - The payload carries the 14 automated checks when it is on and `null` when it is off.
+  - The Test Mode list is WCAG, Performance and Funnel Crawl, and Also Run offers only Performance beside WCAG.
+  - The init chain completed with no errors.
+- **The report**, from `openReportTab` with an A/B entry and an accessibility entry, in the real `qa-report.html`: the section sits between A/B and Run Diagnostics, a not-served v2 is excluded and named in diagnostics, and the cover lists the page once.
+- **Tests:** all six CI suites pass (2,884 assertions, 92 new). Mutation-checked in a scratch copy: each of these fails its own assertions:
+  - dropping the not-compared badge rung, or `notServed`
+  - moving the audit after the capture
+  - guessing the failure cause, or dropping the acknowledgement from the reply
+  - removing any of the section's five parts, or the matrix marks
+  - dropping the introduced issues from the review prompt
+  - turning off count pairing
+  - reverting the note renderer, or the prompt's scope
+  - turning off the "Same changes as" line
+- **The detailed section on real data:** rendered from `r_1791222173138`'s own audits and printed with the report stylesheet. The By-check table carries all 14 checks for v0–v3, and v2 and v3 read "+10 worse" on Screen Reader Announcements with no false "fixed". Each variant's table lists the nine missing-alt axe nodes and "43 <img> … (v0 had 2)", and Control's full audit lists its 9 issues.
+- **The second full real path**, side panel to report, on the W3C pair: 19 checks sent and 19 acknowledged, all five parts rendered, and the review call made with both screenshots. It answered "No API key configured" in the scratch profile, which `problems` carried as a warning.
+- **First field run, `r_1791221055240` (STRZ-1658, four variants), unresolved.** The Visual Diff half ran normally, and the platform confirmed all four variations. The accessibility section came back FAILED because no capture carried an audit, and the reason it printed, "the service worker is older than this popup", is contradicted by its own log:
+  - `extensionVersion` reads 0.7.3, and that comes from the loaded manifest, which Chrome refreshes only on a reload (tested: an edit on disk changes neither the manifest nor the worker, even across a worker restart). The manifest was bumped at 12:17:41 and `background.js` last changed at 12:06:07, so the extension was reloaded after the worker change.
+  - The same build, loaded into a clean Chrome and driven through the real side panel, Run button, worker and report, audited both pages and produced the section.
+
+  The cause is not established. This build replaces the guess with the worker's acknowledgement, so the next such log says which it was.
+- **Second field run, `r_1791222173138` (STRZ-1658, after a reload): the audit ran.** All four variants were audited with axe-core. v1 matched Control exactly (9 pre-existing); v2 and v3 each added 9 axe "Images must have alternative text" nodes (title-card images, six of them in the Trending Now rail, and the Watch Anywhere logo row) and raised the heuristic missing-alt count from 2 to 43. It ran on the counts-only renderer, so the detailed section and the Agentic review have not yet been seen on a real experiment run.
+- **Third field run, `r_1791225305511` (STRZ-1658, full build): the detailed section is field-verified.** All five parts rendered: 19 checks per page, the five manual items once, and a real Sonnet review. v2 and v3 read "+10 worse" with 0 resolved, and their tables carry "43 <img> … (v0 had 2)", so the false "fixed" is gone in the field. Every page's automated results were byte-identical to `r_1791222173138` an hour earlier. The review's formatting and scope (above) were fixed from this run's PDF, so a narrowed review has not yet been seen.
+- **Not yet field-exercised:** the not-served path on a real contradicted probe, and the narrowed review prompt.
+- **The floating window and the pin in a real Chrome:** system Chrome 154 with the extension loaded through `Extensions.loadUnpacked`, and 📌 pressed with trusted CDP clicks. All 16 checks passed, and an earlier run covered the window's placement.
+  - **Opening:** the page kept its full width (inner and outer width both 1400). The window opened at 988,136, 440×780, over the browser window's right edge, and two quick clicks opened one window.
+  - **Default:** on a fresh profile the icon opens the side panel.
+  - **Pinning:** 📌 opened Selenite in Chrome's side panel, closed the floating window, and made the icon open the panel. The page narrowed to 1029 of 1400. Console capture stayed attached, and the panel opened on the tab the floating window had shown.
+  - **Unpinning:** 📌 in the panel brought the floating window back, closed the panel, and gave the page its full width again, with capture still attached.
+  - **With the floating window focused:** a WCAG audit audited the browser window's page, and a queue run opened its tab in the browser window.
+  - **Closing** the browser window closed the floating one.
+- **Tests for the floating window:** `floating.test.js` checks the placement (10 assertions), and the qa-report suite checks that the WCAG request carries the window id. All seven CI suites pass (2,895 assertions).
+- **Not field-verified:** this 📌 hasn't been used in Will's Chrome yet. The first version, which pinned Selenite on top in a Picture-in-Picture window, didn't work for him, and he wanted a pinned Selenite to act as a sidebar anyway.
+
 ## 2026-10-05 — 0.7.2
 
 Found from `r_1790970413550`, a WCAG-only Test Agent run on 0.7.1. Its debug log contained nothing about WCAG: `problems: []`, `captures: []`, `pageUrls: []`, and the A/B tab's settings. `buildDebugLog` only ever read A/B and Funnel Crawl, and A/B has not been a Test Agent mode since 2026-09-21, so every WCAG, Cross-Variant or Performance log has been this empty, and none of them could show whether the run was sound. Running the real Test Agent code against a failing audit turned up two worse defects underneath.

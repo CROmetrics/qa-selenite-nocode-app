@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Selenite — No-Code QA Runner",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "Build and run QA test scripts directly in your browser — no code required.",
   "incognito": "spanning",
   "permissions": [
@@ -21,6 +21,12 @@
       "16":  "icons/icon16.png",
       "48":  "icons/icon48.png",
       "128": "icons/icon128.png"
+    }
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+Shift+S" },
+      "description": "Open Selenite, or bring its floating window back to the front"
     }
   },
   "side_panel": {

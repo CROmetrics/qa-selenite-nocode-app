@@ -60,10 +60,20 @@ const sessionNS = {
   },
 };
 
-// Resolve the id of the window this side-panel instance belongs to. Prefer
-// windows.getCurrent (the panel's own window); fall back to the active tab's
-// window id. Must run before any sessionNS access.
+// Where this instance runs. floating.js (the toolbar icon's floating window)
+// loads it with ?host=window and ?win= — the browser window it serves, which
+// is NOT the window it is drawn in. With no params it is Chrome's docked side
+// panel (Selenite pinned), inside the window it serves.
+const PANEL_PARAMS = new URLSearchParams(location.search);
+const PANEL_HOST = PANEL_PARAMS.get('host') || 'sidepanel';
+const BOUND_WIN = parseInt(PANEL_PARAMS.get('win'), 10);
+
+// Resolve the id of the browser window this panel instance serves: ?win= when
+// floating.js passed one, otherwise windows.getCurrent (the side panel's own
+// window), falling back to the active tab's window id. Must run before any
+// sessionNS access.
 async function resolveWinId() {
+  if (Number.isInteger(BOUND_WIN)) { WIN_ID = BOUND_WIN; return; }
   try {
     const w = await chrome.windows.getCurrent();
     if (w && w.id != null) { WIN_ID = w.id; return; }
@@ -175,9 +185,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initAbCompare();
 
   await initTestModePages();
-  // Cross-Variant Accessibility / Performance (each is a no-op if its host
-  // markup is absent).
-  await initCvaMode();
+  // Performance (a no-op if its host markup is absent).
   await initPerfMode();
 
   // Initialize tab (Jira ticket → Test Context). Isolated in its own
@@ -222,7 +230,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Fill-target registry: binds every mode's "Fill from ticket" button and
   // the Initialize card's "Apply to all modes". Must come after every state
-  // object it writes to is hydrated — abState/cvaState/tmModes (above),
+  // object it writes to is hydrated — abState/tmModes (above),
   // mxState (172), steps (DOMContentLoaded start), funnelState (just above).
   // Isolated in its own try/catch so a registry fault can't take the Test
   // Agent bindings below with it.
@@ -241,6 +249,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const openSettings = () => { if (settingsOverlay) settingsOverlay.hidden = false; };
   const closeSettings = () => { if (settingsOverlay) settingsOverlay.hidden = true; };
   document.getElementById('btn-settings')?.addEventListener('click', openSettings);
+  initPinButton();
   document.getElementById('btn-settings-close')?.addEventListener('click', closeSettings);
   document.getElementById('settings-backdrop')?.addEventListener('click', closeSettings);
   document.addEventListener('keydown', (e) => {
@@ -355,10 +364,77 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Console capture pause/resume toggle — capture itself is automatic and
   // follows whatever tab is focused; this only pauses/resumes it.
   document.getElementById('capture-enabled').addEventListener('change', onCaptureToggle);
+
+  // Reopen on the tab (and Console subtab) last shown in this window. Pinning
+  // or unpinning the floating window reloads this document, and so does
+  // reopening it; without this every reload lands on Functional Testing.
+  try {
+    const { uiTab, uiConsoleSubtab } = await sessionNS.get(['uiTab', 'uiConsoleSubtab']);
+    if (uiConsoleSubtab) showConsoleSubtab(uiConsoleSubtab);
+    if (uiTab && document.getElementById('panel-' + uiTab)) showTab(uiTab);
+  } catch (e) {
+    console.warn('Could not restore the last tab:', e);
+  }
 });
+
+// ── Pin: dock in Chrome's side panel ──────────────────────────────────────
+// Pinned, the default (selenitePinned in storage.local, unset or true),
+// Selenite docks in Chrome's side panel beside the page, and background.js
+// applyPanelBehavior makes the toolbar icon open it there. Unpinned, it
+// floats in its own window and the page keeps its full width. Either move
+// loads this UI in another document, so it is refused mid-run: the A/B, Perf,
+// Funnel, Matrix and Test Agent loops live in this document and would end
+// with it.
+const RUN_STOP_BUTTONS = ['btn-mx-crawl-stop', 'btn-mx-stop', 'btn-perf-stop', 'btn-ta-stop', 'btn-stop-abcompare'];
+
+function panelRunActive() {
+  const queueStop = document.getElementById('btn-stop');
+  if (queueStop && !queueStop.disabled) return true;
+  return RUN_STOP_BUTTONS.some(id => {
+    const b = document.getElementById(id);
+    return !!b && b.style.display !== 'none';
+  });
+}
+
+function initPinButton() {
+  const btn = document.getElementById('btn-pin');
+  if (!btn || !chrome.sidePanel?.open || WIN_ID == null) return;
+  const docked = PANEL_HOST === 'sidepanel';
+  btn.hidden = false;
+  btn.classList.toggle('on', docked);
+  btn.title = docked
+    ? 'Unpin: float Selenite over the page, which keeps its full width'
+    : "Pin Selenite to the browser, in Chrome's side panel";
+  btn.addEventListener('click', () => {
+    if (panelRunActive()) {
+      alert('Stop the run first. Pinning or unpinning reloads Selenite, which would end it.');
+      return;
+    }
+    if (docked) unpinToFloating(); else pinToSidePanel();
+  });
+  // One Selenite per browser window: the side panel, however it was opened
+  // (📌, the toolbar icon, or Chrome's own side panel menu), replaces a
+  // floating window open for the same browser window.
+  if (docked) chrome.runtime.sendMessage({ action: 'closeFloating', winId: WIN_ID }).catch(() => {});
+}
+
+function pinToSidePanel() {
+  // The first call in the click handler: sidePanel.open is only allowed in
+  // response to a user action. Its load closes this floating window.
+  chrome.sidePanel.open({ windowId: WIN_ID })
+    .then(() => chrome.storage.local.set({ selenitePinned: true }))
+    .catch(e => alert('Chrome could not open Selenite in the side panel: ' + e.message));
+}
+
+async function unpinToFloating() {
+  await chrome.storage.local.set({ selenitePinned: false });
+  // background.js opens the floating window, then closes this side panel.
+  await chrome.runtime.sendMessage({ action: 'openFloating', winId: WIN_ID }).catch(() => {});
+}
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function showTab(name) {
+  sessionNS.set({ uiTab: name }).catch(() => {});
   document.querySelectorAll('.tab[data-tab]').forEach(t => {
     t.classList.toggle('active', t.dataset.tab === name);
   });
@@ -402,22 +478,14 @@ const TA_MODES = {
   // entirely in its own tab (#panel-abtest): Test Agent used to offer it as
   // a pointer card that ran whatever that tab had configured, which meant
   // one feature with two run buttons and two report shapes. Run it there.
+  // Cross-Variant Accessibility ('5') left for the same reason: the A/B run
+  // now audits every variant itself (abA11yEntry), in the page load it
+  // already makes, so a second mode with its own targets was the same fork.
   '4': {
     label: 'WCAG / Accessibility', bodyId: 'tm4-body', homeParentId: 'ta-mode-homes',
     run: () => runWcagAudit({ agenticTesting: taAgenticTestingEnabled() }),
     isConfigured: () => wcagCheckboxes().some(cb => cb.checked),
     getData: () => _wcagCurrentRun,
-  },
-  '5': {
-    label: 'Cross-Variant Accessibility', bodyId: 'tm5-body', homeParentId: 'ta-mode-homes',
-    run: () => runCvaAudit(),
-    isConfigured: () => {
-      if (!cvaState) return false;
-      const targets = cvaState.targets.map(t => composeVariantUrl(t, cvaState.baseUrl, cvaState.qaMode)).filter(Boolean);
-      const autoChecks = cvaState.checks.filter(k => WCAG_CHECKS.some(c => c.key === k && !c.manual));
-      return targets.length >= 2 && autoChecks.length > 0;
-    },
-    getData: () => _cvaLastRun,
   },
   '6': {
     label: 'Performance / Load', bodyId: 'tm6-body', homeParentId: 'ta-mode-homes',
@@ -433,7 +501,7 @@ const TA_MODES = {
     getData: () => _funnelLastRun,
   },
 };
-let _taActiveBody = null;        // '4' | '5' | '6' | 'funnel' | null — which mode currently owns #ta-settings-slot
+let _taActiveBody = null;        // '4' | '6' | 'funnel' | null — which mode currently owns #ta-settings-slot
 const taQueuedExtra = new Set(); // mode ids checked in the "Also Run" list, not persisted across popup reopen
 let _taStopRequested = false;
 
@@ -739,7 +807,7 @@ function taShowPrimary() {
     slot.innerHTML = '';
     const mode = TA_MODES[val];
     // Every remaining mode parks its settings body in #ta-mode-homes and has
-    // it reparented in here (WCAG/CVA/Perf); funnel is handled above and owns
+    // it reparented in here (WCAG/Perf); funnel is handled above and owns
     // no parked body of its own.
     if (mode.bodyId) slot.appendChild(document.getElementById(mode.bodyId));
     _taActiveBody = val;
@@ -910,7 +978,7 @@ async function initTestModePages() {
   });
   // "Fill from ticket" binding + refresh for these buttons now lives in the
   // fill-target registry (initFillTargets), which runs later in the init
-  // chain after abState/cvaState/mxState/funnelState are all hydrated too.
+  // chain after abState/mxState/funnelState are all hydrated too.
 }
 
 function renderTmPages(n) {
@@ -1592,6 +1660,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 function showConsoleSubtab(name) {
+  sessionNS.set({ uiConsoleSubtab: name }).catch(() => {});
   document.querySelectorAll('.console-subtab').forEach(b => {
     const active = b.dataset.subtab === name;
     b.style.background = active ? 'var(--brand)' : '';
@@ -1739,7 +1808,7 @@ async function runQueue() {
   // Get the active tab id if needed
   let targetTabId = null;
   if (tabTarget === 'active') {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await chrome.tabs.query({ active: true, windowId: WIN_ID });
     targetTabId = tab?.id || null;
   }
 
@@ -2789,6 +2858,7 @@ async function wcagHighlight(selector, rowEl) {
       action: 'highlightElement',
       tabId: _wcagCurrentRun?.tabId || null,
       selector,
+      winId: WIN_ID,
     });
   } catch (_) {}
   if ((!res?.ok || !res.found) && rowEl && !rowEl.querySelector('.a11y-loc-miss')) {
@@ -2922,7 +2992,7 @@ async function runWcagAudit(opts = {}) {
   resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Auditing page…</div>';
 
   try {
-    const res = await chrome.runtime.sendMessage({ action: 'runWcagAudit', checks, scope, agenticTesting: !!opts.agenticTesting });
+    const res = await chrome.runtime.sendMessage({ action: 'runWcagAudit', checks, scope, agenticTesting: !!opts.agenticTesting, winId: WIN_ID });
     if (!res?.ok) throw new Error(res?.error || 'Audit failed');
     _wcagCurrentRun = {
       url: res.url || '', ts: Date.now(), tabId: res.tabId || null,
@@ -3233,6 +3303,11 @@ function abDefaultState() {
     // checkboxes; recordHeatmap stays in the state (and the code behind it
     // still works) but has no UI and is never switched on.
     visualDiff: true, visualDiffCrops: true, agenticTesting: true, summaryOfChanges: '',
+    // The WCAG audit on every variant (abA11yEntry). On by default, and
+    // unlike the three above it has a checkbox: a visual-only run is a few
+    // seconds a variant quicker. A session or saved set from before the option
+    // existed has no key, so the spread over these defaults turns it on.
+    a11yAudit: true,
     // Which TICKET the spec above was auto-filled from. `summarySource` says
     // 'ticket' but not WHICH ticket, and the box persists across ticket
     // switches, so without this a spec from another experiment is
@@ -3278,6 +3353,10 @@ async function initAbCompare() {
   });
   document.getElementById('ab-visual-diff-crops').addEventListener('change', e => {
     abState.visualDiffCrops = e.target.checked;
+    persistAbState();
+  });
+  document.getElementById('ab-a11y-audit').addEventListener('change', e => {
+    abState.a11yAudit = e.target.checked;
     persistAbState();
   });
   document.getElementById('ab-summary-of-changes').addEventListener('input', e => {
@@ -3358,6 +3437,7 @@ function applyAbStateToInputs() {
   document.getElementById('ab-qa-mode').checked   = !!abState.qaMode;
   document.getElementById('ab-settle').value      = abState.settleSec || '3';
   document.getElementById('ab-keep-tabs').checked = !!abState.keepTabs;
+  document.getElementById('ab-a11y-audit').checked = abState.a11yAudit !== false;
   document.getElementById('ab-visual-diff-crops').checked = abState.visualDiffCrops !== false;
   document.getElementById('ab-summary-of-changes').value = abState.summaryOfChanges || '';
   const abFigmaEl = document.getElementById('ab-figma-url');
@@ -3491,7 +3571,7 @@ async function deleteAbSet() {
 // ── Run orchestration ─────────────────────────────────────────────────────────
 // Compose the final URL for one target: per-target URL (or the shared base),
 // plus the override query string, plus cro_mode=qa last — mirroring the Build
-// tab's Open URL behavior. Shared with the Cross-Variant Accessibility mode.
+// tab's Open URL behavior.
 function composeVariantUrl(target, baseUrl, qaMode) {
   let url = (target.url || baseUrl || '').trim();
   if (!url) return '';
@@ -3697,9 +3777,18 @@ async function autofillAbSummaryFromFigma() {
 // Ticket first, comp second — both only fill an empty box, so the order IS
 // the precedence. Awaited in sequence rather than fired in parallel: run
 // concurrently they would both see an empty box and race to write it.
-async function autofillAbSummary() {
-  await autofillAbSummaryFromTicket();
-  await autofillAbSummaryFromFigma();
+//
+// One pass at a time: init and a restored A/B tab can both ask on the same
+// load, and the Figma half makes paid render and model calls.
+let _abAutofillInFlight = null;
+function autofillAbSummary() {
+  if (!_abAutofillInFlight) {
+    _abAutofillInFlight = (async () => {
+      await autofillAbSummaryFromTicket();
+      await autofillAbSummaryFromFigma();
+    })().finally(() => { _abAutofillInFlight = null; });
+  }
+  return _abAutofillInFlight;
 }
 
 // ── Design reference (A/B tab) ──────────────────────────────────────────────
@@ -3901,6 +3990,13 @@ async function runAbComparison(opts = {}) {
   // _abLastRun.visualDiff mirror instead of visualDiffFull — is still wired end
   // to end; only its entry point is gone.
   const fromTestAgent = !!opts.fromTestAgent;
+  // Every WCAG check, plus axe-core: the automated ones are compared across
+  // the variants, and the manual ones are reported once, as their guidance is
+  // mostly the same on every page. Read once, here, so the report states what
+  // was actually asked for even if the box is flipped mid-run.
+  const a11yAuto = WCAG_CHECKS.filter(c => !c.manual).map(c => c.key);
+  const a11yManual = WCAG_CHECKS.filter(c => c.manual).map(c => c.key);
+  const a11yChecks = abState.a11yAudit !== false ? [...a11yAuto, ...a11yManual] : null;
 
   btn.disabled = true;
   btn.textContent = 'Running…';
@@ -3920,7 +4016,7 @@ async function runAbComparison(opts = {}) {
       action: 'runVariantComparison',
       payload: {
         targets, settleSeconds: abState.settleSec, keepTabs: abState.keepTabs, selectors, winId: WIN_ID,
-        agenticTesting, visualDiff: !!abState.visualDiff,
+        agenticTesting, visualDiff: !!abState.visualDiff, a11yChecks,
       },
     });
     if (!res?.ok) throw new Error(res?.error || 'Comparison failed');
@@ -4018,6 +4114,19 @@ async function runAbComparison(opts = {}) {
         mode: 2, name: 'A/B Variant Comparison', status: 'ran',
         data: { captures, metricsList, selectors, agenticNote: res.agenticNote || null, visualDiffFull: visualDiffResult },
       }];
+      // Its own section, after Visual Diff, never folded into the A/B badge:
+      // that ladder is the Visual Diff verdict, and accessibility is a
+      // separate question with a separate answer.
+      if (a11yChecks) {
+        const a11yEntry = abA11yEntry(captures, visualDiffResult?.perVariant, a11yAuto, Date.now(), res.a11yRequested, a11yManual);
+        // The standalone WCAG mode's Agentic Testing note, over every page:
+        // what an automated check structurally cannot see.
+        if (a11yEntry.status === 'ran' && agenticTesting && !_abVisualDiffStopRequested) {
+          setAbStatus('Reviewing accessibility…');
+          a11yEntry.data.agenticNote = await abA11yReview(captures, a11yEntry.data);
+        }
+        reportModes.push(a11yEntry);
+      }
       await openReportTab({
         ts: Date.now(), pageUrls: abPageUrls(reportModes),
         modes: reportModes,
@@ -4151,7 +4260,7 @@ function diffAbCaptures(captures, metricsList, selectors) {
 // between two runs of the SAME page, and there is no model in the parse path
 // any more for that number to be nonzero.
 async function vdShowCandidateOverlay() {
-  const res = await chrome.runtime.sendMessage({ action: 'vdShowCandidateOverlay' });
+  const res = await chrome.runtime.sendMessage({ action: 'vdShowCandidateOverlay', winId: WIN_ID });
   if (!res?.ok) console.error('[vdDebug] Failed:', res?.error);
   else console.log(`[vdDebug] Drew ${res.count} candidate rects on the active tab — click anywhere or press Esc to clear.`);
   return res;
@@ -4989,13 +5098,13 @@ async function abHeatmapShowOverlay(capture) {
     trail: events.filter(e => e.type === 'move').slice(0, 3000).map(e => ({ x: e.x, y: e.y })),
     maxDepth: Math.max(0, ...events.filter(e => e.type === 'scroll').map(e => e.maxDepth || e.depth || 0)),
   };
-  const res = await chrome.runtime.sendMessage({ action: 'sessionShowOverlay', payload });
+  const res = await chrome.runtime.sendMessage({ action: 'sessionShowOverlay', payload, winId: WIN_ID });
   if (!res?.ok) alert('Could not show overlay: ' + (res?.error || 'unknown error'));
 }
 
 async function abHeatmapHideOverlay(capture) {
   try { await chrome.tabs.update(capture.tabId, { active: true }); } catch (_) {}
-  await chrome.runtime.sendMessage({ action: 'sessionHideOverlay' });
+  await chrome.runtime.sendMessage({ action: 'sessionHideOverlay', winId: WIN_ID });
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -5003,8 +5112,9 @@ async function abHeatmapHideOverlay(capture) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 // One entry per WCAG check suite — mirrors the static checkbox list on the
-// standalone WCAG subpage and background.js's check keys. The Cross-Variant
-// mode builds its check list from this so the two stay in sync.
+// standalone WCAG subpage and background.js's check keys. The A/B run's
+// accessibility audit takes its automated checks from this, so the two stay
+// in sync.
 const WCAG_CHECKS = [
   { key: 'titles',         label: 'Page Identity & Titles',          sc: '2.4.2' },
   { key: 'navconsistency', label: 'Navigation Consistency',          sc: '3.2.3, 3.2.4, 3.2.6' },
@@ -5149,258 +5259,35 @@ async function openImageInTab(dataUrl) {
       delete taImages[drop];
     }
     await chrome.storage.session.set({ taImages });
-    chrome.tabs.create({ url: chrome.runtime.getURL('image.html') + '?k=' + id });
+    chrome.tabs.create({ url: chrome.runtime.getURL('image.html') + '?k=' + id, ...reportTabWindow() });
   } catch (_) {}
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Test Agent mode: Cross-Variant Accessibility (#tm5-body)
+// A/B accessibility audit (the A/B tab's "Accessibility audit" option)
 // ═════════════════════════════════════════════════════════════════════════════
-// Hybrid of the WCAG mode (audit engine — performWcagAudit in background) and
-// the A/B mode (variant-loading machinery). Runs the same audit against every
-// variant and diffs findings vs the baseline: Introduced / Resolved /
-// Pre-existing. Never touches the Build tab queue.
-
-let cvaState = null;
-let _cvaLastRun = null;
-let _cvaProgressPoller = null;
-
-function cvaDefaultState() {
-  return {
-    baseUrl: '', qaMode: false, settleSec: '3', keepTabs: false, scope: '',
-    includeManual: false,
-    checks: WCAG_CHECKS.filter(c => !c.manual).map(c => c.key),
-    targets: [
-      { label: 'v0', url: '', override: '' },
-      { label: 'v1', url: '', override: '' },
-    ],
-  };
-}
-
-async function initCvaMode() {
-  if (!document.getElementById('cva-target-list')) return;
-  const { cvaModeState } = await sessionNS.get('cvaModeState');
-  cvaState = { ...cvaDefaultState(), ...(cvaModeState || {}) };
-  if (!Array.isArray(cvaState.targets) || !cvaState.targets.length) cvaState.targets = cvaDefaultState().targets;
-  if (!Array.isArray(cvaState.checks)) cvaState.checks = cvaDefaultState().checks;
-
-  applyCvaStateToInputs();
-
-  document.getElementById('cva-base-url').addEventListener('input',        e => { cvaState.baseUrl = e.target.value;          persistCvaState(); });
-  document.getElementById('cva-qa-mode').addEventListener('change',        e => { cvaState.qaMode = e.target.checked;         persistCvaState(); });
-  document.getElementById('cva-settle').addEventListener('input',          e => { cvaState.settleSec = e.target.value;        persistCvaState(); });
-  document.getElementById('cva-keep-tabs').addEventListener('change',      e => { cvaState.keepTabs = e.target.checked;       persistCvaState(); });
-  document.getElementById('cva-scope').addEventListener('input',           e => { cvaState.scope = e.target.value;            persistCvaState(); });
-  document.getElementById('cva-include-manual').addEventListener('change', e => { cvaState.includeManual = e.target.checked;  persistCvaState(); });
-
-  document.getElementById('btn-cva-scope-pick')?.addEventListener('click', () => {
-    const row = document.getElementById('cva-scope-row');
-    startPicker(row, null, 'cva-scope', (selector) => {
-      const val = selector.css || (selector.idValue ? '#' + selector.idValue : '');
-      document.getElementById('cva-scope').value = val;
-      cvaState.scope = val;
-      persistCvaState();
-    });
-  });
-
-  document.getElementById('btn-cva-add-target').addEventListener('click', () => {
-    // v0/v1/v2/… convention, matching A/B's own add-variant handler.
-    cvaState.targets.push({ label: 'v' + cvaState.targets.length, url: '', override: '' });
-    renderCvaTargets();
-    persistCvaState();
-  });
-
-  document.getElementById('btn-cva-save-set').addEventListener('click', saveCvaSet);
-  document.getElementById('btn-cva-load-set').addEventListener('click', loadCvaSet);
-  document.getElementById('btn-cva-delete-set').addEventListener('click', deleteCvaSet);
-  // "Fill from ticket" binding + refresh now lives in the fill-target
-  // registry (initFillTargets), which runs later in the init chain.
-  document.getElementById('btn-run-cva').addEventListener('click', runCvaAudit);
-  document.getElementById('btn-cva-stop').addEventListener('click', () =>
-    chrome.runtime.sendMessage({ action: 'stop' }));
-
-  renderCvaTargets();
-  renderCvaChecks();
-  await refreshCvaSets();
-}
-
-function applyCvaStateToInputs() {
-  document.getElementById('cva-base-url').value          = cvaState.baseUrl || '';
-  document.getElementById('cva-qa-mode').checked         = !!cvaState.qaMode;
-  document.getElementById('cva-settle').value            = cvaState.settleSec || '3';
-  document.getElementById('cva-keep-tabs').checked       = !!cvaState.keepTabs;
-  document.getElementById('cva-scope').value             = cvaState.scope || '';
-  document.getElementById('cva-include-manual').checked  = !!cvaState.includeManual;
-}
-
-function persistCvaState() {
-  sessionNS.set({ cvaModeState: cvaState });
-}
-
-function renderCvaTargets() {
-  const list = document.getElementById('cva-target-list');
-  const q = s => esc(s || '').replace(/"/g, '&quot;');
-  list.innerHTML = cvaState.targets.map((t, i) => `
-    <div class="ab-target" data-cva-target="${i}">
-      <div class="arg-row">
-        <span class="arg-lbl">Label</span>
-        <input type="text" data-cva-field="label" value="${q(t.label)}" placeholder="e.g. v1">
-        <button class="btn-icon" data-cva-rm-target title="Remove variant" style="color:var(--err)">✕</button>
-      </div>
-      <div class="arg-row">
-        <span class="arg-lbl">URL</span>
-        <input type="text" data-cva-field="url" value="${q(t.url)}" placeholder="(uses base URL)">
-      </div>
-      <div class="arg-row">
-        <span class="arg-lbl">Override</span>
-        <input type="text" data-cva-field="override" value="${q(t.override)}" placeholder="e.g. optimizely_x=123456">
-      </div>
-    </div>`).join('');
-
-  list.querySelectorAll('[data-cva-target]').forEach(block => {
-    const i = +block.dataset.cvaTarget;
-    block.querySelectorAll('[data-cva-field]').forEach(inp => {
-      inp.addEventListener('input', () => {
-        cvaState.targets[i][inp.dataset.cvaField] = inp.value;
-        persistCvaState();
-      });
-    });
-    block.querySelector('[data-cva-rm-target]').addEventListener('click', () => {
-      cvaState.targets.splice(i, 1);
-      renderCvaTargets();
-      persistCvaState();
-    });
-  });
-}
-
-// Automated checks only — the manual/infoOnly checks produce identical
-// guidance on every variant, so they live behind the single "include manual
-// checks" toggle instead of individual checkboxes.
-function renderCvaChecks() {
-  const list = document.getElementById('cva-check-list');
-  if (!list) return;
-  list.innerHTML = WCAG_CHECKS.filter(c => !c.manual).map(c => `
-    <label class="suite-check">
-      <input type="checkbox" name="cva-check" value="${c.key}"${cvaState.checks.includes(c.key) ? ' checked' : ''}>
-      ${esc(c.label)} <span style="color:var(--fg3);font-size:10px">${esc(c.sc)}</span>
-    </label>`).join('');
-  list.querySelectorAll('input[name="cva-check"]').forEach(cb => {
-    cb.addEventListener('change', () => {
-      cvaState.checks = [...list.querySelectorAll('input[name="cva-check"]:checked')].map(x => x.value);
-      persistCvaState();
-    });
-  });
-}
-
-// ── Saved variant target sets (chrome.storage.sync, namespaced to this mode
-// so the list never collides with the A/B mode's sets) ────────────────────────
-async function refreshCvaSets() {
-  const { cvaVariantSets = {} } = await chrome.storage.sync.get('cvaVariantSets');
-  const names = Object.keys(cvaVariantSets).sort();
-  const sel = document.getElementById('cva-set-select');
-  sel.innerHTML = names.length
-    ? names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')
-    : '<option disabled>&lt;no saved sets&gt;</option>';
-}
-
-async function saveCvaSet() {
-  const name = document.getElementById('cva-set-name').value.trim();
-  if (!name) { alert('Enter a set name.'); return; }
-  const { cvaVariantSets = {} } = await chrome.storage.sync.get('cvaVariantSets');
-  cvaVariantSets[name] = JSON.parse(JSON.stringify(cvaState));
-  await chrome.storage.sync.set({ cvaVariantSets });
-  await refreshCvaSets();
-  document.getElementById('cva-set-select').value = name;
-  document.getElementById('cva-set-name').value = '';
-  alert(`"${name}" saved.`);
-}
-
-async function loadCvaSet() {
-  const name = document.getElementById('cva-set-select').value || '';
-  if (!name) { alert('Select a saved set first.'); return; }
-  const { cvaVariantSets = {} } = await chrome.storage.sync.get('cvaVariantSets');
-  if (!cvaVariantSets[name]) return;
-  cvaState = { ...cvaDefaultState(), ...cvaVariantSets[name] };
-  applyCvaStateToInputs();
-  renderCvaTargets();
-  renderCvaChecks();
-  persistCvaState();
-}
-
-async function deleteCvaSet() {
-  const name = document.getElementById('cva-set-select').value || '';
-  if (!name) return;
-  if (!confirm(`Delete "${name}"?`)) return;
-  const { cvaVariantSets = {} } = await chrome.storage.sync.get('cvaVariantSets');
-  delete cvaVariantSets[name];
-  await chrome.storage.sync.set({ cvaVariantSets });
-  await refreshCvaSets();
-}
-
-// ── Run ───────────────────────────────────────────────────────────────────────
-async function runCvaAudit() {
-  const btn       = document.getElementById('btn-run-cva');
-  const stopBtn   = document.getElementById('btn-cva-stop');
-  const resultsEl = document.getElementById('cva-results');
-
-  const targets = cvaState.targets
-    .map(t => ({ label: (t.label || '').trim() || 'Variant', url: composeVariantUrl(t, cvaState.baseUrl, cvaState.qaMode) }))
-    .filter(t => t.url);
-  if (targets.length < 2) {
-    resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Define at least two variant targets with a URL (or set a base URL). The first target is the baseline.</div>';
-    return { ok: false, error: 'Fewer than two variant targets have a URL.' };
-  }
-  const autoChecks = cvaState.checks.filter(k => WCAG_CHECKS.some(c => c.key === k && !c.manual));
-  if (!autoChecks.length) {
-    resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Select at least one check.</div>';
-    return { ok: false, error: 'No automated checks selected.' };
-  }
-  const checks = cvaState.includeManual ? [...autoChecks, ...WCAG_MANUAL_KEYS] : autoChecks;
-  const scope = (cvaState.scope || '').trim();
-
-  btn.disabled = true;
-  btn.textContent = 'Running…';
-  stopBtn.style.display = '';
-  resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Auditing variants…</div>';
-  _cvaProgressPoller = setInterval(async () => {
-    const { cvaProgress } = await sessionNS.get('cvaProgress');
-    if (cvaProgress?.running) {
-      btn.textContent = `Running ${cvaProgress.index + 1}/${cvaProgress.total}…`;
-      resultsEl.innerHTML = `<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Auditing ${esc(cvaProgress.label)} (${cvaProgress.index + 1} of ${cvaProgress.total})…</div>`;
-    }
-  }, 400);
-
-  try {
-    const res = await chrome.runtime.sendMessage({
-      action: 'runCrossVariantAudit',
-      payload: { targets, settleSeconds: cvaState.settleSec, keepTabs: cvaState.keepTabs, checks, scope, winId: WIN_ID },
-    });
-    if (!res?.ok) throw new Error(res?.error || 'Audit failed');
-    const runs = (res.results || []).filter(r => !r.skipped);
-    if (runs.length < 2) {
-      resultsEl.innerHTML = '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:10px 0">Stopped before two variants were audited — nothing to compare.</div>';
-      return { ok: false, error: 'Fewer than two variants were audited, so there was nothing to compare.' };
-    }
-    _cvaLastRun = { ts: Date.now(), scope, autoChecks, includeManual: cvaState.includeManual, runs };
-    renderCvaResults(_cvaLastRun);
-  } catch (e) {
-    resultsEl.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px 0">Error: ' + esc(e.message) + '</div>';
-    return { ok: false, error: e.message };
-  } finally {
-    clearInterval(_cvaProgressPoller);
-    _cvaProgressPoller = null;
-    btn.disabled = false;
-    btn.textContent = 'Run Cross-Variant Audit';
-    stopBtn.style.display = 'none';
-  }
-}
+// The worker runs the standalone WCAG mode's own routine (performWcagAudit)
+// inside each variant's capture, and the diff below compares every variant
+// with Control: Introduced / Resolved / Pre-existing. This used to be a Test
+// Agent mode of its own, Cross-Variant Accessibility, with its own targets and
+// a second load of every page; the report entry kept that mode's number (5) so
+// its renderer, problems and debug-log section carry over unchanged.
 
 // ── Diff (pure function over the collected result sets) ──────────────────────
 // Issue identity: normalized string (trim, collapse whitespace), matched
 // exactly within its check. axe node-target strings can differ across runs for
 // the same underlying issue — a known v1 limitation; no fuzzy matching.
+//
+// One exception, the heuristic summary lines that lead with a count ("2 <img>
+// missing an alt attribute …", five of them in performWcagAudit). The same
+// line with a different number is one issue whose count moved, so it is paired
+// into `changed` ({ from, to, worse }) instead of reading as one resolved and
+// one introduced. STRZ-1658 v2 (r_1791222173138) went from 2 such images to 43
+// and the report called the 2 "fixed". A rise counts toward `introduced`, a
+// fall toward `resolved`.
 function diffCvaRuns(runs, checkKeys) {
   const norm = s => String(s).replace(/\s+/g, ' ').trim();
+  const countKey = s => /^\d+ /.test(s) ? s.replace(/^\d+/, '#') : null;
   const issuesOf = (r, k) => {
     const c = r.results?.[k];
     return c && !c.infoOnly ? (c.issues || []).map(norm) : null;
@@ -5408,7 +5295,7 @@ function diffCvaRuns(runs, checkKeys) {
   const base = runs[0];
   const variants = runs.slice(1).map(r => {
     if (r.loadError || !r.results) {
-      return { label: r.label, url: r.url, tabId: r.tabId || null, loadError: r.loadError || 'No results', perCheck: [], introduced: 0, resolved: 0, preexisting: 0 };
+      return { label: r.label, url: r.url, tabId: r.tabId || null, loadError: r.loadError || 'No results', notServed: !!r.notServed, perCheck: [], introduced: 0, resolved: 0, preexisting: 0 };
     }
     const perCheck = [];
     let ti = 0, tr = 0, tp = 0;
@@ -5418,20 +5305,29 @@ function diffCvaRuns(runs, checkKeys) {
       if (bv == null && cv == null) continue;
       const bset = new Set(bv || []);
       const cset = new Set(cv || []);
-      const introduced  = [...cset].filter(x => !bset.has(x));
-      const resolved    = [...bset].filter(x => !cset.has(x));
+      let introduced    = [...cset].filter(x => !bset.has(x));
+      let resolved      = [...bset].filter(x => !cset.has(x));
       const preexisting = [...cset].filter(x => bset.has(x));
-      perCheck.push({ key: k, introduced, resolved, preexisting });
-      ti += introduced.length; tr += resolved.length; tp += preexisting.length;
+      const changed = [];
+      for (const to of introduced.slice()) {
+        const key = countKey(to);
+        const from = key && resolved.find(x => countKey(x) === key);
+        if (!from) continue;
+        changed.push({ from, to, worse: parseInt(to, 10) > parseInt(from, 10) });
+        introduced = introduced.filter(x => x !== to);
+        resolved = resolved.filter(x => x !== from);
+      }
+      perCheck.push({ key: k, introduced, resolved, preexisting, changed });
+      const worse = changed.filter(c => c.worse).length;
+      ti += introduced.length + worse; tr += resolved.length + changed.length - worse; tp += preexisting.length;
     }
-    return { label: r.label, url: r.url, tabId: r.tabId || null, loadError: null, perCheck, introduced: ti, resolved: tr, preexisting: tp };
+    return { label: r.label, url: r.url, tabId: r.tabId || null, loadError: null, notServed: !!r.notServed, perCheck, introduced: ti, resolved: tr, preexisting: tp };
   });
   return { base, variants };
 }
 
-// The notes over a cross-variant result, shared by the live panel and the
-// report so the two cannot say different things. The report used to print none
-// of them, so a variant audited without axe-core, or across its whole page
+// The notes over a cross-variant result. The report used to print none of
+// them, so a variant audited without axe-core, or across its whole page
 // because the scope matched nothing there, was diffed against a baseline
 // audited the other way with nothing on the page saying so.
 function cvaRunNotes(run) {
@@ -5444,190 +5340,115 @@ function cvaRunNotes(run) {
   return notes;
 }
 
-// Highlight an issue's element in the variant tab it was found in (kept open
-// via keep-tabs), falling back to the active tab; degrades with an inline note.
-async function cvaHighlight(selector, tabId, rowEl) {
-  let res = null;
-  try {
-    res = await chrome.runtime.sendMessage({ action: 'highlightElement', tabId: tabId || null, selector });
-  } catch (_) {}
-  if ((!res?.ok || !res.found) && rowEl && !rowEl.querySelector('.a11y-loc-miss')) {
-    const note = document.createElement('span');
-    note.className = 'a11y-loc-miss';
-    note.textContent = ' — not found on the current page';
-    note.style.color = 'var(--fg3)';
-    rowEl.appendChild(note);
-    setTimeout(() => note.remove(), 2500);
+// The A/B report's accessibility entry, built from the captures
+// runVariantComparison returned, Control first (runAbComparison's reorder).
+// Shaped as the old Cross-Variant mode's entry so rptCvaSection,
+// taModeProblems, taDebugSection and abPageUrls read it unchanged.
+//
+// `perVariant` is Visual Diff's, read only for notServed: when the platform
+// says a pair did not serve its variations, the variant's audit is Control's
+// page audited twice, and "0 introduced" would be a PASS nobody earned.
+//
+// No capture that loaded carrying `a11y` means the request went unanswered,
+// not that the pages were clean. `workerAck` is the worker's own count of the
+// checks it received (runVariantComparison's a11yRequested), and it is what
+// names the cause: absent, the worker predates the request and a reload fixes
+// it; present, the worker had the request and still audited nothing, which no
+// reload will fix. Run r_1791221055240 was told "the service worker is older"
+// on a log whose own version stamp showed the extension had been reloaded
+// after the worker change, which is why this no longer guesses.
+function abA11yEntry(captures, perVariant, autoChecks, ts, workerAck, manualChecks) {
+  const manual = manualChecks || [];
+  const name = 'Accessibility (WCAG)';
+  const shown = (captures || []).filter(c => !c.skipped);
+  const loaded = shown.filter(c => !c.loadError);
+  if (loaded.length && !loaded.some(c => c.a11y)) {
+    return { mode: 5, name, status: 'failed',
+      reason: workerAck === undefined
+        ? 'The service worker did not acknowledge the accessibility request, so it is running a build older than this panel. '
+          + 'Reload the extension at chrome://extensions and re-run.'
+        : `The service worker received ${workerAck} of the ${autoChecks.length + manual.length} requested check(s) but returned no audit for `
+          + 'any variant. A reload will not fix this; keep this debug log.' };
   }
+  if (shown.length < 2) {
+    return { mode: 5, name, status: 'skipped',
+      reason: 'The run stopped before two variants were captured, so there was nothing to compare.' };
+  }
+  const served = new Map((perVariant || []).map(v => [v.label, !!v.notServed]));
+  const runs = shown.map(c => {
+    const a = c.a11y || null;
+    const loadError = c.loadError
+      || (a?.error ? `The accessibility audit failed (${a.error})` : null)
+      || (!a ? 'No accessibility result was returned for this variant.' : null);
+    return {
+      label: c.label, url: c.url, finalUrl: c.finalUrl || '', tabId: c.tabId || null,
+      loadError, results: loadError ? null : a.results,
+      axeError: a?.axeError || null, scopeError: a?.scopeError || null,
+      notServed: served.get(c.label) || false,
+    };
+  });
+  return { mode: 5, name, status: 'ran',
+    data: { ts, scope: '', autoChecks: autoChecks.slice(), includeManual: manual.length > 0, runs } };
 }
 
-function renderCvaResults(run) {
-  const el = document.getElementById('cva-results');
-  const checkMeta = Object.fromEntries(WCAG_CHECKS.map(c => [c.key, c]));
-  const diff = diffCvaRuns(run.runs, run.autoChecks);
+// The prompt for the Agentic accessibility review: the screenshots in the
+// order given, and what the automated audit found on each page, as
+// differences from Control. Pure, so the suites can read what the model is told.
+function abA11yReviewPrompt(data, imageLabels) {
+  const diff = diffCvaRuns(data.runs, data.autoChecks);
   const base = diff.base;
-
-  const issueHtml = (text, cls, tabId) => {
-    const target = extractIssueTarget(text);
-    const locAttrs = target
-      ? ` class="a11y-issue a11y-issue-loc ${cls}" data-loc="${esc(target).replace(/"/g, '&quot;')}" data-cva-tab="${tabId || ''}" title="Click to highlight this element on the page"`
-      : ` class="a11y-issue ${cls}"`;
-    return `<div${locAttrs}>${esc(text)}</div>`;
-  };
-
-  const blocks = [];
-  const notes = cvaRunNotes(run);
-
-  // Baseline block — its findings as-is (everything here is "pre-existing" by
-  // definition; the interesting buckets live on the variants below).
-  if (base.loadError) {
-    blocks.push(`<div class="ab-line"><b>${esc(base.label)}</b> <span style="color:var(--fg3)">(baseline)</span> — <span class="ab-err">Load failure: ${esc(base.loadError)}</span><div class="ab-cline ab-warn">Variants below are shown against an empty baseline — every issue counts as introduced.</div></div>`);
+  const label = k => a11yCheckMeta(data, k).label;
+  const lines = [];
+  if (base.loadError || !base.results) {
+    lines.push(`${a11yBaseName(base.label)}: not audited (${base.loadError || 'no result'}).`);
   } else {
-    const rows = run.autoChecks.filter(k => base.results?.[k]).map(k => {
-      const c = base.results[k];
-      const count = c.issues.length;
-      const dot = count ? 'a11y-fail-dot' : 'a11y-pass-dot';
-      const body = count ? `<div class="a11y-body">${c.issues.map(t => issueHtml(t, '', base.tabId)).join('')}</div>` : '';
-      return `
-        <div class="a11y-row" data-suite-row>
-          <div class="a11y-row-hdr">
-            <span class="a11y-dot ${dot}"></span>
-            <span class="a11y-row-label">${esc(checkMeta[k]?.label || k)}</span>
-            <span class="a11y-wcag">${esc(checkMeta[k]?.sc || '')}</span>
-            <span class="a11y-count">${count ? count + ' issue' + (count !== 1 ? 's' : '') : 'Pass'}</span>
-            ${count ? '<span class="a11y-chevron">›</span>' : ''}
-          </div>
-          ${body}
-        </div>`;
-    });
-    const baseTotal = run.autoChecks.reduce((n, k) => n + (base.results?.[k]?.issues.length || 0), 0);
-    blocks.push(`
-      <div class="a11y-summary-bar" style="margin-top:2px">
-        <span><b>${esc(base.label)}</b> (baseline)</span>
-        <span class="a11y-summary-total" style="color:${baseTotal ? 'var(--warn)' : 'var(--ok)'}">${baseTotal} issue${baseTotal !== 1 ? 's' : ''}</span>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:4px">${rows.join('')}</div>`);
+    const own = data.autoChecks.filter(k => (base.results[k]?.issues || []).length)
+      .map(k => `${label(k)} (${base.results[k].issues.length})`);
+    lines.push(`${a11yBaseName(base.label)}: ${own.length ? own.join(', ') : 'no automated issues'}.`);
   }
-
-  // Variant blocks — Introduced expanded (error styling), Resolved positive,
-  // Pre-existing collapsed/greyed but never hidden entirely.
+  const seen = new Map();
   for (const v of diff.variants) {
-    if (v.loadError) {
-      blocks.push(`<div class="ab-line" style="margin-top:8px"><b>${esc(v.label)}</b> — <span class="ab-err">Load failure: ${esc(v.loadError)}</span></div>`);
-      continue;
-    }
-    const sumColor = v.introduced ? 'var(--err)' : 'var(--ok)';
-    const rows = v.perCheck
-      .filter(pc => pc.introduced.length || pc.resolved.length || pc.preexisting.length)
-      .map(pc => {
-        const parts = [];
-        if (pc.introduced.length)  parts.push(pc.introduced.length + ' introduced');
-        if (pc.resolved.length)    parts.push(pc.resolved.length + ' resolved');
-        if (pc.preexisting.length) parts.push(pc.preexisting.length + ' pre-existing');
-        const dot = pc.introduced.length ? 'a11y-fail-dot' : (pc.resolved.length ? 'a11y-pass-dot' : 'a11y-skip-dot');
-        const body = `
-          ${pc.introduced.map(t => issueHtml(t, 'cva-issue-intro', v.tabId)).join('')}
-          ${pc.resolved.map(t => `<div class="a11y-issue cva-issue-res">${esc(t)}</div>`).join('')}
-          ${pc.preexisting.length ? `
-            <details class="cva-pre">
-              <summary>${pc.preexisting.length} pre-existing issue${pc.preexisting.length !== 1 ? 's' : ''} (identical to baseline)</summary>
-              ${pc.preexisting.map(t => issueHtml(t, '', v.tabId)).join('')}
-            </details>` : ''}`;
-        return `
-          <div class="a11y-row${pc.introduced.length ? ' open' : ''}" data-suite-row>
-            <div class="a11y-row-hdr">
-              <span class="a11y-dot ${dot}"></span>
-              <span class="a11y-row-label">${esc(checkMeta[pc.key]?.label || pc.key)}</span>
-              <span class="a11y-wcag">${esc(checkMeta[pc.key]?.sc || '')}</span>
-              <span class="a11y-count">${parts.join(' · ')}</span>
-              <span class="a11y-chevron">›</span>
-            </div>
-            <div class="a11y-body">${body}</div>
-          </div>`;
-      });
-    blocks.push(`
-      <div class="a11y-summary-bar" style="margin-top:8px">
-        <span><b>${esc(v.label)}</b></span>
-        <span class="a11y-summary-total" style="color:${sumColor}">${v.introduced} introduced · ${v.resolved} resolved · ${v.preexisting} pre-existing</span>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:4px">${rows.join('') || '<div class="ab-line ab-same-row">No issues in this variant or the baseline for the selected checks.</div>'}</div>`);
+    if (v.notServed) { lines.push(`${v.label}: not compared — the experiment platform reports it was not served its variation.`); continue; }
+    if (v.loadError) { lines.push(`${v.label}: not audited (${v.loadError}).`); continue; }
+    const sig = a11yChangeSignature(v, base.label);
+    if (sig && seen.has(sig)) { lines.push(`${v.label}: the same changes as ${seen.get(sig)}.`); continue; }
+    if (sig) seen.set(sig, v.label);
+    const parts = v.perCheck.map(pc => [pc, a11yChangeLists(pc, base.label)]).filter(([, ch]) => ch.worse.length || ch.better.length)
+      .map(([pc, ch]) => `${label(pc.key)}: ${ch.worse.length} worse${ch.worse.length ? ` (e.g. ${ch.worse.slice(0, 3).join(' | ')})` : ''}`
+        + (ch.better.length ? `, ${ch.better.length} better` : ''));
+    lines.push(`${v.label}: ${parts.length ? parts.join('; ') : `no change from ${base.label} on any automated check`}.`);
   }
-
-  // Manual checks render once — identical guidance on every variant.
-  if (run.includeManual && !base.loadError) {
-    const manualRows = WCAG_MANUAL_KEYS.filter(k => base.results?.[k]).map(k => {
-      const c = base.results[k];
-      const guide = WCAG_MANUAL_GUIDE[k] || [];
-      return `
-        <div class="a11y-row" data-suite-row>
-          <div class="a11y-row-hdr">
-            <span class="a11y-dot a11y-info-dot"></span>
-            <span class="a11y-row-label">${esc(checkMeta[k]?.label || k)}</span>
-            <span class="a11y-wcag">${esc(checkMeta[k]?.sc || '')}</span>
-            <span class="a11y-count">Manual</span>
-            <span class="a11y-chevron">›</span>
-          </div>
-          <div class="a11y-body">
-            ${c.issues.map(t => `<div class="a11y-issue">${esc(t)}</div>`).join('')}
-            ${guide.length ? `<div class="a11y-guide-title">Verify by hand (on every variant):</div>${guide.map(g => `<div class="a11y-guide-item">${esc(g)}</div>`).join('')}` : ''}
-          </div>
-        </div>`;
-    });
-    blocks.push(`
-      <div class="a11y-summary-bar" style="margin-top:8px"><span>Manual checks — apply to every variant</span></div>
-      <div style="display:flex;flex-direction:column;gap:4px">${manualRows.join('')}</div>`);
-  }
-
-  const totalIntroduced = diff.variants.reduce((n, v) => n + v.introduced, 0);
-  el.innerHTML = `
-    <div class="a11y-summary-bar">
-      <span>Baseline: ${esc(base.label)}</span>
-      <div class="row" style="gap:8px">
-        <span class="a11y-summary-total" style="color:${totalIntroduced ? 'var(--err)' : 'var(--ok)'}">${totalIntroduced} introduced issue${totalIntroduced !== 1 ? 's' : ''} across variants</span>
-        <button class="btn ghost btn-icon" data-cva-export title="Download results as JSON">Export</button>
-        <button class="btn ghost btn-icon" data-clear-results title="Clear results">Clear</button>
-      </div>
-    </div>
-    ${notes.length ? `<div style="color:var(--fg3);font-size:11px;padding:2px 2px 6px">${notes.map(esc).join(' · ')}</div>` : ''}
-    ${blocks.join('')}`;
-
-  el.querySelectorAll('[data-suite-row] .a11y-row-hdr').forEach(hdr => {
-    hdr.addEventListener('click', () => hdr.closest('[data-suite-row]').classList.toggle('open'));
-  });
-  el.querySelector('[data-clear-results]')?.addEventListener('click', () => { el.innerHTML = ''; });
-  el.querySelector('[data-cva-export]')?.addEventListener('click', () => exportCvaResults(diff, run));
-  el.querySelectorAll('.a11y-issue-loc').forEach(row => {
-    row.addEventListener('click', () =>
-      cvaHighlight(row.dataset.loc, parseInt(row.dataset.cvaTab, 10) || null, row));
-  });
+  return `These are viewport screenshots (the top of each page) of an A/B experiment, in this order: ${imageLabels.join(', ')}. `
+    + `${base.label} is ${/^control$/i.test(String(base.label).trim()) ? 'the baseline' : 'Control'}. An automated WCAG 2.2 audit (heuristic checks plus axe-core) ran on every page; what it found is below. `
+    + 'Look at the screenshots and flag accessibility barriers the automated checks structurally cannot see: text over busy '
+    + 'imagery, text that passes a contrast ratio but reads poorly, state shown by colour alone, icon-only controls with unclear '
+    + 'meaning, small tap targets, and layout that implies a confusing reading or focus order. Report only what would hinder '
+    + 'someone using a screen reader, a keyboard or zoom, or with low vision, colour blindness or a cognitive disability. '
+    // r_1791225305511's review spent a paragraph arguing that v1 badged the
+    // wrong plan, and two more on a tag's corner overlapping its card: the
+    // experiment's own decisions and polish, not barriers.
+    + 'The variants\' design, copy, pricing and which option they emphasise are the experiment\'s intended changes: do not judge '
+    + 'them, and do not report visual polish unless it affects perceiving or operating the page. Concentrate on what each '
+    + `variant changed relative to ${base.label}. Write one short paragraph per page, starting with its label in bold; if a page `
+    + 'has nothing to add, say so in one line. Keep it under 200 words.\n\n' + lines.join('\n');
 }
 
-function exportCvaResults(diff, run) {
-  const checkMeta = Object.fromEntries(WCAG_CHECKS.map(c => [c.key, c]));
-  const data = {
-    timestamp: new Date(run.ts).toISOString(),
-    scope: run.scope || null,
-    checks: run.autoChecks,
-    baseline: {
-      label: diff.base.label, url: diff.base.url, loadError: diff.base.loadError || null,
-      issues: diff.base.loadError ? null : Object.fromEntries(run.autoChecks
-        .filter(k => diff.base.results?.[k])
-        .map(k => [k, diff.base.results[k].issues])),
-    },
-    variants: diff.variants.map(v => ({
-      label: v.label, url: v.url, loadError: v.loadError,
-      summary: { introduced: v.introduced, resolved: v.resolved, preexisting: v.preexisting },
-      checks: v.perCheck.map(pc => ({
-        key: pc.key,
-        label: checkMeta[pc.key]?.label || pc.key,
-        wcag: checkMeta[pc.key]?.sc || '',
-        introduced: pc.introduced,
-        resolved: pc.resolved,
-        preexisting: pc.preexisting,
-      })),
-    })),
-  };
-  downloadJson(data, 'cross-variant-a11y-' + new Date(run.ts).toISOString().replace(/[:.]/g, '-') + '.json');
+// One vision call over every audited page that has a screenshot (Agentic
+// Testing's viewport shot, taken in the same load as the audit). Returns the
+// note, the reason it is unavailable in the WCAG mode's wording, or null when
+// there was nothing to look at.
+async function abA11yReview(captures, data) {
+  const shots = (captures || []).filter(c => !c.skipped && c.screenshot && data.runs.some(r => r.label === c.label));
+  if (!shots.length) return null;
+  try {
+    const res = await chrome.runtime.sendMessage({ action: 'a11yVisionReview', payload: {
+      images: shots.map(c => c.screenshot), prompt: abA11yReviewPrompt(data, shots.map(c => c.label)),
+    } });
+    if (res?.ok) return res.text || null;
+    return `Agentic Testing unavailable: ${res?.error || 'the service worker did not answer (reload the extension)'}`;
+  } catch (e) {
+    return `Agentic Testing unavailable: ${e.message}`;
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -5992,7 +5813,15 @@ function rptAiSummarySection(summary, error) {
 // for the deterministic result rendered above it.
 function rptAgenticNoteHtml(note, label) {
   if (!note) return '';
-  return `<p class="rpt-muted"><strong>${esc(label || 'Agentic Testing Note (Sonnet)')}:</strong> ${esc(note)}</p>`;
+  // Model notes arrive as Markdown-ish text: paragraphs split by blank lines,
+  // **bold** lead-ins. Printed raw they ran together into one block with the
+  // asterisks showing (the accessibility review on r_1791225305511). Escaped
+  // FIRST, so nothing in a note can become markup; only paragraphs, line
+  // breaks and bold are put back.
+  const paras = String(note).split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)
+    .map(p => esc(p).replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>'));
+  const head = `<strong>${esc(label || 'Agentic Testing Note (Sonnet)')}:</strong> `;
+  return paras.map((p, i) => `<p class="rpt-muted">${i === 0 ? head : ''}${p}</p>`).join('');
 }
 
 // ── the run's ONE visual-diff verdict ──────────────────────────────────────
@@ -6587,8 +6416,10 @@ function abPageUrls(modes) {
     }
     // The Test Agent modes. Since A/B left the Test Agent (838cb35) they are
     // all a Test Agent report can hold, and every such cover read "No page URLs
-    // recorded." above a section naming the page. Cross-Variant records
-    // finalUrl per variant, read for the reason above. WCAG and Performance
+    // recorded." above a section naming the page. The accessibility entry
+    // (mode 5, now part of an A/B report) records finalUrl per variant, read
+    // for the reason above; on an A/B report they repeat the captures' and
+    // `seen` drops them. WCAG and Performance
     // keep only the URL as the user loaded or typed it, which is routinely the
     // forcing link itself (the first real WCAG cover, r_1790972328425); `add`
     // drops the query from all of them alike.
@@ -7201,35 +7032,197 @@ function rptCvaSection(entry) {
   if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
   const run = entry.data;
   const diff = diffCvaRuns(run.runs, run.autoChecks);
-  const checkMeta = Object.fromEntries(WCAG_CHECKS.map(c => [c.key, c]));
-  const totalIntroduced = diff.variants.reduce((n, v) => n + v.introduced, 0);
+  // A variant the platform says was not served its variation (Visual Diff's
+  // notServed, on either side of the pair) was compared with Control's page
+  // audited twice. Its counts mean nothing, so it is left out of the total and
+  // keeps the badge off PASS, the same order as the A/B ladder: a regression
+  // measured on a served variant outranks it, and nothing else does.
+  const compared = diff.variants.filter(v => !v.notServed);
+  const notServedCount = diff.variants.length - compared.length;
+  const totalIntroduced = compared.reduce((n, v) => n + v.introduced, 0);
+  // A variant that failed to load or audit has 0 introduced because it has no
+  // audit, which is not the same as passing one.
+  const unauditedCount = compared.filter(v => v.loadError).length;
   // diffCvaRuns nulls the baseline's issue set when Control failed to load
   // (`base.loadError ? null : issuesOf(base, k)`), so `bset` is empty and every
   // pre-existing issue on the site counts as "introduced" by the variant. The
-  // live renderer discloses this in as many words; the report had no branch for
-  // it at all and printed "N introduced issue(s)" as if Control had loaded.
+  // report once had no branch for it and printed "N introduced issue(s)" as if
+  // Control had loaded.
   const baseFailed = !!diff.base.loadError;
   const badge = baseFailed ? rptBadge('issues', 'NO BASELINE')
     : totalIntroduced ? rptBadge('issues', 'ISSUES FOUND')
+    : (notServedCount || unauditedCount) ? rptBadge('fail', 'NOT COMPARED')
     : rptBadge('pass', 'PASS');
   const summary = baseFailed
     ? `Baseline ${diff.base.label} failed to load (${diff.base.loadError}) — the ${totalIntroduced} issue(s) below are the variants' TOTAL accessibility issues, not regressions introduced by them.`
-    : `Baseline: ${diff.base.label} · ${totalIntroduced} introduced issue(s) across ${diff.variants.length} variant(s)`;
-  const rows = diff.variants.map(v => {
-    if (v.loadError) return `<tr><td>${esc(v.label)}</td><td colspan="2">Load failure: ${esc(v.loadError)}</td></tr>`;
-    const detail = v.perCheck.filter(pc => pc.introduced.length)
-      .map(pc => `${esc(checkMeta[pc.key]?.label || pc.key)}: ${pc.introduced.length} introduced`).join('; ') || '—';
-    return `<tr><td>${esc(v.label)}</td><td>${v.introduced} introduced · ${v.resolved} resolved · ${v.preexisting} pre-existing</td><td>${detail}</td></tr>`;
-  }).join('');
-  // Same sentence the live renderer uses, so the two cannot say different things.
+    : `Baseline: ${diff.base.label} · ${totalIntroduced} introduced issue(s) across ${compared.length} variant(s)`
+      + (notServedCount ? ` · ${notServedCount} not compared (variation not served)` : '')
+      + (unauditedCount ? ` · ${unauditedCount} not audited` : '');
   const baseNote = baseFailed
     ? '<p class="ab-warn">Variants below are shown against an empty baseline — every issue counts as introduced. Re-run once Control loads to see which are actually regressions.</p>'
     : '';
   const notes = cvaRunNotes(run);
   const notesHtml = notes.length ? `<p class="rpt-muted">${notes.map(esc).join(' · ')}</p>` : '';
-  const body = notesHtml + baseNote + `<table class="rpt-table"><thead><tr><th>Variant</th><th>Summary</th><th>${
-    baseFailed ? 'Checks with issues' : 'Introduced checks'}</th></tr></thead><tbody>${rows}</tbody></table>`;
+  // As much as the standalone WCAG report gave one page: every check with its
+  // success criteria and status, and every issue written out. Until 0.7.3 this
+  // section printed three counts per variant and no issue at all, so a report
+  // carrying ten new axe-core violations could not say which elements they were.
+  const body = notesHtml + baseNote
+    + a11yCheckMatrixHtml(run, diff, baseFailed)
+    + a11yVariantChangesHtml(run, diff, baseFailed)
+    + (baseFailed ? '' : a11yBaselineAuditHtml(run, diff.base))
+    + a11yManualReviewHtml(run)
+    + (run.agenticNote ? rptAgenticNoteHtml(run.agenticNote, 'Agentic Accessibility Review (Sonnet)') : '');
   return rptSection(entry.name, badge, summary, body);
+}
+
+// A check's name and success criteria. The engine stamps both on its own
+// result, so they are read from the first page that has one, and from the
+// catalogue only when no page does.
+function a11yCheckMeta(run, key) {
+  const own = (run.runs || []).map(r => r.results && r.results[key]).find(Boolean);
+  const cat = WCAG_CHECKS.find(c => c.key === key);
+  return { label: (own && own.label) || (cat && cat.label) || key, sc: (own && own.wcag) || (cat && cat.sc) || '' };
+}
+
+function a11yCheckCell(run, key) {
+  const m = a11yCheckMeta(run, key);
+  return esc(m.label) + (m.sc ? `<br><span class="rpt-muted">${esc(m.sc)}</span>` : '');
+}
+
+// A check's change as the reader needs it: what got worse (new issues and
+// counts that rose) and what got better (issues gone and counts that fell),
+// each moved count saying what Control had.
+function a11yChangeLists(pc, baseLabel) {
+  const was = c => `${c.to} (${baseLabel} had ${parseInt(c.from, 10)})`;
+  const changed = pc.changed || [];
+  return {
+    worse: [...pc.introduced, ...changed.filter(c => c.worse).map(was)],
+    better: [...pc.resolved, ...changed.filter(c => !c.worse).map(was)],
+  };
+}
+
+// "v0 (Control)", but never "Control (Control)": targets are often labelled
+// Control outright.
+function a11yBaseName(label) {
+  return /^control$/i.test(String(label).trim()) ? label : `${label} (Control)`;
+}
+
+function a11yIssueList(issues) {
+  return issues.length ? `<ul>${issues.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : '—';
+}
+
+// Every automated check down the side, every page across: each page's own
+// status, and on a variant what it added or removed against Control. Without a
+// baseline the marks are left off, since every issue would read as new.
+function a11yCheckMatrixHtml(run, diff, baseFailed) {
+  const count = (r, k) => {
+    const c = r && r.results && r.results[k];
+    return c ? (c.issues || []).length : null;
+  };
+  const status = n => n == null ? '—' : n === 0 ? 'Pass' : `${n} issue(s)`;
+  const head = `<tr><th>Check</th><th>${esc(baseFailed ? diff.base.label : a11yBaseName(diff.base.label))}</th>`
+    + diff.variants.map(v => `<th>${esc(v.label)}</th>`).join('') + '</tr>';
+  const rows = run.autoChecks.map(k => {
+    const baseCell = diff.base.loadError ? '<td class="rpt-muted">not audited</td>' : `<td>${status(count(diff.base, k))}</td>`;
+    const cells = diff.variants.map((v, i) => {
+      if (v.notServed) return '<td class="rpt-muted">not compared</td>';
+      if (v.loadError) return '<td class="rpt-muted">not audited</td>';
+      const pc = v.perCheck.find(p => p.key === k);
+      const ch = pc && a11yChangeLists(pc, diff.base.label);
+      const marks = baseFailed || !pc ? [] : [
+        ch.worse.length ? `<span class="ab-err">+${ch.worse.length} worse</span>` : '',
+        ch.better.length ? `<span class="rpt-muted">−${ch.better.length} better</span>` : '',
+      ].filter(Boolean);
+      return `<td>${status(count(run.runs[i + 1], k))}${marks.length ? '<br>' + marks.join(' ') : ''}</td>`;
+    }).join('');
+    return `<tr><td>${a11yCheckCell(run, k)}</td>${baseCell}${cells}</tr>`;
+  }).join('');
+  return `<h3>By check</h3><table class="rpt-table"><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+}
+
+// A variant's changes as one comparable value: every check it changed, with
+// what got worse and what got better. Two variants with the same signature
+// changed exactly the same issues; null when there is nothing to compare.
+function a11yChangeSignature(v, baseLabel) {
+  if (v.notServed || v.loadError) return null;
+  const changed = v.perCheck.filter(pc => pc.introduced.length || pc.resolved.length || (pc.changed || []).length);
+  if (!changed.length) return null;
+  return JSON.stringify(changed.map(pc => [pc.key, a11yChangeLists(pc, baseLabel)]));
+}
+
+// What each variant changed, issue by issue. Issue identity is diffCvaRuns's:
+// the normalised string, matched exactly within its check.
+//
+// A variant whose changes are identical to an earlier variant's says so in one
+// line instead of repeating its table: STRZ-1658's v2 and v3 share the new UI,
+// so r_1791225305511 printed the same ten issues twice, a page each.
+function a11yVariantChangesHtml(run, diff, baseFailed) {
+  const seen = new Map();   // signature -> label of the first variant with it
+  return diff.variants.map(v => {
+    if (v.notServed) {
+      return `<h3>${esc(v.label)}</h3><p class="rpt-muted">Not compared: the experiment platform reports that this variant or ${esc(diff.base.label)} `
+        + 'was not served its own variation, so any difference here is not the experiment\'s.</p>';
+    }
+    if (v.loadError) return `<h3>${esc(v.label)}</h3><p class="ab-err">Not audited: ${esc(v.loadError)}</p>`;
+    const title = baseFailed ? `${v.label}: every issue (no baseline)` : `${v.label} compared with ${diff.base.label}`;
+    const counts = baseFailed
+      ? `${v.introduced} issue(s) on this page`
+      : `${v.introduced} introduced · ${v.resolved} resolved · ${v.preexisting} pre-existing`;
+    const changed = v.perCheck.filter(pc => pc.introduced.length || pc.resolved.length || (pc.changed || []).length);
+    if (!changed.length) {
+      return `<h3>${esc(title)}</h3><p class="rpt-muted">${counts}. No issue was added or removed on any check.</p>`;
+    }
+    const sig = a11yChangeSignature(v, diff.base.label);
+    if (seen.has(sig)) {
+      return `<h3>${esc(title)}</h3><p class="rpt-muted">${counts}. ${baseFailed ? 'Same issues as' : 'Same changes as'} ${esc(seen.get(sig))}.</p>`;
+    }
+    seen.set(sig, v.label);
+    const rows = changed.map(pc => {
+      const ch = a11yChangeLists(pc, diff.base.label);
+      return `<tr><td>${a11yCheckCell(run, pc.key)}</td><td>${a11yIssueList(ch.worse)}</td>`
+        + (baseFailed ? '' : `<td>${a11yIssueList(ch.better)}</td>`) + '</tr>';
+    }).join('');
+    return `<h3>${esc(title)}</h3><p class="rpt-muted">${counts}</p><table class="rpt-table"><thead><tr><th>Check</th>`
+      + (baseFailed ? '<th>Issues</th>' : '<th>Introduced</th><th>Resolved</th>')
+      + `</tr></thead><tbody>${rows}</tbody></table>`;
+  }).join('');
+}
+
+// Control's own audit, laid out as the standalone WCAG report lays out a page.
+// These are the issues every variant starts from; the tables above carry only
+// what each variant changed.
+function a11yBaselineAuditHtml(run, base) {
+  if (!base || base.loadError || !base.results) return '';
+  let passed = 0, withIssues = 0, total = 0;
+  const rows = run.autoChecks.filter(k => base.results[k]).map(k => {
+    const issues = base.results[k].issues || [];
+    if (issues.length) withIssues++; else passed++;
+    total += issues.length;
+    return `<tr><td>${a11yCheckCell(run, k)}</td><td>${issues.length ? issues.length + ' issue(s)' : 'Pass'}</td><td>${a11yIssueList(issues)}</td></tr>`;
+  }).join('');
+  return `<h3>${esc(a11yBaseName(base.label))}: full audit</h3>`
+    + `<p class="rpt-muted">${passed} passed · ${withIssues} with issues · ${total} total issue(s). Every variant starts from these.</p>`
+    + `<table class="rpt-table"><thead><tr><th>Check</th><th>Status</th><th>Issues</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// The checks no script can settle, once rather than once per page: their
+// guidance is mostly the same everywhere, so a page whose guidance differs from
+// the first audited page's is named under it instead of repeating the table.
+function a11yManualReviewHtml(run) {
+  const audited = (run.runs || []).filter(r => !r.loadError && r.results);
+  if (!audited.length) return '';
+  const first = audited[0];
+  const keys = Object.keys(first.results).filter(k => first.results[k] && first.results[k].infoOnly);
+  if (!keys.length) return '';
+  const norm = r => (r && r.issues || []).join('\n');
+  const rows = keys.map(k => {
+    const differs = audited.slice(1).filter(r => r.results[k] && norm(r.results[k]) !== norm(first.results[k]));
+    const extra = differs.map(r => `<p class="rpt-muted">On ${esc(r.label)}:</p>${a11yIssueList(r.results[k].issues || [])}`).join('');
+    return `<tr><td>${a11yCheckCell(run, k)}</td><td>${a11yIssueList(first.results[k].issues || [])}${extra}</td></tr>`;
+  }).join('');
+  return `<h3>Manual review</h3><p class="rpt-muted">Not checked automatically. The guidance is from ${esc(first.label)}'s page.</p>`
+    + `<table class="rpt-table"><thead><tr><th>Check</th><th>What to verify</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function rptPerfSection(entry) {
@@ -8037,7 +8030,7 @@ function vdCollectProblems(sections) {
   return problems;
 }
 
-// What degraded a WCAG (4), Cross-Variant (5) or Performance (6) run. The mode
+// What degraded a WCAG (4), A/B accessibility (5) or Performance (6) run. The mode
 // loop above only ever looked inside mode 2, so a log over any of these said
 // "nothing degraded this run" whatever happened, including an axe-core failure
 // the report's own section mentions.
@@ -8068,32 +8061,37 @@ function taModeProblems(entry, add) {
     const runs = d.runs || [];
     const base = runs[0];
     if (base?.loadError) {
-      add('error', `cross-variant/${base.label}`, `The baseline failed to load (${base.loadError}), so every issue on `
+      add('error', `accessibility/${base.label}`, `The baseline failed to load (${base.loadError}), so every issue on `
         + 'every variant counts as introduced. None of those counts is a measured regression.');
     }
     for (const r of runs.slice(1)) {
-      if (r.loadError) add('error', `cross-variant/${r.label}`, `Failed to load (${r.loadError}), so it was not compared.`);
+      if (r.loadError) add('error', `accessibility/${r.label}`, `Failed to load (${r.loadError}), so it was not compared.`);
+      else if (r.notServed) {
+        add('warn', `accessibility/${r.label}`, `The experiment platform reports this variant or ${base?.label ? `"${base.label}"` : 'Control'} `
+          + 'was not served its own variation, so its accessibility was not compared and it is left out of the introduced count.');
+      }
     }
     // Each audit's own count is real either way. What stops meaning anything is
     // the subtraction, when the two sides were audited differently.
     const loaded = runs.filter(r => !r.loadError);
     const noAxe = loaded.filter(r => r.axeError);
     if (noAxe.length && noAxe.length < loaded.length) {
-      add('error', 'cross-variant', `axe-core ran on ${names(loaded.filter(r => !r.axeError))} but not on ${names(noAxe)}, `
+      add('error', 'accessibility', `axe-core ran on ${names(loaded.filter(r => !r.axeError))} but not on ${names(noAxe)}, `
         + 'so introduced and resolved there compare an axe-core audit with a heuristics-only one. They are not regressions or fixes.');
     } else if (noAxe.length) {
-      add('warn', 'cross-variant', `axe-core could not run on any variant (${noAxe[0].axeError}). The comparison is like for `
+      add('warn', 'accessibility', `axe-core could not run on any variant (${noAxe[0].axeError}). The comparison is like for `
         + 'like, but anything only axe-core detects is missing from both sides.');
     }
     const unscoped = loaded.filter(r => r.scopeError);
     if (unscoped.length && unscoped.length < loaded.length) {
-      add('error', 'cross-variant', `The scope selector matched nothing on ${names(unscoped)}, so ${unscoped.length === 1 ? 'it was' : 'they were'} `
+      add('error', 'accessibility', `The scope selector matched nothing on ${names(unscoped)}, so ${unscoped.length === 1 ? 'it was' : 'they were'} `
         + `audited across the whole page while ${names(loaded.filter(r => !r.scopeError))} ${loaded.length - unscoped.length === 1 ? 'was' : 'were'} `
         + 'audited inside the region. Introduced and resolved there compare two different areas.');
     } else if (unscoped.length) {
-      add('warn', 'cross-variant', `${unscoped[0].scopeError}, on every variant. The comparison is like for like, but covers `
+      add('warn', 'accessibility', `${unscoped[0].scopeError}, on every variant. The comparison is like for like, but covers `
         + 'the whole page rather than the region asked for.');
     }
+    if (agenticFailed(d.agenticNote)) add('warn', 'accessibility', d.agenticNote);
   }
 
   if (entry.mode === 6) {
@@ -8114,7 +8112,7 @@ function taModeProblems(entry, add) {
   }
 }
 
-// The debug-log section for a WCAG (4), Cross-Variant (5) or Performance (6)
+// The debug-log section for a WCAG (4), A/B accessibility (5) or Performance (6)
 // entry: the raw per-check and per-run numbers rather than the rendered
 // verdicts, so two logs of the same page can be compared directly. Same
 // convention as `funnel`: null when the mode was not in the run, and only
@@ -8151,9 +8149,12 @@ function taDebugSection(entry) {
     const diff = diffCvaRuns(d.runs || [], d.autoChecks || []);
     Object.assign(out, {
       scope: d.scope || null, includeManual: !!d.includeManual, autoChecks: d.autoChecks || [],
+      // null when Agentic Testing did not run; the failure sentence when it did
+      // and the call failed, which `problems` flags.
+      agenticNote: d.agenticNote || null,
       runs: (d.runs || []).map(r => ({
         label: r.label, url: r.url || null, finalUrl: r.finalUrl || null, loadError: r.loadError || null,
-        axeError: r.axeError || null, scopeError: r.scopeError || null,
+        axeError: r.axeError || null, scopeError: r.scopeError || null, notServed: !!r.notServed,
         checks: r.results ? checkRows(r.results, Object.keys(r.results)) : [],
       })),
       // Counts only. The issue strings behind them are in `runs`.
@@ -8162,6 +8163,7 @@ function taDebugSection(entry) {
         introduced: v.introduced, resolved: v.resolved, preexisting: v.preexisting,
         perCheck: v.perCheck.map(pc => ({
           key: pc.key, introduced: pc.introduced.length, resolved: pc.resolved.length, preexisting: pc.preexisting.length,
+          changed: (pc.changed || []).length,
         })),
       })),
     });
@@ -8261,9 +8263,10 @@ function buildDebugLog(sections) {
       + 'that appears repeatedly among reported moves but has no trusted cluster means reflow suppression is '
       + 'under-matching and those findings are cascade, not real changes. A starved `path` entry in `matchTierCounts` '
       + 'means structural identity is not surviving this page\'s experiment JS. '
-      + '`captures`, `visualDiff` and `run.settings` are A/B-only; a Test Agent run of WCAG, Cross-Variant '
-      + 'Accessibility or Performance has its own section (`wcag`, `crossVariant`, `performance`), null when '
-      + 'that mode was not in the run.',
+      + '`captures`, `visualDiff` and `run.settings` are A/B-only; a Test Agent run of WCAG or Performance has '
+      + 'its own section (`wcag`, `performance`), null when that mode was not in the run. `crossVariant` is the '
+      + 'A/B run\'s accessibility audit, one audit per capture diffed against Control, null when the run had '
+      + 'its Accessibility audit option off.',
     generatedAt: new Date(sections.ts).toISOString(),
     extensionVersion: chrome.runtime.getManifest().version,
     userAgent: navigator.userAgent,
@@ -8472,7 +8475,14 @@ async function openReportTab(sections) {
   // Ids are 'r_' + a 13-digit ms timestamp, so they sort chronologically.
   const ids = (await idbReq((await idb()).transaction('reports').objectStore('reports').getAllKeys())).sort();
   while (ids.length > 5) await idbDelete('reports', ids.shift());
-  chrome.tabs.create({ url: chrome.runtime.getURL('qa-report.html') + '?k=' + id });
+  chrome.tabs.create({ url: chrome.runtime.getURL('qa-report.html') + '?k=' + id, ...reportTabWindow() });
+}
+
+// Reports open as tabs of the browser window this panel serves. From the
+// floating window, a tab created with no windowId would go to whichever normal
+// window Chrome picks, which is not necessarily this one.
+function reportTabWindow() {
+  return WIN_ID != null ? { windowId: WIN_ID } : {};
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -8772,7 +8782,7 @@ async function extractFromActiveTab() {
   btn.disabled = true;
   setStatus('Extracting from the active tab…');
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await chrome.tabs.query({ active: true, windowId: WIN_ID });
     if (!tab?.id || !/^https?:/i.test(tab.url || '')) throw new Error("Open the Jira ticket in this window's active tab first.");
 
     const [injected] = await chrome.scripting.executeScript({
@@ -9596,8 +9606,8 @@ function ctxControlLink(ctx) {
 }
 
 // {baseUrl, targets:[{label,url,override}]} — one target per preview link,
-// each carrying its own full URL verbatim. Shared by the A/B and CVA targets,
-// which hold the identical {label,url,override} shape. Previously derived a
+// each carrying its own full URL verbatim. Written into the A/B targets'
+// {label,url,override} shape. Previously derived a
 // common base URL + override query param by diffing the preview links
 // (previewLinkBaseUrl/previewLinkParam, now retired in favor of the
 // AI-detected single itwLink field) — baseUrl/override are kept in the
@@ -9611,7 +9621,7 @@ function ctxVariantTargets(ctx) {
 }
 
 // Write the derived variant targets into whichever variant-mode state object
-// owns them (abState or cvaState — identical shape). State is persisted
+// owns them (abState). State is persisted
 // before rendering so a throwing renderer can't lose the write.
 function fillVariantState(ctx, state, { applyInputs, render, persist }) {
   if (!state) return;
@@ -9768,27 +9778,6 @@ const FILL_TARGETS = [
         applyInputs: applyAbStateToInputs, render: renderAbTargets, persist: persistAbState,
       });
       const nameEl = document.getElementById('ab-set-name');
-      if (nameEl && !nameEl.value.trim()) nameEl.value = ctx.ticketKey;
-    },
-  },
-  {
-    id: 'cva',
-    label: 'Cross-Variant Accessibility',
-    btnSel: '#btn-cva-fill-ticket',
-    hintSel: '#cva-fill-hint',
-    ready:    ctx => !!cvaState && !!ctx.previewLinks?.length,
-    describe: ctx => `Base URL + ${ctx.previewLinks.length} variant target(s)`,
-    snapshot: () => cvaState ? { baseUrl: cvaState.baseUrl, targets: structuredClone(cvaState.targets) } : undefined,
-    restore: snap => {
-      if (!snap || !cvaState) return;
-      cvaState.baseUrl = snap.baseUrl; cvaState.targets = snap.targets;
-      persistCvaState(); applyCvaStateToInputs(); renderCvaTargets();
-    },
-    apply: ctx => {
-      fillVariantState(ctx, cvaState, {
-        applyInputs: applyCvaStateToInputs, render: renderCvaTargets, persist: persistCvaState,
-      });
-      const nameEl = document.getElementById('cva-set-name');
       if (nameEl && !nameEl.value.trim()) nameEl.value = ctx.ticketKey;
     },
   },
@@ -10140,7 +10129,7 @@ function undoLastFill() {
 // Bind every registered surface's own "Fill from ticket" button, then the
 // Initialize card's Apply-to-all, then set every button's initial state in
 // one pass. Called once, late in the init chain — after every state object
-// it touches is hydrated (abState/cvaState/tmModes/mxState/steps/funnelState)
+// it touches is hydrated (abState/tmModes/mxState/steps/funnelState)
 // — and wrapped in its own try/catch by the caller, same as
 // initInitializeTab/initMatrixAuditor. Per-target try/catch inside the loop
 // means one bad selector costs exactly one button, not the whole registry.
@@ -10166,7 +10155,7 @@ async function initFillTargets() {
 // (the same reason wcagHistory/perfHistory all live in local).
 // Each URL is audited by its own `runMatrixAuditStep` message round-trip so
 // the "Next URL" button in the spec maps directly onto one bounded await —
-// no session-storage progress polling needed, unlike the CVA/Perf loops
+// no session-storage progress polling needed, unlike the Perf loop
 // that run unattended across many pages in one background call.
 let mxState = null;
 let mxRun = null;          // { runId, index, total, targets: [{url, group}], results: { [url]: {...} } } while a run is active/complete
@@ -11561,7 +11550,7 @@ function mxRenderResultsTable() {
 // 'pause' auto-advances but stops on any problem so the user can look, and
 // 'manual' stops after every URL (the original one-at-a-time behavior). Each
 // URL is still one bounded await, so resuming is just re-entering the loop —
-// no progress polling needed (unlike CVA/Perf's single background call). ──
+// no progress polling needed (unlike Perf's single background call). ──
 async function runMatrixAuditStart() {
   if (_mxRunning) return;
   const validSelectors = mxState.selectors.filter(s => s.selector.trim());
@@ -11795,7 +11784,7 @@ async function mxOpenReport() {
   const ids = Object.keys(mxReports).sort();
   while (ids.length > 5) delete mxReports[ids.shift()];
   await chrome.storage.session.set({ mxReports });
-  chrome.tabs.create({ url: chrome.runtime.getURL('report.html') + '?k=' + id });
+  chrome.tabs.create({ url: chrome.runtime.getURL('report.html') + '?k=' + id, ...reportTabWindow() });
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────

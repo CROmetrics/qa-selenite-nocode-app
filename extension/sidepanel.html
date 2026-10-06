@@ -34,6 +34,17 @@
     width:28px;height:28px;font-size:15px;line-height:1;cursor:pointer;
     display:flex;align-items:center;justify-content:center;transition:background .15s}
   #btn-settings:hover{background:rgba(255,255,255,.26)}
+  /* Pin — docks Selenite in Chrome's side panel and back (popup.js
+     initPinButton), filled in white while docked. It takes the auto margin
+     from the gear when it is showing, so the two sit together at the right. */
+  #btn-pin{margin-left:auto;flex-shrink:0;background:rgba(255,255,255,.14);
+    border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:6px;
+    width:28px;height:28px;font-size:13px;line-height:1;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;transition:background .15s}
+  #btn-pin[hidden]{display:none}
+  #btn-pin:hover{background:rgba(255,255,255,.26)}
+  #btn-pin.on{background:#fff;border-color:#fff}
+  #btn-pin:not([hidden]) + #btn-settings{margin-left:0}
   #settings-overlay{position:fixed;inset:0;z-index:1000;display:flex;
     align-items:flex-start;justify-content:center;padding:14px}
   #settings-overlay[hidden]{display:none}
@@ -460,14 +471,6 @@
   .ab-err{color:var(--err)}
   .ab-same-row{opacity:.55}
 
-  /* Cross-Variant Accessibility buckets */
-  .a11y-issue.cva-issue-intro{color:var(--err)}
-  .a11y-issue.cva-issue-res{color:var(--ok)}
-  .a11y-issue.cva-issue-res::before{content:'\2713  ';color:var(--ok)}
-  .cva-pre{opacity:.55}
-  .cva-pre summary{cursor:pointer;font-size:11px;color:var(--fg2);padding:3px 0 2px}
-  .cva-pre[open]{opacity:.75}
-
   /* Performance table */
   .perf-table{width:100%;border-collapse:collapse;font-size:11px;margin:4px 0 6px}
   .perf-table th{text-align:left;color:var(--fg2);font-weight:600;padding:3px 6px;
@@ -493,6 +496,7 @@
     <h1>Selenite</h1>
     <p>No-Code QA Runner</p>
   </div>
+  <button id="btn-pin" hidden title="Pin Selenite to the browser, in Chrome's side panel">📌</button>
   <button id="btn-settings" title="Settings — API keys and tokens">⚙</button>
 </div>
 
@@ -1007,7 +1011,6 @@
       <select id="ta-primary-select" style="width:100%">
         <option value="" selected disabled>— Select a mode —</option>
         <option value="4">WCAG / Accessibility</option>
-        <option value="5">Cross-Variant Accessibility</option>
         <option value="6">Performance / Load</option>
         <option value="funnel">Funnel Crawl</option>
       </select>
@@ -1016,8 +1019,10 @@
     <div id="ta-settings-slot"></div>
 
     <!-- Permanent hosts for the reparented mode settings bodies (WCAG,
-         Cross-Variant Accessibility, Performance) — the Test Modes tab that
-         used to own these was retired; Test Agent is now their only home.
+         Performance) — the Test Modes tab that used to own these was
+         retired; Test Agent is now their only home. Cross-Variant
+         Accessibility was a third, until the A/B tab began auditing every
+         variant itself (its "Accessibility audit" option).
          A/B Variant Comparison is not among them. It was parked here as
          tm2-body, then moved to its own tab (#panel-abtest — see ab-body
          there), and is no longer a Test Agent mode at all: it is configured,
@@ -1076,64 +1081,6 @@
           <button class="btn sm" id="btn-wcag-view-history">View</button>
         </div>
       </div>
-    </div>
-<div class="card" id="tm5-body">
-      <div style="font-size:10px;color:var(--fg3);margin-bottom:8px">Runs the same WCAG audit against every experiment variant and diffs findings vs the baseline (first target) — did a variant introduce or fix accessibility issues? Scope the audit to the region the experiment modifies to cut shared-page noise.</div>
-      <div class="row" style="gap:5px;justify-content:flex-end;margin-bottom:8px">
-        <button class="btn danger sm mode-stop-btn" id="btn-cva-stop" style="display:none">Stop</button>
-        <button class="btn primary sm mode-run-btn" id="btn-run-cva">Run Cross-Variant Audit</button>
-      </div>
-      <div class="script-row">
-        <select id="cva-set-select"><option disabled>&lt;no saved sets&gt;</option></select>
-        <button class="btn sm" id="btn-cva-load-set">Load</button>
-        <button class="btn danger sm" id="btn-cva-delete-set">Delete</button>
-      </div>
-      <div class="script-row" style="margin-bottom:8px">
-        <input type="text" id="cva-set-name" placeholder="Save targets as…">
-        <button class="btn sm" id="btn-cva-save-set">Save</button>
-      </div>
-      <div class="row" style="gap:6px;margin-bottom:8px">
-        <button class="btn sm" id="btn-cva-fill-ticket" disabled title="Populate Base URL and the variant list from the active ticket context (Initialize tab)">Fill from ticket</button>
-        <span id="cva-fill-hint" style="font-size:10px;color:var(--fg3)">No active ticket context — use the Initialize tab</span>
-      </div>
-      <div class="arg-row" style="margin-bottom:6px">
-        <span class="arg-lbl">Base URL</span>
-        <input type="text" id="cva-base-url" placeholder="https://example.com — shared by all variants">
-      </div>
-      <div class="row" style="gap:14px;flex-wrap:wrap;margin-bottom:10px">
-        <span class="row" style="gap:5px">
-          <label class="toggle-wrap" title="Append cro_mode=qa as the last parameter on every variant URL">
-            <input type="checkbox" id="cva-qa-mode">
-            <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          </label>
-          <span style="font-size:11px;color:var(--fg2)">QA Mode</span>
-        </span>
-        <span class="row" style="gap:5px" title="Extra wait after page load so experiment scripts can apply their changes">
-          <span style="font-size:11px;color:var(--fg2)">Settle (s)</span>
-          <input type="text" id="cva-settle" value="3" style="width:40px">
-        </span>
-        <label class="row" style="gap:5px;font-size:11px;color:var(--fg2);cursor:pointer" title="Leave each variant tab open — lets result rows highlight elements in the audited tabs">
-          <input type="checkbox" id="cva-keep-tabs" style="accent-color:var(--brand);cursor:pointer">Keep tabs open
-        </label>
-      </div>
-      <label class="cap">Variant Targets</label>
-      <div id="cva-target-list"></div>
-      <button class="btn sm" id="btn-cva-add-target" style="margin:5px 0 10px">+ Add Variant</button>
-      <div class="arg-row" id="cva-scope-row" style="margin-bottom:10px">
-        <span class="arg-lbl">Scope</span>
-        <input type="text" id="cva-scope" placeholder="(optional) CSS selector — audit only this region">
-        <button class="btn-pick" data-pick-arg="cva-scope" id="btn-cva-scope-pick" title="Pick element from page">🎯</button>
-      </div>
-      <label class="cap">Checks (automated)</label>
-      <div id="cva-check-list" style="display:flex;flex-direction:column;gap:1px;margin-bottom:6px"></div>
-      <span class="row" style="gap:5px;margin-bottom:10px">
-        <label class="toggle-wrap" title="Manual checks produce the same guidance on every variant, so they render once, not per variant">
-          <input type="checkbox" id="cva-include-manual">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-        </label>
-        <span style="font-size:11px;color:var(--fg2)">Include manual checks (rendered once, not per variant)</span>
-      </span>
-      <div id="cva-results"></div>
     </div>
 <div id="tm6-body" style="display:contents">
       <div>
@@ -1325,6 +1272,9 @@
         </span>
         <label class="row" style="gap:5px;font-size:11px;color:var(--fg2);cursor:pointer" title="Leave each variant tab open for manual inspection">
           <input type="checkbox" id="ab-keep-tabs" style="accent-color:var(--brand);cursor:pointer">Keep tabs open
+        </label>
+        <label class="row" style="gap:5px;font-size:11px;color:var(--fg2);cursor:pointer" title="Run the WCAG audit (every automated check, plus axe-core) on each variant in the same page load as its capture, and report what each variant introduced or resolved against Control.">
+          <input type="checkbox" id="ab-a11y-audit" style="accent-color:var(--brand);cursor:pointer">Accessibility audit
         </label>
         <label class="row" style="gap:5px;font-size:11px;color:var(--fg2);cursor:pointer" title="Show before/after crop images for each Visual Diff finding in the report. Off keeps the report text-only, smaller, and faster to build.">
           <input type="checkbox" id="ab-visual-diff-crops" style="accent-color:var(--brand);cursor:pointer">Show crop images in report

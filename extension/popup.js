@@ -252,8 +252,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   initPinButton();
   document.getElementById('btn-settings-close')?.addEventListener('click', closeSettings);
   document.getElementById('settings-backdrop')?.addEventListener('click', closeSettings);
+  // Esc closes Settings first. Otherwise it cancels a pick in progress, since
+  // clicking 🎯 leaves the keyboard here rather than on the page.
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && settingsOverlay && !settingsOverlay.hidden) closeSettings();
+    if (e.key !== 'Escape') return;
+    if (settingsOverlay && !settingsOverlay.hidden) closeSettings();
+    else if (_pick) cancelPick();
   });
 
   // Shared by both credential rows: same empty-clears-it contract, same
@@ -2473,30 +2477,50 @@ function wireAutofillArgs(el, step) {
 }
 
 // ── Element picker ────────────────────────────────────────────────────────────
-let _pickerPoller = null;
+// The pick in progress: its 🎯 button, its own poller, and the tab and document
+// picker.js went into. One at a time: a newer 🎯 ends it, and so does Esc in
+// Selenite.
+let _pick = null;
 
 async function startPicker(stepEl, step, argName, onResult) {
-  await sessionNS.remove('pickerResult');
-
+  const closing = cancelPick();
   const btn = stepEl.querySelector(`.btn-pick[data-pick-arg="${argName}"]`);
   if (btn) { btn.textContent = '…'; btn.disabled = true; }
+  const pick = _pick = { btn, poller: null, tabId: null, docId: null };
+
+  await closing;   // the old picker leaves the page before this one goes in
+  await sessionNS.remove('pickerResult');
+  // The worker reports the tab it injects into from 0.7.5 on. An older one
+  // (the extension not reloaded since) doesn't, but it uses this window's
+  // active tab, so note that here too.
+  const [active] = WIN_ID == null ? [] : await chrome.tabs.query({ active: true, windowId: WIN_ID }).catch(() => []);
+  if (_pick !== pick) return;   // ended already: Esc, or yet another 🎯
 
   const res = await chrome.runtime.sendMessage({ action: 'startPicker', winId: WIN_ID });
+  const tabId = res?.tabId ?? active?.id ?? null;
+  const [doc] = res?.ok && tabId != null ? await topDocument(tabId) : [];
+  if (_pick !== pick) {
+    // Ended while the picker was going in. A newer pick may be using that same
+    // overlay (picker.js draws one per page), so close it only if none is.
+    if (!_pick && tabId != null) closePickerIn(tabId);
+    return;
+  }
   if (!res?.ok) {
-    if (btn) { btn.textContent = '🎯'; btn.disabled = false; }
+    endPick(pick);
     alert('Could not inject picker. Make sure you are on a regular webpage (not a chrome:// page).');
     return;
   }
+  pick.tabId = tabId;
+  pick.docId = doc?.documentId ?? null;
 
-  _pickerPoller = setInterval(async () => {
+  pick.poller = setInterval(async () => {
     const { pickerResult } = await sessionNS.get('pickerResult');
-    if (!pickerResult) return;
+    // Ended while this read was in flight: Esc, a newer 🎯, or an overlapping
+    // tick that already took the result.
+    if (!pickerResult || _pick !== pick) return;
 
-    clearInterval(_pickerPoller);
-    _pickerPoller = null;
+    endPick(pick);
     await sessionNS.remove('pickerResult');
-
-    if (btn) { btn.textContent = '🎯'; btn.disabled = false; }
     if (pickerResult.cancelled) return;
 
     if (onResult) {
@@ -2511,6 +2535,50 @@ async function startPicker(stepEl, step, argName, onResult) {
     }
   }, 300);
 }
+
+// Stop this pick's own poller (never another's) and give its 🎯 back.
+function endPick(pick) {
+  clearInterval(pick.poller);
+  if (_pick === pick) _pick = null;
+  if (pick.btn) { pick.btn.textContent = '🎯'; pick.btn.disabled = false; }
+}
+
+// End the pick in progress from Selenite's side and close its picker on the
+// page. Clicking 🎯 leaves the keyboard here, so Esc rarely reaches the page
+// picker.js listens on. The close skips picker.js's pickerCancel: the pick is
+// already over, and a late cancel could land in a newer pick.
+function cancelPick() {
+  const pick = _pick;
+  if (!pick) return Promise.resolve();
+  endPick(pick);
+  return pick.tabId != null ? closePickerIn(pick.tabId) : Promise.resolve();
+}
+
+function closePickerIn(tabId) {
+  return chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => window.__selenitePickerClose?.(),
+  }).catch(() => {});   // the tab closed, or navigated and took the picker with it
+}
+
+// The document a tab shows now, as executeScript reports it. None comes back
+// from a page Selenite can't script.
+function topDocument(tabId) {
+  return chrome.scripting.executeScript({ target: { tabId }, func: () => 0 }).catch(() => []);
+}
+
+// A page that navigates or reloads takes picker.js with it and says nothing,
+// so end the pick here rather than leave its button on "…". Chrome reports the
+// same status for a pushState, a hash change or an iframe navigating, which all
+// leave the picker in place, so end it only once the tab shows a different
+// document from the one picker.js went into. A Back to a cached page counts:
+// that document may have run an earlier pick, but not this one.
+chrome.tabs.onUpdated.addListener(async (tabId, info) => {
+  const pick = _pick;
+  if (!pick || tabId !== pick.tabId || !info.status) return;
+  const [doc] = await topDocument(tabId);
+  if (_pick === pick && doc?.documentId !== pick.docId) cancelPick();
+});
 
 function applyPickerToMethod(selector, stepEl, step) {
   const method = selector.idValue ? 'id' : 'css';

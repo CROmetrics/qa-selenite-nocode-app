@@ -6705,7 +6705,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!tabId) { sendResponse({ ok: false, error: 'No active tab' }); return; }
       try {
         await chrome.scripting.executeScript({ target: { tabId }, files: ['selector.js', 'picker.js'] });
-        sendResponse({ ok: true });
+        sendResponse({ ok: true, tabId });   // where the panel closes it on its own Esc
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }

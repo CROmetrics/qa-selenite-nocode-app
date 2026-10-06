@@ -107,6 +107,11 @@
     }
   }
 
+  // Selenite's own Esc (popup.js cancelPick) closes the picker through this:
+  // clicking 🎯 leaves the keyboard in Selenite, so this page rarely gets the
+  // key. It sends nothing, because the panel has already ended the pick.
+  window.__selenitePickerClose = cleanup;
+
   function cleanup() {
     overlay.remove();
     highlight.remove();
@@ -114,5 +119,6 @@
     hint.remove();
     document.removeEventListener('keydown', onKey, true);
     window.__selenitePicker = false;
+    window.__selenitePickerClose = null;
   }
 })();

@@ -26,6 +26,15 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.5 — 2026-10-06
+
+Esc cancels the element picker from Selenite, and a pick no longer gets stuck.
+
+**Element picker**
+- **Esc in Selenite cancels a pick.** After you click 🎯, the keyboard stays in Selenite, so in 0.7.4 Esc worked only after you clicked into the page. Now Esc in Selenite closes the picker on the page and gives the 🎯 button back. If Settings is open, the first Esc closes Settings.
+- **Clicking 🎯 on another step during a pick** ends the first pick and starts the new one. Before, the first button stayed on "…", and the next click on the page could fill the wrong step, or both.
+- **Reloading or leaving the page during a pick** gives the 🎯 button back.
+
 ### 0.7.4 — 2026-10-06
 
 Esc cancels the element picker.

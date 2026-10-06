@@ -2,6 +2,48 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-06 — 0.7.5
+
+Esc now cancels a pick from Selenite, where the keyboard actually is. 0.7.4 made Esc on the page give the 🎯 button back, but clicking 🎯 leaves keyboard focus in Selenite, so a real Esc went to Selenite and did nothing. This release also closes the other two ways 0.7.4 listed for a pick to get stuck.
+
+### Fixed
+
+- **Esc in Selenite cancels a pick in progress.** popup.js's Esc handler still closes Settings first. Otherwise it calls `cancelPick`, which gives the 🎯 button back and closes the picker on the page. picker.js exposes its cleanup as `__selenitePickerClose`, and the panel runs it in the picker's tab with `chrome.scripting.executeScript`. That close sends no `pickerCancel`: the pick is already over, and a late cancel could land in a newer pick.
+- **A second 🎯 during a pick no longer strands the first or misfiles the next pick.** `startPicker` kept one module-level `_pickerPoller` and overwrote it on a second 🎯. Each poller then cleared whatever interval that variable held, not its own. Step 1's button stayed on "…", and its poller kept running and took later picks. On 0.7.4 in a real Chrome, one click on the page filled both steps.
+  - `_pick` now holds the pick's button, poller, tab and document.
+  - A newer 🎯 ends the old pick first, and each pick stops only its own poller.
+  - A tick that finds `_pick` changed does nothing, so overlapping ticks apply a result once.
+- **A page that reloads or navigates mid-pick** takes picker.js with it, without a message, which left the button on "…". Right after injecting, the panel records the document picker.js went into: the `documentId` an `executeScript` reports. On any status change of that tab, `loading` or `complete`, the pick ends only if the tab now shows a different document or can't be scripted.
+  - **Why not the status alone.** This release first ended the pick on `status: 'loading'`. Chrome reports the same for pushState, replaceState, a hash change and any iframe navigating, so live picks were cancelled on single-page sites and on pages with ad frames. A reload's `changeInfo` is identical to an iframe navigation's, so no `changeInfo` test can tell them apart. The session that took the poller-race task measured this in a real Chrome before the release was pushed, and wrote the document check.
+  - **A Back to a cached page is a different document**, even when it ran an earlier pick. A never-cleared "picker was here" marker failed this case, which is why the check compares document ids.
+  - **A slow reload** can report `loading` while the old document still answers, so the check runs again on `complete`.
+- **The picker's tab.** The worker's `startPicker` reply now includes the `tabId` it injected into. A worker from before this release keeps running until the extension is reloaded, and it doesn't send the tab. So the panel also notes its window's active tab, the tab that worker injects into.
+
+### Verification
+
+- **jsc harness:** the real picker.js and selector.js on a fake page with document ids, the whole background.js, and popup.js's picker block and Esc handler. Its 38 checks cover:
+  - Esc on the page, a worker restart mid-pick, a click, and two windows (0.7.4's cases).
+  - Esc in Selenite, Esc with Settings open, a second 🎯, and a reload, with and without the tab event.
+  - Esc while the picker is still being injected, overlapping ticks, a closed tab, and the worker's tab winning over the panel's.
+  - In-page navigations, a slow reload, and a Back to a cached page that ran an earlier pick.
+  - **Results:** all 38 pass. On 0.7.4, 19 fail. On this release's first version, the status-only check, 3 fail: the in-page and slow-reload cases. With a 0.7.5 panel on a 0.7.4 worker (the extension not reloaded), only a tab switch between the two lookups fails.
+- **Real Chrome:** system Chrome 154, the unpacked extension loaded through `Extensions.loadUnpacked`, Selenite in its floating window. 🎯 was clicked with real mouse events inside Selenite, which left keyboard focus in Selenite's frame.
+  - **Esc** sent to Selenite's window closed the picker on the page and gave 🎯 back.
+  - **With Settings open**, the first Esc closed Settings and the second cancelled the pick.
+  - **A second 🎯** gave step 1 its button back, and the click went to step 2 only.
+  - **A page reload** gave 🎯 back by itself.
+  - **pushState, replaceState, a hash change and an iframe navigating** left the pick open.
+  - **Unchanged:** Esc on the page and a click still work.
+  - **Results:** all 21 checks pass. On 0.7.4, 8 of the 16 non-navigation checks fail. On the status-only version, the 4 in-page cases fail.
+- **The poller-race session's own checks:**
+  - **Its jsc harness:** 106 checks, with five mutations, one per guard, each failing a specific case.
+  - **Its real-Chrome probe:** a delayed (1.2 s) reload and a Back to a bfcached page each end the pick. Same- and cross-origin iframe navigations keep it, and a click afterwards fills the step.
+- **Tests:** all seven CI suites pass.
+
+### Not changed
+
+- **"…" stays disabled during a pick**, so a pick is cancelled with Esc, not a click. If a click on "…" cancelled, a double-click on 🎯 would start a pick and cancel it at once.
+
 ## 2026-10-06 — 0.7.4
 
 Esc in the element picker never reached the panel. picker.js sends `pickerCancel` on Esc, but the worker handled only `pickerResult`, so the panel's poller never saw the cancel. The 🎯 button stayed disabled, showing "…", and the poller kept running until Selenite was reopened.

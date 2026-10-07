@@ -2,6 +2,46 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-07 — 0.7.7
+
+The Function Queue can run through the Test Agent. A step that fails because its selector no longer finds anything is done by the agent instead, and the run says so in a report. Two new steps are the agent itself.
+
+### Added
+
+- **Engine: Classic / Test Agent** in Functional Testing → Target. Classic is unchanged. With the Test Agent, each step still runs from its saved selector first; only an error that proves the step did nothing (`ID / Name / CSS selector / XPath / Link text / Element / Select ... not found`, or `Autofill matched no fields`) hands that one step to the agent. A disabled control, a submit with no form around it, a navigation mid-step, or any step that is not a click, fill, submit, autofill or dropdown is never healed. After a lookup failure it first retries twice, a second apart, so a late element does not cost an agent run.
+  - The agent shares the console mirror's debugger session and never detaches it. It is limited to 5 heals a run and 90 seconds a heal, and the first heal that fails stops the queue.
+  - **A heal is a finding, never a pass.** Statuses are `passed`, `healed`, `healed-unverified`, `done-agent-reported`, `failed`, `blocked`, `stopped`, `skipped` and `not-attempted`. `healed` needs a measurement (a delivered click that moved the page, text that reads back exactly, a dropdown that holds the wanted option); a click no element received is a failure whatever the agent said.
+  - The agent ends a goal by calling a `report_result` tool, so the outcome is a field and not a regex over prose; the loop handles that call before it touches any other block in the turn, because an unanswered `tool_use` makes the next request a 400.
+- **Navigate to (Test Agent)** — the funnel crawl as a queue step. Passes when the tab arrives, comparing host and path (the Open URL step adds `cro_mode=qa`, which `funnelUrlKey` would not match).
+- **Prompt Function** — a typed instruction carried out by the agent. Its only inputs are the instruction and the step's usual Delay. Nothing measures what a free-text instruction asked for, so a finished step is `done-agent-reported`, never `passed`. (A measured *Done when* was built for it and removed before release: the step needs no other inputs.)
+- **Open as Function Queue** in the Test Agent tab's Funnel Crawl card.
+- A report section for the run, a `function-queue` block in Run Diagnostics, and a `queue` key in the debug log. They carry labels, statuses and URLs without their query, and nothing a tester typed: not a Fill value, a Prompt or a Notes field.
+- `typed` on a Funnel Crawl `type` action: whether the text landed. An `input` event, or a value that grew, is delivery; an unchanged value that does not contain the text is a measured failure; a password is never read, and `null` is not `false`. 11 of 11 recorded `type` actions had been identical whether or not the text landed. The agent is told only on a measured failure.
+
+### Found
+
+- **A step whose element does not exist has always "passed".** Measured in Chrome 154 against this extension: `chrome.scripting.executeScript` does not reject when the injected function throws. A sync throw, an async throw, a rejected promise, a thrown string and a `ReferenceError` all resolve as `[{documentId, frameId, result: null}]`, with no `error` key. So every `throw new Error('ID not found: x')` in Click, Fill, Submit and Select Dropdown, and the `Element is disabled, click ignored` check, was swallowed inside the page, and the step reported success.
+  - **Classic's outcome is unchanged**, because making a long-"passing" queue start failing is the owner's call, not a side effect of this release. It is no longer silent: the Console now says `⚠ CSS selector not found: #x — the step did nothing, and Classic goes on.`
+  - **The Test Agent engine is strict**: the step functions now *return* their failure (`{ __selError }`) instead of throwing in the page, and the worker throws it. That is what lets a failed lookup hand the step to the agent, and what makes a disabled control or a missing form fail the step instead of vanishing.
+  - **To make Classic fail such a step too** it is a one-line change: set `_stepsStrict` in `runQueue` regardless of `healOn`.
+
+### Changed
+
+- A queue run now keeps a record (`queueRun`), written before `running` flips false. Classic runs keep one too, but only a Test Agent run opens a report.
+- A second **Execute** while a queue is running is refused instead of starting a second queue. The guard is the in-memory `_running`, not `_runWin`, which is persisted and restored after a worker restart.
+- The queue's MV3 heartbeat now runs inside `runQueue`, which also covers `Wait` steps and long delays.
+- `fnPreClickProbeFn` reports `nothingAtPoint: null` with `notProbed: 'no-coordinate'` for an action with no coordinate; it used to say there was nothing at (-1, -1), which `fnStopSentence` could turn into a claim about the page. A `type` action now waits 400 ms before it is read back.
+- `fnChooseOptionFn` takes an optional third argument, the option a dropdown step must end on. The funnel passes none and still picks at random.
+
+### Verification
+
+- `queue-agent.test.js` (new, in CI): the whole of `background.js` run as a service worker against a fake page and a scripted model. It covers the heal inside the console mirror's session, the cap, Stop mid-heal, a missing key, a stale persisted run window, Prompt Function and Navigate, and that Funnel Crawl itself is unchanged.
+- `fixtures-funnel-sentences.json`: every branch of `fnStopSentence` and every real recorded segment, generated from the build before this change. The funnel's sentences are byte-identical (the generator reproduces the file exactly).
+- Mutation-checked: each guard above was removed in a scratch copy and a suite failed.
+- **Real Chrome 154** (system Chrome, the real unpacked extension loaded over a pipe, a Retina page, a scripted model in place of the API): 39 checks pass. Heal inside the console mirror's session (Active tab), New tab, New tab after `SPA: Resize`, a fill that replaces a pre-filled field and reads back exactly, a native `<select>`, Prompt Function (run before its Done-when was removed), Navigate (host + path), a disabled control not healed, Funnel Crawl unchanged, one queue at a time, Classic's missing selector, and **Execute from the panel opening the report tab by itself**.
+- **The jsc harness had the one thing wrong that mattered.** It modelled `executeScript` as rejecting on a throw, so every "not found" test passed for a step that could never have failed in a browser. The real-Chrome gate found it; the harness now swallows throws as Chrome does.
+- Not yet verified on a real run: the model itself. The vision loop needs an Anthropic key and a reloaded extension; everything around it has run in real Chrome.
+
 ## 2026-10-06 — 0.7.6
 
 The two picker bugs that predate 0.7.5 are fixed. The session that took the poller-race task found both.

@@ -95,7 +95,8 @@
 "url": "https://www.lesschwab.com/wheels"
 },
 "step": 1,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -143,7 +144,8 @@
 "url": "https://www.lesschwab.com/wheels"
 },
 "step": 2,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -191,7 +193,8 @@
 "url": "https://www.lesschwab.com/wheels"
 },
 "step": 3,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -239,7 +242,8 @@
 "url": "https://www.lesschwab.com/wheels"
 },
 "step": 4,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -287,7 +291,8 @@
 "url": "https://www.lesschwab.com/wheels"
 },
 "step": 5,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -335,7 +340,8 @@
 "url": "https://www.lesschwab.com/wheels"
 },
 "step": 6,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -383,7 +389,8 @@
 "url": "https://www.lesschwab.com/wheels"
 },
 "step": 7,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 }
 ],
 "apiStopReason": null,
@@ -468,7 +475,8 @@
 "url": "https://www.lesschwab.com/wheels"
 },
 "step": 1,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -523,7 +531,8 @@
 "url": "https://www.lesschwab.com/wheels"
 },
 "step": 2,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -578,7 +587,8 @@
 "url": "https://www.lesschwab.com/wheels"
 },
 "step": 3,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -633,7 +643,8 @@
 "url": "https://www.lesschwab.com/schedule-appointment/services"
 },
 "step": 4,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -688,7 +699,8 @@
 "url": "https://www.lesschwab.com/schedule-appointment/services"
 },
 "step": 5,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "scroll",
@@ -743,7 +755,8 @@
 "url": "https://www.lesschwab.com/schedule-appointment/services"
 },
 "step": 6,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -798,7 +811,8 @@
 "url": "https://www.lesschwab.com/schedule-appointment/date"
 },
 "step": 7,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 }
 ],
 "apiStopReason": null,
@@ -883,7 +897,8 @@
 "url": "https://www.lesschwab.com/schedule-appointment/services"
 },
 "step": 1,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "scroll",
@@ -938,7 +953,8 @@
 "url": "https://www.lesschwab.com/schedule-appointment/services"
 },
 "step": 2,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -993,7 +1009,8 @@
 "url": "https://www.lesschwab.com/schedule-appointment/date"
 },
 "step": 3,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 }
 ],
 "apiStopReason": null,
@@ -1078,7 +1095,8 @@
 "url": "https://www.healthypawspetinsurance.com/"
 },
 "step": 1,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "type",
@@ -1122,7 +1140,8 @@
 "url": "https://www.healthypawspetinsurance.com/"
 },
 "step": 2,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -1177,7 +1196,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 3,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 }
 ],
 "apiStopReason": null,
@@ -1262,7 +1282,8 @@
 "url": "https://www.healthypawspetinsurance.com/"
 },
 "step": 1,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "type",
@@ -1306,7 +1327,8 @@
 "url": "https://www.healthypawspetinsurance.com/"
 },
 "step": 2,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -1361,7 +1383,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 3,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -1416,7 +1439,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 4,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -1471,7 +1495,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 5,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -1526,7 +1551,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 6,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -1581,7 +1607,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 7,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -1636,7 +1663,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 8,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -1691,7 +1719,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 9,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -1746,7 +1775,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 10,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 }
 ],
 "apiStopReason": null,
@@ -1831,7 +1861,8 @@
 "url": "https://www.healthypawspetinsurance.com/"
 },
 "step": 1,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "type",
@@ -1875,7 +1906,8 @@
 "url": "https://www.healthypawspetinsurance.com/"
 },
 "step": 2,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -1930,7 +1962,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 3,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -1985,7 +2018,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 4,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -2040,7 +2074,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 5,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -2125,7 +2160,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 6,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -2180,7 +2216,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 7,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "type",
@@ -2224,7 +2261,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 8,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -2279,7 +2317,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 9,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "type",
@@ -2323,7 +2362,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 10,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 }
 ],
 "apiStopReason": null,
@@ -2408,7 +2448,8 @@
 "url": "https://www.healthypawspetinsurance.com/"
 },
 "step": 1,
-"structuralMutations": 4
+"structuralMutations": 4,
+"typed": null
 },
 {
 "action": "type",
@@ -2452,7 +2493,8 @@
 "url": "https://www.healthypawspetinsurance.com/"
 },
 "step": 2,
-"structuralMutations": 0
+"structuralMutations": 0,
+"typed": null
 },
 {
 "action": "left_click",
@@ -2507,7 +2549,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 3,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -2562,7 +2605,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 4,
-"structuralMutations": 6
+"structuralMutations": 6,
+"typed": null
 },
 {
 "action": "left_click",
@@ -2617,7 +2661,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 5,
-"structuralMutations": 5
+"structuralMutations": 5,
+"typed": null
 },
 {
 "action": "left_click",
@@ -2702,7 +2747,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 6,
-"structuralMutations": 2
+"structuralMutations": 2,
+"typed": null
 },
 {
 "action": "left_click",
@@ -2757,7 +2803,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 7,
-"structuralMutations": 7
+"structuralMutations": 7,
+"typed": null
 },
 {
 "action": "type",
@@ -2801,7 +2848,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 8,
-"structuralMutations": 0
+"structuralMutations": 0,
+"typed": null
 },
 {
 "action": "left_click",
@@ -2856,7 +2904,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 9,
-"structuralMutations": 8
+"structuralMutations": 8,
+"typed": null
 },
 {
 "action": "type",
@@ -2900,7 +2949,8 @@
 "url": "https://www.healthypawspetinsurance.com/quote/step1"
 },
 "step": 10,
-"structuralMutations": 0
+"structuralMutations": 0,
+"typed": null
 }
 ],
 "apiStopReason": "end_turn",
@@ -2985,7 +3035,8 @@
 "url": "https://www.toryburch.com/en-us/shoes/boots-booties/"
 },
 "step": 1,
-"structuralMutations": 316
+"structuralMutations": 316,
+"typed": null
 },
 {
 "action": "screenshot",
@@ -3029,7 +3080,8 @@
 "url": "https://www.toryburch.com/en-us/shoes/boots-booties/"
 },
 "step": 2,
-"structuralMutations": 0
+"structuralMutations": 0,
+"typed": null
 },
 {
 "action": "left_click",
@@ -3084,7 +3136,8 @@
 "url": "https://www.toryburch.com/en-us/shoes/boots-booties/"
 },
 "step": 3,
-"structuralMutations": 6
+"structuralMutations": 6,
+"typed": null
 },
 {
 "action": "left_click",
@@ -3139,7 +3192,8 @@
 "url": "https://www.toryburch.com/en-us/shoes/boots-booties/"
 },
 "step": 4,
-"structuralMutations": 2
+"structuralMutations": 2,
+"typed": null
 }
 ],
 "apiStopReason": null,
@@ -3224,7 +3278,8 @@
 "url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
 },
 "step": 1,
-"structuralMutations": 322
+"structuralMutations": 322,
+"typed": null
 },
 {
 "action": "left_click",
@@ -3279,7 +3334,8 @@
 "url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
 },
 "step": 2,
-"structuralMutations": 23
+"structuralMutations": 23,
+"typed": null
 },
 {
 "action": "left_click",
@@ -3334,7 +3390,8 @@
 "url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
 },
 "step": 3,
-"structuralMutations": 5
+"structuralMutations": 5,
+"typed": null
 },
 {
 "action": "left_click",
@@ -3389,7 +3446,8 @@
 "url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
 },
 "step": 4,
-"structuralMutations": 1
+"structuralMutations": 1,
+"typed": null
 },
 {
 "action": "left_click",
@@ -3444,7 +3502,8 @@
 "url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
 },
 "step": 5,
-"structuralMutations": 2
+"structuralMutations": 2,
+"typed": null
 },
 {
 "action": "left_click",
@@ -3499,7 +3558,8 @@
 "url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
 },
 "step": 6,
-"structuralMutations": 12
+"structuralMutations": 12,
+"typed": null
 },
 {
 "action": "left_click",
@@ -3554,7 +3614,8 @@
 "url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
 },
 "step": 7,
-"structuralMutations": 1
+"structuralMutations": 1,
+"typed": null
 },
 {
 "action": "left_click",
@@ -3609,7 +3670,8 @@
 "url": "https://www.toryburch.com/en-us/handbags/bunny-knot/"
 },
 "step": 8,
-"structuralMutations": 4
+"structuralMutations": 4,
+"typed": null
 },
 {
 "action": "left_click",
@@ -3664,7 +3726,8 @@
 "url": "https://www.toryburch.com/es-us/handbags/bunny-knot/?fromCountry=US&toCountry=US"
 },
 "step": 9,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -3719,7 +3782,8 @@
 "url": "https://www.toryburch.com/es-us/handbags/bunny-knot/?fromCountry=US&toCountry=US"
 },
 "step": 10,
-"structuralMutations": 2
+"structuralMutations": 2,
+"typed": null
 },
 {
 "action": "left_click",
@@ -3774,7 +3838,8 @@
 "url": "https://www.toryburch.com/es-us/handbags/bunny-knot/?fromCountry=US&toCountry=US"
 },
 "step": 11,
-"structuralMutations": 1
+"structuralMutations": 1,
+"typed": null
 },
 {
 "action": "left_click",
@@ -3829,7 +3894,8 @@
 "url": "https://www.toryburch.com/es-us/sale/categories/sport-sale/"
 },
 "step": 12,
-"structuralMutations": 376
+"structuralMutations": 376,
+"typed": null
 }
 ],
 "apiStopReason": null,
@@ -3914,7 +3980,8 @@
 "url": "https://www.toryburch.com/en-us/"
 },
 "step": 1,
-"structuralMutations": 7
+"structuralMutations": 7,
+"typed": null
 },
 {
 "action": "scroll",
@@ -3969,7 +4036,8 @@
 "url": "https://www.toryburch.com/en-us/"
 },
 "step": 2,
-"structuralMutations": 7
+"structuralMutations": 7,
+"typed": null
 },
 {
 "action": "left_click",
@@ -4024,7 +4092,8 @@
 "url": "https://www.toryburch.com/en-us/"
 },
 "step": 3,
-"structuralMutations": 11
+"structuralMutations": 11,
+"typed": null
 },
 {
 "action": "left_click",
@@ -4083,7 +4152,8 @@
 "url": "https://www.toryburch.com/en-us/"
 },
 "step": 4,
-"structuralMutations": 1
+"structuralMutations": 1,
+"typed": null
 },
 {
 "action": "left_click",
@@ -4142,7 +4212,8 @@
 "url": "https://www.toryburch.com/en-us/"
 },
 "step": 5,
-"structuralMutations": 4
+"structuralMutations": 4,
+"typed": null
 },
 {
 "action": "left_click",
@@ -4201,7 +4272,8 @@
 "url": "https://www.toryburch.com/es-us/?fromCountry=US&toCountry=US"
 },
 "step": 6,
-"structuralMutations": null
+"structuralMutations": null,
+"typed": null
 },
 {
 "action": "left_click",
@@ -4256,7 +4328,8 @@
 "url": "https://www.toryburch.com/es-us/?fromCountry=US&toCountry=US"
 },
 "step": 7,
-"structuralMutations": 2
+"structuralMutations": 2,
+"typed": null
 },
 {
 "action": "left_click",
@@ -4315,7 +4388,8 @@
 "url": "https://www.toryburch.com/es-us/?fromCountry=US&toCountry=US"
 },
 "step": 8,
-"structuralMutations": 1
+"structuralMutations": 1,
+"typed": null
 },
 {
 "action": "left_click",
@@ -4374,7 +4448,8 @@
 "url": "https://www.toryburch.com/es-us/sale/categories/sport-sale/"
 },
 "step": 9,
-"structuralMutations": 393
+"structuralMutations": 393,
+"typed": null
 }
 ],
 "apiStopReason": null,

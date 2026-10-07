@@ -19,12 +19,28 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - WCAG / Accessibility mode — full WCAG 2.2 audit (heuristics + axe-core) with region scoping, check presets, click-to-highlight findings, JSON export, and per-URL run history
 - Performance/Load mode — median page-load metrics (TTFB, FCP, LCP, CLS, long tasks, resources) over N runs, checked against Core Web Vitals budgets, with per-URL history
 - Funnel Crawl — an AI agent clicks through Start → Middle waypoint(s) → End to verify a funnel actually connects
+- **Test Agent engine** for the Function Queue — each step still runs from its saved selector first; when a selector no longer finds anything, an AI agent does that one step by looking at the page, and the run opens a report that lists every heal as a finding. Two steps are the agent itself: **Navigate to (Test Agent)** (the funnel crawl as one step) and **Prompt Function** (type an instruction; the agent carries it out)
 - Agentic Testing (Sonnet) and Agentic Analysis (Opus) — optional AI-powered vision judgment and result summaries via Anthropic's API
 - Stop execution at any time
 
 ## Version History
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
+
+### 0.7.7 — 2026-10-07
+
+The Function Queue can run through the Test Agent: a step whose selector no longer finds anything is done by an AI agent, and the run opens a report that lists every heal as a finding.
+
+**Function Queue**
+- **Engine: Classic / Test Agent** beside Execute. Classic is unchanged. The Test Agent runs each step from its saved selector first and takes over only a step whose element was not found (at most 5 a run). A heal is a finding, never a pass.
+- **Navigate to (Test Agent)** and **Prompt Function** are two new steps that are the agent itself. Prompt Function is a typed instruction and a delay, nothing else. **Open as Function Queue** in the Funnel Crawl card builds a queue from a funnel's waypoints.
+- A Test Agent run opens a report. Exports carry labels, statuses and URLs without their query, and never a Fill value, Prompt or Notes text.
+
+**Found**
+- **A step whose element does not exist has always passed in Classic.** Chrome swallows the error the page throws. Classic's result is unchanged (it now says so in the Console); the Test Agent engine treats the step as failed.
+
+**Funnel Crawl**
+- A `type` action now records whether the text landed.
 
 ### 0.7.6 — 2026-10-06
 
@@ -140,6 +156,19 @@ Earlier versions: see [`CHANGELOG.md`](CHANGELOG.md) and `git log`. The version 
    - Optionally set a per-step delay (seconds).
    - Use the checkbox to enable/disable individual steps.
 6. Click **Execute** to run the queue.
+
+#### Engine: Classic or Test Agent
+
+The **Engine** setting in the Target section chooses how a failing step is handled.
+
+- **Classic** (default) runs every step by its saved selector and stops at the first error, exactly as before. Nothing leaves your machine.
+- **Test Agent** runs each step the same way first. When a step fails because its selector no longer finds anything (`... not found`, or Autofill matching no fields), an AI agent (Sonnet) does *that one step* by looking at the page, then the queue goes on. It never takes over a step that failed for another reason (a disabled button, a form that does not exist, a page that navigated away), and never a step that is not a click, fill, submit, autofill or dropdown. At most five steps are healed per run, and the first heal that fails stops the queue.
+- A **Test Agent** run opens a report. A step is **PASSED** only when its own saved selector worked. A **HEALED** step is a finding: the saved step is out of date, and the report names the control the agent used so you can update the selector. **HEALED · UNVERIFIED** and **DONE · AGENT-REPORTED** mean the agent says it did the step and nothing measurable confirms it; they are never counted as passed.
+- It needs an **Anthropic API key**. Screenshots, any **Fill** text, **Notes** and **Prompt** text go to Anthropic when the Test Agent is used; a report never contains them.
+- It cannot run with **Loop continuously**, which has no end to report on.
+- **Classic and a missing selector.** In Chrome a step whose element does not exist does not fail: the page swallows the error, so Classic goes on to the next step (it now says so in the Console with a `⚠`). The Test Agent engine treats the same step as failed and hands it to the agent.
+
+**Navigate to (Test Agent)** takes a URL and optional notes, and gets the tab there by clicking the page's real UI, the way Funnel Crawl does. It passes when the tab arrives (host and path). **Prompt Function** takes a free-text instruction and runs it where it sits in the queue. It has the instruction and the step's usual **Delay (s)**, and nothing else. Nothing measures what a free-text instruction asked for, so a finished step reads *done (agent-reported)*, never *passed*. A queue that contains either step always runs on the Test Agent. In the Test Agent tab, **Open as Function Queue** turns a funnel's waypoints into a queue of these steps, so other steps can sit between them.
 
 ### Tracking Metrics
 
@@ -262,6 +291,8 @@ A variant the experiment platform says was not served its variation is marked no
 | `switch_to` | Switches context to a frame, parent frame, main page, or window |
 | `alert` | Accepts, dismisses, or reads a browser alert dialog |
 | `track_metric` | Checks the run's console output for a metric defined in the Metrics section |
+| `agent_navigate` | **Navigate to (Test Agent)** — an AI agent gets the tab to a URL by clicking the page's real UI (needs an Anthropic API key) |
+| `agent_prompt` | **Prompt Function** — an AI agent carries out a typed instruction at this point in the queue, (needs an Anthropic API key) |
 
 ## Project Structure
 

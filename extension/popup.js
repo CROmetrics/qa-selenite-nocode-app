@@ -168,6 +168,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   await loadUniversalDelay();
   await loadQueueMetricsTracking();
+  await loadQueueEngine();
   await loadBcTagFilter();
   await restoreCaptureState();
   initAccordions();
@@ -330,6 +331,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Metrics Tracking toggle (Function Queue)
   document.getElementById('qmt-enabled').addEventListener('change', saveQueueMetricsTracking);
+
+  // Engine (Classic / Test Agent) — and Loop, which the Test Agent cannot run.
+  document.querySelectorAll('input[name=engine]').forEach(r => r.addEventListener('change', saveQueueEngine));
+  document.querySelectorAll('input[name=mode]').forEach(r => r.addEventListener('change', syncEngineControl));
 
   // Console filter input
   document.getElementById('filter-input').addEventListener('input', renderLog);
@@ -715,6 +720,10 @@ function taRenderFunnel() {
         <button class="btn danger sm" id="btn-fn-crawl-stop" type="button" style="display:none">Stop</button>
         <span id="fn-crawl-status" style="font-size:10px;color:var(--fg3)">Not crawled yet.</span>
       </div>
+      <div class="row" style="gap:6px;margin-bottom:8px">
+        <button class="btn sm" id="btn-fn-to-queue" type="button" title="Build the Function Queue from these waypoints: an Open URL step for Start, then one Navigate to (Test Agent) step per waypoint, so other steps (fill, click, Prompt Function) can sit between them">Open as Function Queue</button>
+        <span style="font-size:10px;color:var(--fg3)">Same agent, as steps you can mix with others.</span>
+      </div>
       <label class="cap">End (required)</label>
       <input type="text" id="fn-end" value="${esc(funnelState.end)}" placeholder="https://example.com/confirmation" style="width:100%;margin-bottom:8px">
       <label class="cap">Supplemental Instructions (optional)</label>
@@ -744,12 +753,35 @@ function taRenderFunnel() {
   });
   slot.querySelector('#btn-fn-crawl').addEventListener('click', runFnDiscoverPath);
   slot.querySelector('#btn-fn-crawl-stop').addEventListener('click', fnStopCrawl);
+  slot.querySelector('#btn-fn-to-queue').addEventListener('click', fnOpenAsQueue);
   slot.querySelector('#fn-fill-ticket').addEventListener('click', () => fillOneFromTicket('funnel'));
   // The form was just rebuilt with the button disabled; getActiveContext()
   // is async so this resolves a moment later — same fire-and-forget pattern
   // as every other refreshXFillButton() call, just triggered from a render
   // instead of from init.
   refreshAllFillButtons();
+}
+
+// The funnel's waypoints as a Function Queue: the locked Open URL step for Start,
+// then one Navigate to (Test Agent) step per waypoint after it. The Supplemental
+// Instructions become each Navigate step's notes, so they are visible there; they
+// persist with the queue and with any script saved from it, which is said.
+function fnOpenAsQueue() {
+  const wps = funnelWaypoints();
+  if (wps.length < 2) { alert('Fill in a Start and an End first.'); return; }
+  const hasSteps = steps.some(st => !st.locked);
+  if (hasSteps && !confirm('Replace the Function Queue with this funnel?\n\nThe Supplemental Instructions are copied into each Navigate step\'s notes, and stay there if you save the queue as a script.')) return;
+  document.getElementById('step-list').innerHTML = '<div id="empty-msg">No steps yet — click + Add Step to begin</div>';
+  steps = [];
+  nextId = 1;
+  nextGroupId = 1;   // full replace: no prior groups to collide with
+  ensureOpenUrlFirst({ inputs: { url: wps[0], params: [], qa_mode: false } });
+  const notes = (funnelState.supplementalPrompt || '').trim();
+  wps.slice(1).forEach(u => addStep({ func: 'agent_navigate', inputs: { url: u, notes } }));
+  renderGroups();
+  persistQueue();
+  showTab('build');
+  openAccordion('acc-queue');
 }
 
 function renderFunnelResults(el, run) {
@@ -1087,6 +1119,7 @@ async function syncRunState() {
     document.getElementById('log-out').innerHTML = '';
   }
   _wasRunning = !!running;
+  if (!running) await maybeOpenQueueReport();
 }
 
 // ── Log sync ──────────────────────────────────────────────────────────────
@@ -1791,6 +1824,9 @@ function applyTarget(target) {
     const t = document.querySelector(`input[name=tabtarget][value="${target.tabTarget}"]`);
     if (t) t.checked = true;
   }
+  // Setting .checked from script fires no change event, so a loaded script that
+  // switches to Loop would otherwise leave the Engine control out of step.
+  syncEngineControl();
 }
 
 // Saved scripts are stored either as a bare step array (legacy format) or as
@@ -1804,10 +1840,73 @@ function scriptTarget(data) {
   return (data && !Array.isArray(data) && data.target) ? data.target : null;
 }
 
+// ── Engine: Classic / Test Agent ────────────────────────────────────────────
+// Classic replays each step by its saved selector. The Test Agent runs it that
+// way FIRST and, when the selector no longer finds anything, does that one step by
+// looking at the page. Two steps (Navigate to, Prompt Function) are the agent and
+// have no classic form, so a queue that holds one always runs on it.
+async function loadQueueEngine() {
+  const { queueEngine = 'classic' } = await chrome.storage.local.get('queueEngine');
+  const r = document.querySelector(`input[name=engine][value="${queueEngine}"]`);
+  if (r) r.checked = true;
+  syncEngineControl();
+}
+
+async function saveQueueEngine() {
+  await chrome.storage.local.set({
+    queueEngine: document.querySelector('input[name=engine]:checked')?.value || 'classic'
+  });
+  syncEngineControl();
+}
+
+const QUEUE_AGENT_FUNCS = ['agent_navigate', 'agent_prompt'];
+function queueHasAgentSteps() {
+  return steps.some(s => s.enabled && QUEUE_AGENT_FUNCS.indexOf(s.func) !== -1);
+}
+
+// The engine this run will use. A loop has no end to report on and would repeat
+// an agent step forever, so a loop is always Classic (runQueue refuses the
+// combination with an agent step outright).
+function effectiveEngine() {
+  if (document.querySelector('input[name=mode]:checked')?.value === 'loop') return 'classic';
+  const chosen = document.querySelector('input[name=engine]:checked')?.value === 'agent';
+  return (chosen || queueHasAgentSteps()) ? 'agent' : 'classic';
+}
+
+function syncEngineControl() {
+  const agent = document.getElementById('engine-agent');
+  if (!agent) return;
+  const loop = document.querySelector('input[name=mode]:checked')?.value === 'loop';
+  const chosen = document.querySelector('input[name=engine]:checked')?.value === 'agent';
+  const needs = queueHasAgentSteps();
+  agent.disabled = loop;
+  const note = document.getElementById('engine-note');
+  if (!note) return;
+  let text = '';
+  if (loop && needs) text = 'This queue has a Navigate or Prompt Function step, which is the Test Agent, and a loop would repeat it forever. Choose "Close after run" to run it.';
+  else if (loop) text = 'Loop continuously always runs Classic: a loop has no end to report on.';
+  else if (needs && !chosen) text = 'This queue has a Navigate or Prompt Function step, which is the Test Agent, so this run uses it.';
+  note.textContent = text;
+  note.style.display = text ? '' : 'none';
+}
+
 // ── Run / Stop ────────────────────────────────────────────────────────────
+// While a Test Agent run's report is owed: { startedAt }. The worker writes the
+// run's record before it says it has finished, and syncRunState builds the report
+// from it — so the panel does not hold a message open for minutes, and a panel
+// that reloads mid-run still finds the record.
+let _queueReport = null;
+let _queueReportBusy = false;
+
 async function runQueue() {
   const mode       = document.querySelector('input[name=mode]:checked').value;
   const tabTarget  = document.querySelector('input[name=tabtarget]:checked').value;
+
+  if (mode === 'loop' && queueHasAgentSteps()) {
+    alert('A Navigate or Prompt Function step is the Test Agent, and a loop would repeat it forever. Choose "Close after run".');
+    return;
+  }
+  const engine = effectiveEngine();
 
   // Get the active tab id if needed
   let targetTabId = null;
@@ -1816,8 +1915,9 @@ async function runQueue() {
     targetTabId = tab?.id || null;
   }
 
+  // groupName rides along so an agent step can be named by its group in a report.
   const queue = steps.map(s => ({
-    func: s.func, enabled: s.enabled, delay: s.delay, inputs: { ...s.inputs }
+    func: s.func, enabled: s.enabled, delay: s.delay, inputs: { ...s.inputs }, groupName: s.groupName || null
   }));
 
   const { universalDelay = { enabled: false, seconds: '1' } } =
@@ -1825,13 +1925,43 @@ async function runQueue() {
   const { queueMetricsTracking = false } =
     await chrome.storage.local.get('queueMetricsTracking');
 
-  await chrome.runtime.sendMessage({
+  const startedAt = Date.now();
+  if (engine === 'agent') _queueReport = { startedAt };
+  const res = await chrome.runtime.sendMessage({
     action: 'run',
-    payload: { queue, mode, targetTabId, universalDelay, winId: WIN_ID, trackMetricsForRun: queueMetricsTracking }
+    payload: { queue, mode, targetTabId, universalDelay, winId: WIN_ID, trackMetricsForRun: queueMetricsTracking, engine }
   });
+  if (res && res.ok === false) {
+    _queueReport = null;
+    alert(res.error || 'The queue could not start.');
+    return;
+  }
 
   showTab('console');
   syncRunState();
+}
+
+// The Test Agent run's report, once its record is there. Called on every poll
+// while idle, so a run too short to have been seen "running" is still reported.
+async function maybeOpenQueueReport() {
+  if (!_queueReport || _queueReportBusy) return;
+  const { queueRun } = await sessionNS.get('queueRun');
+  // Not this run's record yet (an earlier run's is still in storage).
+  if (!queueRun || !(queueRun.startedAt >= _queueReport.startedAt) || queueRun.engine !== 'agent') return;
+  _queueReportBusy = true;
+  _queueReport = null;
+  try {
+    await openQueueReport(queueRun);
+  } catch (e) {
+    alert('The Function Queue report could not be built: ' + e.message);
+  } finally {
+    _queueReportBusy = false;
+  }
+}
+
+async function openQueueReport(run) {
+  const modes = [{ mode: 'queue', name: 'Functional Queue', status: 'ran', data: run }];
+  await openReportTab({ ts: Date.now(), pageUrls: abPageUrls(modes), modes, extraHtml: '' });
 }
 
 async function stopQueue() {
@@ -2327,6 +2457,30 @@ function buildResizeArgsHTML(step) {
     </div>`;
 }
 
+// Navigate to (Test Agent): the funnel's own goal as a queue step.
+function buildAgentNavigateArgsHTML(step) {
+  return `
+    <div class="arg-row">
+      <span class="arg-lbl">URL</span>
+      <input type="text" data-arg="url" value="${esc(step.inputs.url || '')}" placeholder="https://example.com/checkout">
+    </div>
+    <div class="arg-row" style="align-items:flex-start">
+      <span class="arg-lbl">Notes</span>
+      <textarea data-arg="notes" rows="2" placeholder="optional: test credentials, paths to avoid, values to use" style="flex:1;min-width:0;font-family:monospace;font-size:11px">${esc(step.inputs.notes || '')}</textarea>
+    </div>
+    <div style="font-size:10px;color:var(--fg3);line-height:1.5">An AI agent (Sonnet) clicks through the page to get here, the way a visitor would. Passes when the tab arrives (host and path). Needs an API key; screenshots and these notes go to Anthropic. Notes are never put in a report.</div>`;
+}
+
+// Prompt Function: free text, carried out by the Test Agent when the queue gets here.
+function buildPromptFunctionArgsHTML(step) {
+  return `
+    <div class="arg-row" style="align-items:flex-start">
+      <span class="arg-lbl">Prompt</span>
+      <textarea data-arg="prompt" rows="3" placeholder="e.g. Close the cookie banner, open the first product and add it to the cart" style="flex:1;min-width:0;font-family:monospace;font-size:11px">${esc(step.inputs.prompt || '')}</textarea>
+    </div>
+    <div style="font-size:10px;color:var(--fg3);line-height:1.5">An AI agent (Sonnet) does this by looking at the page. The step reads "done (agent-reported)", never "passed": nothing measures what a prompt asked for. Needs an API key; screenshots and this prompt go to Anthropic. The prompt is never put in a report.</div>`;
+}
+
 function buildArgsHTML(step) {
   if (step.func === 'click')          return buildMethodArgsHTML(step, CLICK_METHODS,  false);
   if (step.func === 'fill')           return buildMethodArgsHTML(step, FILL_METHODS,   true);
@@ -2337,6 +2491,8 @@ function buildArgsHTML(step) {
   if (step.func === 'trigger_metric') return buildTriggerMetricArgsHTML(step);
   if (step.func === 'autofill_form')  return buildAutofillArgsHTML(step);
   if (step.func === 'spa_resize')     return buildResizeArgsHTML(step);
+  if (step.func === 'agent_navigate') return buildAgentNavigateArgsHTML(step);
+  if (step.func === 'agent_prompt')   return buildPromptFunctionArgsHTML(step);
   if (step.func === OPEN_URL_FUNC)    return buildOpenUrlArgsHTML(step);
 
   const args = FN_META[step.func]?.args || [];
@@ -2829,6 +2985,8 @@ function persistQueue() {
       groupId: s.groupId || null, groupName: s.groupName || null,
     }))
   });
+  // A step added, removed or switched to a Test Agent step changes which engine runs.
+  syncEngineControl();
 }
 
 // ── WCAG results renderer ─────────────────────────────────────────────────────
@@ -6497,6 +6655,12 @@ function abPageUrls(modes) {
     // forcing link itself (the first real WCAG cover, r_1790972328425); `add`
     // drops the query from all of them alike.
     if (m?.mode === 4) add(m.data?.url);
+    // The Function Queue: the page it started on, and each Navigate step's target.
+    // Both are stored without their query (fnQueueSegmentExport).
+    if (m?.mode === 'queue') {
+      add(m.data?.startUrl);
+      for (const st of m.data?.steps || []) if (st.segment && st.segment.kind === 'url') add(st.segment.to);
+    }
     if (m?.mode === 5) for (const r of m.data?.runs || []) add(r.finalUrl);
     if (m?.mode === 6) {
       for (const p of m.data?.pages || []) {
@@ -7341,6 +7505,101 @@ function rptPerfSection(entry) {
   return rptSection(entry.name, badge, summary, body);
 }
 
+// ── Function Queue (Test Agent engine) ──────────────────────────────────────
+// A step is PASSED when its own saved selector worked. It is HEALED when the Test
+// Agent did it instead, which is itself a FINDING: the saved step no longer
+// matches the page. UNVERIFIED and AGENT-REPORTED mean the agent says it did the
+// step and nothing measurable confirms or contradicts that; they are never
+// "passed". Only badge kinds the report stylesheet defines are used.
+const QUEUE_STATUS_LABEL = {
+  passed: 'PASSED', healed: 'HEALED', 'healed-unverified': 'HEALED · UNVERIFIED',
+  'done-agent-reported': 'DONE · AGENT-REPORTED', failed: 'FAILED', blocked: 'BLOCKED',
+  stopped: 'STOPPED', skipped: 'SKIPPED', 'not-attempted': 'NOT ATTEMPTED',
+};
+const QUEUE_STATUS_BADGE = {
+  passed: 'pass', healed: 'issues', 'healed-unverified': 'issues', 'done-agent-reported': 'issues',
+  failed: 'fail', blocked: 'fail', stopped: 'skip', skipped: 'skip', 'not-attempted': 'skip',
+};
+const QUEUE_ENGINE_LABEL = {
+  direct: 'Saved step', 'agent-heal': 'Test Agent (healed)', 'agent-navigate': 'Test Agent (navigate)', 'agent-prompt': 'Test Agent (prompt)',
+};
+
+// The worst step decides. A stopped run is no result at all, and a run that
+// aborted before any step failed (no API key, no tab) did not run.
+function queueRunBadge(run) {
+  const steps = (run && run.steps) || [];
+  if (run && run.stopped) return { kind: 'skip', label: 'STOPPED' };
+  const kinds = steps.map(s => QUEUE_STATUS_BADGE[s.status] || 'skip');
+  if (kinds.indexOf('fail') !== -1) return { kind: 'fail', label: 'FAILED' };
+  if (run && run.aborted) return { kind: 'fail', label: 'DID NOT RUN' };
+  if (kinds.indexOf('issues') !== -1) return { kind: 'issues', label: 'NEEDS REVIEW' };
+  if (kinds.indexOf('pass') !== -1) return { kind: 'pass', label: 'PASSED' };
+  return { kind: 'skip', label: 'NOTHING RAN' };
+}
+
+// What a heal's agent acted on last, in a tester's words. The control the agent
+// clicked is not proof it was the RIGHT one (delivery is confirmable, intent is
+// not), so the report offers it as a suggestion and says so.
+function queueHealTarget(seg) {
+  const acts = (seg && seg.actions) || [];
+  for (let i = acts.length - 1; i >= 0; i--) {
+    const t = acts[i] && acts[i].healTarget;
+    if (t && t.selector) return t.selector + (t.text ? ` ("${t.text}")` : '');
+  }
+  return '';
+}
+
+function queueStepDetail(st) {
+  const seg = st.segment || null;
+  const said = seg && seg.summary ? seg.summary : '';
+  switch (st.status) {
+    case 'passed':
+      return st.engine === 'direct' ? 'Ran as saved.' : said;
+    case 'healed':
+    case 'healed-unverified': {
+      const t = queueHealTarget(seg);
+      return `The saved step failed: ${st.directError || 'its selector found nothing'}. `
+        + (st.status === 'healed' ? 'The Test Agent did it instead.' : 'The Test Agent took over this step.') + ` ${said}`
+        + (t ? ` It acted on ${t}. If that is the right control, update this step's selector to match.` : '');
+    }
+    case 'done-agent-reported':
+      return said || 'The agent reports it did this.';
+    case 'failed':
+    case 'blocked':
+      if (st.engine === 'agent-heal') return `The saved step failed: ${st.directError || 'its selector found nothing'}. The Test Agent then tried: ${said}`;
+      if (st.engine === 'direct') return st.directError || 'Failed.';
+      return said || st.directError || 'Failed.';
+    case 'stopped': return 'Stopped by the tester.';
+    case 'skipped': return 'Disabled in the queue.';
+    case 'not-attempted': return 'Not reached: the run stopped before this step.';
+    default: return said;
+  }
+}
+
+function rptQueueSection(entry) {
+  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
+  const run = entry.data || {};
+  const steps = run.steps || [];
+  const badge = queueRunBadge(run);
+  const count = (...st) => steps.filter(s => st.indexOf(s.status) !== -1).length;
+  const failed = count('failed', 'blocked');
+  const summary = `${steps.length} step(s) · ${count('passed')} passed · ${count('healed')} healed · `
+    + `${count('healed-unverified', 'done-agent-reported')} unverified · ${failed} failed · `
+    + `${count('skipped', 'not-attempted', 'stopped')} not run`
+    + (run.stopped ? ' · stopped by the tester' : '')
+    + (run.aborted && run.error && !failed ? ` · ${run.error}` : '');
+  const rows = steps.map(st => `<tr>
+    <td>${(st.i || 0) + 1}</td>
+    <td>${esc(st.label)}${st.group ? `<br><span class="rpt-muted">${esc(st.group)}</span>` : ''}</td>
+    <td>${esc(QUEUE_ENGINE_LABEL[st.engine] || st.engine || '')}</td>
+    <td>${esc(QUEUE_STATUS_LABEL[st.status] || st.status)}</td>
+    <td>${esc(queueStepDetail(st))}</td>
+  </tr>`).join('');
+  const body = `<table class="rpt-table"><thead><tr><th>#</th><th>Step</th><th>How</th><th>Result</th><th>What happened</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="rpt-muted">Each step runs from its saved selector first. When that selector no longer finds anything, the Test Agent (an AI agent, Sonnet) does that one step by looking at the page. A HEALED step is a finding: the saved step is out of date. UNVERIFIED and AGENT-REPORTED mean the agent says it did the step and nothing measurable confirms or contradicts it; a Prompt Function is always AGENT-REPORTED, because nothing measures what a prompt asked for. Delivery is confirmable and intent is not.</p>`;
+  return rptSection(entry.name, rptBadge(badge.kind, badge.label), summary, body);
+}
+
 function rptFunnelSection(entry) {
   if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
   const run = entry.data || {};
@@ -7396,7 +7655,7 @@ function buildReportBody(sections) {
   const builders = {
     2: rptAbSection,
     4: rptWcagSection, 5: rptCvaSection, 6: rptPerfSection,
-    funnel: rptFunnelSection,
+    funnel: rptFunnelSection, queue: rptQueueSection,
   };
   let diagnosticsHtml = '';
   try { diagnosticsHtml = rptDiagnosticsSection(vdCollectProblems(sections)); } catch (_) {}
@@ -8100,6 +8359,35 @@ function vdCollectProblems(sections) {
     }
   }
 
+  // The Function Queue run (Test Agent engine). A heal is a warning, not an error:
+  // the step did get done, and what is wrong is the SAVED step. Anything the agent
+  // could not do is an error, except a gate it was told to stop at, which is a
+  // complete answer ("this cannot be done past here without solving a bot check").
+  const queueEntry = (sections.modes || []).find(m => m.mode === 'queue');
+  if (queueEntry?.status === 'ran' && queueEntry.data) {
+    const run = queueEntry.data;
+    const qsteps = run.steps || [];
+    const name = (st) => `Step ${(st.i || 0) + 1} (${st.label})`;
+    for (const st of qsteps) {
+      const said = st.segment && st.segment.summary ? ' ' + st.segment.summary : '';
+      if (st.status === 'healed' || st.status === 'healed-unverified') {
+        add('warn', 'function-queue',
+          `${name(st)} no longer ran as saved: ${st.directError || 'its selector found nothing'}. `
+          + (st.status === 'healed-unverified' ? 'The Test Agent took over this step, but nothing measurable confirms it.' : 'The Test Agent did it instead.') + said);
+      } else if (st.status === 'done-agent-reported') {
+        add('warn', 'function-queue', `${name(st)} is the Test Agent's own report: nothing measures what the prompt asked for.${said}`);
+      } else if (st.status === 'failed') {
+        add('error', 'function-queue', `${name(st)} failed.${st.engine === 'direct' ? ' ' + (st.directError || '') : said}`);
+      } else if (st.status === 'blocked') {
+        add(st.segment && st.segment.blockedBy ? 'warn' : 'error', 'function-queue', `${name(st)} was blocked.${said}`);
+      }
+    }
+    if (run.aborted && !qsteps.some(st => st.status === 'failed' || st.status === 'blocked')) {
+      add('error', 'function-queue', `The run stopped before any step ran: ${run.error || 'unknown error'}.`);
+    }
+    if (run.stopped) add('info', 'function-queue', 'The tester stopped this run; steps after the stop were not run.');
+  }
+
   return problems;
 }
 
@@ -8514,6 +8802,11 @@ function buildDebugLog(sections) {
           // design, so the resolved choice is exported and two runs stay
           // comparable — same rule the visual-diff prompt export follows.
           choice: a.choice || null,
+          // Whether a `type` action's text landed: { landed, into, kind, valueLen,
+          // match }. null is NOT landed:false -- it is "not a type action, or a
+          // worker that predates the read-back" -- and the typed text itself is
+          // never exported, only its length and a verdict.
+          typed: a.typed || null,
           page: a.page || null,
         })),
       })),
@@ -8526,6 +8819,19 @@ function buildDebugLog(sections) {
     wcag: taDebugSection(modeEntry(4)),
     crossVariant: taDebugSection(modeEntry(5)),
     performance: taDebugSection(modeEntry(6)),
+    // The Function Queue's Test Agent run. Steps are already stored compact and
+    // without anything a tester typed (fnQueueSegmentExport), so they pass through
+    // as recorded. null (not omitted) when no such run was in the report.
+    queue: !modeEntry('queue') ? null : (function () {
+      const q = modeEntry('queue');
+      const d = q.data || {};
+      return {
+        status: q.status, reason: q.reason || null, engine: d.engine || null,
+        startedAt: d.startedAt || null, ts: d.ts || null, startUrl: d.startUrl || null,
+        healCount: d.healCount ?? null, aborted: !!d.aborted, stopped: !!d.stopped, error: d.error || null,
+        steps: d.steps || [],
+      };
+    })(),
   };
 }
 

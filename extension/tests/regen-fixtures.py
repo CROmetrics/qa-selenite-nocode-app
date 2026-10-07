@@ -303,6 +303,15 @@ def gen_clusters():
 # fnDidSomething falls back to the undifferentiated total precisely when
 # structuralMutations is null. `a.get()`'s None is kept rather than coerced.
 #
+# TRAP 8. `typed: null` is not `typed: {landed: false}`. null = the action was not
+# a `type`, or the log was written by a build that predates the read-back (all of
+# them, at the time this key was added); `landed: false` = MEASURED, and the text
+# demonstrably did not land; `landed: null` inside the object = a `type` whose
+# outcome could not be told. Collapsing any two of these invents a failure on
+# every historical log -- 11 of 11 recorded `type` actions look identical to a
+# build that cannot tell, which is the whole reason the read-back exists. The
+# typed text itself is never in the log, only a verdict and a length.
+#
 # TRAP 6. `hit: null` (the probe could not run -- an injection-refusing page, or
 # a navigation that destroyed the isolated world) is NOT the same as a hit whose
 # `top` is null (nothingAtPoint). Flattening to `(a.get('hit') or {}).get('top')`
@@ -366,6 +375,9 @@ def gen_funnel():
                     "modelAttempts": a.get('modelAttempts'),
                     "modelTransient": a.get('modelTransient'),
                     "choice": a.get('choice'),     # TRAP 7
+                    # Whether a `type` action's text landed. TRAP 8: null is NOT
+                    # landed:false.
+                    "typed": a.get('typed'),
                     "structuralMutations": a.get('structuralMutations'),   # TRAP 7
                     "outOfRange": a.get('outOfRange'),
                     "delivered": a.get('delivered'),

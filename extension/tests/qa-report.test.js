@@ -994,7 +994,10 @@ section('the cover page says what was tested');
   // helper that nobody calls is exactly the bug that shipped here twice
   // (shortDescription in 5d934d2, the dead unmetRequirements alias in c197e87).
   var calls = _pu.match(/openReportTab\(\{[\s\S]{0,200}?pageUrls:[^,\n]*/g) || [];
-  eq('both call sites are present', calls.length, 2);
+  // Three: the A/B run, the Test Agent run, and the Function Queue's Test Agent
+  // report. The point of the count is that EVERY site derives its page URLs, which
+  // the loop below asserts.
+  eq('all three call sites are present', calls.length, 3);
   calls.forEach(function (c, i) {
     ok('call site ' + (i + 1) + ' derives pageUrls', /abPageUrls\(/.test(c), c);
   });
@@ -2626,6 +2629,265 @@ section('Cover: the Test Agent modes name their pages');
   eq('WCAG, Cross-Variant and Performance each name their page, once', JSON.stringify(urls),
      JSON.stringify(['https://shop.example/cart', 'https://shop.example/', 'https://shop.example/pdp']));
   ok('no preview token or forcing parameter reaches the cover', !/SECRET|optimizely_/.test(JSON.stringify(urls)), urls);
+})();
+
+// ── the Function Queue's Test Agent run ─────────────────────────────────────
+section('Function Queue: the engine control, the run, and the report it opens');
+
+(function queueEngineAndRun() {
+  var src = slicePopup('const QUEUE_AGENT_FUNCS', 'async function stopQueue() {');
+  ok('the slice is the engine control and the run', src.indexOf('function effectiveEngine') !== -1 && src.indexOf('async function runQueue') !== -1
+     && src.indexOf('async function maybeOpenQueueReport') !== -1, src.length);
+
+  function build(o) {
+    o = o || {};
+    var state = { mode: o.mode || 'close', engine: o.engine || 'classic', tab: o.tab || 'new' };
+    var agentRadio = { disabled: false };
+    var note = { textContent: '', style: { display: 'none' } };
+    var sent = [], alerts = [], tabs = [], opened = [];
+    var steps = o.steps || [];
+    var record = o.record || null;
+    var stubs = {
+      document: {
+        querySelector: function (q) {
+          if (q === 'input[name=mode]:checked') return { value: state.mode };
+          if (q === 'input[name=engine]:checked') return { value: state.engine };
+          if (q === 'input[name=tabtarget]:checked') return { value: state.tab };
+          return null;
+        },
+        getElementById: function (id) { return id === 'engine-agent' ? agentRadio : id === 'engine-note' ? note : null; },
+      },
+      steps: steps,
+      alert: function (m) { alerts.push(m); },
+      WIN_ID: 7,
+      chrome: {
+        tabs: { query: function () { return Promise.resolve([{ id: 42 }]); } },
+        storage: { local: { get: function (k) { return Promise.resolve(k === 'universalDelay' ? {} : {}); } } },
+        runtime: { sendMessage: function (m) { sent.push(m); return Promise.resolve(o.reply === undefined ? { ok: true } : o.reply); } },
+      },
+      showTab: function (n) { tabs.push(n); },
+      syncRunState: function () {},
+      sessionNS: { get: function () { return Promise.resolve({ queueRun: record }); } },
+      openReportTab: function (sec) { opened.push(sec); return o.openThrows ? Promise.reject(new Error(o.openThrows)) : Promise.resolve(); },
+    };
+    var names = Object.keys(stubs);
+    var api = new Function(names.join(','), src + '\nreturn { runQueue: runQueue, maybeOpenQueueReport: maybeOpenQueueReport, '
+      + 'effectiveEngine: effectiveEngine, syncEngineControl: syncEngineControl, queueHasAgentSteps: queueHasAgentSteps };')
+      .apply(null, names.map(function (n) { return stubs[n]; }));
+    api.state = state; api.sent = sent; api.alerts = alerts; api.tabs = tabs; api.opened = opened;
+    api.agentRadio = agentRadio; api.note = note; api.steps = steps;
+    api.setRecord = function (r) { record = r; };
+    return api;
+  }
+  var step = function (func, extra) { return Object.assign({ func: func, enabled: true, delay: '0', inputs: {} }, extra || {}); };
+  function settle() { drainMicrotasks(); }
+
+  // ---- which engine runs ----
+  var a = build({ steps: [step('click')] });
+  eq('Classic is the default', a.effectiveEngine(), 'classic');
+  a.state.engine = 'agent';
+  eq('  the Test Agent when it is chosen', a.effectiveEngine(), 'agent');
+  var b = build({ steps: [step('click'), step('agent_prompt')] });
+  eq('a queue holding a Prompt Function runs on the agent whatever was chosen', b.effectiveEngine(), 'agent');
+  eq('  as does one holding a Navigate step', build({ steps: [step('agent_navigate')] }).effectiveEngine(), 'agent');
+  eq('  but not when that step is disabled', build({ steps: [step('agent_prompt', { enabled: false })] }).effectiveEngine(), 'classic');
+  var c = build({ mode: 'loop', engine: 'agent', steps: [step('click')] });
+  eq('a loop is always Classic, even with the agent chosen', c.effectiveEngine(), 'classic');
+
+  // ---- what the control says ----
+  var d = build({ steps: [step('click')] });
+  d.syncEngineControl();
+  eq('nothing to say normally', d.note.textContent, '');
+  eq('  and the note is hidden', d.note.style.display, 'none');
+  eq('  and the agent can be chosen', d.agentRadio.disabled, false);
+  var e = build({ mode: 'loop', steps: [step('click')] });
+  e.syncEngineControl();
+  eq('a loop cannot use the agent', e.agentRadio.disabled, true);
+  ok('  and says why', /Loop continuously always runs Classic/.test(e.note.textContent), e.note.textContent);
+  var f = build({ mode: 'loop', steps: [step('agent_prompt')] });
+  f.syncEngineControl();
+  ok('a loop with an agent step says it cannot run', /would repeat it forever/.test(f.note.textContent), f.note.textContent);
+  var g2 = build({ steps: [step('agent_navigate')] });
+  g2.syncEngineControl();
+  ok('an agent step under Classic says the run will use the agent', /so this run uses it/.test(g2.note.textContent), g2.note.textContent);
+  eq('  and the note is shown', g2.note.style.display, '');
+  var h = build({ engine: 'agent', steps: [step('agent_navigate')] });
+  h.syncEngineControl();
+  eq('  but not when the agent was chosen anyway', h.note.textContent, '');
+
+  // ---- starting a run ----
+  var r1 = build({ engine: 'agent', steps: [step('click', { groupName: 'Add to cart', inputs: { selector: '#x' } })] });
+  r1.runQueue(); settle();
+  eq('a Test Agent run says so to the worker', r1.sent[0].payload.engine, 'agent');
+  eq('  and sends the group name (an agent step is named by it)', r1.sent[0].payload.queue[0].groupName, 'Add to cart');
+  eq('  to the console, as before', r1.tabs.join(','), 'console');
+  eq('  on the tab it was asked for', r1.sent[0].payload.targetTabId === null || r1.sent[0].payload.targetTabId === undefined, true);
+  var r2 = build({ steps: [step('click')] });
+  r2.runQueue(); settle();
+  eq('a Classic run says so', r2.sent[0].payload.engine, 'classic');
+  var r3 = build({ steps: [step('agent_prompt', { inputs: { prompt: 'x' } })] });
+  r3.runQueue(); settle();
+  eq('a queue with a Prompt Function is sent as an agent run, though Classic was chosen', r3.sent[0].payload.engine, 'agent');
+  var r4 = build({ mode: 'loop', steps: [step('agent_navigate')] });
+  r4.runQueue(); settle();
+  eq('a loop with an agent step is refused, with nothing sent', r4.sent.length, 0);
+  ok('  and told why', r4.alerts.length === 1 && /repeat it forever/.test(r4.alerts[0]), r4.alerts);
+  var r5 = build({ engine: 'agent', steps: [step('click')], reply: { ok: false, error: 'A queue is already running. Stop it first.' } });
+  r5.runQueue(); settle();
+  ok('a refusal from the worker is shown', r5.alerts[0] === 'A queue is already running. Stop it first.', r5.alerts);
+  eq('  and does not go to the console as if it had started', r5.tabs.length, 0);
+  r5.setRecord({ engine: 'agent', startedAt: Date.now() + 10, steps: [] });
+  r5.maybeOpenQueueReport(); settle();
+  eq('  and no report is then owed for it', r5.opened.length, 0);
+
+  // ---- the report, once the worker has written its record ----
+  var run = function (o) { return Object.assign({ engine: 'agent', startedAt: Date.now() + 50, ts: Date.now() + 90, startUrl: 'https://shop.example/', steps: [] }, o || {}); };
+  var q1 = build({ engine: 'agent', steps: [step('click')] });
+  q1.runQueue(); settle();
+  q1.setRecord(run({ startedAt: 1 }));
+  q1.maybeOpenQueueReport(); settle();
+  eq('a record from an EARLIER run is not this run\'s report', q1.opened.length, 0);
+  q1.setRecord(null);
+  q1.maybeOpenQueueReport(); settle();
+  eq('  nor is no record at all', q1.opened.length, 0);
+  q1.setRecord(run({ engine: 'classic' }));
+  q1.maybeOpenQueueReport(); settle();
+  eq('  nor a Classic one', q1.opened.length, 0);
+  q1.setRecord(run({ steps: [{ i: 0, func: 'click', label: 'Click · #x', engine: 'direct', status: 'passed' }] }));
+  q1.maybeOpenQueueReport(); settle();
+  eq('this run\'s record opens ONE report', q1.opened.length, 1);
+  eq('  of the Functional Queue', q1.opened[0].modes[0].name + '/' + q1.opened[0].modes[0].mode + '/' + q1.opened[0].modes[0].status, 'Functional Queue/queue/ran');
+  eq('  carrying the record', q1.opened[0].modes[0].data.steps[0].label, 'Click · #x');
+  eq('  with the cover derived from it, not hardcoded', q1.opened[0].pageUrls.join(','), 'https://shop.example/');
+  q1.maybeOpenQueueReport(); settle();
+  eq('  and asking again does not open a second', q1.opened.length, 1);
+
+  var q2 = build({ engine: 'agent', steps: [step('click')], openThrows: 'IndexedDB is unavailable' });
+  q2.runQueue(); settle();
+  q2.setRecord(run());
+  q2.maybeOpenQueueReport(); settle();
+  ok('a report that cannot be built says so instead of failing silently', q2.alerts.length === 1 && /IndexedDB is unavailable/.test(q2.alerts[0]), q2.alerts);
+  q2.maybeOpenQueueReport(); settle();
+  eq('  and is not retried forever', q2.opened.length, 1);
+
+  var q3 = build({ steps: [step('click')] });
+  q3.runQueue(); settle();
+  q3.setRecord(run({ engine: 'agent' }));
+  q3.maybeOpenQueueReport(); settle();
+  eq('a Classic run owes no report, whatever record is in storage', q3.opened.length, 0);
+})();
+
+(function queueReportSection() {
+  var mk = function (steps, o) { return Object.assign({ engine: 'agent', startedAt: 1, ts: 2, startUrl: 'https://shop.example/', healCount: 0, aborted: false, stopped: false, error: null, steps: steps }, o || {}); };
+  var st = function (i, status, o) { return Object.assign({ i: i, func: 'click', label: 'Click · #s' + i, group: null, engine: 'direct', status: status, directError: null, segment: null, ms: 10 }, o || {}); };
+  var html = function (run) { return rptQueueSection({ mode: 'queue', name: 'Functional Queue', status: 'ran', data: run }); };
+  var badgeOf = function (h) { var m = /rpt-badge rpt-badge-(\w+)">([^<]*)</.exec(h); return m ? m[1] + '/' + m[2] : null; };
+
+  eq('every step passing is a PASS', badgeOf(html(mk([st(0, 'passed'), st(1, 'passed')]))), 'pass/PASSED');
+  eq('a healed step makes it NEEDS REVIEW, never a pass', badgeOf(html(mk([st(0, 'passed'), st(1, 'healed', { engine: 'agent-heal' })]))), 'issues/NEEDS REVIEW');
+  eq('  so does an unverified heal', badgeOf(html(mk([st(0, 'healed-unverified', { engine: 'agent-heal' })]))), 'issues/NEEDS REVIEW');
+  eq('  and a prompt only the agent vouches for', badgeOf(html(mk([st(0, 'done-agent-reported', { func: 'agent_prompt', engine: 'agent-prompt' })]))), 'issues/NEEDS REVIEW');
+  eq('a failed step is a FAIL', badgeOf(html(mk([st(0, 'passed'), st(1, 'failed'), st(2, 'not-attempted')], { aborted: true }))), 'fail/FAILED');
+  eq('  and the worst step wins over a heal', badgeOf(html(mk([st(0, 'healed', { engine: 'agent-heal' }), st(1, 'failed')]))), 'fail/FAILED');
+  eq('a blocked step is a FAIL', badgeOf(html(mk([st(0, 'blocked', { engine: 'agent-prompt' })], { aborted: true }))), 'fail/FAILED');
+  eq('a stopped run is no result', badgeOf(html(mk([st(0, 'passed'), st(1, 'stopped'), st(2, 'not-attempted')], { stopped: true }))), 'skip/STOPPED');
+  eq('a run that aborted before any step failed did not run', badgeOf(html(mk([st(0, 'not-attempted')], { aborted: true, error: 'No Anthropic API key' }))), 'fail/DID NOT RUN');
+  ok('  and says why in its summary', html(mk([st(0, 'not-attempted')], { aborted: true, error: 'No Anthropic API key' })).indexOf('No Anthropic API key') !== -1);
+  eq('nothing but skipped steps ran nothing', badgeOf(html(mk([st(0, 'skipped')]))), 'skip/NOTHING RAN');
+
+  var h = html(mk([st(0, 'passed'), st(1, 'healed', { engine: 'agent-heal', directError: 'CSS selector not found: #old-cta',
+    segment: { summary: 'The agent carried out the step "Click · #s1" in 2 agent step(s), and a click reached an element and the page changed.',
+               actions: [{ healTarget: { tag: 'button', selector: '#get-quote', text: 'Get a quote' } }] } }),
+    st(2, 'failed', { engine: 'agent-heal', directError: 'ID not found: email', segment: { summary: 'The agent reported it could not do the step.' } }),
+    st(3, 'blocked', { func: 'agent_prompt', engine: 'agent-prompt', segment: { summary: 'Stopped at a CAPTCHA.', blockedBy: { gate: 'captcha' } } }),
+    st(4, 'skipped'), st(5, 'not-attempted'), st(6, 'stopped')], { aborted: true }));
+  ok('a healed step shows both what the saved step said and what the agent did',
+     h.indexOf('The saved step failed: CSS selector not found: #old-cta. The Test Agent did it instead.') !== -1, h.slice(0, 200));
+  ok('  and the control it acted on, as a suggestion', h.indexOf('It acted on #get-quote (&quot;Get a quote&quot;). If that is the right control, update this step&#39;s selector to match.') !== -1 ||
+     h.indexOf('It acted on #get-quote') !== -1);
+  ok('a failed heal shows the saved error and what the agent then tried', /The saved step failed: ID not found: email\. The Test Agent then tried: The agent reported it could not do the step\./.test(h));
+  ok('every status has its own label', ['PASSED', 'HEALED', 'FAILED', 'BLOCKED', 'SKIPPED', 'NOT ATTEMPTED', 'STOPPED'].every(function (l) { return h.indexOf('<td>' + l + '</td>') !== -1; }));
+  ok('and says how each step was done', h.indexOf('<td>Saved step</td>') !== -1 && h.indexOf('<td>Test Agent (healed)</td>') !== -1 && h.indexOf('<td>Test Agent (prompt)</td>') !== -1);
+  ok('the summary counts them', /7 step\(s\) · 1 passed · 1 healed · 0 unverified · 2 failed · 3 not run/.test(h.replace(/&middot;/g, '·')), h.match(/rpt-summary">[^<]*/)[0]);
+  ok('it explains what a heal and an unverified step mean', /A HEALED step is a finding/.test(h) && /Delivery is confirmable and intent is not/.test(h));
+
+  var pr = html(mk([
+    st(0, 'done-agent-reported', { func: 'agent_prompt', engine: 'agent-prompt', segment: { summary: 'The agent reports it did this: nothing measures what the prompt asked for.' } }),
+  ]));
+  ok('an agent-reported prompt says nothing measures it, once', (pr.match(/nothing measures what the prompt asked for/g) || []).length === 1, pr.slice(0, 200));
+  ok('  and the report explains a prompt is always agent-reported', /a Prompt Function is always AGENT-REPORTED/.test(pr));
+  ok('  with no Done-when anywhere in it', !/Done[- ]when/i.test(pr));
+
+  // What a page or a model wrote must not become markup.
+  var xs = html(mk([st(0, 'healed', { engine: 'agent-heal', label: '<img src=x onerror=alert(1)>', group: '<b>grp</b>', directError: '<script>1</script>',
+    segment: { summary: '<i>said</i>', actions: [{ healTarget: { selector: '#a<script>', text: '"><svg onload=1>' } }] } })]));
+  ok('markup in a label, group, error, summary or target is escaped', !/<img|<script|<svg|<b>grp|<i>said/.test(xs), xs.slice(0, 300));
+  ok('  and still readable', xs.indexOf('&lt;img src=x') !== -1);
+
+  eq('a skipped entry is a skipped section', rptQueueSection({ mode: 'queue', name: 'Functional Queue', status: 'skipped', reason: 'Not configured.' }).indexOf('SKIPPED') !== -1, true);
+  ok('an empty record still renders', html(mk([])).indexOf('0 step(s)') !== -1);
+  ok('no secret can be in it: the record holds none, and the table prints only record fields',
+     html(mk([st(0, 'passed')])).indexOf('hunter2') === -1);
+  ok('the section is registered with the report builder', /funnel: rptFunnelSection, queue: rptQueueSection,/.test(_pu));
+})();
+
+(function queueCover() {
+  var urls = abPageUrls([{ mode: 'queue', name: 'Functional Queue', status: 'ran', data: {
+    startUrl: 'https://shop.example/start',
+    steps: [
+      { segment: { kind: 'url', to: 'https://shop.example/quote' } },
+      { segment: { kind: 'prompt', to: null } },
+      { segment: { kind: 'url', to: 'https://shop.example/quote' } },
+      { segment: null },
+    ] } }]);
+  eq('the cover names the page the run started on, then each Navigate target, once', urls.join(','), 'https://shop.example/start,https://shop.example/quote');
+  eq('a queue with no URLs adds none', abPageUrls([{ mode: 'queue', status: 'ran', data: { steps: [] } }]).length, 0);
+})();
+
+(function funnelAsQueue() {
+  var src = slicePopup('function fnOpenAsQueue() {', '\nfunction renderFunnelResults(');
+  function build(o) {
+    o = o || {};
+    var stepsArr = o.steps || [];
+    var added = [], first = [], alerts = [], confirms = [], shown = [], accordions = [];
+    var list = { innerHTML: 'old' };
+    var stubs = {
+      steps: stepsArr, nextId: 9, nextGroupId: 9,
+      funnelWaypoints: function () { return o.waypoints || []; },
+      funnelState: { supplementalPrompt: o.notes || '' },
+      alert: function (m) { alerts.push(m); },
+      confirm: function (m) { confirms.push(m); return o.confirm !== false; },
+      document: { getElementById: function () { return list; } },
+      ensureOpenUrlFirst: function (d) { first.push(d); },
+      addStep: function (d) { added.push(d); },
+      renderGroups: function () {}, persistQueue: function () {},
+      showTab: function (n) { shown.push(n); }, openAccordion: function (n) { accordions.push(n); },
+    };
+    var names = Object.keys(stubs);
+    var api = new Function(names.join(','), src + '\nreturn { run: fnOpenAsQueue, steps: function () { return steps; } };')
+      .apply(null, names.map(function (n) { return stubs[n]; }));
+    return Object.assign(api, { added: added, first: first, alerts: alerts, confirms: confirms, shown: shown, accordions: accordions, list: list });
+  }
+  var f = build({ waypoints: ['https://shop.example/', 'https://shop.example/cart', 'https://shop.example/checkout'], notes: 'use qa@example.com' });
+  f.run();
+  eq('the Start becomes the locked Open URL step', f.first[0].inputs.url, 'https://shop.example/');
+  eq('  with no params and QA Mode off', JSON.stringify([f.first[0].inputs.params, f.first[0].inputs.qa_mode]), '[[],false]');
+  eq('every waypoint after it becomes a Navigate step, in order', f.added.map(function (d) { return d.func + ':' + d.inputs.url; }).join(' '),
+     'agent_navigate:https://shop.example/cart agent_navigate:https://shop.example/checkout');
+  eq('  carrying the Supplemental Instructions as notes', f.added[0].inputs.notes, 'use qa@example.com');
+  eq('  and showing the queue', f.shown.join(',') + '|' + f.accordions.join(','), 'build|acc-queue');
+  eq('  with the old list cleared first', f.list.innerHTML.indexOf('No steps yet') !== -1, true);
+  eq('an empty queue is replaced without asking', f.confirms.length, 0);
+  var g = build({ waypoints: ['https://shop.example/', 'https://shop.example/cart'], steps: [{ func: 'click', locked: false }] });
+  g.run();
+  eq('a queue with steps in it asks first', g.confirms.length, 1);
+  ok('  and says the notes are copied and persist', /copied into each Navigate step's notes/.test(g.confirms[0]), g.confirms[0]);
+  var c = build({ waypoints: ['https://shop.example/', 'https://shop.example/cart'], steps: [{ func: 'click', locked: false }], confirm: false });
+  c.run();
+  eq('declining changes nothing', c.added.length + c.first.length + c.shown.length, 0);
+  var n = build({ waypoints: ['https://shop.example/'] });
+  n.run();
+  ok('fewer than two waypoints is refused, and says why', n.alerts.length === 1 && /Start and an End/.test(n.alerts[0]) && n.first.length === 0, n.alerts);
 })();
 
 // ── report ─────────────────────────────────────────────────────────────────

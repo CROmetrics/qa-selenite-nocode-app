@@ -909,6 +909,43 @@ section('funnel crawl coordinate space (real runs)');
        .filter(function (a) { return a.ms !== null && a.modelMs !== null; }).length, 10);
   ok('  with a segment wall clock to match', FUNNEL['1789750056464'].segments[0].elapsedMs > 0);
 
+  // TRAP 8, pinned. `typed: null` is "not a type action, or a build that predates
+  // the read-back" -- not "did not land". Every log on record predates it, so the
+  // projection must carry the key (as null) on every action, and the `type`
+  // actions in those logs must still show the BLIND signature the read-back
+  // exists to fix: no delivery, "nothing at that point" (a type is probed at
+  // (-1,-1), so that reading was noise), no structural mutation. That signature
+  // is identical whether the text landed or not -- r_1789752263211 typed three
+  // times, got nothing back, and ended with the form incomplete.
+  var typeActs = [], noTypedKey = 0, badVerdict = 0;
+  fids.forEach(function (rid) {
+    (FUNNEL[rid].segments || []).forEach(function (sg) {
+      (sg.actions || []).forEach(function (a) {
+        if (!('typed' in a)) noTypedKey++;
+        else if (a.typed !== null && [true, false, null].indexOf(a.typed.landed) === -1) badVerdict++;
+        if (a.action === 'type') typeActs.push(a);
+      });
+    });
+  });
+  eq('every projected action carries the typed key', noTypedKey, 0);
+  eq('  and any verdict present is true, false or null', badVerdict, 0);
+  ok('the corpus carries recorded type actions', typeActs.length > 0, typeActs.length);
+  // Restricted to the old vintage, so a log written by a build WITH the read-back
+  // (typed is an object, and the probe now says nothingAtPoint:null) can join the
+  // corpus without anyone loosening this.
+  var blindTypes = typeActs.filter(function (a) { return a.typed === null; });
+  ok('  and some are from builds without the read-back', blindTypes.length > 0, blindTypes.length);
+  eq('every one of those was reported as never delivered',
+     blindTypes.filter(function (a) { return a.delivered !== false; }).length, 0);
+  eq('  every one as "nothing at that point"',
+     blindTypes.filter(function (a) { return !(a.hit && a.hit.nothingAtPoint === true); }).length, 0);
+  eq('  and none moved the page structurally',
+     blindTypes.filter(function (a) { return a.structuralMutations > 0; }).length, 0);
+  if (typeof fnTypedOutcome === 'function') {
+    eq('an old log, replayed through the verdict, is "could not tell" -- never a failure',
+       fnTypedOutcome(null).landed, null);
+  }
+
   // THE RUN. Replaying the converter over the SEGMENT geometry reproduces steps
   // 2-7 byte for byte and canNOT reproduce step 1 — which is the whole
   // diagnosis. out.geometry is one object mutated per capture, so it holds only

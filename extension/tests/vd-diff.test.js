@@ -4283,6 +4283,186 @@ eval(_bg.slice(_bg.indexOf('const FN_STUCK_NUDGE'),
   ok('  including when that total is zero', !fnDidSomething({ mutations: 0 }));
   ok('  and null is the tell, not zero', fnDidSomething({ mutations: 3, structuralMutations: null }));
 
+  // ---- did the typing land? ----
+  // 11 of 11 recorded `type` actions across four real runs were identical:
+  // delivered:false, hit.nothingAtPoint:true, no structural mutation. Not one
+  // carried any evidence either way, and r_1789752263211 typed three times, got
+  // nothing back, and ended with the form incomplete. fnTypedOutcome is the only
+  // place the verdict is decided.
+  var landedOf = function (e) { return fnTypedOutcome(e).landed; };
+  eq('an input event is delivery, whatever the value read says',
+     landedOf({ edited: true, valueLen: 0, valueLenBefore: 0, match: 'absent', focusKind: 'input:text' }), true);
+  eq('  a grown value with no event is still delivery',
+     landedOf({ edited: false, valueLen: 11, valueLenBefore: 0, match: 'exact', focusKind: 'input:text' }), true);
+  eq('  no event, value unchanged, text absent: measured, and it did not land',
+     landedOf({ edited: false, valueLen: 0, valueLenBefore: 0, match: 'absent', focusKind: 'input:text' }), false);
+  // THE GUARD THAT STOPS A FALSE ACCUSATION. A password is never read, so its
+  // verdict can only ever be "could not tell" -- and `null` here must never be
+  // `false`, or a working login form would be reported as ignoring its input.
+  eq('a password field is null, never false',
+     landedOf({ edited: false, valueLen: null, valueLenBefore: null, match: null, focusKind: 'input:password' }), null);
+  eq('  even if a build somehow handed it a reading that looks absent',
+     landedOf({ edited: false, valueLen: 5, valueLenBefore: 5, match: 'absent', focusKind: 'input:password' }), null);
+  eq('  and an event still wins for a password (delivery needs no read)',
+     landedOf({ edited: true, valueLen: null, valueLenBefore: null, match: null, focusKind: 'input:password' }), true);
+  eq('nothing focused is null',
+     landedOf({ edited: false, valueLen: null, valueLenBefore: null, match: null, focus: null, focusKind: null }), null);
+  eq('no probe result at all (page navigated, injection refused) is null', landedOf(null), null);
+  eq('  and so is undefined', landedOf(undefined), null);
+  eq('an unreadable control (a select) is null, not false',
+     landedOf({ edited: false, valueLen: null, valueLenBefore: null, match: null, focusKind: 'select' }), null);
+  eq('unchanged but with no expected text to compare is null',
+     landedOf({ edited: false, valueLen: 3, valueLenBefore: 3, match: null, focusKind: 'input:text' }), null);
+  eq('`contains` with an unchanged value is not a false accusation either',
+     landedOf({ edited: false, valueLen: 11, valueLenBefore: 11, match: 'contains', focusKind: 'input:text' }), null);
+  ok('null and false are two different answers', landedOf(null) !== false && landedOf(null) === null);
+  var tOut = fnTypedOutcome({ edited: true, editedTo: '#pet-name-1', focus: '#other', focusKind: 'input:text',
+                              valueLen: 11, valueLenBefore: 0, match: 'exact' });
+  eq('it names where the input event fired, ahead of what was focused', tOut.into, '#pet-name-1');
+  eq('  the kind of control', tOut.kind, 'input:text');
+  eq('  how long the value is', tOut.valueLen, 11);
+  eq('  and whether it matched', tOut.match, 'exact');
+  eq('with no event it falls back to the focused element', fnTypedOutcome({ edited: false, focus: '#f', focusKind: 'input:text',
+     valueLen: 1, valueLenBefore: 0, match: 'exact' }).into, '#f');
+  ok('the verdict carries a length and a label, never the typed text',
+     Object.keys(tOut).sort().join(',') === 'into,kind,landed,match,valueLen');
+
+  // The injected probes, against a stub page. fnPostActionProbeFn takes the typed
+  // text IN and must return only a verdict: these logs get attached to tickets.
+  var withPage = function (page, fn) {
+    var had = { w: g.window, d: g.document, l: g.location, mo: g.MutationObserver };
+    g.window = page.window || { addEventListener: function () {}, removeEventListener: function () {},
+                                innerWidth: 1000, innerHeight: 800 };
+    g.document = page.document;
+    g.location = page.location || { href: 'https://shop.example/quote' };
+    g.MutationObserver = page.MutationObserver || function () { this.observe = function () {}; this.disconnect = function () {}; };
+    try { return fn(); }
+    finally { g.window = had.w; g.document = had.d; g.location = had.l; g.MutationObserver = had.mo; }
+  };
+  var bodyEl = { tagName: 'BODY', innerText: 'x' };
+  var field = function (props) {
+    return Object.assign({ tagName: 'INPUT', type: 'text', id: 'pet-name-1', value: '', isContentEditable: false }, props);
+  };
+  var postDoc = function (active) {
+    // The SAME object as bodyEl: the probe compares identity (`ae !== document.body`).
+    return { activeElement: active, body: bodyEl, title: 'Quote' };
+  };
+  var armed = function (extra) {
+    return Object.assign({ delivered: false, target: null, mutations: 0, structural: 0, edited: false,
+                           editedTo: null, focusBefore: '#pet-name-1', valueLenBefore: 0 }, extra || {});
+  };
+  var post = function (active, probe, expected) {
+    var win = { __seleniteCrawlProbe: probe, __seleniteCrawlProbeStop: null,
+                addEventListener: function () {}, removeEventListener: function () {} };
+    return withPage({ window: win, document: postDoc(active) }, function () { return fnPostActionProbeFn(expected); });
+  };
+
+  var okType = post(field({ value: 'QA Test Pet' }), armed({ edited: true, editedTo: '#pet-name-1' }), 'QA Test Pet');
+  eq('the post probe reads an exact match', okType.edit.match, 'exact');
+  eq('  the length of what is there', okType.edit.valueLen, 11);
+  eq('  the kind of control', okType.edit.focusKind, 'input:text');
+  eq('  where the input event fired', okType.edit.editedTo, '#pet-name-1');
+  eq('  and that an event fired at all', okType.edit.edited, true);
+  ok('  and the typed value is NOT in what it returns', JSON.stringify(okType).indexOf('QA Test Pet') === -1, okType);
+  eq('a field that holds the text among other text is `contains`',
+     post(field({ value: 'Mr QA Test Pet Jr' }), armed(), 'QA Test Pet').edit.match, 'contains');
+  eq('a field that does not hold it is `absent`',
+     post(field({ value: '' }), armed(), 'QA Test Pet').edit.match, 'absent');
+  var pw = post(field({ type: 'password', id: 'pw', value: 'hunter2-secret' }), armed({ valueLenBefore: null }), 'hunter2-secret');
+  eq('a password is identified', pw.edit.focusKind, 'input:password');
+  eq('  never read: no length', pw.edit.valueLen, null);
+  eq('  and no verdict on the match', pw.edit.match, null);
+  ok('  and the secret is nowhere in what it returns', JSON.stringify(pw).indexOf('hunter2') === -1, pw);
+  var ta = post(field({ tagName: 'TEXTAREA', type: 'textarea', id: 'notes', value: 'hello' }), armed(), 'hello');
+  eq('a textarea is readable', ta.edit.match, 'exact');
+  var ce = post({ tagName: 'DIV', id: 'ed', isContentEditable: true, innerText: 'hello' }, armed(), 'hello');
+  eq('a contenteditable is read through innerText', ce.edit.match, 'exact');
+  eq('  and named as one', ce.edit.focusKind, 'contenteditable');
+  var chk = post(field({ type: 'checkbox', id: 'agree', value: 'on' }), armed(), 'on');
+  eq('a checkbox is not a text field, so its value is not compared', chk.edit.match, null);
+  var nothing = post(bodyEl, armed(), 'abc');
+  eq('nothing focused: no kind', nothing.edit.focusKind, null);
+  eq('  no match', nothing.edit.match, null);
+  eq('  and no focus label', nothing.edit.focus, null);
+  eq('an action that typed nothing leaves `edit` null (not applicable)',
+     post(field({ value: 'x' }), armed(), null).edit, null);
+  eq('a probe whose armed state was destroyed by a navigation says edited:null, not false',
+     post(field({ value: 'abc' }), null, 'abc').edit.edited, null);
+  eq('  and no length-before', post(field({ value: 'abc' }), null, 'abc').edit.valueLenBefore, null);
+  eq('the empty string can never `match`: there is nothing to look for',
+     post(field({ value: 'abc' }), armed(), '').edit.match, null);
+
+  // The pre-click probe: the coordinate-less hit-test and the input watch.
+  var preHit = function (x, y, active) {
+    var adds = [], rems = [];
+    var win = { addEventListener: function (t, fn) { adds.push([t, fn]); },
+                removeEventListener: function (t) { rems.push(t); }, innerWidth: 1000, innerHeight: 800 };
+    var doc = { elementsFromPoint: function () { return []; }, documentElement: {}, activeElement: active || bodyEl };
+    var hit = withPage({ window: win, document: doc }, function () { return fnPreClickProbeFn(x, y); });
+    // The stop closure reads the GLOBAL window when it runs, so it has to run
+    // inside the stub page, as it does inside the real one.
+    var stop = function () { withPage({ window: win, document: doc }, function () { win.__seleniteCrawlProbeStop(); }); };
+    return { hit: hit, adds: adds, rems: rems, win: win, stop: stop };
+  };
+  var noCoord = preHit(-1, -1);
+  eq('a coordinate-less probe does NOT claim there is nothing at the point', noCoord.hit.nothingAtPoint, null);
+  eq('  it says it did not probe', noCoord.hit.notProbed, 'no-coordinate');
+  ok('  and null is falsy, so the stop sentence cannot be built from it', !noCoord.hit.nothingAtPoint);
+  eq('a real point with nothing under it still says so', preHit(10, 10).hit.nothingAtPoint, true);
+  ok('  and does not call that "not probed"', preHit(10, 10).hit.notProbed === undefined);
+  ok('the probe arms an input watch alongside the click watch',
+     noCoord.adds.map(function (a) { return a[0]; }).sort().join(',') === 'click,input', noCoord.adds);
+  noCoord.stop();
+  eq('  and removes both when it stops', noCoord.rems.sort().join(','), 'click,input');
+  var armedState = null;
+  (function () {
+    var p = preHit(-1, -1, field({ value: 'abc' }));
+    armedState = p.win.__seleniteCrawlProbe;
+    // The listener the probe installed, fired the way a real input event would be.
+    var onInput = p.adds.filter(function (a) { return a[0] === 'input'; })[0][1];
+    onInput({ target: field({ id: 'pet-name-1' }) });
+    onInput({ target: field({ id: 'second' }) });
+  })();
+  eq('it records what was focused before', armedState.focusBefore, '#pet-name-1');
+  eq('  and the value length before', armedState.valueLenBefore, 3);
+  eq('  an input event flips `edited`', armedState.edited, true);
+  eq('  and the FIRST target wins', armedState.editedTo, '#pet-name-1');
+  var pwArmed = preHit(-1, -1, field({ type: 'password', value: 'secret' })).win.__seleniteCrawlProbe;
+  eq('a password\'s length is not read before the typing either', pwArmed.valueLenBefore, null);
+  eq('  though it is still named as focused', pwArmed.focusBefore, '#pet-name-1');
+
+  // THE WIRE, as with structuralMutations: the probe, the verdict and the export
+  // can each be right while nothing connects them. Assert the middle.
+  var typeBranch = _bg.slice(_bg.indexOf("} else if (action === 'type') {"), _bg.indexOf("} else if (action === 'key') {"));
+  ok('the type branch is a real slice', typeBranch.length > 100, typeBranch.length);
+  ok('  and now settles before anything is read back (it was the only path with no settle)',
+     /setTimeout\(r, 400\)/.test(typeBranch), typeBranch);
+  ok('the typed text is passed IN to the post probe',
+     /fnPostActionProbeFn,\s*\[action === 'type' \? String\(b\.input\?\.text \|\| ''\) : null\]/.test(_bg));
+  ok('the verdict is stored on the action record', _bg.indexOf("if (action === 'type') rec.typed = fnTypedOutcome(rec.edit);") !== -1);
+  ok('  and the record declares it, null until a type action fills it', /typed: null, edit: null/.test(_bg));
+  // Only a MEASURED false is ever reported to the agent: null is "could not tell".
+  var typedNudge = _bg.slice(_bg.indexOf('if (!rec.error && rec.typed && rec.typed.landed === false)'));
+  ok('the agent is told only on a measured false', typedNudge.length > 0
+     && typedNudge.slice(0, 400).indexOf('no element reported an input event') !== -1);
+  ok('  never on null', _bg.indexOf('rec.typed.landed === null') === -1 && _bg.indexOf('rec.typed.landed !== true') === -1);
+  eq('  and the stuck detector was not touched: a type is still not a progress action',
+     fnCountsForProgress({ action: 'type', error: null, outOfRange: false }), false);
+
+  // The export. null is "not a type action, or an older worker"; it must not be
+  // rewritten into landed:false, and the typed text must not appear.
+  var funnelLog = buildDebugLog({ ts: 1, pageUrls: [], modes: [{ mode: 'funnel', name: 'Funnel Crawl', status: 'ran',
+    data: { reachedEnd: false, error: null, segments: [{ from: 'a', to: 'b', reached: false, steps: 2, actions: [
+      { step: 1, action: 'type', typed: { landed: true, into: '#pet-name-1', kind: 'input:text', valueLen: 11, match: 'exact' } },
+      { step: 2, action: 'left_click' },
+      { step: 3, action: 'type', typed: { landed: null, into: null, kind: null, valueLen: null, match: null } },
+    ] }] } }] });
+  var typedActs = funnelLog.funnel.segments[0].actions;
+  eq('the debug log carries the verdict', typedActs[0].typed.landed, true);
+  eq('  and where it landed', typedActs[0].typed.into, '#pet-name-1');
+  eq('a click has no typed verdict: null, not an object', typedActs[1].typed, null);
+  eq('a type that could not be read keeps landed:null rather than false', typedActs[2].typed.landed, null);
+
   // THE WIRE, not the ends of it. structuralMutations shipped with the observer
   // counting it and the export exporting it, and nothing in between putting it
   // on the action record — so fnDidSomething fell back to the total on every
@@ -4699,6 +4879,465 @@ section('agentic screenshot reuses the console mirror\'s session');
   eq('an unheld tab is screenshotted', r.v, 'data:image/png;base64,AAAA');
   eq('  by attaching and detaching around it', calls.join(','), 'attach,Page.captureScreenshot,detach');
   delete chrome.debugger;
+})();
+
+// ── queue steps through the Test Agent ──────────────────────────────────────
+// The Function Queue hands a failed scripted step to the funnel's agent loop (a
+// HEAL), and gained two steps that ARE the agent (Navigate to, Prompt Function).
+// Everything that decides something about them is pure, so it is tested here.
+section('queue steps through the Test Agent');
+(function queueAgent() {
+  load('funnel-sentence-cases.js');
+
+  // ---- the funnel's own sentences did not move ----
+  // fnStopSentence was extended so a step goal can reuse its branches, which
+  // touched six of its seven `${s.to}` sites. fixtures-funnel-sentences.json was
+  // generated from the build BEFORE that, so equality here is the proof that no
+  // funnel sentence changed. (Regenerate only after a DELIBERATE wording change:
+  // see regen-funnel-sentences.js, and read the diff.)
+  var SNAP = JSON.parse(readFile('fixtures-funnel-sentences.json'));
+  var moved = Object.keys(FN_SENTENCE_CASES).filter(function (k) {
+    return fnStopSentence(FN_SENTENCE_CASES[k]) !== SNAP.cases[k];
+  });
+  eq('every branch of the funnel stop sentence is byte-identical to the baseline build', moved.join(','), '');
+  eq('  and the snapshot covers every branch there is',
+     Object.keys(SNAP.cases).sort().join(','), Object.keys(FN_SENTENCE_CASES).sort().join(','));
+  ok('  of which there are plenty', Object.keys(SNAP.cases).length >= 30, Object.keys(SNAP.cases).length);
+  var FUN = JSON.parse(readFile('fixtures-real-funnel.json'));
+  var movedReal = [], realN = 0, notInSnap = [];
+  Object.keys(FUN).forEach(function (rid) {
+    (FUN[rid].segments || []).forEach(function (sg, i) {
+      realN++;
+      var key = rid + '#' + i;
+      if (!(key in SNAP.real)) notInSnap.push(key);
+      else if (fnStopSentence(sg) !== SNAP.real[key]) movedReal.push(key);
+    });
+  });
+  eq('  and so is the sentence for every real recorded segment', movedReal.join(','), '');
+  eq('  none of which is missing from the snapshot (regenerate it after a fixture refresh)', notInSnap.join(','), '');
+  ok('  and there are real segments to check', realN >= 12, realN);
+  eq('a funnel goal reads as its URL', fnGoalPhrase({ to: 'https://x.test/end' }), 'https://x.test/end');
+  eq('  exactly, even when there is none', fnGoalPhrase({}), undefined);
+
+  // ---- what the agent may take over ----
+  ['click', 'fill', 'submit', 'autofill_form', 'select_by_name'].forEach(function (f) {
+    ok('the agent may take over ' + f, fnHealableFunc(f));
+  });
+  ['open_url', 'back', 'forward', 'refresh', 'spa_refresh', 'spa_back_forth', 'spa_resize', 'wait_seconds',
+   'track_metric', 'trigger_metric', 'clear_session_data', 'send_keys_action', 'switch_to', 'alert',
+   'agent_navigate', 'agent_prompt', '', undefined].forEach(function (f) {
+    ok('  but never ' + String(f || '(none)') + ': a failure there is a real failure', !fnHealableFunc(f));
+  });
+
+  // ---- only an error that PROVES the step did nothing starts a heal ----
+  ['ID not found: pet-name', 'Name not found: email', 'CSS selector not found: .cta', 'XPath not found: //a',
+   'Link text not found: Buy now', 'Element not found (css): #field', 'Select not found: petBreed',
+   'CSS not found: #quote-form', 'Autofill matched no fields on this page.',
+   'Uncaught Error: ID not found: x'].forEach(function (m) {
+    ok('a lookup failure heals: ' + m, fnHealTrigger(m), m);
+  });
+  [
+    // A product-state finding: the agent would "fix" it by filling the form.
+    ['a disabled control', 'Element is disabled, click ignored: .btn-primary — check that prior fields filled & validated'],
+    ['a disabled control whose selector says "not found"', 'Element is disabled, click ignored: .not found-btn — check that prior fields filled & validated'],
+    // The selector resolved; the step type does not apply.
+    ['submit with no <form> ancestor', "Cannot read properties of null (reading 'submit')"],
+    ['  (the JavaScriptCore wording)', 'null is not an object (evaluating \'el.closest(\'form\').submit\')'],
+    ['an unknown method', 'Unknown click method: magic'],
+    // The step may already have acted: a second submit is not idempotent.
+    ['a frame removed mid-step', 'Frame with ID 0 was removed.'],
+    ['a closed tab', 'No tab with id: 12.'],
+    ['an unreachable page', 'Cannot access contents of the page. Extension manifest must request permission'],
+    ['a dropped message port', 'Could not establish connection. Receiving end does not exist.'],
+    // A selector that merely CONTAINS the words must not turn another failure into a heal.
+    ['a navigation error quoting .navigation', 'The frame was navigated away from .navigation'],
+    ['a partial autofill (not an error at all)', 'Filled 2/7 — missed: Phone (not found), Address (not found)'],
+    ['an empty message', ''], ['a null message', null], ['an undefined one', undefined],
+  ].forEach(function (c) {
+    ok('is NOT a trigger: ' + c[0], !fnHealTrigger(c[1]), c[1]);
+  });
+
+  // ---- the agent ends a goal by CALLING a tool: the report is normalised ----
+  var rep = fnNormalizeReport({ status: 'done', summary: '  I clicked\nthe  button.  ' });
+  eq('a report keeps its status', rep.status, 'done');
+  eq('  and a one-line, trimmed summary', rep.summary, 'I clicked the button.');
+  eq('  and no blocker unless it was blocked', rep.blocker, null);
+  eq('a blocked report keeps the named gate', fnNormalizeReport({ status: 'blocked', summary: 's', blocker: 'captcha' }).blocker, 'captcha');
+  eq('  and defaults an unnamed one to other', fnNormalizeReport({ status: 'blocked', summary: 's' }).blocker, 'other');
+  eq('  and an invented gate to other', fnNormalizeReport({ status: 'blocked', summary: 's', blocker: 'ufo' }).blocker, 'other');
+  eq('a blocker on a done report is dropped', fnNormalizeReport({ status: 'done', summary: 's', blocker: 'captcha' }).blocker, null);
+  var bad = fnNormalizeReport({ status: 'finished', summary: 'x' });
+  eq('an unreadable status is a could_not, not a guess at what was meant', bad.status, 'could_not');
+  ok('  and says it was malformed', bad.malformed === true);
+  eq('a report with nothing in it is a could_not too', fnNormalizeReport(null).status, 'could_not');
+  eq('a long summary is capped', fnNormalizeReport({ status: 'done', summary: new Array(900).join('x') }).summary.length, 400);
+
+  // ---- what an export calls a step: never what a tester typed ----
+  eq('a click names its selector', fnStepLabel('click', 'Click', { selector: '#cta' }, 0, ''), 'Click · #cta');
+  var fillLabel = fnStepLabel('fill', 'Fill Field', { selector: '#email', text: 'hunter2-secret' }, 0, '');
+  eq('a fill names its selector', fillLabel, 'Fill Field · #email');
+  ok('  and NEVER its text', fillLabel.indexOf('hunter2') === -1, fillLabel);
+  eq('a prompt is named by its ordinal', fnStepLabel('agent_prompt', 'Prompt Function', { prompt: 'log in as admin / hunter2' }, 2, ''), 'Prompt Function #2');
+  ok('  and never by its text', fnStepLabel('agent_prompt', 'Prompt Function', { prompt: 'password is hunter2' }, 1, '').indexOf('hunter2') === -1);
+  eq('  or by its group name when it has one', fnStepLabel('agent_prompt', 'Prompt Function', { prompt: 'x' }, 2, 'Add to cart'), 'Add to cart');
+  eq('a Navigate step names its URL without the query',
+     fnStepLabel('agent_navigate', 'Navigate to (Test Agent)', { url: 'https://x.test/cart?optimizely_token=abc#top', notes: 'user: a pass: b' }, 0, ''),
+     'Navigate to (Test Agent) · https://x.test/cart');
+  ok('  and never its notes', fnStepLabel('agent_navigate', 'N', { url: 'https://x.test/', notes: 'pass: hunter2' }, 0, '').indexOf('hunter2') === -1);
+  eq('a step with nothing to name keeps its display name', fnStepLabel('wait_seconds', 'Wait (seconds)', { seconds: '3' }, 0, ''), 'Wait (seconds)');
+
+  // ---- the goal text the agent is given ----
+  var ctx = { prev: [{ label: 'Open URL' }], next: [{ label: 'Fill Field · #email' }, { label: 'Click · #go' }],
+              history: [{ label: 'Open URL', status: 'passed' }] };
+  var gc = fnHealGoal({ func: 'click', inputs: { method: 'css', selector: '#old-cta' } }, ctx);
+  ok('a click goal names the selector that failed', gc.text.indexOf('"#old-cta"') !== -1, gc.text);
+  ok('  and says the lookup failed, so the page may have changed', /lookup failed/.test(gc.text));
+  ok('  and names the steps around it', gc.text.indexOf('"Open URL"') !== -1 && gc.text.indexOf('"Fill Field · #email"') !== -1);
+  ok('  as NOT the agent\'s to do', /NOT yours to do/.test(gc.text));
+  ok('  and what already happened in this run', gc.text.indexOf('"Open URL" (passed)') !== -1);
+  eq('  with no wanted option', gc.want, null);
+  eq('  and no expected text', gc.expectText, null);
+  var gf = fnHealGoal({ func: 'fill', inputs: { method: 'id', selector: 'email', text: 'a "quoted"\nvalue' } }, null);
+  eq('a fill goal carries the exact text to expect', gf.expectText, 'a "quoted"\nvalue');
+  ok('  JSON-quoted in the goal, so quotes and newlines survive', gf.text.indexOf(JSON.stringify('a "quoted"\nvalue')) !== -1, gf.text);
+  ok('  and says typing replaces', /replaces/.test(gf.text));
+  var longText = new Array(400).join('abc');
+  ok('  and a long value is never truncated into a different one',
+     fnHealGoal({ func: 'fill', inputs: { method: 'id', selector: 'e', text: longText } }, null).text.indexOf(JSON.stringify(longText)) !== -1);
+  var gs = fnHealGoal({ func: 'select_by_name', inputs: { name: 'petBirthYear', value: '7' } }, null);
+  eq('a dropdown goal carries the option it must end on', gs.want, '7');
+  ok('  and names the dropdown', gs.text.indexOf('"petBirthYear"') !== -1);
+  var ga = fnHealGoal({ func: 'autofill_form', inputs: { firstName: 'QA', lastName: '', email: 'qa@example.com', zip: ' ' } }, null);
+  ok('an autofill goal lists only the values it was given', /First name: "QA"/.test(ga.text) && /Email: "qa@example.com"/.test(ga.text)
+     && ga.text.indexOf('Last name') === -1 && ga.text.indexOf('ZIP') === -1, ga.text);
+  ok('a submit goal says how a visitor would do it', /submit button, or press Enter/.test(fnHealGoal({ func: 'submit', inputs: { method: 'id', selector: 'f' } }, null).text));
+  var gp = fnPromptGoal('Add the first product to the cart', ctx);
+  ok('a prompt goal carries the tester\'s words', gp.text.indexOf('Add the first product to the cart') !== -1);
+  ok('  and the same surrounding context', gp.text.indexOf('"Click · #go"') !== -1);
+  eq('  with nothing to expect', gp.expectText, null);
+  eq('no context adds nothing', fnPromptGoal('x', null).text, "The tester's instruction: x");
+
+  // ---- how a healed step ended, from what the actions MEASURED ----
+  var click = function (o) {
+    return Object.assign({ action: 'left_click', error: null, outOfRange: false, delivered: true, mutations: 3,
+                           structuralMutations: 2, urlAfter: 'https://x.test/a' }, o || {});
+  };
+  var done = { status: 'done', summary: 'ok', blocker: null };
+  var vctx = { startUrl: 'https://x.test/a' };
+  eq('a delivered click that moved the page is healed', fnHealVerdict('click', [click()], done, vctx).status, 'healed');
+  eq('  and says why', fnHealVerdict('click', [click()], done, vctx).reason, 'delivered-and-page-moved');
+  eq('a delivered click that changed the URL is healed', fnHealVerdict('click', [click({ structuralMutations: 0, urlAfter: 'https://x.test/b' })], done, vctx).status, 'healed');
+  eq('a delivered click that changed NOTHING is unverified, never healed',
+     fnHealVerdict('click', [click({ structuralMutations: 0, mutations: 4 })], done, vctx).status, 'healed-unverified');
+  eq('a click no element received is a failure',
+     fnHealVerdict('click', [click({ delivered: false, structuralMutations: 0 })], done, vctx).status, 'failed');
+  eq('a click whose delivery could not be measured is unverified',
+     fnHealVerdict('click', [click({ delivered: null })], done, vctx).status, 'healed-unverified');
+  eq('"done" with no click at all is unverified, not a guess', fnHealVerdict('click', [], done, vctx).status, 'healed-unverified');
+  // THE ONE THAT MATTERS: an earlier banner dismissal also has a delivered click
+  // and a structural mutation, and must not make the target look clicked.
+  eq('only the LAST click counts: a banner dismissal does not vouch for the target',
+     fnHealVerdict('click', [click({ structuralMutations: 5, urlAfter: 'https://x.test/b' }), click({ structuralMutations: 0, urlAfter: 'https://x.test/b' })],
+       done, vctx).status, 'healed-unverified');
+  eq('  and a navigation an EARLIER click caused is not credited to the last one',
+     fnHealVerdict('click', [click({ structuralMutations: 0, urlAfter: 'https://x.test/b' }), click({ structuralMutations: 0, urlAfter: 'https://x.test/b' })],
+       done, vctx).status, 'healed-unverified');
+  // THE REAL-CHROME CASE (measured): a click that navigates destroys the page's
+  // probe with the old document, so delivery reads null, and the URL is the evidence.
+  var navClick = function (o) { return click(Object.assign({ delivered: null, mutations: null, structuralMutations: null, urlAfter: 'https://x.test/quote' }, o || {})); };
+  eq('a click whose probe died in the navigation it caused is healed on the navigation',
+     fnHealVerdict('click', [navClick()], done, vctx).status, 'healed');
+  eq('  and says why', fnHealVerdict('click', [navClick()], done, vctx).reason, 'click-then-navigation');
+  eq('  but an unknown delivery with NO navigation is still unverified',
+     fnHealVerdict('click', [navClick({ urlAfter: 'https://x.test/a' })], done, vctx).status, 'healed-unverified');
+  eq('  and a delivered click that moved nothing stays unverified',
+     fnHealVerdict('click', [click({ structuralMutations: 0, urlAfter: 'https://x.test/a' })], done, vctx).reason, 'delivered-page-unchanged');
+  eq('  and a navigation after an earlier navigating click is not this click\'s',
+     fnHealVerdict('click', [navClick(), navClick()], done, vctx).status, 'healed-unverified');
+  eq('a click that never ran (out of range) is not evidence',
+     fnHealVerdict('click', [click({ outOfRange: true })], done, vctx).status, 'healed-unverified');
+  eq('a click that errored is not evidence',
+     fnHealVerdict('click', [click({ error: 'x' })], done, vctx).status, 'healed-unverified');
+  eq('a submit by Enter that moved the page is healed',
+     fnHealVerdict('submit', [{ action: 'key', error: null, outOfRange: false, delivered: false, structuralMutations: 3, mutations: 3, urlAfter: 'https://x.test/a' }], done, vctx).status, 'healed');
+  eq('  and by Enter that moved nothing is unverified',
+     fnHealVerdict('submit', [{ action: 'key', error: null, outOfRange: false, structuralMutations: 0, mutations: 0, urlAfter: 'https://x.test/a' }], done, vctx).status, 'healed-unverified');
+
+  var typedAct = function (typed, extra) { return Object.assign({ action: 'type', error: null, outOfRange: false, typed: typed, typedExpected: true }, extra || {}); };
+  var landedExact = { landed: true, into: '#email', kind: 'input:text', valueLen: 9, match: 'exact' };
+  eq('a fill whose field holds exactly the step\'s text is healed', fnHealVerdict('fill', [typedAct(landedExact)], done, vctx).status, 'healed');
+  eq('  but not if the agent typed something other than the step\'s text',
+     fnHealVerdict('fill', [typedAct(landedExact, { typedExpected: false })], done, vctx).status, 'healed-unverified');
+  eq('  and not when typedExpected was never recorded', fnHealVerdict('fill', [typedAct(landedExact, { typedExpected: undefined })], done, vctx).status, 'healed-unverified');
+  eq('typing that measurably did not land is a failure', fnHealVerdict('fill', [typedAct({ landed: false, match: 'absent' })], done, vctx).status, 'failed');
+  eq('a field that still holds OTHER text is a failure (the replace did not take)',
+     fnHealVerdict('fill', [typedAct({ landed: true, match: 'contains', valueLen: 20 })], done, vctx).status, 'failed');
+  eq('an input MASK (event fired, text absent) is unverified, not a failure',
+     fnHealVerdict('fill', [typedAct({ landed: true, match: 'absent', valueLen: 14 })], done, vctx).status, 'healed-unverified');
+  eq('null is "could not tell", not a failure', fnHealVerdict('fill', [typedAct({ landed: null, match: null })], done, vctx).status, 'healed-unverified');
+  eq('a fill that typed nothing is unverified', fnHealVerdict('fill', [click()], done, vctx).status, 'healed-unverified');
+  eq('  and says nothing was typed', fnHealVerdict('fill', [click()], done, vctx).reason, 'nothing-typed');
+  eq('the LAST typing decides: a retype that landed beats a first that did not',
+     fnHealVerdict('fill', [typedAct({ landed: false, match: 'absent' }), typedAct(landedExact)], done, vctx).status, 'healed');
+
+  var pick = function (c) { return { action: 'left_click', error: null, outOfRange: false, choice: c }; };
+  eq('a dropdown set to the wanted option is healed',
+     fnHealVerdict('select_by_name', [pick({ applied: true, matchedWant: true })], done, vctx).status, 'healed');
+  eq('a dropdown that did not keep the value is a failure',
+     fnHealVerdict('select_by_name', [pick({ applied: false, matchedWant: true })], done, vctx).status, 'failed');
+  eq('a dropdown the native chooser never touched (a custom widget) is unverified',
+     fnHealVerdict('select_by_name', [click()], done, vctx).status, 'healed-unverified');
+  eq('an autofill that typed something is unverified (the fields are not checked one by one)',
+     fnHealVerdict('autofill_form', [typedAct(landedExact)], done, vctx).status, 'healed-unverified');
+  eq('  and says so', fnHealVerdict('autofill_form', [typedAct(landedExact)], done, vctx).reason, 'fields-not-individually-checked');
+  eq('an unknown func falls back to the click rule', fnHealVerdict('mystery', [click()], done, vctx).status, 'healed');
+
+  eq('a could_not report is a failure', fnHealVerdict('click', [click()], { status: 'could_not', summary: 'no such button' }, vctx).status, 'failed');
+  eq('a blocked report keeps its gate', fnHealVerdict('click', [], { status: 'blocked', summary: 's', blocker: 'captcha' }, vctx).gate, 'captcha');
+  eq('  and "other" is no gate', fnHealVerdict('click', [], { status: 'blocked', summary: 's', blocker: 'other' }, vctx).gate, null);
+  eq('no report at all is a failure', fnHealVerdict('click', [click()], null, vctx).status, 'failed');
+  ok('a verdict carries the evidence it rests on', fnHealVerdict('click', [click()], done, vctx).evidence.clicks === 1);
+  var ev = fnActionEvidence([click(), typedAct(landedExact), pick({ applied: true }), click({ error: 'x' })], vctx);
+  eq('evidence counts only actions that ran', ev.actions, 3);
+  eq('  its clicks (a dropdown choice is made BY a click, so it is one)', ev.clicks, 2);
+  eq('  its typing', ev.typed, 1);
+  eq('  its dropdown choices', ev.choices, 1);
+
+  // ---- a Prompt Function's verdict: reported by the agent, never measured ----
+  var pv = function (rep) { return fnPromptVerdict(rep, [click()], vctx); };
+  eq('done is "agent-reported", never passed: nothing measures what a prompt asked for', pv(done).status, 'done-agent-reported');
+  eq('  and carries the evidence it rests on', pv(done).evidence.clicks, 1);
+  eq('could_not is a failure', pv({ status: 'could_not', summary: 's' }).status, 'failed');
+  ok('there is no Done-when check any more', typeof fnDoneCheck === 'undefined');
+  eq('blocked keeps its gate', pv({ status: 'blocked', summary: 's', blocker: 'payment' }).gate, 'payment');
+  eq('  and a blocked step is not a success', fnVerdictOk(pv({ status: 'blocked', summary: 's', blocker: 'payment' })), false);
+  eq('no report is a failure', pv(null).status, 'failed');
+  ['passed', 'healed', 'healed-unverified', 'done-agent-reported'].forEach(function (st) {
+    ok('  ' + st + ' lets the queue go on', fnVerdictOk({ status: st }));
+  });
+  ['failed', 'blocked', 'stopped', 'skipped', 'not-attempted', 'running', undefined].forEach(function (st) {
+    ok('  ' + String(st) + ' does not', !fnVerdictOk({ status: st }));
+  });
+  ok('  and no verdict at all does not', !fnVerdictOk(null));
+
+  // ---- the sentence for a goal that ended by report ----
+  var gseg = function (verdict, report, o) {
+    return Object.assign({ goal: { kind: 'step', func: 'click', label: 'Click · #cta' }, stopReason: 'step-done', steps: 3,
+                           report: report || { status: 'done', summary: 'I clicked the Get a quote button.' }, verdict: verdict }, o || {});
+  };
+  var sH = fnStopSentence(gseg({ status: 'healed', reason: 'delivered-and-page-moved' }));
+  ok('a healed step says the page showed an effect', /the step "Click · #cta" in 3 agent step\(s\), and a click reached an element and the page changed/.test(sH), sH);
+  ok('  and quotes what the agent said', sH.indexOf('I clicked the Get a quote button.') !== -1);
+  var sU = fnStopSentence(gseg({ status: 'healed-unverified', reason: 'delivered-page-unchanged' }));
+  ok('an unverified heal says delivery is confirmable and intent is not', /Delivery is confirmable here and intent is not/.test(sU), sU);
+  ok('  and says what was missing', /the click reached an element but the page did not change/.test(sU), sU);
+  var sA = fnStopSentence(gseg({ status: 'done-agent-reported', reason: 'agent-reported' }, null, { goal: { kind: 'prompt', label: 'Prompt Function #1' } }));
+  ok('an agent-reported prompt says it is the agent\'s own account', /own account/.test(sA) && /nothing measures what the prompt asked for/.test(sA), sA);
+  var sB = fnStopSentence(gseg({ status: 'blocked', reason: 'reported', gate: 'captcha' }, { status: 'blocked', summary: 'A CAPTCHA appeared.', blocker: 'captcha' }));
+  ok('a blocked step names the gate and says it is not attempted', /reported a CAPTCHA \/ bot check, which it is instructed not to attempt/.test(sB), sB);
+  var sC = fnStopSentence(gseg({ status: 'failed', reason: 'could-not' }, { status: 'could_not', summary: 'There is no such button.' }));
+  ok('a could_not is called the agent\'s own account, not a measurement', /its own account, not a measurement/.test(sC), sC);
+  ok('  and never claims the site is broken', !/broken|defect|bug/i.test(sC + sU + sB));
+  ok('a typing that did not land is described as measured',
+     /no input event fired and the value did not change/.test(fnStopSentence(gseg({ status: 'failed', reason: 'typing-did-not-land' }))));
+  ok('a field holding other text is described', /also holds text that was not typed/.test(fnStopSentence(gseg({ status: 'failed', reason: 'field-holds-other-text' }))));
+  ok('a dropdown that did not keep its value is described', /did not keep the value/.test(fnStopSentence(gseg({ status: 'failed', reason: 'dropdown-did-not-keep-value' }))));
+  ok('a click nothing received is described', /no element received it/.test(fnStopSentence(gseg({ status: 'failed', reason: 'click-not-delivered' }))));
+  ok('a report with no verdict decided still says what it reported',
+     /reported "done" for the step "Click · #cta" after 3 agent step\(s\)/.test(fnStopSentence(gseg(null))));
+  // Every OTHER way a goal can stop reuses the funnel's branches, saying the goal
+  // where a URL goal says its URL.
+  var gt = fnStopSentence({ goal: { kind: 'prompt', label: 'Prompt Function #2' }, stopReason: 'timeout', steps: 4, elapsedMs: 300000, actions: [] });
+  ok('a timed-out prompt names the prompt, not a URL', /without reaching the step "Prompt Function #2"/.test(gt), gt);
+  var gs2 = fnStopSentence({ goal: { kind: 'step', func: 'click', label: 'Click · #cta' }, stopReason: 'stuck', steps: 6, actions: [] });
+  ok('a stuck heal reuses the stuck wording', /repeated an action that provably changed nothing/.test(gs2), gs2);
+  var gn = fnStopSentence({ goal: { kind: 'prompt' }, stopReason: 'agent-stopped', steps: 2, finalText: 'I could not tell.' });
+  ok('a goal with no label is still a sentence', /without reaching the prompt and without naming anything/.test(gn), gn);
+  var gk = fnStopSentence({ goal: { kind: 'step', label: 'Click' }, stopReason: 'agent-stopped', steps: 2, finalText: 'A reCAPTCHA is in the way.' });
+  ok('the gate branch still classifies an agent that stopped without reporting', /CAPTCHA \/ bot check/.test(gk), gk);
+
+  // ---- the host+path key a Navigate step compares ----
+  eq('the query is not part of the key', fnHostPathKey('https://Shop.example/cart/?cro_mode=qa&x=1#top'), 'shop.example/cart');
+  eq('  nor is a trailing slash or the scheme', fnHostPathKey('http://shop.example/cart/'), 'shop.example/cart');
+  eq('  so the page the Open URL step reached matches a target typed without the query',
+     fnHostPathKey('https://shop.example/cart?cro_mode=qa'), fnHostPathKey('https://shop.example/cart'));
+  eq('  and a different path does not match', fnHostPathKey('https://shop.example/cart') === fnHostPathKey('https://shop.example/checkout'), false);
+  eq('  an empty URL is an empty key', fnHostPathKey(null), '');
+
+  // ---- what is stored and exported about a segment ----
+  var exp = fnQueueSegmentExport({
+    from: 'https://x.test/a?optimizely_token=SECRET#h', to: 'Prompt Function #1', reached: true, steps: 2, stopReason: 'step-done',
+    goal: { kind: 'prompt', func: null, label: 'Prompt Function #1', text: 'log in as admin / hunter2', want: 'secret-option', expectText: 'hunter2' },
+    report: { status: 'done', summary: 'Logged in.', blocker: null }, verdict: { status: 'done-agent-reported', reason: 'agent-reported' },
+    summary: 'The agent reports it carried out the step.', finalText: 'password hunter2 typed', note: 'typed hunter2',
+    actions: [
+      { step: 1, action: 'type', error: null, urlAfter: 'https://x.test/b?optimizely_token=SECRET', typed: { landed: true, into: '#pw', kind: 'input:password', valueLen: 7, match: null },
+        choice: { applied: true, matchedWant: true, chosenText: 'Secret Option Label', sampleOptions: ['a', 'b'], optionCount: 9 },
+        healTarget: { tag: 'input', id: 'pw', selector: '#pw' }, hit: { top: '#pw', stack: ['#pw', '#x'], coversPct: 3, chain: ['#pw'] }, mutations: 1, structuralMutations: 0 },
+    ],
+  });
+  var expJson = JSON.stringify(exp);
+  ok('an export has no query string anywhere', expJson.indexOf('optimizely_token') === -1 && expJson.indexOf('SECRET') === -1, expJson);
+  ok('  and none of what was typed or asked for', expJson.indexOf('hunter2') === -1 && expJson.indexOf('secret-option') === -1, expJson);
+  ok('  nor the goal text, the final text or the notes', expJson.indexOf('log in as admin') === -1 && expJson.indexOf('note') === -1);
+  eq('  but the verdict survives', exp.verdict.status, 'done-agent-reported');
+  eq('  and the agent\'s own report', exp.report.summary, 'Logged in.');
+  eq('  and what was typed is a verdict and a length, not text', exp.actions[0].typed.valueLen, 7);
+  eq('  a choice is reduced to whether it held', exp.actions[0].choice.matchedWant, true);
+  ok('  without the option labels', expJson.indexOf('Secret Option Label') === -1 && expJson.indexOf('sampleOptions') === -1);
+  eq('  and what a heal aimed at', exp.actions[0].healTarget.selector, '#pw');
+  eq('  the hit is trimmed', Object.keys(exp.actions[0].hit).sort().join(','), 'coversPct,disabled,isIframe,nothingAtPoint,top');
+  eq('a goal segment exports no target URL', exp.to, null);
+  eq('  and says what kind it was', exp.kind, 'prompt');
+  eq('a funnel-style segment keeps its target', fnQueueSegmentExport({ from: 'https://x.test/', to: 'https://x.test/end?q=1', actions: [] }).to, 'https://x.test/end');
+  eq('  and says it is a URL goal', fnQueueSegmentExport({ from: 'a', to: 'b', actions: [] }).kind, 'url');
+  eq('nothing in, nothing out', fnQueueSegmentExport(null), null);
+
+  // ---- a step's own failure comes back as a RETURNED value ----
+  // MEASURED in Chrome 154: executeScript resolves { result: null } when the injected
+  // function throws (sync, async, rejected promise, thrown string, ReferenceError),
+  // so a thrown "ID not found" never reached the worker and the step "passed".
+  eq('a step failure is read from what the page returned', fnStepError({ __selError: 'ID not found: x' }), 'ID not found: x');
+  eq('  any other result is the step\'s own', fnStepError({ ok: 1 }), null);
+  eq('  null (what a throw becomes) is not an error report', fnStepError(null), null);
+  eq('  nor undefined', fnStepError(undefined), null);
+  eq('  nor a string', fnStepError('ID not found: x'), null);
+  eq('  nor an empty message', fnStepError({ __selError: '' }), null);
+  eq('  nor a message that is not text', fnStepError({ __selError: 5 }), null);
+  eq('  nor autofill\'s per-field results', fnStepError({ firstName: 'filled', email: 'not found' }), null);
+  var actSrc = _bg.slice(_bg.indexOf('  click: async (tabId, { method, selector }) => {'), _bg.indexOf('  send_keys_action: async'));
+  ok('the action slice is a real one', actSrc.length > 3000, actSrc.length);
+  eq('no click, fill, submit, select or autofill reads its page through plain exec (a throw there is swallowed)',
+     (actSrc.match(/await exec\(tabId,/g) || []).length, 0);
+  eq('  and none still throws inside the page for a lookup or a disabled control',
+     (actSrc.match(/throw new Error\(`[^`]*(?:not found|is disabled)/g) || []).length, 0);
+  ok('  they return the failure instead', (actSrc.match(/return \{ __selError:/g) || []).length >= 14, (actSrc.match(/return \{ __selError:/g) || []).length);
+  ok('  a submit with no <form> around it says so, rather than being a swallowed TypeError',
+     /No <form> around the element to submit/.test(actSrc) && actSrc.indexOf("el.closest('form').submit()") === -1);
+  ok('  and the worker-side errors (an unknown method) are still real throws', /throw new Error\(`Unknown click method/.test(actSrc));
+
+  // ---- the dropdown chooser takes a wanted option, and the funnel still picks at random ----
+  var opt = function (value, text, disabled) { return { value: value, text: text, disabled: !!disabled }; };
+  function Sel(id, opts, selectedIndex) { this.id = id; this.name = id; this.multiple = false; this.options = opts; this.selectedIndex = selectedIndex == null ? 0 : selectedIndex; this.events = []; }
+  Object.defineProperty(Sel.prototype, 'value', {
+    get: function () { return (this.options[this.selectedIndex] || {}).value; },
+    set: function (v) { for (var i = 0; i < this.options.length; i++) if (this.options[i].value === v) { this.selectedIndex = i; return; } },
+  });
+  Sel.prototype.focus = function () {}; Sel.prototype.dispatchEvent = function (e) { this.events.push(e.type); return true; };
+  Sel.prototype.closest = function (q) { return q === 'select' ? this : null; };
+  var gg = (typeof globalThis === 'object') ? globalThis : this;
+  var withSel = function (el, fn) {
+    var had = { d: gg.document, H: gg.HTMLSelectElement, E: gg.Event };
+    gg.document = { elementsFromPoint: function () { return el ? [el] : []; } };
+    gg.HTMLSelectElement = Sel; gg.Event = function (t) { this.type = t; };
+    try { return fn(); } finally { gg.document = had.d; gg.HTMLSelectElement = had.H; gg.Event = had.E; }
+  };
+  var yr = function () { return new Sel('yr', [opt('', 'Age'), opt('1', '1 year'), opt('7', '7 years'), opt('9', '9 years', true)], 0); };
+  var w1 = yr(); var rw1 = withSel(w1, function () { return fnChooseOptionFn(1, 1, '7'); });
+  eq('a wanted option is chosen by value, not at random', w1.selectedIndex, 2);
+  eq('  and the record says it matched', rw1.matchedWant, true);
+  eq('  and that it held', rw1.applied, true);
+  var w2 = yr(); var rw2 = withSel(w2, function () { return fnChooseOptionFn(1, 1, '1 YEAR'); });
+  eq('a wanted option is matched by its text, case-insensitively, when no value fits', w2.selectedIndex, 1);
+  ok('  and still counts as the wanted one', rw2.matchedWant === true);
+  var w3 = yr(); var rw3 = withSel(w3, function () { return fnChooseOptionFn(1, 1, 'nope'); });
+  ok('an option that does not exist is an error, not a random pick', /no option matching/.test(rw3.error), rw3);
+  eq('  nothing is changed', w3.selectedIndex, 0);
+  eq('  and it says it did not match', rw3.matchedWant, false);
+  var w4 = yr(); w4.selectedIndex = 2; var rw4 = withSel(w4, function () { return fnChooseOptionFn(1, 1, '7'); });
+  ok('a dropdown already on the wanted option is set, not broken', rw4.alreadySet === true && rw4.error === null && rw4.applied === true && rw4.matchedWant === true, rw4);
+  var w5 = yr(); var rw5 = withSel(w5, function () { return fnChooseOptionFn(1, 1, '9'); });
+  ok('a disabled option cannot be wanted', /no option matching/.test(rw5.error), rw5);
+  var w6 = yr(); var rw6 = withSel(w6, function () { return fnChooseOptionFn(1, 1); });
+  ok('with nothing wanted it still picks, as the funnel always did', rw6.chosenIndex > 0 && rw6.error === null, rw6);
+  ok('  and its record carries no matchedWant key at all', !('matchedWant' in rw6), Object.keys(rw6));
+
+  // ---- the prompts share the funnel's SAFETY clauses word for word ----
+  var promptOf = function (name) {
+    var i = _bg.indexOf('const ' + name + ' = `');
+    return i === -1 ? '' : _bg.slice(i, _bg.indexOf('`;', i));
+  };
+  var funnelP = promptOf('FUNNEL_CRAWL_PRIMARY_PROMPT'), healP = promptOf('QUEUE_HEAL_PRIMARY_PROMPT'), promptP = promptOf('QUEUE_PROMPT_PRIMARY_PROMPT');
+  ok('all three prompts were found', funnelP.length > 500 && healP.length > 500 && promptP.length > 500, [funnelP.length, healP.length, promptP.length]);
+  [
+    'Never submit real payment details, and never complete an actual purchase, subscription, donation, or any other action that moves real money or creates a real financial obligation.',
+    'Never try to solve, bypass, or trick a CAPTCHA, bot-check, or login wall.',
+    'Only interact through the page itself — click, scroll, type, submit with Enter.',
+    'Take exactly one action, then look at the next screenshot before deciding your next move. Never plan several moves ahead in one turn.',
+  ].forEach(function (clause) {
+    ok('the funnel prompt carries: ' + clause.slice(0, 48) + '…', funnelP.indexOf(clause) !== -1);
+    ok('  and so does the heal prompt', healP.indexOf(clause) !== -1);
+    ok('  and so does the prompt-function prompt', promptP.indexOf(clause) !== -1);
+  });
+  ok('the new prompts say page text is content, not instructions', /content, not instructions/.test(healP) && /content, not instructions/.test(promptP));
+  ok('  and that typing replaces', /replaces whatever the focused field already holds/.test(healP) && /replaces whatever the focused field already holds/.test(promptP));
+  ok('  and that they end by calling report_result', /call report_result once/.test(healP) && /call report_result once/.test(promptP));
+  ok('the funnel prompt was not touched: it knows nothing of report_result', funnelP.indexOf('report_result') === -1);
+  ok('  and still ends by saying so in plain text', /say so in plain text/.test(funnelP));
+
+  // ---- what the debug log and the problems list say about a queue run ----
+  var qRun = function (steps, o) { return Object.assign({ engine: 'agent', startedAt: 1, ts: 2, startUrl: 'https://x.test/', healCount: 0, aborted: false, stopped: false, error: null, steps: steps }, o || {}); };
+  var qs = function (i, status, o) { return Object.assign({ i: i, func: 'click', label: 'Click · #s' + i, group: null, engine: 'direct', status: status, directError: null, segment: null }, o || {}); };
+  var problemsOf = function (run) {
+    return vdCollectProblems({ ts: 1, pageUrls: [], modes: [{ mode: 'queue', name: 'Functional Queue', status: 'ran', data: run }] })
+      .filter(function (p) { return p.where === 'function-queue'; });
+  };
+  var pp = problemsOf(qRun([qs(0, 'passed'), qs(1, 'healed', { engine: 'agent-heal', directError: 'CSS selector not found: #old', segment: { summary: 'S1.' } }),
+    qs(2, 'healed-unverified', { engine: 'agent-heal', directError: 'ID not found: e', segment: { summary: 'S2.' } }),
+    qs(3, 'done-agent-reported', { func: 'agent_prompt', engine: 'agent-prompt', segment: { summary: 'S3.' } }),
+    qs(4, 'failed', { engine: 'agent-heal', segment: { summary: 'S4.' } }),
+    qs(5, 'blocked', { func: 'agent_prompt', engine: 'agent-prompt', segment: { summary: 'S5.', blockedBy: { gate: 'captcha' } } }),
+    qs(6, 'blocked', { func: 'agent_prompt', engine: 'agent-prompt', segment: { summary: 'S6.', blockedBy: null } })], { aborted: true }));
+  eq('a healed step is a WARNING, not an error: the step got done, the saved step is what is wrong', pp[0].severity, 'warn');
+  ok('  naming the saved step\'s own error and that the agent did it', /Step 2 \(Click · #s1\) no longer ran as saved: CSS selector not found: #old\. The Test Agent did it instead\. S1\./.test(pp[0].detail), pp[0].detail);
+  ok('an unverified heal says nothing measurable confirms it', /nothing measurable confirms it/.test(pp[1].detail) && pp[1].severity === 'warn', pp[1]);
+  ok('an agent-reported prompt is a warning too', pp[2].severity === 'warn' && /own report/.test(pp[2].detail), pp[2]);
+  eq('a failed step is an error', pp[3].severity, 'error');
+  eq('a step blocked at a gate it was told to stop at is a warning (a complete answer)', pp[4].severity, 'warn');
+  eq('  and one blocked with no gate is an error', pp[5].severity, 'error');
+  eq('a passed step raises nothing', pp.filter(function (p) { return /Step 1 /.test(p.detail); }).length, 0);
+  var pa = problemsOf(qRun([qs(0, 'not-attempted')], { aborted: true, error: 'No Anthropic API key.' }));
+  ok('a run that stopped before any step ran says why, as an error', pa.length === 1 && pa[0].severity === 'error' && /before any step ran: No Anthropic API key\./.test(pa[0].detail), pa);
+  var ps = problemsOf(qRun([qs(0, 'passed'), qs(1, 'stopped')], { stopped: true }));
+  eq('a run the tester stopped is a note', ps.length === 1 && ps[0].severity === 'info', true);
+  eq('a clean run raises nothing', problemsOf(qRun([qs(0, 'passed')])).length, 0);
+  eq('a mode that was skipped raises nothing', vdCollectProblems({ ts: 1, pageUrls: [], modes: [{ mode: 'queue', status: 'skipped', reason: 'x' }] }).filter(function (p) { return p.where === 'function-queue'; }).length, 0);
+
+  var dbgRun = qRun([qs(0, 'healed', { engine: 'agent-heal', directError: 'CSS selector not found: #old', segment: fnQueueSegmentExport({ from: 'https://x.test/a?t=SECRET', goal: { kind: 'step', func: 'click', label: 'Click · #old' }, steps: 2, actions: [], summary: 'S' }) })], { healCount: 1 });
+  var dbg = buildDebugLog({ ts: 5, pageUrls: [], modes: [{ mode: 'queue', name: 'Functional Queue', status: 'ran', data: dbgRun }] });
+  eq('the debug log carries the queue run', dbg.queue.steps.length, 1);
+  eq('  its engine', dbg.queue.engine, 'agent');
+  eq('  how many heals', dbg.queue.healCount, 1);
+  eq('  and what the saved step said', dbg.queue.steps[0].directError, 'CSS selector not found: #old');
+  ok('  with no query string and no input values in it', JSON.stringify(dbg.queue).indexOf('SECRET') === -1 && JSON.stringify(dbg.queue).indexOf('inputs') === -1);
+  eq('a log from a run with no queue says so explicitly (null, not absent)', buildDebugLog({ ts: 5, pageUrls: [], modes: [] }).queue, null);
+  ok('  and the other modes are unaffected', 'funnel' in buildDebugLog({ ts: 5, pageUrls: [], modes: [] }));
+
+  // ---- the wire: a goal ends by report, and only a goal is offered the tool ----
+  var segSrc = _bg.slice(_bg.indexOf('async function crawlSegment'), _bg.indexOf('async function runFunnelCrawl'));
+  ok('the crawl is a real slice', segSrc.length > 4000, segSrc.length);
+  ok('report_result is offered only to a goal', /if \(goal\) tools\.push\(FN_REPORT_TOOL_DEF\);/.test(segSrc));
+  var interceptAt = segSrc.indexOf('b.name === FN_REPORT_TOOL');
+  var computerAt = segSrc.indexOf("b.name !== 'computer'");
+  ok('the report is handled BEFORE the computer blocks (an unanswered tool_use is a 400)', interceptAt > 0 && computerAt > interceptAt, [interceptAt, computerAt]);
+  ok('  and ends the loop', /out\.stopReason = 'step-done';\s*break;/.test(segSrc));
+  ok('a goal has no URL arrival check', !/targetKey = urlKey/.test(segSrc) && /const targetKey = goal \? null : urlKey\(target\);/.test(segSrc));
+  eq('  every arrival comparison is guarded by `!goal`',
+     (segSrc.match(/if \(!goal\) \{\s*try \{/g) || []).length, 3);
+  ok('an "already attached" tab is probed, not believed', /already attached/.test(segSrc) && /Page\.getLayoutMetrics/.test(segSrc));
+  ok('  and a reused session is never detached (attached stays false)', /reused = true;/.test(segSrc) && !/attached = true;\s*reused/.test(segSrc));
+  ok('a heal brings the tab to the front', /chrome\.tabs\.update\(tabId, \{ active: true \}\)/.test(segSrc));
+  ok('typing in a goal selects the field first, so it replaces', /typeof el\.select === 'function'/.test(segSrc));
+  ok('  and only a goal does', /if \(goal\) \{\s*try \{\s*await bounded\(exec\(tabId, \(\) => \{/.test(segSrc));
+  ok('a goal\'s text is not stored on the segment', !/out\.goal = \{[^}]*text/.test(segSrc));
+  ok('a heal records what it aimed at before the click', segSrc.indexOf('fnHealTargetFn') !== -1 && segSrc.indexOf('fnHealTargetFn') < segSrc.indexOf('dispatchTrustedClick(tabId'));
+  ok('a funnel call passes no opts, so the funnel prompt is used', segSrc.indexOf('FUNNEL_CRAWL_PRIMARY_PROMPT}\\n\\nYour specific task: navigate from') !== -1);
+  ok('the vision call for a goal gets the heal\'s bounds, and a funnel call gets none',
+     /goal \? \{ modelTimeoutMs: opts\.modelTimeoutMs, retries: opts\.retries \} : undefined/.test(segSrc));
+  ok('the budget can be overridden per goal', /opts && opts\.budgetMs\) \|\| FN_SEGMENT_BUDGET_MS/.test(segSrc));
+  ok('the verdict is decided after the loop, by the caller, only for a goal that reported',
+     /opts\.finalize && out\.stopReason === 'step-done'/.test(segSrc));
+  ok('a named gate becomes the same blockedBy shape the classifier makes', /out\.blockedBy = \{ gate: out\.report\.blocker, evidence: 'reported by the agent' \}/.test(segSrc));
 })();
 
 // ── report ─────────────────────────────────────────────────────────────────

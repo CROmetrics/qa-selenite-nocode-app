@@ -542,6 +542,23 @@
             <label for="tt-new">New tab</label>
           </div>
         </div>
+        <!-- Engine: Classic replays each step by its saved selector. Test Agent does
+             the same first and, when a step's selector no longer finds anything, has an
+             AI agent (Sonnet) do that one step by looking at the page. A Test Agent run
+             opens a report. Navigate / Prompt Function steps are the agent, so a queue
+             holding one always uses it (popup.js: effectiveEngine). Rendered state is
+             kept in step by syncEngineControl. -->
+        <div id="engine-block">
+          <label class="cap">Engine</label>
+          <div class="radio-group">
+            <input type="radio" name="engine" id="engine-classic" value="classic" checked>
+            <label for="engine-classic">Classic</label>
+            <input type="radio" name="engine" id="engine-agent" value="agent">
+            <label for="engine-agent">Test Agent</label>
+          </div>
+          <div style="font-size:10px;color:var(--fg3);line-height:1.5;margin-top:3px">Classic runs each step by its saved selector. Test Agent runs it that way first, and when a step's selector no longer finds anything an AI agent (Sonnet) does that one step by looking at the page, then the queue goes on. A Test Agent run opens a report. Needs an Anthropic API key; screenshots and any Fill text, Notes or Prompt go to Anthropic. Classic sends nothing.</div>
+          <div id="engine-note" style="font-size:10px;color:var(--warn);line-height:1.5;margin-top:3px;display:none"></div>
+        </div>
         <div class="queue-bar">
           <input type="text" id="save-name" placeholder="Script name…" style="flex:1;min-width:70px">
           <button class="btn sm" id="btn-save-script">Save</button>

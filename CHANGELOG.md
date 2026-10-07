@@ -2,6 +2,23 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-07 — 0.7.9
+
+The A/B tab's per-variant console was empty on every run, and counting it in the badge would have made it wrong the moment it filled.
+
+### Fixed
+
+- **A/B captures never held a console line.** All 208 captures in the 106 recorded logs read `consoleLineCount` 0, back to 36a0022. A run owns its window, so `followTab` never maps the variant tab, and the `browserLog` handler returned at its window lookup before it reached the per-variant buffer. The buffer is now filled first, synchronously, so a line is either in `captureVariant`'s copy or arrives after it and is dropped. Which window a line feeds is unchanged.
+
+### Changed
+
+- **Console lines no longer count toward the A/B badge.** A variant logging a line control doesn't (`[PJS] variation 2 applied`) is what a working variant does, and lines are compared by exact text, so a timestamp or an id differs on every run. With the buffer working, one differing line turned PASS into ISSUES FOUND, and the report renders no console lines that could explain why. Page basics, watched selectors and metrics still count: whether a conversion event fires differently is a QA result. The summary now reads "difference(s) in page basics, watched selectors and metrics".
+
+### Verification
+
+- **jsc (CI):** qa-report.test.js and vd-diff.test.js each gain a block. They run the real `rptAbSection` and `diffAbCaptures`, and the real `browserLog` branch sliced out of background.js. They fail without the fix (3 and 2 assertions) and pass with it. All eight CI suites pass.
+- **Not yet verified:** a real A/B run in Chrome with this build, and whether a variant's tagged lines now arrive in the debug log.
+
 ## 2026-10-07 — 0.7.8
 
 Browser Console now mirrors a BrowserStack Live device. On a Live tab it shows the iPhone's or Android's console, labelled with the device, instead of the Live page's own, and the command input and Quick Commands run on the device. Before this, focusing a Live tab mirrored BrowserStack's dashboard page, and a Quick Command ran there.

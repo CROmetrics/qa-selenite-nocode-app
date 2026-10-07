@@ -6261,7 +6261,7 @@ function rptAgenticNoteHtml(note, label) {
 //
 // Lifted out of rptAbVisualDiffSection so that section and rptAbSection cannot
 // disagree. They did: the A/B section's totalDeltas counts page basics, watched
-// selectors, metrics and console and NEVER looked at the visual diff, even
+// selectors and metrics, and NEVER looked at the visual diff, even
 // though the Visual Diff section is rendered as its child from the same
 // captures. On the OnDeck run that put a green PASS on page 2 — same title,
 // same URL, no selectors, no metrics fired, no console deltas — directly above
@@ -6617,7 +6617,7 @@ function vdVerdict(vd) {
   // returns skipped:true WITH a fully populated perVariant of controlDuplicate
   // entries, so bailing here returned before notCompared could be computed —
   // and totalDeltas is 0 by construction on that path (every target resolved to
-  // the same page, so same title, same URL, no selector/metric/console delta),
+  // the same page, so same title, same URL, no selector or metric delta),
   // which landed rptAbSection's ladder on a green PASS. That is the one verdict
   // this comment block has always said neither section may show for a
   // comparison that did not happen.
@@ -6872,7 +6872,10 @@ function abPageUrls(modes) {
 // inherits whatever was last configured — one OnDeck report carried ten rows of
 // "OAM | WOW! Offer Card Clicks  v0 ×0 · v1 ×0" and "Meta LP | Scroll Depth |
 // 25%", none related to the page under test and not one of them fired. Ten
-// zeros is not a QA result.
+// zeros is not a QA result. (Until the browserLog fix in background.js, no
+// metric could fire in ANY A/B run, because every capture's console came back
+// empty. Those zeros said nothing about the metrics; hiding a row that fired
+// nowhere is still right.)
 //
 // A metric that DID fire earns its row: whether a conversion event fires on
 // both variants is exactly what this report should say. So this suppresses the
@@ -6890,11 +6893,19 @@ function rptAbSection(entry) {
 
   const d = diffAbCaptures(captures, metricsList, selectors);
   const errCount = d.errors.reduce((n, e) => n + (e.loadError ? 1 : 0) + e.jsErrors.length, 0);
+  // Console lines are deliberately NOT counted. A variant logging a line Control
+  // does not ("[PJS] variation 2 applied") is what a working variant does, and
+  // lines are compared by exact text, so a timestamp or an id in one differs on
+  // every run. Counted, they would badge a correctly served variant ISSUES FOUND
+  // (measured in a real worker: one differing line turned PASS into ISSUES
+  // FOUND), and the report renders no console lines that could explain why. Not
+  // reachable until the per-variant buffer worked (browserLog, background.js);
+  // every capture before that was empty. Metric deltas stay: whether a
+  // conversion event fires differently is a QA result.
   const totalDeltas =
     d.basics.filter(b => b.titleDiff || b.urlDiff).length +
     d.selectorRows.filter(s => !s.allSame).length +
-    d.metricRows.filter(m => !m.allSame).length +
-    d.consoleRows.filter(v => v.added.length || v.missing.length).length;
+    d.metricRows.filter(m => !m.allSame).length;
   // The Visual Diff is this section's own child, built from these same
   // captures, so its result belongs in this badge. Without it this section
   // reported PASS on a run whose next page said ISSUES FOUND.
@@ -6930,7 +6941,7 @@ function rptAbSection(entry) {
   // meant zero differences IN WHAT THIS SECTION CHECKS, and read as zero
   // differences full stop. Name the scope, and name the visual half.
   const summary = `Baseline: ${captures[0].label} · ${errCount ? errCount + ' error(s) · ' : ''}`
-    + `${totalDeltas} difference(s) in page basics, watched selectors, metrics and console`
+    + `${totalDeltas} difference(s) in page basics, watched selectors and metrics`
     + (vv.ran
         ? ` · ${vdVerdictSummary(vv)} — see Visual Diff below`
         : '')

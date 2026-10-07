@@ -4701,6 +4701,71 @@ section('agentic screenshot reuses the console mirror\'s session');
   delete chrome.debugger;
 })();
 
+// ── A/B per-variant console buffer ─────────────────────────────────────────
+section('A/B console buffer: the run-owned variant tab is never mapped to a window');
+(function abCaptureBuffersBeforeTheWindowLookup() {
+  // All 208 captures in the 106 recorded logs read consoleLineCount 0. A run
+  // owns its window (beginTmRun), so followTab never maps the variant tab, and
+  // the browserLog branch returned at its tabToWin lookup before reaching the
+  // _abCapture buffer. A real worker showed it: every tagged line from both
+  // variant tabs arrived unmapped, and captureVariant returned console [].
+  var slice = function (from, to) {
+    var a = _bg.indexOf(from), b = _bg.indexOf(to, a + 1);
+    if (a === -1 || b === -1) throw new Error('slice marker missing: ' + from);
+    return _bg.slice(a, b);
+  };
+  var _abCapture = null, _srSession = null, fed = [], replies = [];
+  var tabToWin = new Map(), winFollow = new Map();
+  var restoreFollowState = function () { return Promise.resolve(); };
+  var addLog = function (winId, level, text) { fed.push('log ' + winId + ' ' + text); return Promise.resolve(); };
+  var addMetric = function (winId, level, text) { fed.push('metric ' + winId + ' ' + text); return Promise.resolve(); };
+  var srAppendEvents = function () {};
+  // The listener's browserLog branch as a function; the slice ends just before
+  // the `}` that closes it, so that brace is put back here.
+  var branch = slice("} else if (msg.action === 'browserLog') {", "} else if (msg.action === 'bcEval') {");
+  var handle = eval('(function (msg, sender, sendResponse) {' + branch.replace(/^\} else /, '') + '}})');
+  var line = function (text, tagged) { return { action: 'browserLog', level: 'BROWSER', text: text, tagged: tagged }; };
+  var reply = function (r) { replies.push(r); };
+
+  // The run's variant tab 7: capturing, and unmapped, as in every real run.
+  _abCapture = { tabId: 7, lines: [] };
+  handle(line('[PJS] exp 123: variation 2 applied', true), { tab: { id: 7 } }, reply);
+  var beforeAwait = _abCapture.lines.length;
+  drainMicrotasks();
+  eq('a tagged line from the unmapped variant tab is buffered', JSON.stringify(_abCapture.lines),
+     '[{"level":"BROWSER","text":"[PJS] exp 123: variation 2 applied"}]');
+  eq('  synchronously, before the handler awaits anything', beforeAwait, 1);
+  eq('  and the feed routing is unchanged: an unmapped tab feeds nothing', fed.join(' | '), '');
+  eq('  the message is still answered', JSON.stringify(replies), '[{"ok":true}]');
+
+  var n = _abCapture.lines.length;
+  handle(line('untagged noise', false), { tab: { id: 7 } }, reply);
+  eq('an untagged line is not buffered', _abCapture.lines.length, n);
+
+  // The panel's followed tab 5 keeps logging during the run.
+  tabToWin.set(5, 1); winFollow.set(1, { tabId: 5, attached: true });
+  handle(line('[PJS] followed tab heartbeat', true), { tab: { id: 5 } }, reply);
+  drainMicrotasks();
+  eq('another tab\'s line is not buffered into the variant', _abCapture.lines.length, n);
+  eq('  and still reaches its own window\'s feed, as before', fed.join(' | '), 'log 1 [browser] [PJS] followed tab heartbeat');
+
+  // A variant tab that IS mapped (its window had a panel following it) is
+  // buffered once, not once per path.
+  fed = [];
+  _abCapture = { tabId: 9, lines: [] };
+  tabToWin.set(9, 2);
+  handle(line('[CRO] metric: hero_cta_view', true), { tab: { id: 9 } }, reply);
+  drainMicrotasks();
+  eq('a mapped variant tab is buffered exactly once', _abCapture.lines.length, 1);
+  eq('  and fed to its window as before', fed.join(' | '), 'log 2 [browser] [CRO] metric: hero_cta_view | metric 2 [CRO] metric: hero_cta_view');
+
+  // After captureVariant's finally has copied the buffer and cleared it.
+  _abCapture = null;
+  var threw = null;
+  try { handle(line('[PJS] late line', true), { tab: { id: 9 } }, reply); drainMicrotasks(); } catch (e) { threw = String(e); }
+  eq('a line after the capture ends is dropped without a throw', threw, null);
+})();
+
 // ── report ─────────────────────────────────────────────────────────────────
 print('');
 if (failures.length) {

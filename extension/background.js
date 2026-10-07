@@ -6715,16 +6715,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
 
   } else if (msg.action === 'browserLog') {
+    // While a variant comparison is capturing, tagged lines from the variant's
+    // own tab are buffered per variant for the post-run diff. This must run
+    // before the window lookup below. A run owns its window (beginTmRun), so
+    // followTab never maps the variant tab, and the lookup's early return
+    // dropped every line: all 208 recorded captures read consoleLineCount 0,
+    // from 36a0022 until this fix. Kept synchronous, so a line is either in
+    // captureVariant's copy of the buffer or arrives after it and is dropped.
+    if (_abCapture && sender?.tab?.id === _abCapture.tabId && msg.tagged) {
+      _abCapture.lines.push({ level: msg.level, text: msg.text });
+    }
     (async () => {
       await restoreFollowState();
       const winId = tabToWin.get(sender?.tab?.id);
       if (winId == null) { sendResponse({ ok: true }); return; } // stray relay from an unfollowed/just-detached tab
       addLog(winId, msg.level, `[browser] ${msg.text}`, { browser: true, tagged: !!msg.tagged });
-      // While a variant comparison is capturing, tagged lines from the variant's
-      // own tab are also buffered per variant for the post-run diff.
-      if (_abCapture && sender?.tab?.id === _abCapture.tabId && msg.tagged) {
-        _abCapture.lines.push({ level: msg.level, text: msg.text });
-      }
       // While a session recording is live, tagged lines from the recorded tab
       // interleave into the session timeline as metric-fire events.
       if (_srSession && sender?.tab?.id === _srSession.tabId && msg.tagged) {

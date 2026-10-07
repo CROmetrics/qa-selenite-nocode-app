@@ -27,6 +27,12 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.9 — 2026-10-07
+
+**A/B**
+- **Fixed:** a variant's tagged console lines (`[PJS]`, `[cro]`) now reach the capture. They never had, so every A/B run showed an empty console per variant.
+- **Changed:** console lines no longer count toward the badge. A variant that logs its own variation line is working, and the lines differ run to run. Page basics, watched selectors and metrics still do.
+
 ### 0.7.8 — 2026-10-07
 
 Browser Console mirrors a BrowserStack Live device.

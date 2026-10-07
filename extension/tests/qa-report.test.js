@@ -1230,6 +1230,56 @@ function vdOf(over) {
      !/const\s+(totalIssues|variantIssueCount|unmetRequirements)\s*=/.test(vdsec), 'stale local tally');
 })();
 
+(function consoleLinesDoNotMoveTheAbBadge() {
+  // Every recorded capture's console was empty until the browserLog fix in
+  // background.js, so totalDeltas had never seen a console line. Once it did, a
+  // variant logging its own variation turned PASS into ISSUES FOUND, with no
+  // console line anywhere in the report to say why. This runs the REAL
+  // rptAbSection, diffAbCaptures and metric matcher, not a copy of the count.
+  // jsc has no URL, so diffAbCaptures' stripUrl would fall back to the whole URL
+  // and count the forced-variation query as a page-basics difference that
+  // Chrome strips. This local stand-in gives origin + pathname, as Chrome does.
+  var URL = function (u) {
+    var m = /^(https?:\/\/[^\/?#]+)([^?#]*)/.exec(String(u));
+    if (!m) throw new TypeError('Invalid URL: ' + u);
+    this.origin = m[1]; this.pathname = m[2] || '/';
+  };
+  load('../metric-match.js');
+  eval(slicePopup('function diffAbCaptures(captures, metricsList, selectors) {',
+                  '\n// ── Visual Diff (A/B Variant Comparison, opt-in)'));
+  eval(slicePopup('function rptAbSection(entry) {', '\n// Static-report counterpart driven by'));
+  // Same page, same title; only the forced-variation query differs, as in a real run.
+  var cap = function (label, query, lines) {
+    return { label: label, url: 'https://example.com/lp' + query, finalUrl: 'https://example.com/lp' + query,
+             title: 'Landing page', loadError: null, errors: [], selectors: [],
+             console: lines.map(function (t) { return { level: 'BROWSER', text: t }; }) };
+  };
+  var captures = [
+    cap('v0', '?variation=0', ['[PJS] exp 123: control bucketed', '[CRO] metric: hero_cta_view']),
+    cap('v1', '?variation=2', ['[PJS] exp 123: variation 2 applied', '[CRO] metric: hero_cta_view',
+                               '[CRO] metric: hero_cta_click']),
+  ];
+  var run = function (metricsList) {
+    var html = rptAbSection({ status: 'ran', name: 'A/B Variant Comparison',
+      data: { captures: captures, metricsList: metricsList, selectors: [] } });
+    return { html: html,
+             badge: (/rpt-badge rpt-badge-[a-z]+">([^<]*)</.exec(html) || [])[1],
+             summary: (/<div class="rpt-summary">([^<]*)</.exec(html) || [])[1] || '' };
+  };
+
+  var quiet = run(['hero_cta_view']);
+  eq('console lines that differ do not move the A/B badge', quiet.badge, 'PASS');
+  eq('  and are not counted as a difference', quiet.summary,
+     'Baseline: v0 · 0 difference(s) in page basics, watched selectors and metrics');
+  ok('  while the metric those lines carry IS counted from them',
+     quiet.html.indexOf('<td>hero_cta_view</td><td>v0 ×1 · v1 ×1</td>') !== -1, quiet.html.slice(0, 600));
+
+  var fired = run(['hero_cta_view', 'hero_cta_click']);
+  eq('a metric firing in one variant only still raises ISSUES FOUND', fired.badge, 'ISSUES FOUND');
+  eq('  as one difference', fired.summary,
+     'Baseline: v0 · 1 difference(s) in page basics, watched selectors and metrics');
+})();
+
 (function aFragmentNearMatchMustNotBadge() {
   // The wording is unchanged, only how much of it one element carries.
   eq('a fragment near-match is not a defect',

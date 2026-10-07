@@ -18,7 +18,7 @@
 // captureFullPageAndViewport/vdShowCandidateOverlay below (a separate
 // executeScript call, not this importScripts) — see domCandidateWalkFn's
 // own header comment for why.
-importScripts('metric-match.js', 'pixelmatch.js', 'vd-config.js', 'vd-diff.js', 'figma.js');
+importScripts('metric-match.js', 'pixelmatch.js', 'vd-config.js', 'vd-diff.js', 'figma.js', 'browserstack.js');
 
 // ── Toolbar icon: the side panel, or the floating window when unpinned ────
 // Pinned, the default, Selenite docks in Chrome's side panel: with
@@ -196,7 +196,7 @@ function ns(win) {
 // Each window's panel passively follows whatever tab is focused in that window
 // — no manual toggle, no test run required. winFollow/tabToWin replace the old
 // single global "one captured tab, extension-wide" model.
-const winFollow = new Map();       // winId -> { tabId, attached, attaching, capturable, error }
+const winFollow = new Map();       // winId -> { tabId, attached, attaching, capturable, error, bsLive }
 const tabToWin  = new Map();       // tabId -> winId (a tab is the active tab of at most one window)
 const connectedPanels = new Map(); // winId -> Port, which windows currently have a panel open
 const followLocks = new Map();     // winId -> Promise, serializes follow/unfollow per window
@@ -214,7 +214,7 @@ const resolveFeedWin = (winId) => (_runWin != null ? _runWin : winId);
 // just need reconstructing so events route to the right window again.)
 async function persistWins() {
   const follow = {};
-  for (const [winId, rec] of winFollow) follow[winId] = { tabId: rec.tabId, attached: rec.attached };
+  for (const [winId, rec] of winFollow) follow[winId] = { tabId: rec.tabId, attached: rec.attached, bsLive: !!rec.bsLive };
   await chrome.storage.session.set({ _wins: { run: _runWin, sr: _srWin, pick: _pickWin, follow } });
 }
 async function restoreWins() {
@@ -246,7 +246,7 @@ async function restoreFollowState() {
   for (const [winIdStr, rec] of Object.entries(follow)) {
     const winId = Number(winIdStr);
     if (winFollow.has(winId)) continue;
-    winFollow.set(winId, { tabId: rec.tabId, attached: !!rec.attached, attaching: false, capturable: true, error: null });
+    winFollow.set(winId, { tabId: rec.tabId, attached: !!rec.attached, attaching: false, capturable: true, error: null, bsLive: !!rec.bsLive });
     if (rec.tabId != null) tabToWin.set(rec.tabId, winId);
   }
 }
@@ -258,6 +258,16 @@ async function restoreFollowState() {
 async function injectCapture(tabId) {
   await chrome.scripting.executeScript({ target: { tabId }, files: ['console-capture.js'], world: 'MAIN' });
   await chrome.scripting.executeScript({ target: { tabId }, files: ['console-bridge.js'] });
+}
+
+// A BrowserStack Live tab: bs-live-tap.js reads the device's console out of
+// Live's own DevTools frame and runs commands through it (MAIN world), and
+// bs-live-bridge.js relays it here as bsDeviceLog / bsDeviceState (ISOLATED).
+// The bridge goes first so the tap's first batch, the replay of what the
+// device has already logged, has a listener. Both are idempotent.
+async function injectBsLiveTap(tabId) {
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['bs-live-bridge.js'] });
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['bs-live-tap.js'], world: 'MAIN' });
 }
 
 // ── Full live-console mirror (Browser Console tab) via chrome.debugger/CDP ──
@@ -543,22 +553,42 @@ Never invent a URL, id, or value that doesn't appear in the content below. If so
 
 const BROWSER_CONSOLE_CAP = 1000;
 
-async function addBrowserConsoleLog(winId, entry) {
-  const store = ns(winId);
-  const { browserConsoleLogs = [] } = await store.get('browserConsoleLogs');
-  browserConsoleLogs.push({ ts: new Date().toLocaleTimeString(), ...entry });
-  if (browserConsoleLogs.length > BROWSER_CONSOLE_CAP) {
-    const evicted = browserConsoleLogs.splice(0, browserConsoleLogs.length - BROWSER_CONSOLE_CAP);
-    // Release remote object handles for evicted expandable entries so long
-    // sessions don't pin objects in the page's memory indefinitely.
-    const tabId = winFollow.get(winId)?.tabId;
-    for (const e of evicted) {
-      if (e.objectId && tabId) {
-        chrome.debugger.sendCommand({ tabId }, 'Runtime.releaseObject', { objectId: e.objectId }).catch(() => {});
+// Serializes the browserConsoleLogs read-modify-write per window, the
+// mtQueue idiom. The debugger handler calls addBrowserConsoleLog without
+// awaiting it, so two events landing together used to read the same array
+// and the second write dropped the first's line. A BrowserStack device sends
+// its console in batches beside that, which made the race likelier.
+const bcLocks = new Map();
+let _bcSeq = 0;   // lets the panel see a change once the cap holds the length still
+function bcQueue(winId, fn) {
+  const next = (bcLocks.get(winId) || Promise.resolve()).then(fn).catch(() => {});
+  bcLocks.set(winId, next);
+  return next;
+}
+
+function addBrowserConsoleLog(winId, entry) {
+  return addBrowserConsoleLogs(winId, [entry]);
+}
+
+function addBrowserConsoleLogs(winId, entries) {
+  return bcQueue(winId, async () => {
+    const store = ns(winId);
+    const { browserConsoleLogs = [] } = await store.get('browserConsoleLogs');
+    const ts = new Date().toLocaleTimeString();
+    for (const entry of entries) browserConsoleLogs.push({ ts, seq: ++_bcSeq, ...entry });
+    if (browserConsoleLogs.length > BROWSER_CONSOLE_CAP) {
+      const evicted = browserConsoleLogs.splice(0, browserConsoleLogs.length - BROWSER_CONSOLE_CAP);
+      // Release remote object handles for evicted expandable entries so long
+      // sessions don't pin objects in the page's memory indefinitely.
+      const tabId = winFollow.get(winId)?.tabId;
+      for (const e of evicted) {
+        if (e.objectId && tabId) {
+          chrome.debugger.sendCommand({ tabId }, 'Runtime.releaseObject', { objectId: e.objectId }).catch(() => {});
+        }
       }
     }
-  }
-  await store.set({ browserConsoleLogs });
+    await store.set({ browserConsoleLogs });
+  });
 }
 
 // ── Metrics (Build tab) ─────────────────────────────────────────────────────
@@ -1129,7 +1159,12 @@ async function doFollow(winId, tabId) {
   }
 
   winFollow.set(winId, { tabId, attached: false, attaching: true, capturable: true, error: null });
-  try { await injectCapture(tabId); } catch (_) {}
+  // A Live dashboard's own console is BrowserStack's app, not the page under
+  // test, so it gets no capture scripts: the device tap is injected instead,
+  // below (refreshBsLive).
+  if (!bsIsLiveDashboardUrl(tab.url)) {
+    try { await injectCapture(tabId); } catch (_) {}
+  }
   try {
     await attachDebugger(tabId, winId);
   } catch (e) {
@@ -1139,8 +1174,46 @@ async function doFollow(winId, tabId) {
   }
   const rec = winFollow.get(winId);
   if (rec) rec.attaching = false;
-  await ns(winId).set({ captureTabId: tabId, captureStatus: { tabId, title: tab.title || '', url: tab.url || '', capturable: true } });
+  // bsLive is written from the start, not only by refreshBsLive below: the
+  // panel reads its absence as an older worker that predates device mirroring.
+  await ns(winId).set({ captureTabId: tabId, captureStatus: { tabId, title: tab.title || '', url: tab.url || '', capturable: true, bsLive: bsIsLiveDashboardUrl(tab.url) } });
+  await refreshBsLive(winId, tabId, tab);
   await persistWins();
+}
+
+// Whether the tab a window captures is a BrowserStack Live session, and if so
+// the device tap in it. Runs after every follow and every load of the captured
+// tab. doFollow returns early for a tab it is already attached to, so without
+// this a Live dashboard that reloads would lose its tap, and a captured tab
+// that navigates to or from one would keep a stale flag.
+// bsDeviceStatus is written on every Live follow, which is how a panel tells
+// an older worker (no key at all) from a tap still coming up ("waiting").
+async function refreshBsLive(winId, tabId, tab) {
+  const rec = winFollow.get(winId);
+  if (!rec || rec.tabId !== tabId) return;
+  if (!tab) {
+    try { tab = await chrome.tabs.get(tabId); } catch (_) { return; }
+  }
+  const live = rec.capturable !== false && bsIsLiveDashboardUrl(tab.url);
+  rec.bsLive = live;
+  const { captureStatus } = await ns(winId).get('captureStatus');
+  if (captureStatus && captureStatus.tabId === tabId) {
+    await ns(winId).set({ captureStatus: { ...captureStatus, title: tab.title || '', url: tab.url || '', bsLive: live } });
+  }
+  await persistWins();
+  if (!live) return;
+  await ns(winId).set({ bsDeviceStatus: { state: 'waiting', version: null, tabId } });
+  try { await injectBsLiveTap(tabId); } catch (_) {}
+}
+
+// The window whose Browser Console mirrors this Live tab: the one capturing it
+// right now. Device lines from any other tab are dropped, because the mirror
+// only ever shows the captured tab.
+function bsLiveWinFor(tabId) {
+  for (const [winId, rec] of winFollow) {
+    if (rec.tabId === tabId && rec.bsLive) return winId;
+  }
+  return null;
 }
 
 // Detach + restore console for the tab winId was following, without touching
@@ -1202,6 +1275,48 @@ async function dispatchTrustedClick(tabId, x, y) {
   await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
 }
 
+// The command input and Quick Commands on a BrowserStack Live tab run on the
+// device, through Live's own DevTools (bs-live-tap.js's eval), not in the
+// dashboard page the debugger is attached to. The echo and the result are
+// written like a local command's. A result is text only: a device object
+// lives in the DevTools frame, where there is nothing for bcExpand to reach.
+// $click/$hover need the Input domain of a tab in this browser, which a
+// remote device doesn't have.
+const BS_EVAL_TIMEOUT_MS = 15000;
+async function bsDeviceEval(winId, tabId, expression) {
+  await addBrowserConsoleLog(winId, { level: 'CMD', text: expression, source: 'eval-input' });
+  let res;
+  if (/^\s*\$(click|hover)\(/.test(expression)) {
+    res = { ok: false, error: '$click and $hover work only on a page in this browser, not on a BrowserStack device.' };
+  } else {
+    let timer;
+    try {
+      const [inj] = await Promise.race([
+        chrome.scripting.executeScript({
+          target: { tabId },
+          world: 'MAIN',
+          func: (expr) => (window.__seleniteBsTap
+            ? window.__seleniteBsTap.eval(expr)
+            : { ok: false, error: 'Selenite is not connected to this Live session yet. Click into the tab, then try again.' }),
+          args: [expression],
+        }),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('The device did not answer within 15 s.')), BS_EVAL_TIMEOUT_MS); }),
+      ]);
+      res = inj?.result || { ok: false, error: 'No answer from the Live session.' };
+    } catch (e) {
+      res = { ok: false, error: e.message };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  if (!res.ok) {
+    await addBrowserConsoleLog(winId, { level: 'ERROR', text: String(res.error), source: 'eval-result' });
+    return { ok: false, error: String(res.error) };
+  }
+  await addBrowserConsoleLog(winId, { level: res.exception ? 'ERROR' : 'BROWSER', text: String(res.text), source: 'eval-result' });
+  return { ok: true };
+}
+
 chrome.debugger.onEvent.addListener((source, method, params) => {
   // Performance-measurement tabs get their own short-lived CDP attach; route
   // their uncaught exceptions to the active run, not the console mirror.
@@ -1215,6 +1330,11 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   }
   const winId = tabToWin.get(source.tabId);
   if (winId == null) return;
+  // While a window captures a BrowserStack Live tab, Browser Console mirrors
+  // the device's console (bsDeviceLog), not the dashboard page's own:
+  // BrowserStack's app logging is not the page under test.
+  if (winFollow.get(winId)?.bsLive &&
+      (method === 'Runtime.consoleAPICalled' || method === 'Runtime.exceptionThrown' || method === 'Log.entryAdded')) return;
   if (method === 'Runtime.consoleAPICalled') {
     const level  = CONSOLE_TYPE_MAP[params.type] || 'BROWSER';
     const text   = formatConsoleArgs(params.args || []);
@@ -1297,6 +1417,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, info) => {
   // any prior tab for this window before the run's own attach took its place).
   if (winId != null) {
     await followTab(winId, tabId, { force: true });
+    await refreshBsLive(winId, tabId);
     // Two probes per navigation, not one: Optimizely/Convert both decide
     // bucketing asynchronously after load, so a single probe right at
     // 'complete' routinely reads an undecided state. The later probe catches
@@ -1304,6 +1425,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, info) => {
     // one is nearly free if the first already found a stable answer.
     expSchedule(winId, 'nav', 600);
     expSchedule(winId, 'nav-late', 2500);
+  } else {
+    // A captured Live tab whose debugger attach failed has no tabToWin entry,
+    // but its device tap works without the debugger: keep it after a reload.
+    const bsWin = bsLiveWinFor(tabId);
+    if (bsWin != null) await refreshBsLive(bsWin, tabId);
   }
 });
 
@@ -6615,10 +6741,45 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
 
+  } else if (msg.action === 'bsDeviceLog') {
+    // A batch of the device's console from a captured Live tab
+    // (bs-live-tap.js → bs-live-bridge.js). Labelled with the tab's title,
+    // which Live sets to the device ("Samsung Galaxy S23 13.0"). Device lines
+    // do not feed the Tracker: addMetric would fire probes and on-page notices
+    // at the dashboard, not at the device.
+    (async () => {
+      await restoreFollowState();
+      const tabId = sender?.tab?.id;
+      const winId = bsLiveWinFor(tabId);
+      if (winId != null && Array.isArray(msg.lines)) {
+        const device = sender.tab.title || 'BrowserStack device';
+        const entries = msg.lines.slice(0, 200).map(l => bsDeviceEntry(l, device, TAGS)).filter(Boolean);
+        if (entries.length) await addBrowserConsoleLogs(winId, entries);
+      }
+      sendResponse({ ok: true });
+    })();
+    return true;
+
+  } else if (msg.action === 'bsDeviceState') {
+    (async () => {
+      await restoreFollowState();
+      const tabId = sender?.tab?.id;
+      const winId = bsLiveWinFor(tabId);
+      if (winId != null && ['connected', 'closed', 'unsupported'].includes(msg.state)) {
+        await ns(winId).set({ bsDeviceStatus: { state: msg.state, version: msg.version ? String(msg.version).slice(0, 60) : null, tabId } });
+      }
+      sendResponse({ ok: true });
+    })();
+    return true;
+
   } else if (msg.action === 'bcEval') {
     (async () => {
       await restoreFollowState();
       const rec = winFollow.get(msg.winId);
+      if (rec?.bsLive) {
+        sendResponse(await bsDeviceEval(msg.winId, rec.tabId, msg.expression));
+        return;
+      }
       if (!rec || !rec.attached) { sendResponse({ ok: false, error: 'Not attached' }); return; }
       const tabId = rec.tabId;
       await addBrowserConsoleLog(msg.winId, { level: 'CMD', text: msg.expression, source: 'eval-input' });

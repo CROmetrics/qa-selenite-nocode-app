@@ -12,7 +12,7 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - Universal delay override — set a single delay across all steps
 - Two execution modes: **close after run** or **loop continuously**
 - Tab targeting: run on the **active tab** or open a **new tab**
-- Console tab — a live step-execution log with INFO / WARN / ERR filtering, plus a live mirror of the captured tab's browser console with a CRO (`[PJS]`/`[cro]`) filter, a JavaScript command input, and **Quick Commands**: one-click buttons for the Optimizely, Convert, AB Tasty and other platform debugging commands QA runs all day
+- Console tab — a live step-execution log with INFO / WARN / ERR filtering, plus a live mirror of the captured tab's browser console (or, on a BrowserStack Live tab, the device's) with a CRO (`[PJS]`/`[cro]`) filter, a JavaScript command input, and **Quick Commands**: one-click buttons for the Optimizely, Convert, AB Tasty and other platform debugging commands QA runs all day
 - Visual Regression — full-page screenshot baselines per URL with pixel diffing, ignore regions, and a mismatch threshold (Functional Testing tab)
 - **Test Agent** tab — run WCAG, Performance, or Funnel Crawl one at a time, batch the first two together via **Also Run**, and get a single combined report with an optional AI-written summary
 - **A/B** tab — load each experiment variant once and diff page state, metric fires, and tagged console output against control, with an optional per-variant interaction heatmap, an AI-powered full-page visual diff, and a WCAG audit of every variant diffed against control (introduced / resolved / pre-existing)
@@ -26,6 +26,15 @@ A Chrome extension for building and running QA test scripts directly in your bro
 ## Version History
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
+
+### 0.7.8 — 2026-10-07
+
+Browser Console mirrors a BrowserStack Live device.
+
+**Browser Console**
+- **The device's console.** On a Live tab on an iPhone or Android device, Browser Console shows the device's console, labelled with the device, instead of the Live page's own. It reads Live's DevTools, so open it in the session first; what the device logged earlier is replayed.
+- **Commands run on the device.** The command input and Quick Commands answer from the phone. `$click` and `$hover` don't work there.
+- **Fixed:** the feed no longer drops lines that arrive in a burst, and no longer freezes at 1,000 lines.
 
 ### 0.7.7 — 2026-10-06
 
@@ -184,6 +193,12 @@ In **Browser Console**, top to bottom:
   - Opt-out and debug-flag buttons (the Convert, Optimizely, VWO and AB Tasty opt-outs, **Enable CRO logs**, **Cro-debug param**) set the matching URL parameter or hash for you. AB Tasty uses a hash, so reload to apply; the others navigate. (Optimizely Edge's opt-out calls its API instead.) None of the built-in buttons force a variation or register a tracked exposure.
   - **+ Add** saves your own command: a label and a JavaScript expression (or `$click(...)` / `$hover(...)`). Saved commands appear under every tab, are stored in Chrome local storage, and are removed with a two-click **×**. While the form is open it replaces the tabs and buttons.
 
+**BrowserStack Live devices.** When the captured tab is a BrowserStack Live session on an iPhone or Android device, Browser Console mirrors the device's console instead of the Live page's own.
+- Open Live's **DevTools** (in the session's toolbar). The device's console lines then appear here, each labelled with the device (📱 iPhone 14 16.3). That includes what the device logged before you opened DevTools. The CRO toggle and the level filters work on them as usual.
+- The command input and Quick Commands run on the device, through Live's DevTools, so an Optimizely or Convert Quick Command answers from the iPhone or Android page. `$click` and `$hover` don't work on a device, and a device result can't be expanded.
+- The status line says which device is mirrored, or that DevTools needs opening, and the input is disabled until it is open.
+- Desktop browsers in Live run their DevTools on BrowserStack's machine, so there is nothing to read; their sessions show no console here.
+
 ### Visual Regression
 
 Lives in the **Functional Testing** tab, alongside the function queue. Catches unintended visual changes on a page over time: capture full-page screenshots as a named baseline, then diff later runs against it — layout shifts, broken styling, missing elements.
@@ -301,6 +316,8 @@ extension/
 ├── recorder.js         # Interaction recorder for A/B's heatmap (clicks/scroll/movement, injected on demand)
 ├── console-capture.js  # MAIN-world console patch (relays [PJS]/[cro] tagged output)
 ├── console-bridge.js   # ISOLATED-world bridge to the service worker
+├── bs-live-tap.js      # MAIN-world reader of a BrowserStack Live session's DevTools: the device's console, and commands run on the device
+├── bs-live-bridge.js   # ISOLATED-world bridge from bs-live-tap.js to the service worker
 ├── axe.min.js          # axe-core, used by the WCAG audit suite
 └── icons/              # Extension icons (16, 48, 128px)
 ```

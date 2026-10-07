@@ -12,7 +12,8 @@
 // This milestone is BrowserStack LIVE: interactive sessions opened in the
 // user's own logged-in browser tab, so nothing here needs a username or an
 // access key. The fetch to the Local console lives in popup.js; this file
-// builds the link and interprets the answer.
+// builds the link and interprets the answer. The worker loads it too
+// (importScripts), for the device-console helpers near the end.
 (function (g) {
   'use strict';
 
@@ -155,6 +156,47 @@
     return /^https:\/\/live\.browserstack\.com(\/|$)/i.test(String(url || ''));
   }
 
+  // The Live dashboard: the page a Live session runs in, and the only page
+  // whose DevTools frame bs-live-tap.js reads.
+  function bsIsLiveDashboardUrl(url) {
+    return /^https:\/\/live\.browserstack\.com\/dashboard(?:[/?#]|$)/i.test(String(url || ''));
+  }
+
+  // One device-console line, as bs-live-tap.js relays it from Live's DevTools
+  // ({level, type, source, text}), turned into a Browser Console entry.
+  //   - Level follows the worker's own mapping for a local tab: by console
+  //     type first, as CONSOLE_TYPE_MAP does (error/assert ERROR, warning
+  //     WARNING, info/table/count INFO, anything else BROWSER). A message whose
+  //     own level is error or warning keeps it: an exception, a failed request.
+  //   - A line that is not a console call or an exception reads like the
+  //     worker's Log.entryAdded lines: "[network] …".
+  //   - `tags` is MT_TAGS, passed in so this file needs nothing else loaded. It
+  //     makes the CRO toggle work on device lines.
+  //   - No objectId: a device object lives in the DevTools frame, where the
+  //     worker's debugger can't expand it.
+  //   - Commands typed into Live's own console come back as command and result
+  //     echoes; those are Live's business, not the device's output.
+  var BS_TYPE_LEVEL = { error: 'ERROR', assert: 'ERROR', warning: 'WARNING', info: 'INFO', table: 'INFO', count: 'INFO' };
+  var BS_SKIP_TYPES = { command: true, result: true, endGroup: true, clear: true };
+  var BS_DEVICE_TEXT_MAX = 4000;
+  function bsDeviceEntry(line, device, tags) {
+    if (!line || typeof line !== 'object') return null;
+    var type = String(line.type || '');
+    if (BS_SKIP_TYPES[type]) return null;
+    var source = String(line.source || '');
+    var text = String(line.text == null ? '' : line.text);
+    if (source && source !== 'console-api' && source !== 'javascript') text = '[' + source + '] ' + text;
+    if (text.length > BS_DEVICE_TEXT_MAX) text = text.slice(0, BS_DEVICE_TEXT_MAX) + ' … (truncated)';
+    var level = BS_TYPE_LEVEL[type] || 'BROWSER';
+    if (line.level === 'error') level = 'ERROR';
+    else if (line.level === 'warning' && level !== 'ERROR') level = 'WARNING';
+    var lower = text.toLowerCase();
+    var tagged = (Array.isArray(tags) ? tags : []).some(function (t) {
+      return lower.indexOf(String(t).toLowerCase()) > -1;
+    });
+    return { level: level, text: text, source: 'bs-device', device: String(device || ''), tagged: tagged };
+  }
+
   // reachable: the console answered at all. json: its parsed /status body,
   // or null. In the console's own code (its React app, read 2026-10-06)
   // status:true means the app is running and signed in to an account — it
@@ -182,5 +224,7 @@
   g.bsFormEncode = bsFormEncode;
   g.bsLiveUrl = bsLiveUrl;
   g.bsIsLiveUrl = bsIsLiveUrl;
+  g.bsIsLiveDashboardUrl = bsIsLiveDashboardUrl;
+  g.bsDeviceEntry = bsDeviceEntry;
   g.bsLocalStatusFrom = bsLocalStatusFrom;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

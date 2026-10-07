@@ -2,6 +2,79 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-07 — 0.7.8
+
+Browser Console now mirrors a BrowserStack Live device. On a Live tab it shows the iPhone's or Android's console, labelled with the device, instead of the Live page's own, and the command input and Quick Commands run on the device. Before this, focusing a Live tab mirrored BrowserStack's dashboard page, and a Quick Command ran there.
+
+### Added
+
+- **The device's console, read from Live's own DevTools.** Measured on real iOS and Android sessions (2026-10-06):
+  - Live's DevTools is a same-origin iframe in the Live tab (`iframe.devtools-iframe`). It holds a pinned Chrome DevTools 91 frontend at `/devtools/realios/91.0.4472.101/` (`realdroid` on Android).
+  - Its console model (`SDK.ConsoleModel.instance()`, event `MessageAdded`) is where the device's console arrives: `console.log('[cro] test')` on the iPhone is `{source:'console-api', level:'info', type:'log'}`.
+- **`bs-live-tap.js` (MAIN world) and `bs-live-bridge.js` (ISOLATED).** Injected into a captured Live tab instead of the console-capture scripts.
+  - **Hooking:** the tap polls for the DevTools frame, since it can be opened and closed at any time. When the frame comes up it replays what the device already logged (the last 200 lines), then subscribes.
+  - **Relaying:** it sends lines in batches (200 ms, 50 at most), and posts `connected`, `closed` or `unsupported` with the frontend's version.
+  - **The token:** the iframe's `wss=` parameter carries a session token, and nothing reads it. The version comes from the frame's own `location.pathname`.
+  - **The bridge** accepts only messages the page posted to itself, under its own marker. console-bridge.js trusts any `__selenite` message, so the separate marker keeps the two apart.
+- **Device lines in the feed** (`bsDeviceEntry` in browserstack.js; the worker now loads browserstack.js).
+  - Each line is labelled with the Live tab's title, which Live sets to the device: "iPhone 14 16.3".
+  - Levels follow the local mapping. Network, violation and other lines read `[network] …`, like local `Log.entryAdded` lines.
+  - `[PJS]`/`[cro]` lines are tagged, so the CRO toggle keeps them. Live's own command and result echoes are dropped, and a line is cut at 4,000 characters.
+  - Device lines don't feed the Tracker: that would fire probes and notices at the dashboard, not the device.
+- **Commands on the device** (`bsDeviceEval`). The command input and Quick Commands run through Live's DevTools, in its selected execution context (the page under test), with the console API, awaiting promises.
+  - Results read like local ones ("Object {123: Object}", `ƒ name()`). A device exception is an ERROR line.
+  - `$click`/`$hover` are refused with a reason, and nothing on a device is expandable.
+  - A device that doesn't answer within 15 s says so.
+- **Status line.** On a Live tab it reads one of:
+  - "● Live — mirroring iPhone 14 16.3 through BrowserStack Live's DevTools"
+  - "○ Open DevTools in the Live session to mirror …"
+  - "○ Can't read this version of Live's DevTools (…)" when the frontend changes
+  - "○ Reload Selenite in chrome://extensions …" when the worker predates this
+
+  The command input and Quick Commands are enabled only while the device is connected.
+
+### Changed
+
+- **Device only on a Live tab.** The dashboard page's own console (BrowserStack's app logging) is no longer mirrored, and the dashboard no longer gets the console-capture scripts.
+- **The Live flag survives a worker restart.** It is kept in `_wins`, so device lines keep landing after the worker sleeps and wakes. The worker also re-injects the tap when the dashboard reloads, which `doFollow` had skipped for a tab it was already attached to.
+
+### Fixed
+
+- **Browser Console lost lines in a burst.** The debugger handler wrote the feed without awaiting, so two events landing together read the same array, and the second write dropped the first's line. Writes are now queued per window, and a device batch is one write. In the worker harness, 30 events in a burst landed one line before and all 30 now.
+- **Browser Console froze at 1,000 lines.** The panel re-rendered only when the length changed, and the cap holds the length at 1,000, so the view stopped until Clear. It now also watches the newest entry; the worker numbers entries with `seq`.
+- **sidepanel.html had no style for the `[tag]` label.** popup.html had one; both do now, plus the device label.
+
+### Verification
+
+- **jsc (CI):** browserstack.test.js now has 238 assertions. They run the real `bs-live-tap.js` and `bs-live-bridge.js` against a fake Live page whose frontend has the measured shapes, and cover:
+  - the replay, the cap of 200, the batches, and close/reopen with a new frame
+  - the unsupported report, and `eval` results and exceptions
+  - the token never being read
+  - the bridge's filters
+  - the entry mapping, and the panel's state reading
+
+  They fail against seven broken copies: hooking twice, reading the frame's `src`, no replay cap, no state de-duplication, no command-line API, a bridge that trusts any source, and command echoes kept. All eight CI suites pass.
+- **jsc, the whole worker:** 28 checks drive the real background.js through its own listeners:
+  - Live follow, injection order, and lines from the captured tab only
+  - the dashboard's console hidden
+  - commands routed to the device, and `$click` refused
+  - re-injection after a reload, and a worker restart
+  - leaving the Live tab
+  - a 30-event burst
+
+  It fails against the 0.7.7 worker and against four single changes (no write queue, `bsLive` not persisted, no dashboard suppression, no re-inject on reload).
+- **Real Chrome:** system Chrome 154 with the real extension. `live.browserstack.com` was mapped to a local HTTPS server serving a fake dashboard and a fake DevTools 91 frontend, and the real panel was bound to the dashboard's window. 28 checks pass, covering:
+  - status "open DevTools", then connected, closed and unsupported
+  - the replayed history, device lines with labels and tags, and the dashboard's noise hidden
+  - the CRO filter
+  - a typed command, an object result, an exception, and the Optimizely "Variations (table)" Quick Command running in the device frame
+  - `$click` refused
+  - the view still moving past 1,000 lines
+  - the token absent everywhere
+
+  On 0.7.7 the same gate fails from the first device check: the feed shows the dashboard's "dashboard noise".
+- **Not yet verified:** a real Live session end to end with this build.
+
 ## 2026-10-06 — 0.7.7
 
 The A/B tab can open any variant, and Functional Testing's Target section a queue's start URL, on a real phone, tablet or another desktop browser in BrowserStack Live. Until now QA covered those device columns by pasting each preview URL into a Live session's console (the "Open URL (BrowserStack)" Quick Command). This is the first BrowserStack milestone: Live only, through BrowserStack Local. Automate comes later.

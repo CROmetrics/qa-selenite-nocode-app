@@ -7,6 +7,7 @@ let nextGroupId = 1;  // groupId values are 'g' + this counter, scoped to the li
 let logData = [];
 let filterLevel = null;
 let bcLogData = [];
+let bcLogSig = '';       // syncBcLogs' change check: length alone stops changing at the 1000-entry cap
 let bcFilterLevel = null;
 let bcTagOnly = false;   // Browser Console "CRO" toggle: narrow the live mirror to [PjS]/[cro] tagged lines + the user's own commands (isBcUserEntry)
 let metrics = [];        // User-defined metric values (Build tab → Metrics), persisted in storage.local
@@ -1142,7 +1143,14 @@ function setFilter(lv, btn) {
 // above, so the two panels never clobber each other and update independently.
 async function syncBcLogs() {
   const { browserConsoleLogs = [] } = await sessionNS.get('browserConsoleLogs');
-  if (browserConsoleLogs.length !== bcLogData.length) {
+  // Length AND the newest entry: once the worker's cap holds the length at
+  // 1000, a length check alone froze the view until Clear. `seq` is the
+  // worker's per-entry counter; older entries without one fall back to the
+  // time and text.
+  const last = browserConsoleLogs[browserConsoleLogs.length - 1];
+  const sig = browserConsoleLogs.length + '|' + (last ? `${last.seq ?? ''}|${last.ts}|${last.text}` : '');
+  if (sig !== bcLogSig) {
+    bcLogSig = sig;
     bcLogData = browserConsoleLogs;
     renderBcLog();
   }
@@ -1175,10 +1183,15 @@ function renderBcLog() {
       const toggle = e.expandable ? `<button class="bc-expand-toggle" data-object-id="${e.objectId}">&#9656;</button>` : '';
       const { tag, rest } = splitBcTag(e.text);
       const tagHtml = tag ? `<span class="bc-tag">${esc(tag)}</span>` : '';
+      // A line from a BrowserStack device (bsDeviceLog) names the device.
+      const deviceHtml = e.source === 'bs-device' && e.device
+        ? `<span class="bc-device" title="${esc(e.device).replace(/"/g, '&quot;')}">&#128241; ${esc(e.device)}</span>`
+        : '';
       return `<div class="bc-entry bc-${e.level}">
         <span class="bc-ts">${e.ts}</span>
         <span class="bc-badge">${badge}</span>
         ${toggle}
+        ${deviceHtml}
         ${tagHtml}
         <span class="bc-text">${esc(rest)}</span>
       </div>`;
@@ -1266,6 +1279,7 @@ function setBcFilter(lv, btn) {
 
 async function clearBcLog() {
   bcLogData = [];
+  bcLogSig = '';
   await sessionNS.set({ browserConsoleLogs: [] });
   document.getElementById('bc-log-out').innerHTML = '';
 }
@@ -1320,18 +1334,54 @@ chrome.storage.onChanged.addListener((changes, area) => {
   refreshTrackMetricSteps();
 });
 
+// The captured tab is a BrowserStack Live session: Browser Console mirrors
+// the device's console and the command input runs on the device, both through
+// Live's own DevTools (background.js bsDeviceLog / bsDeviceEval). Their state
+// is bsDeviceStatus, not the debugger attached to the dashboard page.
+// captureStatus.bsLive exists only from a worker that knows about devices, so
+// without it the worker predates this and needs reloading.
+function bcDeviceState(captureStatus, bsDeviceStatus, captureEnabled) {
+  const live = captureEnabled !== false && !!captureStatus && captureStatus.capturable !== false
+    && typeof bsIsLiveDashboardUrl === 'function' && bsIsLiveDashboardUrl(captureStatus.url);
+  if (!live) return null;
+  if (captureStatus.bsLive === undefined) return 'old-worker';
+  return bsDeviceStatus && bsDeviceStatus.tabId === captureStatus.tabId ? bsDeviceStatus.state : 'waiting';
+}
+
 async function syncBcStatus() {
-  const { debuggerStatus } = await sessionNS.get('debuggerStatus');
-  const attached = !!debuggerStatus?.attached;
+  const { debuggerStatus, captureStatus, bsDeviceStatus, captureEnabled } =
+    await sessionNS.get(['debuggerStatus', 'captureStatus', 'bsDeviceStatus', 'captureEnabled']);
+  const devState = bcDeviceState(captureStatus, bsDeviceStatus, captureEnabled);
+  const device = devState ? (captureStatus.title || 'the device') : '';
+  const attached = devState ? devState === 'connected' : !!debuggerStatus?.attached;
   const input = document.getElementById('bc-eval-input');
   if (input) {
     input.disabled = !attached;
-    input.placeholder = attached ? '> Type a JS expression and press Enter…' : '> Not attached';
+    input.placeholder = devState
+      ? (attached ? `> Runs on ${device}. Type a JS expression and press Enter…` : '> Open DevTools in the Live session to run commands on the device')
+      : (attached ? '> Type a JS expression and press Enter…' : '> Not attached');
   }
   if (bcQuickAttached !== attached) { bcQuickAttached = attached; renderBcQuick(); }
   const el = document.getElementById('bc-status');
   const reconnectBtn = document.getElementById('btn-bc-reconnect');
   if (!el) return;
+  if (devState) {
+    if (reconnectBtn) reconnectBtn.style.display = 'none';
+    if (devState === 'connected') {
+      el.textContent = `● Live — mirroring ${device} through BrowserStack Live's DevTools`;
+      el.style.color = 'var(--brand)';
+    } else if (devState === 'unsupported') {
+      el.textContent = `○ Can't read this version of Live's DevTools (${bsDeviceStatus.version || 'unknown version'})`;
+      el.style.color = 'var(--err)';
+    } else if (devState === 'old-worker') {
+      el.textContent = '○ Reload Selenite in chrome://extensions to mirror BrowserStack devices';
+      el.style.color = 'var(--warn)';
+    } else {
+      el.textContent = `○ Open DevTools in the Live session to mirror ${device}'s console`;
+      el.style.color = 'var(--fg3)';
+    }
+    return;
+  }
   if (attached) {
     el.textContent = '● Live — mirroring the captured tab';
     el.style.color = 'var(--brand)';

@@ -1191,9 +1191,10 @@ async function doFollow(winId, tabId) {
 async function refreshBsLive(winId, tabId, tab) {
   const rec = winFollow.get(winId);
   if (!rec || rec.tabId !== tabId) return;
-  if (!tab) {
-    try { tab = await chrome.tabs.get(tabId); } catch (_) { return; }
-  }
+  // The tab as it is now, not the one the caller fetched before it attached the
+  // debugger: Live renames its tab after the session starts, and writing the
+  // earlier title back would undo it.
+  try { tab = await chrome.tabs.get(tabId); } catch (_) { if (!tab) return; }
   const live = rec.capturable !== false && bsIsLiveDashboardUrl(tab.url);
   rec.bsLive = live;
   const { captureStatus } = await ns(winId).get('captureStatus');
@@ -1317,6 +1318,118 @@ async function bsDeviceEval(winId, tabId, expression) {
   return { ok: true };
 }
 
+// ── BrowserStack Live: what became of a launch ──────────────────────────────
+// The panel opens a Live tab and cannot see what Live then does with it: a
+// device it refuses ("Device is temporarily disabled"), a session that drops
+// ten seconds in ("Connection to the remote device failed"), or one it starts
+// without Local. The worker watches the tab instead of the panel, because the
+// panel may be the toolbar popup, which closes the moment the tab takes focus,
+// and writes the outcome to the window's session storage, which the panel's
+// status line follows. One record per place that launched ('ab', 'ft'), so a
+// launch from one never overwrites the other's report. What it reads is
+// browserstack.js's bsLiveReadOutcome (run in the page); what it concludes is
+// bsLaunchVerdict.
+const bsLaunchWatchers = new Map();      // tabId -> token of the watch in force
+const BS_LAUNCH_POLL_MS = 1000;
+// After the session starts: long enough to catch a late failure and for the
+// toolbar and Local state to settle, then stop polling. A phone's tab says
+// "running" 5 to 10 s before its toolbar exists, and on iOS 27 and desktop the
+// toolbar is then rendered, goes for about 4 s and comes back, so the state is
+// not final until about 15 s after the title (measured 2026-10-08).
+const BS_LAUNCH_SETTLE_MS = 40000;
+// "Refused" and "ended" are believed only when this many readings in a row say
+// so: the dashboard re-renders and raises toasts of its own, and one odd
+// reading must not end the launch or tell the tester something false. (That
+// alone is not enough for "ended": see the picker test in bsLaunchVerdict.)
+const BS_LAUNCH_CONFIRM = 2;
+function bsLaunchStoreKey(ctx) {
+  return 'bsLaunch_' + (String(ctx && ctx.key || '').replace(/[^a-z]/gi, '').slice(0, 10) || 'ab');
+}
+async function bsWatchLaunch(winId, tabId, ctx) {
+  const token = {};
+  bsLaunchWatchers.set(tabId, token);
+  const store = ns(winId);
+  const storeKey = bsLaunchStoreKey(ctx);
+  const t0 = Date.now();
+  let startedAt = 0;
+  let lastSig = '';
+  let lastVerdict = null;
+  let seen = null;           // the last verdict made with the session toolbar on screen
+  let pending = { state: '', n: 0 };
+  const nap = () => new Promise(r => setTimeout(r, BS_LAUNCH_POLL_MS));
+  // False when a newer launch from the same place has taken the record: this
+  // watch is history then, and must not write over it.
+  const write = async (verdict) => {
+    try {
+      const cur = (await store.get(storeKey))[storeKey];
+      if (cur && cur.tabId !== tabId && cur.at >= t0) return false;
+      await store.set({ [storeKey]: { tabId, ...ctx, verdict, at: Date.now() } });
+    } catch (_) {}
+    return true;
+  };
+  while (bsLaunchWatchers.get(tabId) === token) {
+    let tab;
+    try {
+      tab = await chrome.tabs.get(tabId);
+    } catch (_) {
+      // Gone: the tester closed it, or a newer launch did. Say so, or the line
+      // would go on saying "waiting" or "running" for a tab that no longer exists.
+      await write({ state: 'closed', wasStarted: !!startedAt });
+      break;
+    }
+    // A tab that has just been created has no url yet, only the pendingUrl it is
+    // loading; judging it by tab.url alone ends the watch before it begins. It
+    // counts as taken elsewhere only once it has finished loading something that
+    // is not the dashboard.
+    const url = tab.pendingUrl || tab.url || '';
+    if (tab.status === 'complete' && url && url !== 'about:blank' && !bsIsLiveDashboardUrl(url)) {
+      // After it started, a session whose tab went somewhere else is over.
+      if (startedAt) { await write({ state: 'ended' }); break; }
+      // Before it started, Live may have sent the tester to sign in, and they
+      // may come back and the session start: say where it went and keep watching.
+      const left = bsLaunchLeft(url);
+      const sigLeft = JSON.stringify(left);
+      if (sigLeft !== lastSig) {
+        lastSig = sigLeft;
+        if (!(await write(left))) break;
+      }
+      if (Date.now() - t0 >= BS_LAUNCH_GIVE_UP_MS) break;
+      await nap();
+      continue;
+    }
+    let read = null;
+    try {
+      const [inj] = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: bsLiveReadOutcome });
+      read = inj?.result || null;
+    } catch (_) {}
+    // A reading that failed says nothing: once it has started that stays "started"
+    // with what the toolbar last said, and before it started every poll still counts,
+    // or an unreadable page would keep the watch "starting" past its own timeout for
+    // as long as the tab stayed open.
+    let v = bsLaunchVerdict(read, { elapsedMs: Date.now() - t0, wasStarted: !!startedAt, seen });
+    if (v.state === 'refused' || v.state === 'ended') {
+      pending = pending.state === v.state ? { state: v.state, n: pending.n + 1 } : { state: v.state, n: 1 };
+      // Not believed yet: carry on with what was believed before, so the record
+      // still gets its first write at once and a blip never changes it.
+      if (pending.n < BS_LAUNCH_CONFIRM) v = lastVerdict || bsLaunchVerdict(null, { elapsedMs: Date.now() - t0 });
+    } else {
+      pending = { state: '', n: 0 };
+    }
+    lastVerdict = v;
+    if (v.state === 'started' && v.toolbar) seen = v;
+    if (v.state === 'started' && !startedAt) startedAt = Date.now();
+    const sig = JSON.stringify(v);
+    if (sig !== lastSig) {
+      lastSig = sig;
+      if (!(await write(v))) break;
+    }
+    if (v.state === 'refused' || v.state === 'timeout' || v.state === 'ended') break;
+    if (startedAt && Date.now() - startedAt >= BS_LAUNCH_SETTLE_MS) break;
+    await nap();
+  }
+  if (bsLaunchWatchers.get(tabId) === token) bsLaunchWatchers.delete(tabId);
+}
+
 chrome.debugger.onEvent.addListener((source, method, params) => {
   // Performance-measurement tabs get their own short-lived CDP attach; route
   // their uncaught exceptions to the active run, not the console mirror.
@@ -1372,6 +1485,24 @@ chrome.debugger.onDetach.addListener(async (source, reason) => {
 });
 
 const _activateDebounce = new Map(); // windowId -> timer
+// The window that follows this tab, for a navigation event. tabToWin only holds
+// tabs the debugger attached to, so a tab first looked at before it was
+// capturable has a winFollow record and no tabToWin entry. That is every tab
+// opened for a slow site: the follow runs 250 ms after the tab is activated,
+// tab.url is '' until the navigation commits (only pendingUrl is set), and the
+// tab was recorded as not capturable and never looked at again when its page
+// loaded. A BrowserStack Live tab opened by Selenite hit exactly this, so its
+// console mirror never started. Only a tab recorded as not capturable counts:
+// one that is capturable but failed to attach is the attach's business.
+function followedWinFor(tabId) {
+  const w = tabToWin.get(tabId);
+  if (w != null) return w;
+  for (const [winId, rec] of winFollow) {
+    if (rec.tabId === tabId && rec.capturable === false) return winId;
+  }
+  return null;
+}
+
 chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
   if (!connectedPanels.has(windowId)) return; // no panel open for this window — nothing to follow
   // Debounced so fast tab-cycling (e.g. Ctrl+Tab) doesn't thrash the native
@@ -1384,6 +1515,19 @@ chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, info) => {
+  if (info.title !== undefined) {
+    // Live renames its tab after the session starts ("iPhone 18 Pro v27.0"),
+    // seconds after the page finished loading, so the title captureStatus took at
+    // load names nothing ("Dashboard"). The panel names the device by it.
+    await restoreFollowState();
+    const bsWin = bsLiveWinFor(tabId);
+    if (bsWin != null) {
+      const { captureStatus } = await ns(bsWin).get('captureStatus');
+      if (captureStatus && captureStatus.tabId === tabId && captureStatus.title !== info.title) {
+        await ns(bsWin).set({ captureStatus: { ...captureStatus, title: info.title } });
+      }
+    }
+  }
   if (info.url && info.status !== 'complete') {
     // A client-side route change (history.pushState/replaceState, hashchange)
     // fires onUpdated with changeInfo.url but never reaches 'complete' — for
@@ -1407,7 +1551,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, info) => {
     try { await srInjectRecorder(tabId); } catch (_) {}
   }
   await restoreFollowState();
-  const winId = tabToWin.get(tabId);
+  const winId = followedWinFor(tabId);
   // Re-runs capturability/inject/attach idempotently — also correctly handles
   // the followed tab navigating across the capturable/non-capturable boundary.
   // Forced because tabToWin only maps a window to whatever tab it's ALREADY
@@ -6770,12 +6914,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       await restoreFollowState();
       const tabId = sender?.tab?.id;
       const winId = bsLiveWinFor(tabId);
-      if (winId != null && ['connected', 'closed', 'unsupported'].includes(msg.state)) {
-        await ns(winId).set({ bsDeviceStatus: { state: msg.state, version: msg.version ? String(msg.version).slice(0, 60) : null, tabId } });
+      if (winId != null && ['connected', 'closed', 'unsupported', 'attaching', 'unavailable', 'failed'].includes(msg.state)) {
+        const status = { state: msg.state, version: msg.version ? String(msg.version).slice(0, 60) : null, tabId };
+        // Live's own words for why there is no DevTools (or why it broke), and
+        // whether a frame has waited for its device longer than it should.
+        if (typeof msg.reason === 'string' && msg.reason) status.reason = msg.reason.slice(0, 200);
+        if (msg.late === true) status.late = true;
+        await ns(winId).set({ bsDeviceStatus: status });
       }
       sendResponse({ ok: true });
     })();
     return true;
+
+  } else if (msg.action === 'bsWatchLaunch') {
+    // The panel opened a Live tab and wants to know what Live does with it.
+    // Not awaited: the watch outlives this message, and the answer is the
+    // bsLaunch it writes to the window's session storage.
+    const tabId = Number(msg.tabId);
+    if (Number.isInteger(tabId)) {
+      bsWatchLaunch(msg.winId ?? null, tabId, {
+        key: String(msg.key || '').slice(0, 20),
+        what: String(msg.what || '').slice(0, 160),
+        presetId: String(msg.presetId || '').slice(0, 40),
+        // A page URL cut short would reopen as a different page, so one that is
+        // too long is not kept at all (and the manual route is not offered).
+        pageUrl: String(msg.pageUrl || '').length <= 8000 ? String(msg.pageUrl || '') : '',
+        wantLocal: !!msg.wantLocal,
+        wantForceLocal: !!msg.wantForceLocal,
+        unconfirmed: !!msg.unconfirmed,
+      }).catch(() => {});
+    }
+    sendResponse({ ok: Number.isInteger(tabId) });
 
   } else if (msg.action === 'bcEval') {
     (async () => {

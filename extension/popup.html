@@ -560,14 +560,14 @@
             <div style="font-size:10px;color:var(--fg3);line-height:1.5">Opens the queue's start URL (the Open URL step, with its parameters and QA Mode) on another browser or a real device in BrowserStack Live, signed in as you. Live can't run the steps: walk them by hand on the device. The device selection and both toggles are shared with the A/B tab.</div>
             <div class="row" style="gap:14px;flex-wrap:wrap">
               <span class="row" style="gap:5px">
-                <label class="toggle-wrap" title="Route the session through BrowserStack Local, so the device can reach staging, VPN and allowlisted pages. Needs the BrowserStack Local app running on this Mac.">
+                <label class="toggle-wrap" title="Route the session through BrowserStack Local, so the device can reach staging, VPN and allowlisted pages. Needs the BrowserStack Local app running on this Mac. On some accounts Live starts the session before it finds the app; Selenite tells you when that happened.">
                   <input type="checkbox" data-bs-role="local">
                   <span class="toggle-track"><span class="toggle-thumb"></span></span>
                 </label>
                 <span style="font-size:11px;color:var(--fg2)">Use BrowserStack Local</span>
               </span>
               <span class="row" style="gap:5px" data-bs-role="force-local-wrap">
-                <label class="toggle-wrap" title="Send all of the session's traffic through this Mac (Live's &quot;Resolve all URLs through my network&quot;), so the device's visits come from your IP, as an IP-targeted QA audience needs. Needs BrowserStack Local on.">
+                <label class="toggle-wrap" title="Asks Live to send all of the session's traffic through this Mac (Live's &quot;Resolve all URLs through my network&quot;), so the device's visits come from your IP. Live does not apply this from a link on every account; after a launch Selenite says whether it did. Needs BrowserStack Local on.">
                   <input type="checkbox" data-bs-role="force-local">
                   <span class="toggle-track"><span class="toggle-thumb"></span></span>
                 </label>
@@ -575,7 +575,7 @@
               </span>
             </div>
             <div class="row" style="gap:6px;align-items:flex-start">
-              <button class="btn sm" data-bs-role="check" title="Ask the BrowserStack Local app on this Mac whether it is running and signed in">Check</button>
+              <button class="btn sm" data-bs-role="check" title="Ask whether Live can see the BrowserStack Local app: the port Live itself checks (127.0.0.1:45691), and the app's own console">Check</button>
               <div data-bs-role="status" style="font-size:10px;color:var(--fg3);line-height:1.5;flex:1;min-height:12px"></div>
             </div>
             <div>
@@ -1364,14 +1364,14 @@
         <div style="font-size:10px;color:var(--fg3);line-height:1.5">Opens a variant on a real phone, tablet or another desktop browser in BrowserStack Live, signed in as you. Each button opens that variant's URL with its override and QA Mode, as the comparison would.</div>
         <div class="row" style="gap:14px;flex-wrap:wrap">
           <span class="row" style="gap:5px">
-            <label class="toggle-wrap" title="Route the session through BrowserStack Local, so the device can reach staging, VPN and allowlisted pages. Needs the BrowserStack Local app running on this Mac.">
+            <label class="toggle-wrap" title="Route the session through BrowserStack Local, so the device can reach staging, VPN and allowlisted pages. Needs the BrowserStack Local app running on this Mac. On some accounts Live starts the session before it finds the app; Selenite tells you when that happened.">
               <input type="checkbox" data-bs-role="local">
               <span class="toggle-track"><span class="toggle-thumb"></span></span>
             </label>
             <span style="font-size:11px;color:var(--fg2)">Use BrowserStack Local</span>
           </span>
           <span class="row" style="gap:5px" data-bs-role="force-local-wrap">
-            <label class="toggle-wrap" title="Send all of the session's traffic through this Mac (Live's &quot;Resolve all URLs through my network&quot;), so the device's visits come from your IP, as an IP-targeted QA audience needs. Needs BrowserStack Local on.">
+            <label class="toggle-wrap" title="Asks Live to send all of the session's traffic through this Mac (Live's &quot;Resolve all URLs through my network&quot;), so the device's visits come from your IP. Live does not apply this from a link on every account; after a launch Selenite says whether it did. Needs BrowserStack Local on.">
               <input type="checkbox" data-bs-role="force-local">
               <span class="toggle-track"><span class="toggle-thumb"></span></span>
             </label>
@@ -1379,7 +1379,7 @@
           </span>
         </div>
         <div class="row" style="gap:6px;align-items:flex-start">
-          <button class="btn sm" data-bs-role="check" title="Ask the BrowserStack Local app on this Mac whether it is running and signed in">Check</button>
+          <button class="btn sm" data-bs-role="check" title="Ask whether Live can see the BrowserStack Local app: the port Live itself checks (127.0.0.1:45691), and the app's own console">Check</button>
           <div data-bs-role="status" style="font-size:10px;color:var(--fg3);line-height:1.5;flex:1;min-height:12px"></div>
         </div>
         <div>

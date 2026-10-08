@@ -1348,17 +1348,62 @@ function bcDeviceState(captureStatus, bsDeviceStatus, captureEnabled) {
   return bsDeviceStatus && bsDeviceStatus.tabId === captureStatus.tabId ? bsDeviceStatus.state : 'waiting';
 }
 
+// What to call the captured Live session in a status line. A phone or tablet
+// renames its tab to "<device> v<os>"; a desktop browser session leaves it as
+// "Dashboard", which is not a name for anything.
+function bcDeviceName(title) {
+  const t = String(title || '').trim();
+  return t && t !== 'Dashboard' ? t : 'this session';
+}
+
+// The Browser Console status line for a captured Live session, by devState
+// (bcDeviceState). Pure, so every wording is tested. `status` is
+// bsDeviceStatus; its reason is Live's own text, so it is only ever put in
+// with textContent.
+function bcDeviceLine(devState, status, device) {
+  const st = status || {};
+  switch (devState) {
+    case 'connected':
+      return { text: `● Live — mirroring ${device} through BrowserStack Live's DevTools`, color: 'var(--brand)' };
+    case 'unsupported':
+      return { text: `○ Can't read this version of Live's DevTools (${st.version || 'unknown version'})`, color: 'var(--err)' };
+    case 'attaching':
+      // The frame is on screen but has no device behind it, so there is nothing
+      // to mirror. Late means it has waited longer than a device takes.
+      return st.late
+        ? { text: `○ DevTools is open in Live but hasn't attached to ${device} after 15 s. Close and reopen it in Live, or start a new session.`, color: 'var(--warn)' }
+        : { text: `○ DevTools is open in Live; waiting for it to attach to ${device}…`, color: 'var(--fg3)' };
+    case 'unavailable':
+      return { text: `○ Live has no DevTools for ${device}: ${st.reason || 'unavailable'}`, color: 'var(--warn)' };
+    case 'failed': {
+      // Live's own wording already ends "Please try a new session."
+      const why = st.reason || 'an unexpected issue.';
+      return { text: `○ Live's DevTools failed on ${device}: ${why}${/session/i.test(why) ? '' : ' Start a new session.'}`, color: 'var(--err)' };
+    }
+    case 'old-worker':
+      return { text: '○ Reload Selenite in chrome://extensions to mirror BrowserStack devices', color: 'var(--warn)' };
+    default: {
+      // On an iPhone or iPad the DevTools item opens a menu of Chrome DevTools and
+      // Safari Web Inspector (measured on iOS 26.5); only the first can be read.
+      const hint = /\b(?:iPhone|iPad)\b/i.test(device) ? ' (choose Chrome DevTools, not Safari Web Inspector)' : '';
+      return { text: `○ Open DevTools in the Live session to mirror ${device}'s console${hint}`, color: 'var(--fg3)' };
+    }
+  }
+}
+
 async function syncBcStatus() {
   const { debuggerStatus, captureStatus, bsDeviceStatus, captureEnabled } =
     await sessionNS.get(['debuggerStatus', 'captureStatus', 'bsDeviceStatus', 'captureEnabled']);
   const devState = bcDeviceState(captureStatus, bsDeviceStatus, captureEnabled);
-  const device = devState ? (captureStatus.title || 'the device') : '';
+  const device = devState ? bcDeviceName(captureStatus.title) : '';
   const attached = devState ? devState === 'connected' : !!debuggerStatus?.attached;
   const input = document.getElementById('bc-eval-input');
   if (input) {
     input.disabled = !attached;
     input.placeholder = devState
-      ? (attached ? `> Runs on ${device}. Type a JS expression and press Enter…` : '> Open DevTools in the Live session to run commands on the device')
+      ? (attached ? `> Runs on ${device}. Type a JS expression and press Enter…`
+        : devState === 'unavailable' ? "> Live has no DevTools for this device, so commands can't run on it"
+        : '> Open DevTools in the Live session to run commands on the device')
       : (attached ? '> Type a JS expression and press Enter…' : '> Not attached');
   }
   if (bcQuickAttached !== attached) { bcQuickAttached = attached; renderBcQuick(); }
@@ -1367,19 +1412,9 @@ async function syncBcStatus() {
   if (!el) return;
   if (devState) {
     if (reconnectBtn) reconnectBtn.style.display = 'none';
-    if (devState === 'connected') {
-      el.textContent = `● Live — mirroring ${device} through BrowserStack Live's DevTools`;
-      el.style.color = 'var(--brand)';
-    } else if (devState === 'unsupported') {
-      el.textContent = `○ Can't read this version of Live's DevTools (${bsDeviceStatus.version || 'unknown version'})`;
-      el.style.color = 'var(--err)';
-    } else if (devState === 'old-worker') {
-      el.textContent = '○ Reload Selenite in chrome://extensions to mirror BrowserStack devices';
-      el.style.color = 'var(--warn)';
-    } else {
-      el.textContent = `○ Open DevTools in the Live session to mirror ${device}'s console`;
-      el.style.color = 'var(--fg3)';
-    }
+    const line = bcDeviceLine(devState, bsDeviceStatus, device);
+    el.textContent = line.text;
+    el.style.color = line.color;
     return;
   }
   if (attached) {
@@ -3840,13 +3875,32 @@ async function initBsLive() {
       openBsLive(key, btn.dataset.bsOpen, btn.dataset.bsTarget);
     });
     bsRole(key, 'status')?.addEventListener('click', e => {
+      const manual = e.target.closest('[data-bs-open-manual]');
+      if (manual) { openBsLiveManual(key, manual.dataset); return; }
       if (!e.target.closest('[data-bs-open-anyway]') || !_bsLivePending[key]) return;
       const pending = _bsLivePending[key];
       delete _bsLivePending[key];
-      launchBsLiveTab(key, pending.url, pending.what, { unconfirmed: true });
+      // Local was asked for in the link (Selenite just found it not connected), so
+      // the watcher still reads what the dashboard says; `unconfirmed` shapes the words.
+      launchBsLiveTab(key, pending.url, pending.what, {
+        unconfirmed: true, presetId: pending.presetId, pageUrl: pending.pageUrl,
+        wantLocal: pending.local, wantForceLocal: pending.local && pending.forceLocal,
+      });
     });
   }
   renderBsLiveAll();
+  // What the worker saw Live do with a launch arrives as a change to this
+  // window's bsLaunch_<place>; a panel opened after the launch reads it once.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'session') return;
+    for (const k of bsLiveKeys()) {
+      const ch = changes[nsKey('bsLaunch_' + k)];
+      if (ch && ch.newValue) renderBsLaunch(ch.newValue);
+    }
+  });
+  for (const k of keys) {
+    sessionNS.get('bsLaunch_' + k).then(r => { if (r['bsLaunch_' + k]) renderBsLaunch(r['bsLaunch_' + k]); }).catch(() => {});
+  }
 }
 
 // Every place shows the same selection and toggles, so a change made in one
@@ -3884,11 +3938,15 @@ function renderBsLiveDevices(key) {
     return `
       <div data-bs-kind="${q(k.kind)}" style="margin-bottom:6px">
         <div style="font-size:10px;font-weight:600;color:var(--fg2);margin-bottom:3px">${esc(k.label)}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px">${group.map(p => `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px">${group.map(p => {
+          // Live has no DevTools on iOS 27, which the Browser Console mirror reads.
+          const dt = bsDevtoolsSupport(p);
+          return `
           <label class="suite-check" style="font-size:11px">
             <input type="checkbox" data-bs-dev="${q(p.id)}"${on.has(p.id) ? ' checked' : ''}>
-            <span>${esc(p.label)} <span style="font-size:10px;color:var(--fg3)">${esc(p.detail)}</span></span>
-          </label>`).join('')}
+            <span>${esc(p.label)} <span style="font-size:10px;color:var(--fg3)">${esc(p.detail)}</span>${dt.mirror ? '' : ` <span style="font-size:10px;color:var(--warn)" title="${q(dt.why)}" data-bs-nomirror>no console mirror</span>`}</span>
+          </label>`;
+        }).join('')}
         </div>
       </div>`;
   }).join('');
@@ -3931,29 +3989,42 @@ function setBsLiveStatus(key, html, color) {
   el.innerHTML = html;
 }
 
-// The one network call in this section. The BrowserStack Local app serves a
-// console on localhost:45454, and GET /status answers {status, token, userId}
-// with no auth. bsLocalStatusFrom reads only `status`, so the token goes no
-// further than this function's local variable. 1.5 s is ample for a local
-// socket, and short enough that a click with the app closed fails fast.
+// The two network calls in this section, both to this Mac, both at once.
+// Live itself asks the Local binary's port (BS_LOCAL_BINARY, which answers
+// JSONP: commandLineTunnel('…')); that is the answer that decides whether a
+// session can use Local, so it is the one that counts. The app's console on
+// localhost:45454 answers GET /status {status, token, userId} with no auth and
+// only says the app is signed in, which stayed true while Live could not see
+// Local at all. bsLocalStatusFrom reads only `status` and bsLocalBinaryAnswer
+// only the shape, so neither the token nor the tunnel identifier goes further
+// than this function. 1.5 s is ample for a local socket, and short enough that
+// a click with the app closed fails fast.
 async function bsLocalStatus() {
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 1500);
-  try {
-    const res = await fetch(BS_LOCAL_CONSOLE + '/status', { cache: 'no-store', credentials: 'omit', signal: ctl.signal });
-    const body = await res.json().catch(() => null);
-    return bsLocalStatusFrom(res.ok ? body : null, true);
-  } catch (_) {
-    return bsLocalStatusFrom(null, false);
-  } finally {
-    clearTimeout(timer);
-  }
+  const ask = async (url, read) => {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 1500);
+    try {
+      const res = await fetch(url, { cache: 'no-store', credentials: 'omit', signal: ctl.signal });
+      return await read(res);
+    } catch (_) {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const [binaryUp, consoleStatus] = await Promise.all([
+    ask(BS_LOCAL_BINARY + '/?_=' + Date.now(), async res => (res.ok ? bsLocalBinaryAnswer(await res.text()).up : false)),
+    ask(BS_LOCAL_CONSOLE + '/status', async res => bsLocalStatusFrom(res.ok ? await res.json().catch(() => null) : null, true)),
+  ]);
+  return bsLocalReadiness(binaryUp === true, consoleStatus || bsLocalStatusFrom(null, false));
 }
 
 function showBsLocalStatus(key, st) {
-  if (st.running && st.signedIn) {
-    setBsLiveStatus(key, '✓ BrowserStack Local is running on this Mac and signed in. Live connects to it when a session starts.', 'var(--ok)');
-  } else if (st.running) {
+  if (st.ready) {
+    setBsLiveStatus(key, '✓ BrowserStack Local is connected: its app answers on the port Live checks (127.0.0.1:45691). After you open a device, Selenite reports whether Live actually started it with Local.', 'var(--ok)');
+  } else if (st.state === 'not-connected') {
+    setBsLiveStatus(key, "BrowserStack Local is open and signed in, but nothing answers on the port Live checks (127.0.0.1:45691), so Live won't see it. In the Local app make sure it is connected, then Check again.", 'var(--warn)');
+  } else if (st.state === 'not-signed-in') {
     setBsLiveStatus(key, 'BrowserStack Local is open but not signed in. Sign in in the app, then Check again.', 'var(--warn)');
   } else {
     setBsLiveStatus(key, `BrowserStack Local isn't running on this Mac. Open the BrowserStack Local app (in Applications), then Check again. <a href="${BS_LOCAL_DOWNLOAD}" target="_blank" rel="noopener">Get the app</a>`, 'var(--err)');
@@ -3971,56 +4042,135 @@ async function openBsLive(key, presetId, targetKey) {
   const preset = bsPresetById(presetId);
   const target = BS_LIVE_SURFACES[key]?.targets().find(t => t.key === targetKey);
   if (!preset || !target || !bsLive) return;
+  // Taken now, once: the link is built from these, and what the status line goes
+  // on to say about the launch is judged against the same two, not whatever the
+  // toggles read after the Local check below.
+  const local = !!bsLive.local;
+  const forceLocal = !!bsLive.forceLocal;
   const what = `${target.label} on ${preset.label}`;
-  const url = bsLiveUrl(preset, target.url, { local: bsLive.local, forceLocal: bsLive.forceLocal });
+  const url = bsLiveUrl(preset, target.url, { local, forceLocal });
   if (!url) {
     setBsLiveStatus(key, esc(target.noUrl), 'var(--err)');
     return;
   }
   delete _bsLivePending[key];
-  if (bsLive.local) {
+  if (local) {
     // Checked before every launch, not once: the app can be quit or signed
     // out between clicks, and Live given local=true without a tunnel starts a
     // session that cannot reach the pages this is for.
     setBsLiveStatus(key, 'Checking BrowserStack Local…');
     const st = await bsLocalStatus();
-    if (!(st.running && st.signedIn)) {
+    if (!st.ready) {
       showBsLocalStatus(key, st);
-      _bsLivePending[key] = { url, what };
+      _bsLivePending[key] = { url, what, presetId: preset.id, pageUrl: target.url, local, forceLocal };
       bsRole(key, 'status')?.insertAdjacentHTML('beforeend',
         ` <button class="btn sm" data-bs-open-anyway title="Open ${esc(what).replace(/"/g, '&quot;')} in Live without a confirmed tunnel">Open anyway</button>`);
       return;
     }
   }
-  await launchBsLiveTab(key, url, what);
+  await launchBsLiveTab(key, url, what, { presetId: preset.id, pageUrl: target.url, wantLocal: local, wantForceLocal: local && forceLocal });
 }
 
 // Live runs one session at a time, and a second dashboard tab would contend
 // with the first for it. So the Live tab Selenite opened last, from either
 // place, is closed first, but only while it is still on the dashboard: a tab
-// the user has since taken somewhere else is theirs.
-async function launchBsLiveTab(key, url, what, { unconfirmed = false } = {}) {
+// the user has since taken somewhere else is theirs. Launches run one after
+// another, so two quick clicks leave one tab (the later one), not two
+// dashboards fighting over the session.
+//
+// Opening the tab says nothing about what Live then did with it: a device it
+// refuses, a session that drops after ten seconds, or one that starts without
+// Local. So the worker watches the tab (bsWatchLaunch) and the status line
+// follows what it reports (renderBsLaunch), instead of announcing success the
+// moment the tab exists. `manual` opens Live with the page and Local in place
+// but no start=true, for the tester to pick the device: nothing to watch.
+let _bsLaunchChain = Promise.resolve();
+function launchBsLiveTab(key, url, what, opts) {
+  const run = _bsLaunchChain.then(() => launchBsLiveTabNow(key, url, what, opts || {}));
+  _bsLaunchChain = run.catch(() => {});
+  return run;
+}
+
+const _bsLastTab = {};        // place -> the Live tab its latest launch opened
+const _bsRenderedAt = {};     // place -> `at` of the report its line shows now
+
+async function launchBsLiveTabNow(key, url, what, { unconfirmed = false, manual = false, presetId = '', pageUrl = '', wantLocal = false, wantForceLocal = false } = {}) {
   try {
     const { bsLiveTabId } = await sessionNS.get('bsLiveTabId');
     if (bsLiveTabId != null) {
       const old = await chrome.tabs.get(bsLiveTabId).catch(() => null);
-      if (old && bsIsLiveUrl(old.url)) await chrome.tabs.remove(old.id).catch(() => {});
+      // A tab opened a moment ago has no url yet, only the pendingUrl it is loading.
+      if (old && bsIsLiveUrl(old.pendingUrl || old.url)) await chrome.tabs.remove(old.id).catch(() => {});
     }
     const tab = await chrome.tabs.create({ url, active: true, ...(WIN_ID != null ? { windowId: WIN_ID } : {}) });
     await sessionNS.set({ bsLiveTabId: tab.id });
-    if (unconfirmed) {
-      // "Open anyway": the link still asks Live for the tunnel, but nothing
-      // confirmed one, so don't report the session as routed through it.
-      setBsLiveStatus(key, `Opened ${esc(what)} in BrowserStack Live without a confirmed BrowserStack Local tunnel. Live will report the tunnel's state itself.`, 'var(--warn)');
+    _bsLastTab[key] = tab.id;
+    if (manual) {
+      setBsLiveStatus(key, `Opened Live with Local on and the page for ${esc(what)} ready. Wait until Live shows Local as connected, then pick the device in its list; the session starts with Local.`, 'var(--ok)');
       return;
     }
-    const route = !bsLive.local ? '' : bsLive.forceLocal
-      ? ', through BrowserStack Local, with all traffic through this Mac'
-      : ', through BrowserStack Local';
-    setBsLiveStatus(key, `Opened ${esc(what)} in BrowserStack Live${route}.`, 'var(--ok)');
+    setBsLiveStatus(key, esc(bsLaunchLine({ state: 'starting' }, { what }).text), 'var(--fg3)');
+    const ack = await chrome.runtime.sendMessage({
+      action: 'bsWatchLaunch', winId: WIN_ID, tabId: tab.id, key, what, presetId, pageUrl,
+      wantLocal, wantForceLocal, unconfirmed,
+    }).catch(() => null);
+    if (!ack || ack.ok !== true) {
+      setBsLiveStatus(key, `Opened ${esc(what)} in BrowserStack Live. Reload Selenite in chrome://extensions so it can report what Live did with it.`, 'var(--warn)');
+      return;
+    }
+    // The worker can be reloaded or killed mid-watch, and then nothing would ever
+    // update this line again. Its own timeout is BS_LAUNCH_GIVE_UP_MS.
+    setTimeout(() => bsCheckLaunchLost(key, tab.id, what), BS_LAUNCH_GIVE_UP_MS + 20000);
   } catch (e) {
     setBsLiveStatus(key, 'Could not open BrowserStack Live: ' + esc(e?.message || String(e)), 'var(--err)');
   }
+}
+
+// Past the watch's own deadline and still "starting": the watch died.
+async function bsCheckLaunchLost(key, tabId, what) {
+  if (_bsLastTab[key] !== tabId) return;                       // a newer launch from this place has its own line
+  const storeKey = 'bsLaunch_' + key;
+  const rec = (await sessionNS.get(storeKey).catch(() => ({})))[storeKey];
+  if (rec && rec.tabId === tabId && rec.verdict && rec.verdict.state !== 'starting') return;   // it reported something
+  setBsLiveStatus(key, esc(bsLaunchLine({ state: 'lost' }, { what }).text), 'var(--warn)');
+}
+
+// The worker's report on a launch from this place, as a status line.
+async function renderBsLaunch(rec) {
+  if (!rec || !rec.key || !rec.verdict || !bsRole(rec.key, 'status')) return;
+  // A reopened panel reads the last report back; an old one is history, not what is on screen.
+  if (!(Number(rec.at) > Date.now() - BS_LAUNCH_REPORT_MAX_AGE_MS)) return;
+  // A newer launch from this place has its own line.
+  if (_bsLastTab[rec.key] != null && _bsLastTab[rec.key] !== rec.tabId) return;
+  // A report that the Live tab was closed is about a tab that is gone, by definition.
+  // Any other report is about what is on screen, so its tab must still be the one
+  // Selenite opened last and must still exist.
+  if (rec.verdict.state !== 'closed') {
+    const { bsLiveTabId } = await sessionNS.get('bsLiveTabId');
+    if (rec.tabId !== bsLiveTabId) return;
+    if (!(await chrome.tabs.get(rec.tabId).catch(() => null))) return;
+  }
+  // Reports can be rendered out of order (each waits on the checks above).
+  if (rec.at < (_bsRenderedAt[rec.key] || 0)) return;
+  _bsRenderedAt[rec.key] = rec.at;
+  const line = bsLaunchLine(rec.verdict, { what: rec.what, wantLocal: rec.wantLocal, wantForceLocal: rec.wantForceLocal, unconfirmed: rec.unconfirmed });
+  const color = { ok: 'var(--ok)', warn: 'var(--warn)', err: 'var(--err)' }[line.tone] || 'var(--fg3)';
+  setBsLiveStatus(rec.key, esc(line.text), color);
+  if (line.offerManual && rec.presetId && rec.pageUrl) {
+    // The button carries what it opens, so it opens that and not whichever launch
+    // happens to be the latest on record.
+    const q = s => esc(s || '').replace(/"/g, '&quot;');
+    bsRole(rec.key, 'status').insertAdjacentHTML('beforeend',
+      ` <button class="btn sm" data-bs-open-manual data-bs-preset="${q(rec.presetId)}" data-bs-page="${q(rec.pageUrl)}" data-bs-what="${q(rec.what)}" title="Open Live with Local on and this page ready, then pick the device yourself once Live shows Local connected">Open Live and pick the device myself</button>`);
+  }
+}
+
+// "Open Live and pick the device myself", from the button renderBsLaunch wrote.
+async function openBsLiveManual(key, data) {
+  const preset = bsPresetById(data && data.bsPreset);
+  if (!preset || !data.bsPage || !bsLive) return;
+  const url = bsLiveUrl(preset, data.bsPage, { local: true, forceLocal: bsLive.forceLocal, start: false });
+  if (url) await launchBsLiveTab(key, url, data.bsWhat || preset.label, { manual: true });
 }
 
 let _abProgressPoller = null;

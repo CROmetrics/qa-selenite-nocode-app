@@ -82,6 +82,26 @@ All of it measured on real sessions (2026-10-08; see CHANGELOG.md, "Measured on 
 | `vanish` | a desktop session whose toolbar goes away for 4 s is not reported as ended |
 | `early-title` | a phone whose title says running before its toolbar makes no claim about Local until the toolbar can say it |
 | `ended` | stopping the session in Live is reported once the picker is back |
+| `ended-late` | so is stopping it long after the 40 s settle window (the watch slows to every 5 s, it does not stop) |
+
+## Against real Live: `live.py`
+
+The gate's fake cannot show what the real dashboard does. `live.py` runs the same real extension against real
+BrowserStack Live, in a separate, persistent Chrome profile (`~/Library/Application Support/Selenite Live Test`) that
+you sign in to once, and drives it through a small control server on 127.0.0.1:
+
+```
+python3 -I -u extension/tests/browserstack-gate/live.py serve     # keep running; sign in to BrowserStack in that window once
+python3 -I extension/tests/browserstack-gate/live.py panel        # Selenite's panel as a tab
+python3 -I extension/tests/browserstack-gate/live.py ev panel "document.querySelector('[data-bs-role=status]').innerText"
+```
+
+`ev <where> '<js>'` runs JavaScript in `panel`, `worker` or any tab whose URL contains `<where>`; `shot` saves a
+screenshot; `tabs`, `open`, `front`, `stop` do what they say. A fresh profile cannot see passkeys kept by your
+everyday browser profile (install your password manager's extension there), and Chrome asks once for **Local
+network access** on live.browserstack.com: until it is allowed, the page's requests to the Local app hang and Live
+never finds it. Your everyday Chrome is not used: extension pages and the side panel cannot be scripted from
+outside it.
 
 ## Limits and traps
 

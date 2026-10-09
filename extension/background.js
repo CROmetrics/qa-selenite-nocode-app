@@ -1332,11 +1332,18 @@ async function bsDeviceEval(winId, tabId, expression) {
 const bsLaunchWatchers = new Map();      // tabId -> token of the watch in force
 const BS_LAUNCH_POLL_MS = 1000;
 // After the session starts: long enough to catch a late failure and for the
-// toolbar and Local state to settle, then stop polling. A phone's tab says
+// toolbar and Local state to settle, polling every second. A phone's tab says
 // "running" 5 to 10 s before its toolbar exists, and on iOS 27 and desktop the
 // toolbar is then rendered, goes for about 4 s and comes back, so the state is
 // not final until about 15 s after the title (measured 2026-10-08).
 const BS_LAUNCH_SETTLE_MS = 40000;
+// Then every 5 s for as long as the session runs, so the line does not go on
+// saying "running" after the tester stopped it in Live or Live dropped it
+// (seen on real Live, 2026-10-09: Stop Session at 50 s, line unchanged). An
+// end that is not yet believed is checked again a second later. The cap only
+// stops a watch on a tab left open for hours.
+const BS_LAUNCH_SLOW_POLL_MS = 5000;
+const BS_LAUNCH_WATCH_MAX_MS = 4 * 60 * 60 * 1000;
 // "Refused" and "ended" are believed only when this many readings in a row say
 // so: the dashboard re-renders and raises toasts of its own, and one odd
 // reading must not end the launch or tell the tester something false. (That
@@ -1356,7 +1363,7 @@ async function bsWatchLaunch(winId, tabId, ctx) {
   let lastVerdict = null;
   let seen = null;           // the last verdict made with the session toolbar on screen
   let pending = { state: '', n: 0 };
-  const nap = () => new Promise(r => setTimeout(r, BS_LAUNCH_POLL_MS));
+  const nap = (ms = BS_LAUNCH_POLL_MS) => new Promise(r => setTimeout(r, ms));
   // False when a newer launch from the same place has taken the record: this
   // watch is history then, and must not write over it.
   const write = async (verdict) => {
@@ -1424,8 +1431,9 @@ async function bsWatchLaunch(winId, tabId, ctx) {
       if (!(await write(v))) break;
     }
     if (v.state === 'refused' || v.state === 'timeout' || v.state === 'ended') break;
-    if (startedAt && Date.now() - startedAt >= BS_LAUNCH_SETTLE_MS) break;
-    await nap();
+    if (Date.now() - t0 >= BS_LAUNCH_WATCH_MAX_MS) break;
+    const settled = startedAt && Date.now() - startedAt >= BS_LAUNCH_SETTLE_MS;
+    await nap(settled && !pending.n ? BS_LAUNCH_SLOW_POLL_MS : BS_LAUNCH_POLL_MS);
   }
   if (bsLaunchWatchers.get(tabId) === token) bsLaunchWatchers.delete(tabId);
 }

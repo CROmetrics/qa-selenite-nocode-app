@@ -1147,8 +1147,40 @@ ok('the context rides along on every write', W1.writes.every(function (r) {
 }));
 eq("it writes under the window's own namespace", W1.nsCalls.filter(function (x, i, a) { return a.indexOf(x) === i; }).join(','), '5');
 eq("and in this place's own record, bsLaunch_ab", Object.keys(W1.store).join(','), 'bsLaunch_ab');
-eq('it stops on its own once the session has settled, and lets go of the tab', W1.done + ':' + W1.api.watchers.size, 'true:0');
-eq('and it did not poll forever: one reading a second until 40 s after it started (the third reading, at 2 s)', W1.execCalls, 43);
+eq('once settled it keeps watching the running session, and keeps the tab', W1.done + ':' + W1.api.watchers.size, 'false:1');
+eq('one reading a second until 40 s after it started (the third reading, at 2 s), then one every 5 s', W1.execCalls, 44);
+eq('and nothing changes while it runs', W1.states(), 'starting,started');
+// The tester stops the session in Live long after it settled: the line must not go on saying "running".
+W1.reads = [PG_PICKER];
+W1.advance(3500);   // the next slow reading is at 52 s; the picker there is checked again at 53 s
+eq('the first reading of the picker after the 40 s is checked again a second later, not five', W1.execCalls + ':' + W1.states(), '46:starting,started,ended');
+eq('ended is reported, and the watch lets go of the tab', W1.done + ':' + W1.api.watchers.size, 'true:0');
+// A drop long after it started.
+var WL = makeWorld({ reads: [PG_ANDROID_LOCAL] });
+WL.watch(5, 7, CTX);
+WL.advance(120000);
+WL.reads = [PG_DROPPED];
+WL.advance(7000);
+eq('a session that drops two minutes in is reported dropped, with the banner', WL.states() + ':' + WL.writes[WL.writes.length - 1].verdict.afterStart + ':' + WL.done, 'started,refused:true:true');
+var WC = makeWorld({ reads: [PG_ANDROID_LOCAL] });
+WC.watch(5, 7, CTX);
+WC.advance(120000);
+WC.tab = null;
+WC.advance(6000);
+eq('a tab closed two minutes in is reported closed', WC.states() + ':' + WC.writes[WC.writes.length - 1].verdict.wasStarted + ':' + WC.done, 'started,closed:true:true');
+var WB = makeWorld({ reads: [PG_ANDROID_LOCAL] });
+WB.watch(5, 7, CTX);
+WB.advance(120000);
+WB.reads = [PG_TOOLBAR_AWAY, PG_ANDROID_LOCAL];
+WB.advance(20000);
+eq('one odd reading after the 40 s (the toolbar away) changes nothing', WB.states() + ':' + WB.done, 'started:false');
+// A session left running for hours: the watch stops at its cap, leaving the line as it was.
+var WM = makeWorld({ reads: [PG_ANDROID_LOCAL] });
+WM.watch(5, 7, CTX);
+WM.advance(4 * 3600 * 1000 - 10000);
+eq('still watching just under four hours in', WM.done, false);
+WM.advance(20000);
+eq('and stopped at four hours, with the line still saying started', WM.done + ':' + WM.api.watchers.size + ':' + WM.states(), 'true:0:started');
 
 // One record per place: a launch from Functional Testing never overwrites the A/B one.
 var W1b = makeWorld({ reads: [PG_ANDROID_LOCAL] });
@@ -1203,7 +1235,7 @@ var WD = makeWorld({ reads: [PG_PICKER].concat(rep_(PG_TOOLBAR_AWAY, 6), [PG_DES
 WD.watch(5, 7, CTX);
 WD.advance(60000);
 eq('a desktop session whose toolbar goes away for 4 s is never reported ended; it starts once, with the Local the toolbar said', WD.states() + ':' + WD.writes[1].verdict.local, 'starting,started:true');
-eq('and the watch settles on its own', WD.done, true);
+eq('and it is still watching the session, slowly', WD.done + ':' + WD.api.watchers.size, 'false:1');
 var WD2 = makeWorld({ reads: [PG_PICKER].concat(rep_(PG_TOOLBAR_AWAY, 6), [PG_DESKTOP_UP], rep_(PG_TOOLBAR_AWAY, 12), [PG_DESKTOP_UP]) });
 WD2.watch(5, 7, CTX);
 WD2.advance(60000);
@@ -1556,7 +1588,7 @@ eq('"Open anyway" is marked unconfirmed for the watcher, which then says what it
 var G5 = makeGlue();
 settle(G5.api.launchBsLiveTab('ab', bsLiveUrl(bsPresetById('galaxy-s26'), 'https://x.com/', { local: true, start: false }), 'Control on Galaxy S26', { manual: true }));
 eq('the manual route opens the tab and watches nothing', G5.created.length + ':' + G5.sent.length + ':' + G5.timers.length, '1:0:0');
-ok('and tells the tester what to do', /pick the device in its list; the session starts with Local/.test(G5.statuses[0].html) && G5.statuses[0].color === 'var(--ok)', G5.statuses[0]);
+ok('and tells the tester what to do, without promising Local (a device picked by hand has started without it)', /When Live's Local Testing panel shows Local connected, pick the device in its list, then check that the page loads on it/.test(G5.statuses[0].html) && !/starts with Local/.test(G5.statuses[0].html) && G5.statuses[0].color === 'var(--ok)', G5.statuses[0]);
 ok('its link has no start parameter', G5.created[0].url.indexOf('start=') === -1, G5.created[0].url);
 var G6 = makeGlue({ noAck: true });
 settle(G6.api.launchBsLiveTab('ab', G_URL, 'x', {}));

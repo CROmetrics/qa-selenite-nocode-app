@@ -2,6 +2,33 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-09 — 0.7.11
+
+0.7.10 was tested on real BrowserStack Live with the extension itself for the first time (until then the real pieces had been run inside Live pages by hand). It held up, apart from two things this release fixes.
+
+### Tested on real Live (2026-10-09)
+
+- **In Will's own Chrome:** a Galaxy S26 launched from the A/B tab; the status line, the console mirror (a `[cro]` line logged on the phone appeared in Browser Console) and a command typed into Selenite's console that ran on the phone.
+- **In a separate Chrome driven over its debugging pipe** (`extension/tests/browserstack-gate/live.py`, signed in once): the Check button against the real Local app; a Galaxy S26 with Local on ("Waiting", then "running" at 5.6 s with no claim about Local, then at 7.6 s "Live started it before it found your BrowserStack Local app" with the manual button; the phone really showed BrowserStack's "Unable to connect" for a page served only on this Mac); the manual button's link (Local on, no `start=true`) and line; the console mirror and a command from Selenite's input on a Galaxy S26 Ultra; a Windows Chrome session with no false "ended" while Live's toolbar was away; a real refusal on Windows Chrome ("Connection to the remote device failed", reported as didn't start); and a tab closed before the session started.
+- **Found:** (1) the watch stopped 40 s after a session started, so Stop Session pressed at about 50 s left the line saying "running"; (2) a device picked by hand through the manual route, after Live had detected the Local app (`LocalTesting.bsLocalSuccess` true), still started without Local: Live never completed its handshake with the app (`commandLineTunnelExists` stayed false) and the phone could not reach this Mac. On 2026-10-08, in an everyday Chrome profile (which also has the BrowserStack extension), the same route did reach it.
+
+### Changed
+
+- **The launch watch follows a running session to its end** (`bsWatchLaunch`): every second for the first 40 s as before, then every 5 s (`BS_LAUNCH_SLOW_POLL_MS`) until the session ends, drops or its tab closes, with a 4-hour cap (`BS_LAUNCH_WATCH_MAX_MS`). An end that is not yet believed is read again a second later, so the report comes 1 to 6 s after the session stops.
+- **The manual route's line no longer promises Local:** "When Live's Local Testing panel shows Local connected, pick the device in its list, then check that the page loads on it: Live doesn't always attach Local to a session started this way."
+- **`extension/tests/browserstack-gate/live.py`** (new): runs the real extension against real Live in a persistent Chrome profile of its own and exposes a small control server (`panel`, `ev`, `shot`, `tabs`, `open`, `front`, `stop`). Each start uninstalls and reloads the extension, because that profile otherwise reuses the background script it cached on the previous run (it ran 0.7.10's worker under 0.7.11's panel until this was added). Two one-time steps for a fresh profile: a password manager for passkeys, and allowing Local network access on live.browserstack.com, without which the page's requests to the Local app hang and Live never finds it.
+
+### Verification
+
+- **jsc:** browserstack.test.js 679 → 687 assertions (the watch after the 40 s: an end, a drop, a closed tab, one odd reading, the 4-hour cap; the manual-route line). 18 mutations of this change and of the 0.7.10 rules all fail the suite. All eight CI suites pass.
+- **Real Chrome 154 against the fake Live:** 101 checks, including a new `ended-late` scenario (Stop Session 45 s in).
+- **Real Live:** a Windows Chrome session launched from Selenite in the separate Chrome; 55 s in the watch was still on, and Stop Session pressed then gave "Live ended the session on v0 on Windows Chrome." 2.5 s later.
+
+### Not yet verified
+
+- The manual route in Will's everyday Chrome since this release; why Live attaches Local there and not in a fresh profile.
+- A session dropped by Live (rather than stopped) more than 40 s in, on real Live.
+
 ## 2026-10-08 — 0.7.10
 
 BrowserStack Live launches now report what Live did with them. The 0.7.7 and 0.7.8 changelogs listed Local, force-local, `start=true` and the device console as "not yet verified"; on 2026-10-08 they were run for the first time on real sessions (an iPhone 18 Pro, iPhone 17, Galaxy S26, Pixel 10, iPad Pro 13, Galaxy Tab S11 and Mac Safari, Windows Chrome, Edge and Firefox) with the Local app connected, and several of them did not do what they claimed.

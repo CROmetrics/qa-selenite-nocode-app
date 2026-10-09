@@ -217,7 +217,7 @@ def scen_local_missed(g):
     url = tabs[0]['url'] if tabs else ''
     chk('with Local and the page in the link, and NO start=true', 'local=true' in url and 'url=https%3A%2F%2Fexample.com%2F' in url and 'start=' not in url, url)
     t = g.status()
-    chk('and tells the tester to pick the device', 'Wait until Live shows Local as connected, then pick the device in its list' in t, t)
+    chk('and tells the tester to pick the device, without promising Local', "When Live's Local Testing panel shows Local connected, pick the device in its list, then check that the page loads on it" in t and 'starts with Local' not in t, t)
     g.close_live_tabs()
 
 
@@ -608,11 +608,27 @@ def scen_ended(g):
     g.close_live_tabs()
 
 
+def scen_ended_late(g):
+    print('stopping the session in Live long after it settled: the line still follows it (seen stale on real Live)')
+    g.open_panel(); g.setup_ab(['galaxy-s26'], local=False)
+    g.click_open('galaxy-s26')
+    t = g.wait_status(lambda t: 'is running' in t, timeout=20)
+    chk('running', 'is running' in t, t)
+    time.sleep(45)
+    chk('45 s on, the watch is still on the tab (it slowed down, it did not stop)', watchers(g) == 1, watchers(g))
+    page = live_session(g)
+    g.b.ev(page, "document.querySelector('[aria-label=\"Stop Session\"]').click()")
+    t = g.wait_status(lambda t: 'ended the session' in t, timeout=12)
+    chk('stopped then: the line says Live ended the session', t == 'Live ended the session on Control on Galaxy S26.', t)
+    chk('and the watch ended', poll(lambda: watchers(g), lambda n: n == 0, 4) == 0, watchers(g))
+    g.close_live_tabs()
+
+
 SCENARIOS = {'smoke': scen_smoke, 'check': scen_check, 'local-missed': scen_local_missed, 'ios27': scen_ios27,
              'refused': scen_refused, 'dropped': scen_dropped, 'desktop': scen_desktop, 'not-ready': scen_not_ready,
              'mirror': scen_mirror, 'mirror-unavailable': scen_mirror_unavailable, 'panels': scen_panels, 'mirror-slow': scen_mirror_slow,
              'closed': scen_closed, 'left': scen_left, 'toast': scen_toast, 'relaunch': scen_relaunch, 'places': scen_places,
-             'vanish': scen_vanish, 'early-title': scen_early_title, 'ended': scen_ended}
+             'vanish': scen_vanish, 'early-title': scen_early_title, 'ended': scen_ended, 'ended-late': scen_ended_late}
 
 if __name__ == '__main__':
     if '--list' in sys.argv[1:]:

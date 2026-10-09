@@ -4106,7 +4106,10 @@ async function launchBsLiveTabNow(key, url, what, { unconfirmed = false, manual 
     await sessionNS.set({ bsLiveTabId: tab.id });
     _bsLastTab[key] = tab.id;
     if (manual) {
-      setBsLiveStatus(key, `Opened Live with Local on and the page for ${esc(what)} ready. Wait until Live shows Local as connected, then pick the device in its list; the session starts with Local.`, 'var(--ok)');
+      // Not a promise of Local: on 2026-10-09 a device picked this way, after Live had
+      // found the app, still started without it (in a fresh Chrome profile; on
+      // 2026-10-08, in an everyday one, it started with Local).
+      setBsLiveStatus(key, `Opened Live with Local on and the page for ${esc(what)} ready. When Live's Local Testing panel shows Local connected, pick the device in its list, then check that the page loads on it: Live doesn't always attach Local to a session started this way.`, 'var(--ok)');
       return;
     }
     setBsLiveStatus(key, esc(bsLaunchLine({ state: 'starting' }, { what }).text), 'var(--fg3)');

@@ -10,7 +10,8 @@ Everything here is a stand-in for what was MEASURED on the real dashboard on
   - a running desktop browser: the title stays "Dashboard", the same toolbar without the DevTools item
   - the dashboard's own Local record: Reactor.localTesting.getLocalStatusAtStart()
   - Live's DevTools: a same-origin iframe.devtools-iframe holding a frontend with
-    SDK.ConsoleModel / SDK.targetManager / UI.context (targets() is empty while it has not attached)
+    SDK.ConsoleModel / SDK.targetManager / UI.context (targets() is empty while it has not attached; with
+    __state.noctx a target has no page context, as on iOS 26, and its runtimeAgent says the tab is about:blank)
 
 The scenario is chosen by the `device` / `browser` in the link's hash, exactly as the
 real dashboard reads its own link. A `sim` parameter (unknown to the real dashboard)
@@ -173,7 +174,10 @@ FRAME = r"""<!doctype html><html><head><meta charset="utf-8"><title>devtools</ti
     ExecutionContext: ExecutionContext,
     targetManager: { targets: function () { return targets(); } },
   };
-  window.UI = { context: { flavor: function (c) { return c === ExecutionContext && targets().length ? ctx : null; } } };
+  // __state.noctx: a device with no page to run in, as an iPhone 17 on iOS 26.5/26.6 was (measured 2026-10-13):
+  // a target, never a selected context; its runtimeAgent answers location.href with "about:blank".
+  var noctx = function () { try { return !!parent.__state.noctx; } catch (e) { return false; } };
+  window.UI = { context: { flavor: function (c) { return c === ExecutionContext && targets().length && !noctx() ? ctx : null; } } };
   window.fire = function (text, level, type) {
     var m = { source: 'console-api', level: level || 'info', type: type || 'log', messageText: text, parameters: [{ type: 'string', value: text }] };
     msgs.push(m);

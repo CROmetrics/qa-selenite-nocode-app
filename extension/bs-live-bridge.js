@@ -9,7 +9,7 @@
   if (window.__seleniteBsBridge) return;
   window.__seleniteBsBridge = true;
 
-  var STATES = { connected: true, closed: true, unsupported: true, attaching: true, unavailable: true, failed: true };
+  var STATES = { connected: true, closed: true, unsupported: true, attaching: true, nopage: true, unavailable: true, failed: true };
 
   window.addEventListener('message', function (e) {
     if (e.source !== window || !e.data || e.data.__seleniteBsLive !== 1) return;
@@ -23,6 +23,8 @@
         // frame has waited for a device longer than it should.
         if (typeof d.reason === 'string' && d.reason) m.reason = d.reason.slice(0, 200);
         if (d.late === true) m.late = true;
+        // For "nopage": whether the device's tab is empty or some other page.
+        if (d.page === 'blank' || d.page === 'other') m.page = d.page;
         chrome.runtime.sendMessage(m).catch(function () {});
       }
     } catch (_) {

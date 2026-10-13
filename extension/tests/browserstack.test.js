@@ -362,24 +362,42 @@ function makeFrontend(opts) {
     addEventListener: function (type, fn) { listeners.push({ type: type, fn: fn }); },
   };
   function ExecutionContext() {}
-  var ctx = opts.ctx === undefined ? null : opts.ctx;
+  // The selected page context. A working device has one (a Galaxy S26: 0.2 s
+  // after it attaches, measured 2026-10-13), so that is the default; ctx: null
+  // is a device with no page to run in (an iPhone 17 on iOS 26.5/26.6).
+  var ctx = opts.ctx === undefined ? { evaluate: function () { return Promise.resolve({ object: { type: 'undefined' } }); } } : opts.ctx;
   var SDK = opts.noConsoleModel ? { ExecutionContext: ExecutionContext } : {
     ConsoleModel: { instance: function () { return cm; }, Events: { MessageAdded: 'MessageAdded', ConsoleCleared: 'ConsoleCleared' } },
     ExecutionContext: ExecutionContext,
   };
+  // The target's runtime agent answers location.href without a selected
+  // context: "about:blank" on the iPhone 17, the page's URL on the Galaxy S26
+  // ({result:{type:'string',value}}, plus wasThrown on iOS). opts.href is what
+  // it answers: a string, a function of the call number, or one returning a promise.
+  var probeCalls = [];
+  function agent() {
+    return { invoke_evaluate: function (params) {
+      probeCalls.push(params);
+      var h = typeof opts.href === 'function' ? opts.href(probeCalls.length) : opts.href;
+      if (h && typeof h.then === 'function') return h;
+      return Promise.resolve({ result: { type: 'string', value: h }, wasThrown: false });
+    } };
+  }
   // The real frontend has SDK.targetManager, and its targets() is empty while
   // the frame is up but the DevTools websocket has not attached to the device
   // (measured on real sessions 2026-10-08). One target by default: attached.
-  var targetList = opts.targets === undefined ? [{ name: 'page' }] : opts.targets;
+  var targetList = opts.targets === undefined ? [opts.href === undefined ? { name: 'page' } : { name: 'page', runtimeAgent: agent }] : opts.targets;
   if (!opts.noTargetManager) SDK.targetManager = { targets: function () { return opts.throwingTargets ? (function () { throw new Error('boom'); })() : targetList; } };
   var w = {
     location: { pathname: '/devtools/' + (opts.platform || 'realios') + '/91.0.4472.101/inspector.html' },
     SDK: SDK,
-    UI: { context: { flavor: function (cls) { return cls === ExecutionContext ? ctx : null; } } },
+    UI: opts.noUI ? undefined : { context: { flavor: function (cls) { return cls === ExecutionContext ? ctx : null; } } },
   };
   return {
-    w: w, listeners: listeners,
+    w: w, listeners: listeners, probeCalls: probeCalls,
     setTargets: function (list) { targetList = list; },
+    setCtx: function (c) { ctx = c; },
+    agent: agent,
     fire: function (m) { listeners.forEach(function (l) { if (l.type === 'MessageAdded') l.fn({ data: m }); }); },
   };
 }
@@ -786,6 +804,122 @@ var T4e = makePage();
 T4e.run();
 eq('a page with no body at all is just closed', T4e.states().join('|'), 'closed');
 
+// A device, and no page to run in. Measured on real sessions 2026-10-13,
+// sampled every 100 ms after DevTools opened:
+//   Galaxy S26: target at 0.4 s with no context and no URL; context and URL at
+//     0.6 s. A reload: context gone for 0.1 s, URL kept.
+//   iPhone 17 (iOS 26.6, and 26.5 the same): target 0.2 s after "Chrome
+//     DevTools" was chosen, then 40 s with no context and no URL;
+//     runtimeAgent().invoke_evaluate location.href answered "about:blank".
+// Scans are 1 s apart, so the Galaxy's gaps are at most one scan.
+section('the tap: a device with no page to run in');
+function nopageStates(page) { return page.posted.filter(function (p) { return p.m.kind === 'state'; }).map(function (p) { return p.m.state + (p.m.page ? ' ' + p.m.page : ''); }); }
+
+// Galaxy S26: one scan catches the device before its context.
+var G1fe = makeFrontend({ ctx: null, href: 'https://example.com/?measure=android' });
+var G1 = makePage();
+G1.frames.push(makeFrame(G1fe, G1.counters));
+G1.run();
+eq('Android, a device with no context yet: attaching, not connected', nopageStates(G1).join('|'), 'attaching');
+G1fe.setCtx({ evaluate: function () { return Promise.resolve({ object: { type: 'undefined' } }); } });
+G1.tick();
+eq('its context comes up a scan later: connected', nopageStates(G1).join('|'), 'attaching|connected');
+eq('and the page was never read: no probe on a working device', G1fe.probeCalls.length, 0);
+// A reload: the context is gone for one scan.
+G1fe.setCtx(null);
+G1.tick();
+G1fe.setCtx({ evaluate: function () { return Promise.resolve({ object: { type: 'undefined' } }); } });
+G1.tick();
+eq('a reload (context gone for one scan) posts nothing: still connected', nopageStates(G1).join('|'), 'attaching|connected');
+// Gone for PAGE_GRACE scans: still connected; the next one starts the read.
+G1fe.setCtx(null);
+G1.tick(3);
+eq('three scans without a context: still connected', nopageStates(G1).join('|'), 'attaching|connected');
+eq('and not yet read', G1fe.probeCalls.length, 0);
+G1.tick();
+eq('the fourth reads the page', G1fe.probeCalls.length, 1);
+eq('with nothing posted until the answer is in', nopageStates(G1).join('|'), 'attaching|connected');
+drainMicrotasks();
+G1.tick();
+eq('a real page with no context, past the grace: nopage, other', nopageStates(G1).slice(-1)[0], 'nopage other');
+
+// iPhone 17: a device, never a context, on about:blank.
+var I1fe = makeFrontend({ ctx: null, href: 'about:blank' });
+var I1 = makePage();
+I1.frames.push(makeFrame(I1fe, I1.counters));
+I1.run();
+I1.tick(2);
+eq('iOS 26: attaching through the grace, said once', nopageStates(I1).join('|'), 'attaching');
+ok('never late meanwhile', I1.posted.every(function (p) { return !p.m.late; }));
+I1.tick();
+eq('the page is read once the grace is over', I1fe.probeCalls.length, 1);
+eq('reading location.href, by value', JSON.stringify(I1fe.probeCalls[0]), '{"expression":"location.href","returnByValue":true}');
+drainMicrotasks();
+I1.tick();
+eq('iOS 26: nopage, on an empty tab', nopageStates(I1).join('|'), 'attaching|nopage blank');
+eq('with the frontend version', I1.states().slice(-1)[0], 'nopage ' + VER);
+I1.tick(8);
+eq('it is not re-read before PROBE_EVERY scans', I1fe.probeCalls.length, 1);
+for (var s30 = 0; s30 < 30; s30++) { I1.tick(); drainMicrotasks(); }
+eq('but is re-read every 10 scans, in case the tab is navigated', I1fe.probeCalls.length, 4);
+eq('and an unchanged answer posts nothing', nopageStates(I1).join('|'), 'attaching|nopage blank');
+ok('commands say the tab is empty, not to wait or reload', /attached to an empty tab \(about:blank\), not the page under test/.test(evalResult(I1, '1').error), evalResult(I1, '1'));
+I1fe.setCtx({ evaluate: function () { return Promise.resolve({ object: { type: 'number', value: 2 } }); } });
+I1.tick();
+eq('a context arriving later: connected', nopageStates(I1).slice(-1)[0], 'connected');
+eq('and commands run', evalResult(I1, '1+1').text, '2');
+I1fe.setCtx(null);
+I1.tick(3);
+var before4 = I1fe.probeCalls.length;
+I1.tick();
+eq('losing it again starts a fresh read, not the old answer', I1fe.probeCalls.length, before4 + 1);
+I1fe.setTargets([]);
+I1.tick();
+eq('the device detaching is attaching, as before', nopageStates(I1).slice(-1)[0], 'attaching');
+
+// The tab navigates to a page while DevTools still has no context.
+var I2fe = makeFrontend({ ctx: null, href: function (n) { return n === 1 ? 'about:blank' : 'https://example.com/'; } });
+var I2 = makePage();
+I2.frames.push(makeFrame(I2fe, I2.counters));
+I2.run(); I2.tick(3); drainMicrotasks(); I2.tick();
+I2.tick(10); drainMicrotasks(); I2.tick();
+eq('a re-read that finds a page changes blank to other', nopageStates(I2).join('|'), 'attaching|nopage blank|nopage other');
+
+// Reads that fail.
+function nopageAfter(href) {
+  var fe = makeFrontend({ ctx: null, href: href });
+  var pg = makePage();
+  pg.frames.push(makeFrame(fe, pg.counters));
+  pg.run(); pg.tick(3); drainMicrotasks(); pg.tick();
+  return { page: pg, fe: fe };
+}
+eq('a read that is refused: nopage, page unknown', nopageStates(nopageAfter(function () { return Promise.reject(new Error('no')); }).page).join('|'), 'attaching|nopage');
+eq('a read that throws: nopage, page unknown', nopageStates(nopageAfter(function () { return { then: function () { throw new Error('boom'); } }; }).page).join('|'), 'attaching|nopage');
+eq('a read that throws in the page (WebKit: wasThrown, the thrown value as the result) is unknown, not a page', nopageStates(nopageAfter(function () { return Promise.resolve({ result: { type: 'string', value: 'SecurityError' }, wasThrown: true }); }).page).join('|'), 'attaching|nopage');
+eq('likewise with CDP exceptionDetails', nopageStates(nopageAfter(function () { return Promise.resolve({ result: { type: 'string', value: 'x' }, exceptionDetails: { text: 'Uncaught' } }); }).page).join('|'), 'attaching|nopage');
+eq('an empty href is blank', nopageStates(nopageAfter('').page).join('|'), 'attaching|nopage blank');
+eq('about:srcdoc is blank too', nopageStates(nopageAfter('about:srcdoc').page).join('|'), 'attaching|nopage blank');
+var hang = nopageAfter(function () { return new Promise(function () {}); });
+eq('a read that never answers posts nothing yet', nopageStates(hang.page).join('|'), 'attaching');
+hang.page.flush();
+hang.page.tick();
+eq('after PROBE_MS it is nopage, page unknown', nopageStates(hang.page).join('|'), 'attaching|nopage');
+ok('and a command does not claim the tab is empty', /no script context yet/.test(evalResult(hang.page, '1').error), evalResult(hang.page, '1'));
+var keep = nopageAfter(function (n) { return n === 1 ? Promise.resolve({ result: { type: 'string', value: 'about:blank' } }) : Promise.reject(new Error('gone')); });
+keep.page.tick(10); drainMicrotasks(); keep.page.tick();
+eq('a later read that fails keeps the last answer', nopageStates(keep.page).join('|'), 'attaching|nopage blank');
+var noAgentFe = makeFrontend({ ctx: null });
+var NA = makePage();
+NA.frames.push(makeFrame(noAgentFe, NA.counters));
+NA.run(); NA.tick(3);
+eq('a target with no runtime agent: nopage at once after the grace, page unknown', nopageStates(NA).join('|'), 'attaching|nopage');
+
+var NU = makePage();
+NU.frames.push(makeFrame(makeFrontend({ ctx: null, noUI: true }), NU.counters));
+NU.run();
+eq('a frontend that cannot be asked about contexts is assumed to have a page', NU.states().join('|'), 'connected ' + VER);
+eq('the token is never read by any of this', I1.counters.src + G1.counters.src + I2.counters.src, 0);
+
 // ── the bridge ─────────────────────────────────────────────────────────────
 section('the bridge (bs-live-bridge.js)');
 var sent = [];
@@ -816,6 +950,12 @@ deliver({ __seleniteBsLive: 1, kind: 'state', state: 'unavailable', reason: new 
 eq('a reason is capped at 200 characters', sent[5].reason.length, 200);
 deliver({ __seleniteBsLive: 1, kind: 'state', state: 'unavailable', reason: { evil: true }, late: 'yes' });
 ok('a reason that is not a string and a late that is not true are dropped', !('reason' in sent[6]) && !('late' in sent[6]), sent[6]);
+deliver({ __seleniteBsLive: 1, kind: 'state', state: 'nopage', version: 'realios 91.0.4472.101', page: 'blank' });
+eq('nopage is forwarded, with what the page is', JSON.stringify(sent[7]), '{"action":"bsDeviceState","state":"nopage","version":"realios 91.0.4472.101","page":"blank"}');
+deliver({ __seleniteBsLive: 1, kind: 'state', state: 'nopage', page: 'other' });
+eq('other passes too', sent[8] && sent[8].page, 'other');
+deliver({ __seleniteBsLive: 1, kind: 'state', state: 'nopage', page: 'https://example.com/?secret=1' });
+ok('a page that is not blank/other (a URL) is not forwarded', !!sent[9] && sent[9].state === 'nopage' && !('page' in sent[9]), sent[9]);
 
 // ── the panel's reading of the device state ────────────────────────────────
 section('panel: device state (bcDeviceState)');
@@ -856,6 +996,13 @@ eq('waiting reads the same as closed', bcDeviceLine('waiting', null, DEVN).text,
 eq('an iPad gets the same hint', /choose Chrome DevTools/.test(bcDeviceLine('closed', {}, 'iPad Pro 13 2024 v18.0').text), true);
 eq('an Android phone has no such menu, so no hint', bcDeviceLine('closed', {}, 'Samsung Galaxy S26 v16.0').text, "○ Open DevTools in the Live session to mirror Samsung Galaxy S26 v16.0's console");
 eq('nor does a session that has no name', bcDeviceLine('closed', {}, 'this session').text, "○ Open DevTools in the Live session to mirror this session's console");
+var IP17 = 'iPhone 17 v26.6';
+eq('nopage on an empty tab: says so, and that it is not the page under test', bcDeviceLine('nopage', { page: 'blank' }, IP17).text, "○ Live's DevTools on iPhone 17 v26.6 is attached to an empty tab (about:blank), not the page under test, so there's nothing to mirror and commands can't run.");
+eq('nopage on some other page: claims only what is known', bcDeviceLine('nopage', { page: 'other' }, IP17).text, "○ Live's DevTools is attached to iPhone 17 v26.6 but gives Selenite no page to run commands in.");
+eq('nopage, page unknown: the same', bcDeviceLine('nopage', {}, IP17).text, bcDeviceLine('nopage', { page: 'other' }, IP17).text);
+ok('nopage never claims to be mirroring', !/mirroring/.test(bcDeviceLine('nopage', { page: 'blank' }, IP17).text) && !/mirroring/.test(bcDeviceLine('nopage', {}, IP17).text));
+eq('nopage is a warning', bcDeviceLine('nopage', { page: 'blank' }, IP17).color + bcDeviceLine('nopage', {}, IP17).color, 'var(--warn)var(--warn)');
+eq('nopage passes through bcDeviceState from the worker', bcDeviceState(LIVE_CS, { state: 'nopage', tabId: 11, page: 'blank' }, undefined), 'nopage');
 eval(sliceBetween(POPUP, 'function bcDeviceName(title) {', '\n}\n', 'popup bcDeviceName') + '\n}');
 eq('a phone is named by its tab', bcDeviceName('iPhone 18 Pro v27.0'), 'iPhone 18 Pro v27.0');
 eq('a desktop session keeps the title "Dashboard", which names nothing', bcDeviceName('Dashboard'), 'this session');
@@ -1984,6 +2131,29 @@ eq('no records at all', followWorld([], [])(7), null);
 // is the behavioural test. This pins that the 'complete' branch still asks the helper.
 ok("the 'complete' branch of tabs.onUpdated looks the window up through followedWinFor",
   /await restoreFollowState\(\);\n  const winId = followedWinFor\(tabId\);\n  \/\/ Re-runs capturability/.test(WORKER));
+
+// ── worker: the bsDeviceState message ──────────────────────────────────────
+// The real branch of background.js's onMessage, sliced out: what the bridge
+// forwards is stored as the window's bsDeviceStatus only for known states.
+section('worker: the bsDeviceState message');
+var DEVSTATE_SRC = sliceBetween(WORKER, "  } else if (msg.action === 'bsDeviceState') {", "  } else if (msg.action === 'bsWatchLaunch') {", 'worker bsDeviceState branch');
+function devState(msg, tabId) {
+  var store = {};
+  var fn = new Function('msg', 'sender', 'sendResponse', 'restoreFollowState', 'bsLiveWinFor', 'ns', 'if (false) {\n' + DEVSTATE_SRC + '}');
+  var done = false;
+  fn(msg, { tab: { id: tabId === undefined ? 11 : tabId } }, function () { done = true; }, function () { return Promise.resolve(); },
+    function (id) { return id === 11 ? 5 : null; },
+    function () { return { set: function (o) { for (var k in o) store[k] = o[k]; return Promise.resolve(); } }; });
+  drainMicrotasks();
+  return { status: store.bsDeviceStatus, done: done };
+}
+eq('nopage is stored, with its page', JSON.stringify(devState({ action: 'bsDeviceState', state: 'nopage', version: 'realios 91.0.4472.101', page: 'blank' }).status), '{"state":"nopage","version":"realios 91.0.4472.101","tabId":11,"page":"blank"}');
+eq('other is kept too', (devState({ action: 'bsDeviceState', state: 'nopage', page: 'other' }).status || {}).page, 'other');
+ok('a page that is neither (a URL) is not stored', (function () { var st = devState({ action: 'bsDeviceState', state: 'nopage', page: 'https://x/?q=1' }).status; return !!st && !('page' in st); })());
+eq('the earlier states still pass', ['connected', 'closed', 'unsupported', 'attaching', 'unavailable', 'failed'].map(function (s) { var r = devState({ action: 'bsDeviceState', state: s }); return r.status && r.status.state; }).join(','), 'connected,closed,unsupported,attaching,unavailable,failed');
+eq('an unknown state is not stored', devState({ action: 'bsDeviceState', state: 'bogus' }).status, undefined);
+eq('nor one from a tab that is not a followed Live tab', devState({ action: 'bsDeviceState', state: 'nopage', page: 'blank' }, 99).status, undefined);
+ok('and it always answers', devState({ action: 'bsDeviceState', state: 'bogus' }).done);
 
 // ── report ─────────────────────────────────────────────────────────────────
 print('');

@@ -2,6 +2,38 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-13 — 0.7.12
+
+On an iPhone 17 (iOS 26) Browser Console said "● Live — mirroring iPhone 17 v26.6" and enabled the command input while Live's DevTools was attached to an empty tab. This release says so instead.
+
+### Measured on real sessions (2026-10-13)
+
+- **iPhone 17, three sessions (iOS 26.5 and 26.6):** choosing **Chrome DevTools** in Live's DevTools menu attaches it to the device (one target, 0.2 s later), but for the 40 s sampled the frontend never had a selected execution context, its target's inspected URL stayed empty, and its console model had no messages. `location.href`, read through the target's runtime agent (`runtimeAgent().invoke_evaluate`, which answers without a selected context), was `about:blank`: Safari's Start Page, not the page under test. A reload through DevTools changed nothing. The old status line called this "connected" because a target existed, and a command answered "The device page has no script context yet… reload it on the device", which did not help.
+- **Galaxy S26, the working case, sampled every 100 ms:** the target appears 0.4 s after DevTools opens and the page's context and URL 0.2 s after that; a reload leaves the page without a context for 0.1 s, with its URL kept; a navigation showed no gap. The runtime agent's `location.href` read works there too.
+
+### Changed
+
+- **"Connected" needs a page to run in** (`bs-live-tap.js`). A device whose frontend has no selected context is reported as **attaching** for up to three scans (a session already connected stays connected through them, which covers the Galaxy's reload gap), then the tap reads `location.href` once through the runtime agent and reports a new state, **nopage**, with `page: 'blank'` (about:blank or empty) or `'other'`. It reads again every 10 scans in case the tab is navigated, gives a read 5 s, and keeps the last answer when a later read fails. A context that arrives later turns it back to connected. This is the only expression the tap evaluates of its own accord.
+- **The status line** (`bcDeviceLine`): "○ Live's DevTools on iPhone 17 v26.6 is attached to an empty tab (about:blank), not the page under test, so there's nothing to mirror and commands can't run." For a page other than about:blank it claims less: "○ Live's DevTools is attached to … but gives Selenite no page to run commands in." The command input stays disabled ("> Live's DevTools has no page on the device to run commands in"), and a command that still reaches the device on an empty tab is refused with that reason rather than "wait, or reload".
+- `bs-live-bridge.js` and the worker's `bsDeviceState` handler accept `nopage`, and pass `page` only as `blank` or `other` (never a URL).
+
+### Also tested on real Live (2026-10-13, 0.7.11)
+
+- **Functional Testing's Cross-browser block**, until then run only against the fake Live: its buttons are disabled while the Open URL step is blank; with a URL, parameters and QA Mode set, a Galaxy S26 launch opened exactly the start URL (`https://` added, `cro_mode=qa` last, read back from the phone with `location.href` through Selenite's console), its own line followed the session to "Live ended the session", and the A/B line and record were untouched.
+- **The side panel and the floating window**, the two surfaces a tester launches from (there is no toolbar popup since 0.7.3, so 0.7.10's "the `bsWatchLaunch` message from the toolbar popup" no longer applies): a launch from each opened the Live tab in the browser window Selenite belongs to, the line followed the session from start to end, and the console mirror connected within about a second of DevTools opening. The 📌 button moved Selenite from the floating window to the side panel.
+- **iOS 27** (iPhone 18 Pro, iPad Pro 13) through the extension: "Live has no DevTools for …" with Live's reason, the input disabled, held through the toolbar's absence.
+
+### Verification
+
+- **jsc:** browserstack.test.js 687 → 740 assertions: the tap against the measured timelines (the Galaxy's attach and reload gaps, the iPhone's 40 s without a context and its about:blank answer), reads that are refused, throw, answer a thrown value, never answer, or answer a page later; the bridge; the panel line; and the worker's `bsDeviceState` branch, sliced out of background.js (its state list had no test). 18 mutations of this change all fail the suite, each with readable failures. All eight CI suites pass.
+- **Real Chrome against the fake Live:** 109 checks (101 before), including a new `mirror-nopage` scenario whose fake DevTools has a device, no context and an about:blank answer. It fails 6 checks on 0.7.11, showing what real Live showed: "mirroring", the input enabled, the old advice.
+- **Real Live:** on an iPhone 17 (iOS 26.6) the line read "waiting for it to attach", then, about 4 s after Chrome DevTools was chosen, the empty-tab line, with the input disabled. On a Galaxy S26 the mirror connected, `location.href` and `location.reload()` ran from Selenite's input, and the reload did not change the line.
+
+### Not yet verified
+
+- Whether a Live iOS session loads the link's page at all: screenshots of the device stream froze in the test harness (the device clock stopped), so they cannot show it. Someone has to look at the Live window.
+- Whether **Safari Web Inspector**, the other item in Live's iOS DevTools menu, attaches to the right tab. Selenite cannot read that inspector either way.
+
 ## 2026-10-09 — 0.7.11
 
 0.7.10 was tested on real BrowserStack Live with the extension itself for the first time (until then the real pieces had been run inside Live pages by hand). It held up, apart from two things this release fixes.

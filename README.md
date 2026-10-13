@@ -27,6 +27,11 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.12 — 2026-10-13
+
+**BrowserStack Live**
+- **Fixed:** on an iPhone 17 (iOS 26) Browser Console said it was mirroring the device and enabled the command input, but Live's Chrome DevTools was attached to an empty Safari tab (about:blank), not the page under test, so nothing could be read and every command failed with advice to reload. The status line now says DevTools is on an empty tab and keeps the input disabled. It switches to mirroring by itself if a page ever comes up. Android devices are unchanged.
+
 ### 0.7.11 — 2026-10-09
 
 First test of 0.7.10 on real BrowserStack Live with the extension itself; it held up apart from the two things below.
@@ -227,6 +232,7 @@ In **Browser Console**, top to bottom:
 - The command input and Quick Commands run on the device, through Live's DevTools, so an Optimizely or Convert Quick Command answers from the iPhone or Android page. `$click` and `$hover` don't work on a device, and a device result can't be expanded.
 - The status line says which device is mirrored, or that DevTools needs opening, and the input is disabled until it is open. If DevTools is open but has no device behind it, it says it is waiting for it to attach, and after about 15 seconds to close and reopen it in Live.
 - Live has no DevTools on iOS 27, in desktop browser sessions, or on some Android devices (the Pixel 10 had none when it was checked, the Galaxy S26 on the same Android did). Then the status line says Live has none, in Live's words, and commands can't run; there is nothing to read.
+- On iOS 26 (the iPhone 17) Live's Chrome DevTools does attach to the device, but to an empty Safari tab (about:blank) rather than the page under test, so there is nothing to mirror. The status line says so and the input stays disabled. It switches to mirroring by itself if a page ever comes up in DevTools.
 
 ### Visual Regression
 

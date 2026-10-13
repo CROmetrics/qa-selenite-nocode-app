@@ -9,16 +9,19 @@
 //   - relays that model's messages, the device's console, to
 //     bs-live-bridge.js (ISOLATED world), which forwards them to the worker;
 //   - reports what DevTools is doing, so the status line can say so: closed,
-//     connected (a device behind the frame), attaching (a frame and no device
-//     yet; late after ~15 s), unavailable (Live has none for this device, with
-//     its reason), failed (Live says it broke), unsupported (a frontend this
-//     doesn't know);
+//     connected (a device and a page to run in behind the frame), attaching
+//     (a frame and no device yet, late after ~15 s; or a device whose page
+//     context has not come up yet), nopage (a device but, for more than a few
+//     scans, no page context: on iOS 26 Live attaches to an empty tab),
+//     unavailable (Live has none for this device, with its reason), failed
+//     (Live says it broke), unsupported (a frontend this doesn't know);
 //   - runs the command input's expressions on the device through the same
 //     frontend (__seleniteBsTap.eval), for background.js bsDeviceEval.
 //
-// It only listens and evaluates. It never reads the iframe's src, whose wss=
-// parameter carries a session token: the version shown in the status line
-// comes from the frame's own location.pathname.
+// It only listens and evaluates; the one thing it evaluates of its own accord is
+// location.href, to tell an empty tab from a page (probePage). It never reads
+// the iframe's src, whose wss= parameter carries a session token: the version
+// shown in the status line comes from the frame's own location.pathname.
 (function () {
   'use strict';
   if (window.__seleniteBsTap) { window.__seleniteBsTap.announce(); return; }
@@ -32,17 +35,23 @@
   var ATTACH_LATE = 15;   // scans a frame can sit without a device before "attaching" is called late
   var NO_ITEM_SCANS = 2;  // scans in a row a rendered toolbar must lack the DevTools item before that is believed
   var HOLD_SCANS = 8;     // scans an "unavailable" is kept while the whole toolbar is away (Live re-renders it, early in a session)
+  var PAGE_GRACE = 3;     // scans a device may have no page context before that is believed (Android: 0.2 s after attaching, 0.1 s in a reload)
+  var PROBE_EVERY = 10;   // scans between reads of which page a device with no page context is on
+  var PROBE_MS = 5000;    // how long that read may take before it counts as unanswered
   var REASON_MAX = 200;
 
   var hooked = new WeakSet();
   var tries = new WeakMap();
   var waiting = new WeakMap();
+  var noPage = new WeakMap();   // frame -> scans in a row with a device and no page context
+  var probes = new WeakMap();   // frame -> what probePage last found
   var noItem = 0;
   var away = 0;
   var lastOff = null;
   var queue = [];
   var timer = null;
   var lastState = null;
+  var lastName = null;
 
   function post(msg) {
     msg[MARK] = 1;
@@ -71,14 +80,17 @@
   // Posted only when it changes; announce() clears the memory so a re-follow
   // of this tab, which resets the worker's status to "waiting", hears it again.
   // reason is Live's own words for why there is no DevTools (or why it broke);
-  // late is "attaching" for longer than a device normally takes.
-  function state(s, version, reason, late) {
-    var key = s + '|' + (version || '') + '|' + (reason || '') + '|' + (late ? 1 : 0);
+  // late is "attaching" for longer than a device normally takes; page is what
+  // probePage found for "nopage" ('blank' or 'other').
+  function state(s, version, reason, late, page) {
+    var key = s + '|' + (version || '') + '|' + (reason || '') + '|' + (late ? 1 : 0) + '|' + (page || '');
+    lastName = s;
     if (key === lastState) return;
     lastState = key;
     var m = { kind: 'state', state: s, version: version || null };
     if (reason) m.reason = reason;
     if (late) m.late = true;
+    if (page) m.page = page;
     post(m);
   }
 
@@ -152,6 +164,62 @@
       if (tm && typeof tm.targets === 'function') return tm.targets().length > 0;
     } catch (_) {}
     return true;
+  }
+
+  // The script context commands run in: the one Live's DevTools has selected,
+  // the page's. null when it has none, undefined when the frontend gives no way
+  // to ask (then, as in attachedTo, a page is assumed). Measured on real sessions
+  // 2026-10-13: on a Galaxy S26 the context is selected 0.2 s after the device
+  // attaches and is gone for 0.1 s during a reload; on an iPhone 17 (iOS 26.5 and
+  // 26.6) Chrome DevTools attaches to the device and never gets one, because the
+  // tab it is on is about:blank, Safari's empty Start Page.
+  function contextOf(w) {
+    try {
+      var EC = w.SDK.ExecutionContext || (w.SDK.RuntimeModel && w.SDK.RuntimeModel.ExecutionContext);
+      if (!EC || !w.UI || !w.UI.context || typeof w.UI.context.flavor !== 'function') return undefined;
+      return w.UI.context.flavor(EC) || null;
+    } catch (_) {
+      return undefined;
+    }
+  }
+
+  // Which page a device with no page context is on: location.href, read through
+  // the target's runtime agent, which answers without a selected context (it
+  // returned "about:blank" on the iPhone 17 and the page's URL on the Galaxy S26).
+  // 'blank' for about:blank or nothing, 'other' for a real page, null if it could
+  // not be read. Read once the context has been missing for PAGE_GRACE scans and
+  // every PROBE_EVERY scans after that, in case the tab is navigated; an answer
+  // that does not come leaves the last one standing.
+  function probePage(f, w, n) {
+    var p = probes.get(f);
+    if (p && (p.pending || n - p.at < PROBE_EVERY)) return p;
+    if (!p) { p = { pending: false, done: false, page: null, at: n }; probes.set(f, p); }
+    p.at = n;
+    var agent = null;
+    try {
+      var t = w.SDK.targetManager.targets()[0];
+      agent = t && typeof t.runtimeAgent === 'function' ? t.runtimeAgent() : null;
+    } catch (_) {}
+    if (!agent || typeof agent.invoke_evaluate !== 'function') { p.done = true; return p; }
+    p.pending = true;
+    var settled = false;
+    function finish(page) {
+      if (settled) return;
+      settled = true;
+      p.pending = false;
+      if (page || !p.done) p.page = page;
+      p.done = true;
+    }
+    setTimeout(function () { finish(null); }, PROBE_MS);
+    try {
+      Promise.resolve(agent.invoke_evaluate({ expression: 'location.href', returnByValue: true })).then(function (r) {
+        var v = r && !r.wasThrown && !r.exceptionDetails && r.result && r.result.type === 'string' ? r.result.value : null;
+        finish(v == null ? null : (v === '' || /^about:/i.test(v) ? 'blank' : 'other'));
+      }, function () { finish(null); });
+    } catch (_) {
+      finish(null);
+    }
+    return p;
   }
 
   function frames() {
@@ -292,7 +360,25 @@
     fs.forEach(hook);
     var live = fs.filter(function (f) { return hooked.has(f); })[0];
     if (live) {
-      if (attachedTo(frontendOf(live))) { waiting.delete(live); state('connected', versionOf(live)); return; }
+      var w = frontendOf(live);
+      if (attachedTo(w)) {
+        waiting.delete(live);
+        if (contextOf(w) !== null) { noPage.delete(live); probes.delete(live); state('connected', versionOf(live)); return; }
+        // A device, and no page to run in. Briefly that is a device still
+        // attaching or a page reloading, so a session already connected stays
+        // so; past PAGE_GRACE it is believed, and said once the page is read.
+        var k = (noPage.get(live) || 0) + 1;
+        noPage.set(live, k);
+        if (k <= PAGE_GRACE) {
+          if (lastName !== 'connected') state('attaching', versionOf(live));
+          return;
+        }
+        var p = probePage(live, w, k);
+        if (p.done) state('nopage', versionOf(live), '', false, p.page);
+        return;
+      }
+      noPage.delete(live);
+      probes.delete(live);
       // Hooked, so the replay and the subscription are in place for whenever a
       // device does attach, but until then there is nothing to mirror.
       var n = (waiting.get(live) || 0) + 1;
@@ -317,10 +403,12 @@
     if (w && !attachedTo(w)) {
       return Promise.resolve({ ok: false, error: "Live's DevTools is open but hasn't attached to the device. Close and reopen it in Live, then try again." });
     }
-    var EC = w && (w.SDK.ExecutionContext || (w.SDK.RuntimeModel && w.SDK.RuntimeModel.ExecutionContext));
-    var ctx = null;
-    try { ctx = EC && w.UI && w.UI.context && w.UI.context.flavor(EC); } catch (_) {}
+    var ctx = w ? contextOf(w) : null;
     if (!ctx || typeof ctx.evaluate !== 'function') {
+      var p = probes.get(f);
+      if (p && p.page === 'blank') {
+        return Promise.resolve({ ok: false, error: "Live's DevTools is attached to an empty tab (about:blank), not the page under test, so there is nothing to run this on." });
+      }
       return Promise.resolve({ ok: false, error: 'The device page has no script context yet. Wait for it to load, or reload it on the device, then try again.' });
     }
     var options = {

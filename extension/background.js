@@ -6922,12 +6922,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       await restoreFollowState();
       const tabId = sender?.tab?.id;
       const winId = bsLiveWinFor(tabId);
-      if (winId != null && ['connected', 'closed', 'unsupported', 'attaching', 'unavailable', 'failed'].includes(msg.state)) {
+      if (winId != null && ['connected', 'closed', 'unsupported', 'attaching', 'nopage', 'unavailable', 'failed'].includes(msg.state)) {
         const status = { state: msg.state, version: msg.version ? String(msg.version).slice(0, 60) : null, tabId };
         // Live's own words for why there is no DevTools (or why it broke), and
         // whether a frame has waited for its device longer than it should.
         if (typeof msg.reason === 'string' && msg.reason) status.reason = msg.reason.slice(0, 200);
         if (msg.late === true) status.late = true;
+        // A device with no page context: is its tab empty, or some other page?
+        if (msg.page === 'blank' || msg.page === 'other') status.page = msg.page;
         await ns(winId).set({ bsDeviceStatus: status });
       }
       sendResponse({ ok: true });

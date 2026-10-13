@@ -364,6 +364,46 @@ def scen_mirror(g):
     g.close_live_tabs()
 
 
+def scen_mirror_nopage(g):
+    print('the console mirror on iOS 26: DevTools attached to the device but on an empty tab (an iPhone 17, measured 2026-10-13)')
+    g.open_panel(); g.setup_ab(['iphone-17'], local=False)
+    g.click_open('iphone-17')
+    g.wait_status(lambda t: 'is running' in t, timeout=25)
+    follow(g)
+    poll(lambda: dev_status(g), lambda s: s and s.get('state') == 'closed', 12)
+    page = live_session(g)
+    g.b.ev(page, """(() => { __state.noctx = true; __state.targets = [{ name: 'page', runtimeAgent: function () { return { invoke_evaluate: function (p) {
+        window.__probes = (window.__probes || []).concat([p.expression]);
+        return Promise.resolve({ result: { type: 'string', value: 'about:blank' }, wasThrown: false }); } }; } }]; return true; })()""")
+    g.b.ev(page, '__openDevtools()')
+    seen = []
+    end = time.time() + 10
+    while time.time() < end:
+        t = bc_line(g)
+        if not seen or seen[-1] != t:
+            seen.append(t)
+        if t.startswith("○ Live's DevTools on"):
+            break
+        time.sleep(0.3)
+    chk('the panel never says it is mirroring a device that has no page', not any('mirroring' in x for x in seen), seen)
+    st = poll(lambda: dev_status(g), lambda s: s and s.get('state') == 'nopage', 12)
+    chk('the worker records nopage, on an empty tab', st and st.get('state') == 'nopage' and st.get('page') == 'blank' and st.get('version') == 'realios 91.0.4472.101', st)
+    t = bc_line(g)
+    chk('the panel line says DevTools is on an empty tab, not the page under test', t == "○ Live's DevTools on iPhone 17 v16.0 is attached to an empty tab (about:blank), not the page under test, so there's nothing to mirror and commands can't run.", t)
+    inp = g.pev("(() => { const i = document.getElementById('bc-eval-input'); return { disabled: i.disabled, ph: i.placeholder }; })()")
+    chk('the command box is off and says why', inp == {'disabled': True, 'ph': "> Live's DevTools has no page on the device to run commands in"}, inp)
+    probes = g.b.ev(page, 'window.__probes || []')
+    chk('the page was read with location.href, once', probes == ['location.href'], probes)
+    g.pev("chrome.runtime.sendMessage({ action: 'bcEval', winId: WIN_ID, expression: '1+1' })")
+    logs = poll(lambda: g.pev("sessionNS.get('browserConsoleLogs').then(r => r.browserConsoleLogs || [])"), lambda l: any('empty tab' in (e.get('text') or '') for e in l), 8)
+    chk('a command sent anyway is refused: the tab is empty (not "wait, or reload")', any('attached to an empty tab (about:blank)' in (e.get('text') or '') and e.get('level') == 'ERROR' for e in logs), [e.get('text') for e in logs][-3:])
+    g.b.ev(page, '__state.noctx = false')
+    st = poll(lambda: dev_status(g), lambda s: s and s.get('state') == 'connected', 8)
+    chk('a page context arriving: connected', st and st.get('state') == 'connected' and 'page' not in st, st)
+    t = bc_line(g)
+    chk('and the panel says it is mirroring', t == "● Live — mirroring iPhone 17 v16.0 through BrowserStack Live's DevTools", t)
+    g.close_live_tabs()
+
 def scen_mirror_slow(g):
     print('the mirror when Live is slow to answer: the tab has no committed url when Selenite first looks at it')
     fake_live.DELAY = 1.3
@@ -626,7 +666,7 @@ def scen_ended_late(g):
 
 SCENARIOS = {'smoke': scen_smoke, 'check': scen_check, 'local-missed': scen_local_missed, 'ios27': scen_ios27,
              'refused': scen_refused, 'dropped': scen_dropped, 'desktop': scen_desktop, 'not-ready': scen_not_ready,
-             'mirror': scen_mirror, 'mirror-unavailable': scen_mirror_unavailable, 'panels': scen_panels, 'mirror-slow': scen_mirror_slow,
+             'mirror': scen_mirror, 'mirror-unavailable': scen_mirror_unavailable, 'mirror-nopage': scen_mirror_nopage, 'panels': scen_panels, 'mirror-slow': scen_mirror_slow,
              'closed': scen_closed, 'left': scen_left, 'toast': scen_toast, 'relaunch': scen_relaunch, 'places': scen_places,
              'vanish': scen_vanish, 'early-title': scen_early_title, 'ended': scen_ended, 'ended-late': scen_ended_late}
 

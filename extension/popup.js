@@ -1368,11 +1368,20 @@ function bcDeviceLine(devState, status, device) {
     case 'unsupported':
       return { text: `○ Can't read this version of Live's DevTools (${st.version || 'unknown version'})`, color: 'var(--err)' };
     case 'attaching':
-      // The frame is on screen but has no device behind it, so there is nothing
-      // to mirror. Late means it has waited longer than a device takes.
+      // The frame is on screen but has no device behind it (or the device's
+      // page context has not come up yet), so there is nothing to mirror. Late
+      // means it has waited longer than a device takes.
       return st.late
         ? { text: `○ DevTools is open in Live but hasn't attached to ${device} after 15 s. Close and reopen it in Live, or start a new session.`, color: 'var(--warn)' }
         : { text: `○ DevTools is open in Live; waiting for it to attach to ${device}…`, color: 'var(--fg3)' };
+    case 'nopage':
+      // Attached to the device, but with no page to run in for longer than a
+      // device takes to provide one. On an iPhone 17 (iOS 26.5 and 26.6, three
+      // sessions) that is every session: Live's Chrome DevTools is on
+      // about:blank, Safari's empty Start Page, not the page under test.
+      return st.page === 'blank'
+        ? { text: `○ Live's DevTools on ${device} is attached to an empty tab (about:blank), not the page under test, so there's nothing to mirror and commands can't run.`, color: 'var(--warn)' }
+        : { text: `○ Live's DevTools is attached to ${device} but gives Selenite no page to run commands in.`, color: 'var(--warn)' };
     case 'unavailable':
       return { text: `○ Live has no DevTools for ${device}: ${st.reason || 'unavailable'}`, color: 'var(--warn)' };
     case 'failed': {
@@ -1403,6 +1412,7 @@ async function syncBcStatus() {
     input.placeholder = devState
       ? (attached ? `> Runs on ${device}. Type a JS expression and press Enter…`
         : devState === 'unavailable' ? "> Live has no DevTools for this device, so commands can't run on it"
+        : devState === 'nopage' ? "> Live's DevTools has no page on the device to run commands in"
         : '> Open DevTools in the Live session to run commands on the device')
       : (attached ? '> Type a JS expression and press Enter…' : '> Not attached');
   }

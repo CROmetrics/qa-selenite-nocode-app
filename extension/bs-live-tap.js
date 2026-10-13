@@ -369,6 +369,8 @@
         // so; past PAGE_GRACE it is believed, and said once the page is read.
         var k = (noPage.get(live) || 0) + 1;
         noPage.set(live, k);
+        var down = devtoolsFailed();
+        if (down) { state('failed', versionOf(live), down); return; }
         if (k <= PAGE_GRACE) {
           if (lastName !== 'connected') state('attaching', versionOf(live));
           return;
@@ -388,6 +390,13 @@
       else state('attaching', versionOf(live), '', n >= ATTACH_LATE);
       return;
     }
+    // No frame could be hooked. When Live's DevTools breaks, its frame is left
+    // unreadable (cross-origin, measured 2026-10-13 on a Galaxy S26 whose page
+    // was Live's own "Unable to connect" error) while Live's notice is drawn on
+    // the dashboard, so the notice is what says what happened. Without this the
+    // line read "Open DevTools" for 30 s and then blamed "this version" of it.
+    var broken = devtoolsFailed();
+    if (broken) { state('failed', null, broken); return; }
     var stuck = fs.filter(function (f) { return (tries.get(f) || 0) >= HOOK_TRIES; })[0];
     if (stuck) state('unsupported', versionOf(stuck));
     // Otherwise a frame is still coming up: the worker's "waiting" stands.
@@ -400,11 +409,22 @@
     var f = frames()[0];
     if (!f) return Promise.resolve({ ok: false, error: 'Open DevTools in the Live session first. Selenite runs commands through it.' });
     var w = frontendOf(f);
-    if (w && !attachedTo(w)) {
+    if (!w) {
+      // A frame Selenite cannot read: Live's DevTools broke (its notice says so),
+      // a frontend this doesn't know, or one still coming up.
+      var broke = devtoolsFailed();
+      if (broke) return Promise.resolve({ ok: false, error: "Live's DevTools failed: " + broke });
+      return Promise.resolve({ ok: false, error: (tries.get(f) || 0) >= HOOK_TRIES
+        ? "Selenite can't read this version of Live's DevTools, so commands can't run through it."
+        : "Live's DevTools is still opening. Try again in a moment." });
+    }
+    if (!attachedTo(w)) {
       return Promise.resolve({ ok: false, error: "Live's DevTools is open but hasn't attached to the device. Close and reopen it in Live, then try again." });
     }
-    var ctx = w ? contextOf(w) : null;
+    var ctx = contextOf(w);
     if (!ctx || typeof ctx.evaluate !== 'function') {
+      var down = devtoolsFailed();
+      if (down) return Promise.resolve({ ok: false, error: "Live's DevTools failed: " + down });
       var p = probes.get(f);
       if (p && p.page === 'blank') {
         return Promise.resolve({ ok: false, error: "Live's DevTools is attached to an empty tab (about:blank), not the page under test, so there is nothing to run this on." });

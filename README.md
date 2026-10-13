@@ -27,6 +27,11 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.13 — 2026-10-13
+
+**BrowserStack Live**
+- **Fixed:** when Live's DevTools broke ("Developer tools have experienced an unexpected issue. Please try a new session."), Browser Console said "Open DevTools in the Live session" for 30 seconds and then "Can't read this version of Live's DevTools", and a command said the page had no script context. It now says Live's DevTools failed, in Live's words, as soon as Live shows the notice, and a command gives the same reason.
+
 ### 0.7.12 — 2026-10-13
 
 **BrowserStack Live**
@@ -233,6 +238,7 @@ In **Browser Console**, top to bottom:
 - The status line says which device is mirrored, or that DevTools needs opening, and the input is disabled until it is open. If DevTools is open but has no device behind it, it says it is waiting for it to attach, and after about 15 seconds to close and reopen it in Live.
 - Live has no DevTools on iOS 27, in desktop browser sessions, or on some Android devices (the Pixel 10 had none when it was checked, the Galaxy S26 on the same Android did). Then the status line says Live has none, in Live's words, and commands can't run; there is nothing to read.
 - On iOS 26 (the iPhone 17) Live's Chrome DevTools does attach to the device, but to an empty Safari tab (about:blank) rather than the page under test, so there is nothing to mirror. The status line says so and the input stays disabled. It switches to mirroring by itself if a page ever comes up in DevTools.
+- When Live's DevTools breaks ("Developer tools have experienced an unexpected issue. Please try a new session."), the status line says so in Live's words as soon as Live shows it, and a command answers with the same reason. It was seen on a session Live had started without Local, with the phone on Live's "Unable to connect" page.
 
 ### Visual Regression
 

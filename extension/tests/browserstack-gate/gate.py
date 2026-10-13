@@ -404,6 +404,36 @@ def scen_mirror_nopage(g):
     chk('and the panel says it is mirroring', t == "● Live — mirroring iPhone 17 v16.0 through BrowserStack Live's DevTools", t)
     g.close_live_tabs()
 
+def scen_mirror_failed(g):
+    print("the console mirror when Live's DevTools breaks: its frame unreadable, Live's notice on the dashboard (measured 2026-10-13)")
+    g.open_panel(); g.setup_ab(['galaxy-s26'], local=False)
+    g.click_open('galaxy-s26')
+    g.wait_status(lambda t: 'is running' in t, timeout=25)
+    follow(g)
+    poll(lambda: dev_status(g), lambda s: s and s.get('state') == 'closed', 12)
+    page = live_session(g)
+    g.b.ev(page, '__openDevtoolsBroken()')
+    t0 = time.time()
+    st = poll(lambda: dev_status(g), lambda s: s and s.get('state') == 'failed', 10)
+    took = time.time() - t0
+    notice = 'Developer tools have experienced an unexpected issue. Please try a new session.'
+    chk("failed, in Live's words, within seconds (0.7.12 waited 30 s, then said unsupported)", st and st.get('state') == 'failed' and st.get('reason') == notice and took < 6, [st, round(took, 1)])
+    t = bc_line(g)
+    chk('the panel line says Live\'s DevTools failed, and why', t == "○ Live's DevTools failed on Samsung Galaxy S26 v16.0: " + notice, t)
+    inp = g.pev("document.getElementById('bc-eval-input').disabled")
+    chk('the command box is off', inp is True, inp)
+    g.pev("chrome.runtime.sendMessage({ action: 'bcEval', winId: WIN_ID, expression: '1+1' })")
+    logs = poll(lambda: g.pev("sessionNS.get('browserConsoleLogs').then(r => r.browserConsoleLogs || [])"), lambda l: any('DevTools failed' in (e.get('text') or '') for e in l), 8)
+    chk("a command sent anyway is refused with Live's reason", any(e.get('text') == "Live's DevTools failed: " + notice and e.get('level') == 'ERROR' for e in logs), [e.get('text') for e in logs][-3:])
+    seen = set()
+    end = time.time() + 32
+    while time.time() < end:
+        s2 = dev_status(g) or {}
+        seen.add(s2.get('state'))
+        time.sleep(1)
+    chk('past the 30 s a frame gets to come up, it is still failed, never unsupported', seen == {'failed'}, sorted(x for x in seen if x))
+    g.close_live_tabs()
+
 def scen_mirror_slow(g):
     print('the mirror when Live is slow to answer: the tab has no committed url when Selenite first looks at it')
     fake_live.DELAY = 1.3
@@ -666,7 +696,7 @@ def scen_ended_late(g):
 
 SCENARIOS = {'smoke': scen_smoke, 'check': scen_check, 'local-missed': scen_local_missed, 'ios27': scen_ios27,
              'refused': scen_refused, 'dropped': scen_dropped, 'desktop': scen_desktop, 'not-ready': scen_not_ready,
-             'mirror': scen_mirror, 'mirror-unavailable': scen_mirror_unavailable, 'mirror-nopage': scen_mirror_nopage, 'panels': scen_panels, 'mirror-slow': scen_mirror_slow,
+             'mirror': scen_mirror, 'mirror-unavailable': scen_mirror_unavailable, 'mirror-nopage': scen_mirror_nopage, 'mirror-failed': scen_mirror_failed, 'panels': scen_panels, 'mirror-slow': scen_mirror_slow,
              'closed': scen_closed, 'left': scen_left, 'toast': scen_toast, 'relaunch': scen_relaunch, 'places': scen_places,
              'vanish': scen_vanish, 'early-title': scen_early_title, 'ended': scen_ended, 'ended-late': scen_ended_late}
 

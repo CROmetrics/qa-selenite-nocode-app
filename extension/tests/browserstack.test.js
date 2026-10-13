@@ -920,6 +920,70 @@ NU.run();
 eq('a frontend that cannot be asked about contexts is assumed to have a page', NU.states().join('|'), 'connected ' + VER);
 eq('the token is never read by any of this', I1.counters.src + G1.counters.src + I2.counters.src, 0);
 
+// Live's DevTools broken, its frame unreadable. Measured 2026-10-13 on a Galaxy
+// S26 launched with Local that Live started without it (the phone was on Live's
+// "Unable to connect" page): DevTools opened to "Developer tools have experienced
+// an unexpected issue. Please try a new session.", drawn on the dashboard (it is
+// in document.body.innerText, split over two lines), while iframe.devtools-iframe
+// had a same-origin src path and a cross-origin document: reading anything in it
+// threw SecurityError. 0.7.12 said "Open DevTools…" for 30 s, then "Can't read this
+// version of Live's DevTools (unknown version)"; a command said "no script context yet".
+section('the tap: Live\'s DevTools broken, its frame unreadable');
+var LIVE_FAIL_BODY = 'Samsung Galaxy S26 v16.0\nStop Session\nDeveloper tools have experienced an unexpected issue.\nPlease try a new session.\nSchedule UI monitoring';
+var LIVE_FAIL_TEXT = 'Developer tools have experienced an unexpected issue. Please try a new session.';
+function crossOriginFrame(counters) {
+  var deny = function () { throw new Error("SecurityError: Failed to read a named property 'SDK' from 'Window': Blocked a frame with origin \"https://live.browserstack.com\" from accessing a cross-origin frame."); };
+  var w = {};
+  ['SDK', 'UI', 'location', 'document'].forEach(function (k) { Object.defineProperty(w, k, { get: deny }); });
+  return {
+    contentWindow: w,
+    get src() { counters.src++; return '/devtools/realios/91.0.4472.101/inspector.html?wss=' + FAKE_JWT; },
+    getAttribute: function (n) { counters.attr.push(n); return n === 'src' ? this.src : null; },
+  };
+}
+var X1 = makePage();
+X1.frames.push(crossOriginFrame(X1.counters));
+X1.setBody(LIVE_FAIL_BODY);
+X1.run();
+eq('an unreadable frame and Live\'s notice: failed at once, in Live\'s words', X1.states().join('|'), 'failed <' + LIVE_FAIL_TEXT + '>');
+X1.tick(40);
+eq('and it stays failed: never "unsupported" (it is not a version problem)', X1.states().join('|'), 'failed <' + LIVE_FAIL_TEXT + '>');
+eq('a command gets Live\'s reason, not "no script context yet"', evalResult(X1, '1').error, "Live's DevTools failed: " + LIVE_FAIL_TEXT);
+eq('nothing in the frame was read, the token included', X1.counters.src + ':' + X1.counters.attr.length, '0:0');
+
+var X2 = makePage();
+X2.frames.push(crossOriginFrame(X2.counters));
+X2.run();
+eq('an unreadable frame with no notice: nothing said early (it may still be opening)', X2.states().length, 0);
+eq('and a command meanwhile says it is still opening', evalResult(X2, '1').error, "Live's DevTools is still opening. Try again in a moment.");
+X2.tick(3);
+X2.setBody(LIVE_FAIL_BODY);
+X2.tick();
+eq('the notice appearing later: failed then', X2.states().join('|'), 'failed <' + LIVE_FAIL_TEXT + '>');
+
+var X3 = makePage();
+X3.frames.push(crossOriginFrame(X3.counters));
+X3.run();
+X3.tick(29);
+eq('an unreadable frame and no notice for 30 scans: still unsupported, as before', X3.states().join('|'), 'unsupported');
+eq('and a command then says the frontend cannot be read', evalResult(X3, '1').error, "Selenite can't read this version of Live's DevTools, so commands can't run through it.");
+
+// A device attached with no page context while Live says DevTools broke.
+var X4fe = makeFrontend({ ctx: null, href: 'about:blank' });
+var X4 = makePage();
+X4.frames.push(makeFrame(X4fe, X4.counters));
+X4.setBody(LIVE_FAIL_BODY);
+X4.run();
+X4.tick(5); drainMicrotasks(); X4.tick();
+eq('a device with no page and Live\'s notice: failed, not attaching or nopage', X4.states().join('|'), 'failed ' + VER + ' <' + LIVE_FAIL_TEXT + '>');
+eq('and the page is not read', X4fe.probeCalls.length, 0);
+eq('a command gets Live\'s reason', evalResult(X4, '1').error, "Live's DevTools failed: " + LIVE_FAIL_TEXT);
+var X5 = makePage();
+X5.frames.push(makeFrame(makeFrontend({}), X5.counters));
+X5.setBody(LIVE_FAIL_BODY);
+X5.run();
+eq('a device with a page is connected whatever the notice says (a stale notice cannot hide a working mirror)', X5.states().join('|'), 'connected ' + VER);
+
 // ── the bridge ─────────────────────────────────────────────────────────────
 section('the bridge (bs-live-bridge.js)');
 var sent = [];

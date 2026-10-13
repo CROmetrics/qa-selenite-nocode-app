@@ -2,6 +2,31 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-13 — 0.7.13
+
+When Live's DevTools breaks, Browser Console now says so instead of blaming its own reading of it.
+
+### Measured on a real session (2026-10-13)
+
+- A Galaxy S26 launched with Local, which Live started without it (the phone was on Live's "Unable to connect… Trying to test a private URL or localhost?" page). Live's DevTools pane opened to "Developer tools have experienced an unexpected issue. Please try a new session." That text is in the dashboard's `document.body.innerText`, over two lines. The `iframe.devtools-iframe` kept a same-origin `src` path but its document was cross-origin: reading anything in it threw SecurityError.
+- 0.7.12's tap could not hook that frame, and it only looked for Live's notice when there was no frame at all or a hooked one with no device. So the status line read "○ Open DevTools in the Live session to mirror Samsung Galaxy S26 v16.0's console" for 30 s, then "○ Can't read this version of Live's DevTools (unknown version)", and a command answered "The device page has no script context yet… reload it on the device".
+- A second launch set up the same way did not break: DevTools opened, was readable, and Selenite mirrored the phone. The failure is not reproducible on demand.
+
+### Changed
+
+- **`bs-live-tap.js`:** when a DevTools frame is on the page but none can be read, Live's notice is checked before anything else, and if it is there the state is **failed** with Live's sentence, at once, and stays failed (never "unsupported", which is about a frontend Selenite doesn't know). A device attached with no page context while the notice is up is also **failed**, without reading the page. A device with a page context stays connected whatever the notice says, so a notice left over from earlier cannot hide a working mirror.
+- **Commands** on a frame that cannot be read answer "Live's DevTools failed: <Live's sentence>" when the notice is up, "Live's DevTools is still opening. Try again in a moment." in its first 30 s otherwise, and after that "Selenite can't read this version of Live's DevTools, so commands can't run through it." A device with no page context and the notice up gets Live's sentence too.
+- The README's Browser Console section has a line on it.
+
+### Verification
+
+- **jsc:** browserstack.test.js 740 → 753 assertions, against the page as measured: a frame whose window throws SecurityError on every property and the notice split over two lines of body text. The notice from the start, arriving later, absent for 30 scans (still "unsupported"), with a pageless device, and with a working one; the command replies in each case; and the frame's `src` (the token) never read. 7 mutations of this change all fail the suite. All eight CI suites pass.
+- **Real Chrome against the fake Live:** 114 checks (109 before), including a new `mirror-failed` scenario whose fake DevTools is a sandboxed frame (same `src` path, cross-origin document) with Live's notice on the dashboard: failed in Live's words within seconds, the panel line, the input disabled, a command refused with Live's reason, and still failed 32 s on. It fails 4 of its 5 checks on 0.7.12 ("closed", then "unsupported", and "no script context yet").
+
+### Not yet verified
+
+- The fixed path on a real broken DevTools: it did not break again when tried.
+
 ## 2026-10-13 — 0.7.12
 
 On an iPhone 17 (iOS 26) Browser Console said "● Live — mirroring iPhone 17 v26.6" and enabled the command input while Live's DevTools was attached to an empty tab. This release says so instead.

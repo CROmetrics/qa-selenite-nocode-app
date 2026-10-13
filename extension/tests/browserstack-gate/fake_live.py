@@ -99,6 +99,19 @@ DASHBOARD = r"""<!doctype html>
     document.body.appendChild(f);
   };
   window.__closeDevtools = function () { var f = document.querySelector('iframe.devtools-iframe'); if (f) f.remove(); };
+  // Live's DevTools broken, as measured 2026-10-13: the frame keeps its same-origin src path but its
+  // document is cross-origin (a sandboxed frame here), and Live's notice is drawn on the dashboard.
+  window.__openDevtoolsBroken = function () {
+    var f = document.createElement('iframe');
+    f.className = 'devtools-iframe';
+    f.setAttribute('sandbox', '');
+    f.src = '/devtools/realios/91.0.4472.101/inspector.html?wss=FAKE_JWT_DO_NOT_READ';
+    document.body.appendChild(f);
+    var n = document.createElement('div'); n.id = 'fake-devtools-error';
+    var a = document.createElement('p'); a.textContent = 'Developer tools have experienced an unexpected issue.';
+    var b = document.createElement('p'); b.textContent = 'Please try a new session.';
+    n.appendChild(a); n.appendChild(b); document.body.appendChild(n);
+  };
 
   function start(title, extra) {
     document.title = title;

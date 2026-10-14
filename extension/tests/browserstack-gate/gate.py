@@ -434,6 +434,34 @@ def scen_mirror_failed(g):
     chk('past the 30 s a frame gets to come up, it is still failed, never unsupported', seen == {'failed'}, sorted(x for x in seen if x))
     g.close_live_tabs()
 
+def scen_countdown(g):
+    print("Live's idle countdown retitles the tab every second: the device keeps its name (measured 2026-10-14)")
+    g.open_panel(); g.setup_ab(['galaxy-s26'], local=False)
+    g.click_open('galaxy-s26')
+    g.wait_status(lambda t: 'is running' in t, timeout=25)
+    follow(g)
+    page = live_session(g)
+    g.b.ev(page, '__openDevtools()')
+    poll(lambda: dev_status(g), lambda s: s and s.get('state') == 'connected', 12)
+    titles, lines = set(), set()
+    for n in range(60, 52, -1):
+        g.b.ev(page, 'document.title = "%d seconds to session timeout"' % n)
+        if n == 56:
+            g.b.ev(page, "document.querySelector('iframe.devtools-iframe').contentWindow.fire('[cro] during the countdown')")
+        time.sleep(0.9)
+        cs = g.pev("sessionNS.get('captureStatus').then(r => r.captureStatus || null)") or {}
+        titles.add(cs.get('title'))
+        lines.add(bc_line(g))
+    chk('the worker keeps the device name in captureStatus through the countdown', titles == {'Samsung Galaxy S26 v16.0'}, sorted(x for x in titles if x))
+    chk('the console line names the device, never the countdown', lines == {"● Live — mirroring Samsung Galaxy S26 v16.0 through BrowserStack Live's DevTools"}, sorted(lines))
+    logs = poll(lambda: g.pev("sessionNS.get('browserConsoleLogs').then(r => r.browserConsoleLogs || [])"), lambda l: any('during the countdown' in (e.get('text') or '') for e in l), 8)
+    line = [e for e in logs if 'during the countdown' in (e.get('text') or '')]
+    chk('a device line logged during the countdown is labelled with the device', line and line[0].get('device') == 'Samsung Galaxy S26 v16.0', line)
+    g.b.ev(page, '__endSession()')
+    t = g.wait_status(lambda t: 'ended the session' in t, timeout=15)
+    chk('when Live closes the session the line says it ended', t == 'Live ended the session on Control on Galaxy S26.', t)
+    g.close_live_tabs()
+
 def scen_mirror_slow(g):
     print('the mirror when Live is slow to answer: the tab has no committed url when Selenite first looks at it')
     fake_live.DELAY = 1.3
@@ -696,7 +724,7 @@ def scen_ended_late(g):
 
 SCENARIOS = {'smoke': scen_smoke, 'check': scen_check, 'local-missed': scen_local_missed, 'ios27': scen_ios27,
              'refused': scen_refused, 'dropped': scen_dropped, 'desktop': scen_desktop, 'not-ready': scen_not_ready,
-             'mirror': scen_mirror, 'mirror-unavailable': scen_mirror_unavailable, 'mirror-nopage': scen_mirror_nopage, 'mirror-failed': scen_mirror_failed, 'panels': scen_panels, 'mirror-slow': scen_mirror_slow,
+             'mirror': scen_mirror, 'mirror-unavailable': scen_mirror_unavailable, 'mirror-nopage': scen_mirror_nopage, 'mirror-failed': scen_mirror_failed, 'countdown': scen_countdown, 'panels': scen_panels, 'mirror-slow': scen_mirror_slow,
              'closed': scen_closed, 'left': scen_left, 'toast': scen_toast, 'relaunch': scen_relaunch, 'places': scen_places,
              'vanish': scen_vanish, 'early-title': scen_early_title, 'ended': scen_ended, 'ended-late': scen_ended_late}
 

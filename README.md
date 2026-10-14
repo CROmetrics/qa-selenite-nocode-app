@@ -27,6 +27,11 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.16 — 2026-10-14
+
+**BrowserStack Live**
+- **Fixed:** in the last minute before Live closes an idle session, it retitles the tab "60 seconds to session timeout", "59 seconds…", and Browser Console used that as the device's name ("mirror 37 seconds to session timeout's console"), as did the label on device console lines. The device keeps its name now.
+
 ### 0.7.15 — 2026-10-14
 
 **A/B**

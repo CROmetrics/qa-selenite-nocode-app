@@ -1176,9 +1176,19 @@ async function doFollow(winId, tabId) {
   if (rec) rec.attaching = false;
   // bsLive is written from the start, not only by refreshBsLive below: the
   // panel reads its absence as an older worker that predates device mirroring.
-  await ns(winId).set({ captureTabId: tabId, captureStatus: { tabId, title: tab.title || '', url: tab.url || '', capturable: true, bsLive: bsIsLiveDashboardUrl(tab.url) } });
+  const { captureStatus: prevStatus } = await ns(winId).get('captureStatus');
+  await ns(winId).set({ captureTabId: tabId, captureStatus: { tabId, title: captureTitle(tab, prevStatus), url: tab.url || '', capturable: true, bsLive: bsIsLiveDashboardUrl(tab.url) } });
   await refreshBsLive(winId, tabId, tab);
   await persistWins();
+}
+
+// The title that names a captured tab in the panel ("Samsung Galaxy S26 v16.0").
+// Live's idle countdown ("37 seconds to session timeout", bsIsCountdownTitle)
+// names nothing: the name the tab had stands, or none for a tab not seen before.
+function captureTitle(tab, prev) {
+  const t = (tab && tab.title) || '';
+  if (!bsIsCountdownTitle(t)) return t;
+  return prev && tab && prev.tabId === tab.id ? (prev.title || '') : '';
 }
 
 // Whether the tab a window captures is a BrowserStack Live session, and if so
@@ -1199,7 +1209,7 @@ async function refreshBsLive(winId, tabId, tab) {
   rec.bsLive = live;
   const { captureStatus } = await ns(winId).get('captureStatus');
   if (captureStatus && captureStatus.tabId === tabId) {
-    await ns(winId).set({ captureStatus: { ...captureStatus, title: tab.title || '', url: tab.url || '', bsLive: live } });
+    await ns(winId).set({ captureStatus: { ...captureStatus, title: captureTitle(tab, captureStatus), url: tab.url || '', bsLive: live } });
   }
   await persistWins();
   if (!live) return;
@@ -1531,7 +1541,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, info) => {
     const bsWin = bsLiveWinFor(tabId);
     if (bsWin != null) {
       const { captureStatus } = await ns(bsWin).get('captureStatus');
-      if (captureStatus && captureStatus.tabId === tabId && captureStatus.title !== info.title) {
+      // Live's idle countdown retitles the tab every second for a minute; it is
+      // not a name, and the device's stands (measured 2026-10-14: the console line
+      // read "mirror 37 seconds to session timeout's console").
+      if (captureStatus && captureStatus.tabId === tabId && captureStatus.title !== info.title && !bsIsCountdownTitle(info.title)) {
         await ns(bsWin).set({ captureStatus: { ...captureStatus, title: info.title } });
       }
     }
@@ -6951,15 +6964,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   } else if (msg.action === 'bsDeviceLog') {
     // A batch of the device's console from a captured Live tab
     // (bs-live-tap.js → bs-live-bridge.js). Labelled with the tab's title,
-    // which Live sets to the device ("Samsung Galaxy S23 13.0"). Device lines
-    // do not feed the Tracker: addMetric would fire probes and on-page notices
-    // at the dashboard, not at the device.
+    // which Live sets to the device ("Samsung Galaxy S23 13.0"), or during
+    // Live's idle countdown with the name the panel already has for it. Device
+    // lines do not feed the Tracker: addMetric would fire probes and on-page
+    // notices at the dashboard, not at the device.
     (async () => {
       await restoreFollowState();
       const tabId = sender?.tab?.id;
       const winId = bsLiveWinFor(tabId);
       if (winId != null && Array.isArray(msg.lines)) {
-        const device = sender.tab.title || 'BrowserStack device';
+        let device = sender.tab.title || '';
+        if (bsIsCountdownTitle(device)) {
+          const { captureStatus } = await ns(winId).get('captureStatus');
+          device = captureStatus && captureStatus.tabId === tabId ? (captureStatus.title || '') : '';
+        }
+        device = device || 'BrowserStack device';
         const entries = msg.lines.slice(0, 200).map(l => bsDeviceEntry(l, device, TAGS)).filter(Boolean);
         if (entries.length) await addBrowserConsoleLogs(winId, entries);
       }

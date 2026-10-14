@@ -342,6 +342,13 @@
   // A running Live session names its tab "<device> v<os>" ("iPhone 18 Pro
   // v27.0"); the picker and the boot screen do not carry a version.
   var BS_TITLE_RUNNING = /\s+v?\d+(?:\.\d+)+$/;
+  // Live's tab title while it counts an idle session down to its end, measured
+  // 2026-10-14: "60 seconds to session timeout" … "1 seconds to session
+  // timeout", once a second, about 9 minutes after the last input (the account's
+  // idle_timeout_for_devices is 10). It names no device, so whatever names the
+  // device from the tab's title keeps the name it had.
+  var BS_TITLE_COUNTDOWN = /^\s*\d+\s+seconds?\s+to\s+session\s+timeout\s*$/i;
+  function bsIsCountdownTitle(title) { return BS_TITLE_COUNTDOWN.test(String(title == null ? '' : title)); }
   var BS_LAUNCH_GIVE_UP_MS = 75000;
   // The panel shows a stored launch report only this long (a reopened panel
   // reads it back): a "running" line from an hour ago is not what is on screen.
@@ -503,6 +510,7 @@
   g.bsLiveUrl = bsLiveUrl;
   g.bsIsLiveUrl = bsIsLiveUrl;
   g.bsIsLiveDashboardUrl = bsIsLiveDashboardUrl;
+  g.bsIsCountdownTitle = bsIsCountdownTitle;
   g.bsDeviceEntry = bsDeviceEntry;
   g.bsLocalStatusFrom = bsLocalStatusFrom;
   g.bsLocalBinaryAnswer = bsLocalBinaryAnswer;

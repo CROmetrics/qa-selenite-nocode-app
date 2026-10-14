@@ -2,6 +2,27 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-14 — 0.7.16
+
+Live's idle countdown no longer takes the device's name.
+
+### Measured on real Live (2026-10-14)
+
+- The account's `BrowserStack.user.idle_timeout_for_devices` is 10. A Galaxy S26 session left untouched: about 9 minutes after the last input Live retitled the tab "60 seconds to session timeout", then "59 …" down to "1 seconds to session timeout" (Live's spelling), once a second, with the session toolbar gone and the device picker still hidden; then the title "Dashboard", the picker back, and "Your remote session has been closed due to inactivity."
+- 0.7.15's launch line handled it: "running" through the countdown (the picker never came back, so no false end), then "Live ended the session on the start URL on Galaxy S26." a second after Live closed it, and the watch stopped. But the worker follows the tab's title to name the device, so for that minute the Browser Console line read "○ Open DevTools in the Live session to mirror 37 seconds to session timeout's console", changing every second, and a device line logged then would have been labelled with the countdown.
+
+### Changed
+
+- **`browserstack.js`:** `bsIsCountdownTitle`, the countdown's title as measured (`<n> second(s) to session timeout`, whole title, any case).
+- **`background.js`:** the `tabs.onUpdated` title-follow leaves the captured tab's name as it was when the new title is the countdown; `captureTitle`, used where a follow or a refresh copies the tab's title in, keeps the name that tab had (or none, for a tab not named before); `bsDeviceLog` labels device lines with that name while the tab's own title is the countdown.
+- **`popup.js`:** `bcDeviceName` treats the countdown as no name ("this session"), for a status that was stored before this change.
+
+### Verification
+
+- **jsc:** browserstack.test.js 753 → 770 assertions: all sixty measured titles and near misses; the real title-follow branch kept on the device's name through 60 → 1 and following "Dashboard" afterwards; `captureTitle`; the real `refreshBsLive` run mid-countdown; the real `bsDeviceLog` branch labelling a line during the countdown, with no stored name, and with another tab's; `bcDeviceName`. 10 mutations of the change all fail the suite. All eight CI suites pass.
+- **Real Chrome against the fake Live:** 118 checks (114 before), including a new `countdown` scenario that retitles the fake dashboard through a countdown and logs a device line during it. It fails 3 of its 4 checks on 0.7.15 (captureStatus, the console line, and the line's label all "56 seconds to session timeout").
+- **Real Live:** a Galaxy S26 left untouched until Live closed it "due to inactivity": Browser Console said "mirroring Samsung Galaxy S26 v16.0" up to the close, and the 18 device lines logged from 13:55:30 to 13:58:20, the countdown minute among them, were all labelled "Samsung Galaxy S26 v16.0". Live's own tab title was not sampled in that run; the countdown is inferred from the inactivity close, which it preceded in the measured run.
+
 ## 2026-10-14 — 0.7.15
 
 The A/B capture now records the JS errors a variant throws while its page is loading, the blind spot 0.7.14 left open.

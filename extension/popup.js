@@ -1353,7 +1353,8 @@ function bcDeviceState(captureStatus, bsDeviceStatus, captureEnabled) {
 // "Dashboard", which is not a name for anything.
 function bcDeviceName(title) {
   const t = String(title || '').trim();
-  return t && t !== 'Dashboard' ? t : 'this session';
+  // Live's idle countdown ("37 seconds to session timeout") names nothing either.
+  return t && t !== 'Dashboard' && !(typeof bsIsCountdownTitle === 'function' && bsIsCountdownTitle(t)) ? t : 'this session';
 }
 
 // The Browser Console status line for a captured Live session, by devState

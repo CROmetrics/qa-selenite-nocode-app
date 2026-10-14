@@ -1073,6 +1073,7 @@ eq('a desktop session keeps the title "Dashboard", which names nothing', bcDevic
 eq('no title at all', bcDeviceName(''), 'this session');
 eq('whitespace is not a name', bcDeviceName('   '), 'this session');
 eq('undefined', bcDeviceName(undefined), 'this session');
+eq("Live's idle countdown is not a device name", bcDeviceName('37 seconds to session timeout'), 'this session');
 eq('so a desktop line reads naturally', bcDeviceLine('unavailable', { reason: 'its toolbar has no DevTools item (desktop browser sessions have none).' }, bcDeviceName('Dashboard')).text, "○ Live has no DevTools for this session: its toolbar has no DevTools item (desktop browser sessions have none).");
 eq('the new states pass through bcDeviceState from the worker', ['unavailable', 'attaching', 'failed'].map(function (st) {
   return bcDeviceState(LIVE_CS, { state: st, tabId: 11 }, undefined);
@@ -2171,6 +2172,53 @@ var RW5 = renameWorld();
 RW5.run(11, { status: 'loading' });
 eq('an update with no title change does nothing here', RW5.writes.length, 0);
 
+// Live's idle countdown. Measured 2026-10-14 on a Galaxy S26 left untouched:
+// ~9 minutes after the last input the tab was retitled "60 seconds to session
+// timeout", then "59 …" down to "1 seconds to session timeout" (Live's
+// spelling), one a second, then "Dashboard" when Live closed the session. In
+// 0.7.15 the console line followed it: "○ Open DevTools in the Live session to
+// mirror 37 seconds to session timeout's console", sixty times.
+section('Live\'s idle countdown title (bsIsCountdownTitle)');
+var COUNTDOWN = [];
+for (var cd = 60; cd >= 1; cd--) COUNTDOWN.push(cd + ' seconds to session timeout');
+ok('every title of the measured countdown is recognised', COUNTDOWN.every(bsIsCountdownTitle), COUNTDOWN.filter(function (t) { return !bsIsCountdownTitle(t); }));
+ok('so is a singular "second", and spacing or case', bsIsCountdownTitle('1 second to session timeout') && bsIsCountdownTitle('  9 Seconds To Session Timeout '));
+ok('a device name, Dashboard, nothing and longer text are not',
+  ['Samsung Galaxy S26 v16.0', 'iPhone 17 v26.6', 'Dashboard', '', null, undefined, 'seconds to session timeout', '60 seconds to session timeout (paused)', 'Session timeout in 60 seconds']
+    .every(function (t) { return !bsIsCountdownTitle(t); }));
+
+var RW6 = renameWorld({ captureStatus: { tabId: 11, title: 'Samsung Galaxy S26 v16.0', url: 'https://live.browserstack.com/dashboard#os=android', capturable: true, bsLive: true } });
+COUNTDOWN.forEach(function (t) { RW6.run(11, { title: t }); });
+eq('the worker keeps the device\'s name through the whole countdown', RW6.store.captureStatus.title + ':' + RW6.writes.length, 'Samsung Galaxy S26 v16.0:0');
+RW6.run(11, { title: 'Dashboard' });
+eq('and follows the tab again once Live has closed the session', RW6.store.captureStatus.title + ':' + RW6.writes.length, 'Dashboard:1');
+
+// The same rule where a follow or a refresh copies the tab's title in.
+eval(sliceBetween(WORKER, 'function captureTitle(tab, prev) {', '\n// Whether the tab a window captures', 'worker captureTitle'));
+eq('a device title is taken as it is', captureTitle({ id: 11, title: 'Samsung Galaxy S26 v16.0' }, { tabId: 11, title: 'Dashboard' }), 'Samsung Galaxy S26 v16.0');
+eq('a countdown keeps the name this tab had', captureTitle({ id: 11, title: '12 seconds to session timeout' }, { tabId: 11, title: 'Samsung Galaxy S26 v16.0' }), 'Samsung Galaxy S26 v16.0');
+eq('a countdown on a tab not seen before names nothing', captureTitle({ id: 12, title: '12 seconds to session timeout' }, { tabId: 11, title: 'Samsung Galaxy S26 v16.0' }), '');
+eq('  nor with no earlier status at all', captureTitle({ id: 12, title: '12 seconds to session timeout' }, undefined), '');
+eq('a tab with no title is empty, as before', captureTitle({ id: 11 }, null), '');
+
+// refreshBsLive, the real one, run for the Live tab mid-countdown (it runs after
+// every follow and every load of the captured tab).
+(function () {
+  var store = { captureStatus: { tabId: 11, title: 'Samsung Galaxy S26 v16.0', url: 'https://live.browserstack.com/dashboard#os=android', capturable: true, bsLive: true } };
+  var winFollow = new Map([[5, { tabId: 11, capturable: true }]]);
+  var chrome = { tabs: { get: function () { return Promise.resolve({ id: 11, title: '37 seconds to session timeout', url: 'https://live.browserstack.com/dashboard#os=android' }); } } };
+  var ns = function () { return {
+    get: function (k) { var o = {}; o[k] = store[k]; return Promise.resolve(o); },
+    set: function (o) { for (var n in o) store[n] = o[n]; return Promise.resolve(); },
+  }; };
+  var persistWins = function () { return Promise.resolve(); };
+  var injectBsLiveTap = function () { return Promise.resolve(); };
+  eval(sliceBetween(WORKER, 'async function refreshBsLive(winId, tabId, tab) {', '\n// The window whose Browser Console mirrors this Live tab', 'worker refreshBsLive'));
+  refreshBsLive(5, 11, null);
+  drainMicrotasks();
+  eq('refreshBsLive mid-countdown keeps the device\'s name', store.captureStatus.title + ':' + store.captureStatus.bsLive, 'Samsung Galaxy S26 v16.0:true');
+})();
+
 
 // ── a tab that is still loading when Selenite first looks at it ─────────────
 // The follow runs 250 ms after a tab is activated; for a slow site tab.url is ''
@@ -2197,6 +2245,29 @@ ok("the 'complete' branch of tabs.onUpdated looks the window up through followed
   /await restoreFollowState\(\);\n  const winId = followedWinFor\(tabId\);\n  \/\/ Re-runs capturability/.test(WORKER));
 
 // ── worker: the bsDeviceState message ──────────────────────────────────────
+// The real bsDeviceLog branch: device lines are labelled with the device, not
+// with Live's idle countdown that has taken over the tab's title.
+section('worker: the bsDeviceLog message during Live\'s idle countdown');
+var DEVLOG_SRC = sliceBetween(WORKER, "  } else if (msg.action === 'bsDeviceLog') {", "  } else if (msg.action === 'bsDeviceState') {", 'worker bsDeviceLog branch');
+function devLog(tabTitle, captureStatus, tabId) {
+  var added = [];
+  var fn = new Function('msg', 'sender', 'sendResponse', 'restoreFollowState', 'bsLiveWinFor', 'ns', 'bsDeviceEntry', 'TAGS', 'addBrowserConsoleLogs', 'if (false) {\n' + DEVLOG_SRC + '}');
+  fn({ action: 'bsDeviceLog', lines: [{ source: 'console-api', level: 'info', type: 'log', text: '[cro] hello' }] },
+    { tab: { id: tabId === undefined ? 11 : tabId, title: tabTitle } }, function () {}, function () { return Promise.resolve(); },
+    function (id) { return id === 11 || id === 12 ? 5 : null; },
+    function () { return { get: function () { return Promise.resolve({ captureStatus: captureStatus }); } }; },
+    bsDeviceEntry, TAGS_,
+    function (win, entries) { added = added.concat(entries); return Promise.resolve(); });
+  drainMicrotasks();
+  return added.map(function (e) { return e.device; }).join(',');
+}
+var S26 = { tabId: 11, title: 'Samsung Galaxy S26 v16.0' };
+eq('a line is labelled with the tab\'s device title', devLog('Samsung Galaxy S26 v16.0', S26), 'Samsung Galaxy S26 v16.0');
+eq('during the countdown, with the name the panel has for it', devLog('37 seconds to session timeout', S26), 'Samsung Galaxy S26 v16.0');
+eq('with nothing to go on, the generic label', devLog('37 seconds to session timeout', undefined), 'BrowserStack device');
+eq('  and not another tab\'s name', devLog('37 seconds to session timeout', S26, 12), 'BrowserStack device');
+eq('a tab with no title, as before', devLog('', S26), 'BrowserStack device');
+
 // The real branch of background.js's onMessage, sliced out: what the bridge
 // forwards is stored as the window's bsDeviceStatus only for known states.
 section('worker: the bsDeviceState message');

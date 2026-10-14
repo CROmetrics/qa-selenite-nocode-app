@@ -7,6 +7,7 @@ let nextGroupId = 1;  // groupId values are 'g' + this counter, scoped to the li
 let logData = [];
 let filterLevel = null;
 let bcLogData = [];
+let bcLogSig = '';       // syncBcLogs' change check: length alone stops changing at the 1000-entry cap
 let bcFilterLevel = null;
 let bcTagOnly = false;   // Browser Console "CRO" toggle: narrow the live mirror to [PjS]/[cro] tagged lines + the user's own commands (isBcUserEntry)
 let metrics = [];        // User-defined metric values (Build tab → Metrics), persisted in storage.local
@@ -184,6 +185,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initWcagMode();
   // A/B Variant Comparison mode
   await initAbCompare();
+  // BrowserStack Live: the A/B tab's Devices section and Functional Testing's
+  // Target. In its own try/catch: a storage fault in it must not take every
+  // binding below it down too.
+  try {
+    await initBsLive();
+  } catch (e) {
+    console.error('Selenite: BrowserStack Live failed to initialize —', e);
+  }
 
   await initTestModePages();
   // Performance (a no-op if its host markup is absent).
@@ -1167,7 +1176,14 @@ function setFilter(lv, btn) {
 // above, so the two panels never clobber each other and update independently.
 async function syncBcLogs() {
   const { browserConsoleLogs = [] } = await sessionNS.get('browserConsoleLogs');
-  if (browserConsoleLogs.length !== bcLogData.length) {
+  // Length AND the newest entry: once the worker's cap holds the length at
+  // 1000, a length check alone froze the view until Clear. `seq` is the
+  // worker's per-entry counter; older entries without one fall back to the
+  // time and text.
+  const last = browserConsoleLogs[browserConsoleLogs.length - 1];
+  const sig = browserConsoleLogs.length + '|' + (last ? `${last.seq ?? ''}|${last.ts}|${last.text}` : '');
+  if (sig !== bcLogSig) {
+    bcLogSig = sig;
     bcLogData = browserConsoleLogs;
     renderBcLog();
   }
@@ -1200,10 +1216,15 @@ function renderBcLog() {
       const toggle = e.expandable ? `<button class="bc-expand-toggle" data-object-id="${e.objectId}">&#9656;</button>` : '';
       const { tag, rest } = splitBcTag(e.text);
       const tagHtml = tag ? `<span class="bc-tag">${esc(tag)}</span>` : '';
+      // A line from a BrowserStack device (bsDeviceLog) names the device.
+      const deviceHtml = e.source === 'bs-device' && e.device
+        ? `<span class="bc-device" title="${esc(e.device).replace(/"/g, '&quot;')}">&#128241; ${esc(e.device)}</span>`
+        : '';
       return `<div class="bc-entry bc-${e.level}">
         <span class="bc-ts">${e.ts}</span>
         <span class="bc-badge">${badge}</span>
         ${toggle}
+        ${deviceHtml}
         ${tagHtml}
         <span class="bc-text">${esc(rest)}</span>
       </div>`;
@@ -1291,6 +1312,7 @@ function setBcFilter(lv, btn) {
 
 async function clearBcLog() {
   bcLogData = [];
+  bcLogSig = '';
   await sessionNS.set({ browserConsoleLogs: [] });
   document.getElementById('bc-log-out').innerHTML = '';
 }
@@ -1345,18 +1367,101 @@ chrome.storage.onChanged.addListener((changes, area) => {
   refreshTrackMetricSteps();
 });
 
+// The captured tab is a BrowserStack Live session: Browser Console mirrors
+// the device's console and the command input runs on the device, both through
+// Live's own DevTools (background.js bsDeviceLog / bsDeviceEval). Their state
+// is bsDeviceStatus, not the debugger attached to the dashboard page.
+// captureStatus.bsLive exists only from a worker that knows about devices, so
+// without it the worker predates this and needs reloading.
+function bcDeviceState(captureStatus, bsDeviceStatus, captureEnabled) {
+  const live = captureEnabled !== false && !!captureStatus && captureStatus.capturable !== false
+    && typeof bsIsLiveDashboardUrl === 'function' && bsIsLiveDashboardUrl(captureStatus.url);
+  if (!live) return null;
+  if (captureStatus.bsLive === undefined) return 'old-worker';
+  return bsDeviceStatus && bsDeviceStatus.tabId === captureStatus.tabId ? bsDeviceStatus.state : 'waiting';
+}
+
+// What to call the captured Live session in a status line. A phone or tablet
+// renames its tab to "<device> v<os>"; a desktop browser session leaves it as
+// "Dashboard", which is not a name for anything.
+function bcDeviceName(title) {
+  const t = String(title || '').trim();
+  // Live's idle countdown ("37 seconds to session timeout") and the tab's own
+  // address while it loads ("live.browserstack.com/dashboard#…") name nothing either.
+  return t && t !== 'Dashboard' && !(typeof bsTitleNamesNothing === 'function' && bsTitleNamesNothing(t)) ? t : 'this session';
+}
+
+// The Browser Console status line for a captured Live session, by devState
+// (bcDeviceState). Pure, so every wording is tested. `status` is
+// bsDeviceStatus; its reason is Live's own text, so it is only ever put in
+// with textContent.
+function bcDeviceLine(devState, status, device) {
+  const st = status || {};
+  switch (devState) {
+    case 'connected':
+      return { text: `● Live — mirroring ${device} through BrowserStack Live's DevTools`, color: 'var(--brand)' };
+    case 'unsupported':
+      return { text: `○ Can't read this version of Live's DevTools (${st.version || 'unknown version'})`, color: 'var(--err)' };
+    case 'attaching':
+      // The frame is on screen but has no device behind it (or the device's
+      // page context has not come up yet), so there is nothing to mirror. Late
+      // means it has waited longer than a device takes.
+      return st.late
+        ? { text: `○ DevTools is open in Live but hasn't attached to ${device} after 15 s. Close and reopen it in Live, or start a new session.`, color: 'var(--warn)' }
+        : { text: `○ DevTools is open in Live; waiting for it to attach to ${device}…`, color: 'var(--fg3)' };
+    case 'nopage':
+      // Attached to the device, but with no page to run in for longer than a
+      // device takes to provide one. On an iPhone 17 (iOS 26.5 and 26.6, three
+      // sessions) that is every session: Live's Chrome DevTools is on
+      // about:blank, Safari's empty Start Page, not the page under test.
+      return st.page === 'blank'
+        ? { text: `○ Live's DevTools on ${device} is attached to an empty tab (about:blank), not the page under test, so there's nothing to mirror and commands can't run.`, color: 'var(--warn)' }
+        : { text: `○ Live's DevTools is attached to ${device} but gives Selenite no page to run commands in.`, color: 'var(--warn)' };
+    case 'unavailable':
+      return { text: `○ Live has no DevTools for ${device}: ${st.reason || 'unavailable'}`, color: 'var(--warn)' };
+    case 'failed': {
+      // Live's own wording already ends "Please try a new session."
+      const why = st.reason || 'an unexpected issue.';
+      return { text: `○ Live's DevTools failed on ${device}: ${why}${/session/i.test(why) ? '' : ' Start a new session.'}`, color: 'var(--err)' };
+    }
+    case 'old-worker':
+      return { text: '○ Reload Selenite in chrome://extensions to mirror BrowserStack devices', color: 'var(--warn)' };
+    default: {
+      // On an iPhone or iPad the DevTools item opens a menu of Chrome DevTools and
+      // Safari Web Inspector (measured on iOS 26.5); only the first can be read.
+      const hint = /\b(?:iPhone|iPad)\b/i.test(device) ? ' (choose Chrome DevTools, not Safari Web Inspector)' : '';
+      return { text: `○ Open DevTools in the Live session to mirror ${device}'s console${hint}`, color: 'var(--fg3)' };
+    }
+  }
+}
+
 async function syncBcStatus() {
-  const { debuggerStatus } = await sessionNS.get('debuggerStatus');
-  const attached = !!debuggerStatus?.attached;
+  const { debuggerStatus, captureStatus, bsDeviceStatus, captureEnabled } =
+    await sessionNS.get(['debuggerStatus', 'captureStatus', 'bsDeviceStatus', 'captureEnabled']);
+  const devState = bcDeviceState(captureStatus, bsDeviceStatus, captureEnabled);
+  const device = devState ? bcDeviceName(captureStatus.title) : '';
+  const attached = devState ? devState === 'connected' : !!debuggerStatus?.attached;
   const input = document.getElementById('bc-eval-input');
   if (input) {
     input.disabled = !attached;
-    input.placeholder = attached ? '> Type a JS expression and press Enter…' : '> Not attached';
+    input.placeholder = devState
+      ? (attached ? `> Runs on ${device}. Type a JS expression and press Enter…`
+        : devState === 'unavailable' ? "> Live has no DevTools for this device, so commands can't run on it"
+        : devState === 'nopage' ? "> Live's DevTools has no page on the device to run commands in"
+        : '> Open DevTools in the Live session to run commands on the device')
+      : (attached ? '> Type a JS expression and press Enter…' : '> Not attached');
   }
   if (bcQuickAttached !== attached) { bcQuickAttached = attached; renderBcQuick(); }
   const el = document.getElementById('bc-status');
   const reconnectBtn = document.getElementById('btn-bc-reconnect');
   if (!el) return;
+  if (devState) {
+    if (reconnectBtn) reconnectBtn.style.display = 'none';
+    const line = bcDeviceLine(devState, bsDeviceStatus, device);
+    el.textContent = line.text;
+    el.style.color = line.color;
+    return;
+  }
   if (attached) {
     el.textContent = '● Live — mirroring the captured tab';
     el.style.color = 'var(--brand)';
@@ -2987,6 +3092,9 @@ function persistQueue() {
   });
   // A step added, removed or switched to a Test Agent step changes which engine runs.
   syncEngineControl();
+  // Target's BrowserStack Live buttons open the Open URL step's URL, and every
+  // edit to it (URL, parameters, QA Mode, a loaded script) lands here.
+  renderBsLiveGrid('ft');
 }
 
 // ── WCAG results renderer ─────────────────────────────────────────────────────
@@ -3575,7 +3683,7 @@ async function initAbCompare() {
 
   applyAbStateToInputs();
 
-  document.getElementById('ab-base-url').addEventListener('input',   e => { abState.baseUrl  = e.target.value;   persistAbState(); });
+  document.getElementById('ab-base-url').addEventListener('input',   e => { abState.baseUrl  = e.target.value;   persistAbState(); renderBsLiveGrid('ab'); });
   document.getElementById('ab-qa-mode').addEventListener('change',   e => { abState.qaMode   = e.target.checked; persistAbState(); });
   document.getElementById('ab-settle').addEventListener('input',     e => { abState.settleSec = e.target.value;  persistAbState(); });
   document.getElementById('ab-keep-tabs').addEventListener('change', e => {
@@ -3707,6 +3815,9 @@ function renderAbTargets() {
       inp.addEventListener('input', () => {
         abState.targets[i][inp.dataset.abField] = inp.value;
         persistAbState();
+        // A label names a Devices button; a URL or override decides whether
+        // that button can open anything.
+        renderBsLiveGrid('ab');
       });
     });
     block.querySelector('[data-ab-rm-target]').addEventListener('click', () => {
@@ -3715,6 +3826,9 @@ function renderAbTargets() {
       persistAbState();
     });
   });
+  // Every path that changes the target list comes through here: add, remove,
+  // load a saved set, Fill from ticket.
+  renderBsLiveGrid('ab');
 }
 
 function renderAbSelectors() {
@@ -3819,6 +3933,417 @@ function composeVariantUrl(target, baseUrl, qaMode) {
 
 function abComposeUrl(target) {
   return composeVariantUrl(target, abState.baseUrl, abState.qaMode);
+}
+
+// ── BrowserStack Live (A/B Devices, Functional Testing Target) ────────────────
+// Opens a page on a real phone or tablet, or another desktop browser, in
+// BrowserStack Live, in the user's own logged-in Live session. QA covers those
+// device columns today by pasting each preview URL into a Live session's
+// console (the "Open URL (BrowserStack)" Quick Command). The link and the
+// device presets live in browserstack.js; this is the UI, the one fetch to the
+// BrowserStack Local console, and the tab.
+//
+// The same section appears in two places. Each is a root marked data-bs-live,
+// with its parts marked data-bs-role:
+//   ab: the A/B tab's Devices section. A row per device, a button per variant.
+//   ft: Functional Testing's Target. A button per device that opens the
+//       queue's start URL. Live cannot run the steps; the tester walks them by
+//       hand on the device.
+// Both share one device selection, the two Local toggles, and one Live tab
+// per window. Each has its own status line. The selection is a preference,
+// not test state: it is saved as bsLivePrefs in chrome.storage.local and
+// shared by every window, where abState is per window and per session.
+const BS_LIVE_PREFS_KEY = 'bsLivePrefs';
+let bsLive = null;            // { devices: [presetId], local, forceLocal } once initBsLive has run
+const _bsLivePending = {};    // place -> { url, what } that "Open anyway" opens after a failed tunnel check
+
+const BS_LIVE_SURFACES = {
+  ab: {
+    layout: 'rows',
+    targets: () => (abState?.targets || []).map((t, i) => {
+      const label = (t.label || '').trim() || ('v' + i);
+      return { key: String(i), label, url: abComposeUrl(t), noUrl: `${label} has no URL. Set its URL or the Base URL.` };
+    }),
+  },
+  ft: {
+    layout: 'chips',
+    targets: () => [{
+      key: 'start', label: 'the start URL', url: queueStartUrl(queueOpenUrlStep()?.inputs),
+      noUrl: "Set a URL in the queue's Open URL step.",
+    }],
+  },
+};
+
+function bsRoot(key) { return document.querySelector(`[data-bs-live="${key}"]`); }
+function bsRole(key, role) { return bsRoot(key)?.querySelector(`[data-bs-role="${role}"]`) || null; }
+function bsLiveKeys() { return Object.keys(BS_LIVE_SURFACES).filter(k => bsRoot(k)); }
+
+// The URL the queue's Open URL step opens, built by the same rules as the
+// worker's ACTIONS.open_url (background.js), which does the real navigation:
+// each parameter trimmed and blanks dropped (a legacy step stores them as one
+// newline-joined string), and with QA Mode any cro_mode= replaced by
+// cro_mode=qa as the LAST parameter. bsLiveUrl then adds https:// the way the
+// worker's normalizeUrl does. The worker is not changed for this, so
+// browserstack.test.js slices both and checks that they agree.
+function queueStartUrl(inputs) {
+  let url = (inputs?.url || '').trim();
+  if (!url) return '';
+  const params = inputs.params;
+  let list = Array.isArray(params)
+    ? params.map(p => String(p).trim()).filter(Boolean)
+    : String(params || '').split('\n').map(p => p.trim()).filter(Boolean);
+  if (inputs.qa_mode) {
+    list = list.filter(p => !p.toLowerCase().startsWith('cro_mode='));
+    list.push('cro_mode=qa');
+  }
+  if (list.length) url += (url.includes('?') ? '&' : '?') + list.join('&');
+  return url;
+}
+
+function bsLiveDefaultPrefs() {
+  // Local and force-local default ON: the pages this is for are staging,
+  // VPN or allowlisted ones, and experiments whose QA audience is our IP.
+  return { devices: BS_LIVE_DEFAULT_DEVICES.slice(), local: true, forceLocal: true };
+}
+
+function persistBsLive() {
+  chrome.storage.local.set({ [BS_LIVE_PREFS_KEY]: bsLive }).catch(() => {});
+}
+
+async function initBsLive() {
+  const keys = bsLiveKeys();
+  if (!keys.length) return;
+  const { [BS_LIVE_PREFS_KEY]: saved } = await chrome.storage.local.get(BS_LIVE_PREFS_KEY);
+  bsLive = { ...bsLiveDefaultPrefs(), ...(saved || {}) };
+  if (!Array.isArray(bsLive.devices)) bsLive.devices = bsLiveDefaultPrefs().devices;
+
+  for (const key of keys) {
+    bsRole(key, 'local')?.addEventListener('change', e => {
+      bsLive.local = e.target.checked;
+      persistBsLive();
+      renderBsLiveAll();
+    });
+    bsRole(key, 'force-local')?.addEventListener('change', e => {
+      bsLive.forceLocal = e.target.checked;
+      persistBsLive();
+      renderBsLiveAll();
+    });
+    bsRole(key, 'check')?.addEventListener('click', () => checkBsLocal(key));
+    // Delegated, because the checklist and the buttons are re-rendered wholesale.
+    bsRole(key, 'devices')?.addEventListener('change', e => {
+      const id = e.target?.dataset?.bsDev;
+      if (!id) return;
+      const ids = new Set(bsLive.devices);
+      if (e.target.checked) ids.add(id); else ids.delete(id);
+      bsLive.devices = bsSelectedPresets([...ids]).map(p => p.id);
+      persistBsLive();
+      renderBsLiveAll();
+    });
+    bsRole(key, 'grid')?.addEventListener('click', e => {
+      const btn = e.target.closest('[data-bs-open]');
+      if (!btn || btn.disabled) return;
+      openBsLive(key, btn.dataset.bsOpen, btn.dataset.bsTarget);
+    });
+    bsRole(key, 'status')?.addEventListener('click', e => {
+      const manual = e.target.closest('[data-bs-open-manual]');
+      if (manual) { openBsLiveManual(key, manual.dataset); return; }
+      if (!e.target.closest('[data-bs-open-anyway]') || !_bsLivePending[key]) return;
+      const pending = _bsLivePending[key];
+      delete _bsLivePending[key];
+      // Local was asked for in the link (Selenite just found it not connected), so
+      // the watcher still reads what the dashboard says; `unconfirmed` shapes the words.
+      launchBsLiveTab(key, pending.url, pending.what, {
+        unconfirmed: true, presetId: pending.presetId, pageUrl: pending.pageUrl,
+        wantLocal: pending.local, wantForceLocal: pending.local && pending.forceLocal,
+      });
+    });
+  }
+  renderBsLiveAll();
+  // What the worker saw Live do with a launch arrives as a change to this
+  // window's bsLaunch_<place>; a panel opened after the launch reads it once.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'session') return;
+    for (const k of bsLiveKeys()) {
+      const ch = changes[nsKey('bsLaunch_' + k)];
+      if (ch && ch.newValue) renderBsLaunch(ch.newValue);
+    }
+  });
+  for (const k of keys) {
+    sessionNS.get('bsLaunch_' + k).then(r => { if (r['bsLaunch_' + k]) renderBsLaunch(r['bsLaunch_' + k]); }).catch(() => {});
+  }
+}
+
+// Every place shows the same selection and toggles, so a change made in one
+// is redrawn in all of them.
+function renderBsLiveAll() {
+  if (!bsLive) return;
+  for (const key of bsLiveKeys()) {
+    const local = bsRole(key, 'local');
+    const force = bsRole(key, 'force-local');
+    const wrap = bsRole(key, 'force-local-wrap');
+    if (local) local.checked = !!bsLive.local;
+    if (force) {
+      force.checked = !!bsLive.forceLocal;
+      // force-local only means something through the tunnel (bsLiveUrl never
+      // sends it without local), so its toggle goes inert while Local is off
+      // rather than looking like it still does something.
+      force.disabled = !bsLive.local;
+    }
+    if (wrap) wrap.style.opacity = bsLive.local ? '' : '.5';
+    renderBsLiveDevices(key);
+    renderBsLiveGrid(key);
+  }
+}
+
+// Grouped Desktop / Mobile / Tablet (BS_LIVE_KINDS), each group its own
+// two-column grid.
+function renderBsLiveDevices(key) {
+  const el = bsRole(key, 'devices');
+  if (!el || !bsLive) return;
+  const q = s => esc(s || '').replace(/"/g, '&quot;');
+  const on = new Set(bsLive.devices);
+  el.innerHTML = BS_LIVE_KINDS.map(k => {
+    const group = BS_LIVE_PRESETS.filter(p => p.kind === k.kind);
+    if (!group.length) return '';
+    return `
+      <div data-bs-kind="${q(k.kind)}" style="margin-bottom:6px">
+        <div style="font-size:10px;font-weight:600;color:var(--fg2);margin-bottom:3px">${esc(k.label)}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px">${group.map(p => {
+          // Live has no DevTools on iOS 27, which the Browser Console mirror reads.
+          const dt = bsDevtoolsSupport(p);
+          return `
+          <label class="suite-check" style="font-size:11px">
+            <input type="checkbox" data-bs-dev="${q(p.id)}"${on.has(p.id) ? ' checked' : ''}>
+            <span>${esc(p.label)} <span style="font-size:10px;color:var(--fg3)">${esc(p.detail)}</span>${dt.mirror ? '' : ` <span style="font-size:10px;color:var(--warn)" title="${q(dt.why)}" data-bs-nomirror>no console mirror</span>`}</span>
+          </label>`;
+        }).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// The buttons: in A/B a row per ticked device with a button per variant, in
+// Functional Testing one button per ticked device. A no-op until initBsLive
+// has run, because renderAbTargets and persistQueue both call it during
+// startup, before this section exists.
+function renderBsLiveGrid(key) {
+  const el = bsRole(key, 'grid');
+  const surface = BS_LIVE_SURFACES[key];
+  if (!el || !bsLive || !surface) return;
+  const presets = bsSelectedPresets(bsLive.devices);
+  const count = bsRole(key, 'count');
+  if (count) count.textContent = presets.length ? `${presets.length} device${presets.length !== 1 ? 's' : ''}` : '';
+  if (!presets.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--fg3)">Tick a device above.</div>';
+    return;
+  }
+  const q = s => esc(s || '').replace(/"/g, '&quot;');
+  const targets = surface.targets();
+  const button = (p, t, text) => `<button class="btn sm" data-bs-open="${q(p.id)}" data-bs-target="${q(t.key)}"${t.url ? '' : ' disabled'}
+    title="${q(t.url ? `Open ${t.label} on ${p.label} (${p.detail}) in BrowserStack Live` : t.noUrl)}">${esc(text)}</button>`;
+  if (surface.layout === 'chips') {
+    el.innerHTML = `<div class="row" style="gap:5px;flex-wrap:wrap">${presets.map(p => button(p, targets[0], p.label)).join('')}</div>`;
+    return;
+  }
+  el.innerHTML = presets.map(p => `
+    <div class="row" style="gap:5px;flex-wrap:wrap;margin-bottom:5px">
+      <span style="font-size:11px;color:var(--fg1);width:96px;flex-shrink:0" title="${q(p.detail)}">${esc(p.label)}</span>
+      ${targets.map(t => button(p, t, t.label)).join('')}
+    </div>`).join('');
+}
+
+function setBsLiveStatus(key, html, color) {
+  const el = bsRole(key, 'status');
+  if (!el) return;
+  el.style.color = color || 'var(--fg3)';
+  el.innerHTML = html;
+}
+
+// The two network calls in this section, both to this Mac, both at once.
+// Live itself asks the Local binary's port (BS_LOCAL_BINARY, which answers
+// JSONP: commandLineTunnel('…')); that is the answer that decides whether a
+// session can use Local, so it is the one that counts. The app's console on
+// localhost:45454 answers GET /status {status, token, userId} with no auth and
+// only says the app is signed in, which stayed true while Live could not see
+// Local at all. bsLocalStatusFrom reads only `status` and bsLocalBinaryAnswer
+// only the shape, so neither the token nor the tunnel identifier goes further
+// than this function. 1.5 s is ample for a local socket, and short enough that
+// a click with the app closed fails fast.
+async function bsLocalStatus() {
+  const ask = async (url, read) => {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 1500);
+    try {
+      const res = await fetch(url, { cache: 'no-store', credentials: 'omit', signal: ctl.signal });
+      return await read(res);
+    } catch (_) {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const [binaryUp, consoleStatus] = await Promise.all([
+    ask(BS_LOCAL_BINARY + '/?_=' + Date.now(), async res => (res.ok ? bsLocalBinaryAnswer(await res.text()).up : false)),
+    ask(BS_LOCAL_CONSOLE + '/status', async res => bsLocalStatusFrom(res.ok ? await res.json().catch(() => null) : null, true)),
+  ]);
+  return bsLocalReadiness(binaryUp === true, consoleStatus || bsLocalStatusFrom(null, false));
+}
+
+function showBsLocalStatus(key, st) {
+  if (st.ready) {
+    setBsLiveStatus(key, '✓ BrowserStack Local is connected: its app answers on the port Live checks (127.0.0.1:45691). After you open a device, Selenite reports whether Live actually started it with Local.', 'var(--ok)');
+  } else if (st.state === 'not-connected') {
+    setBsLiveStatus(key, "BrowserStack Local is open and signed in, but nothing answers on the port Live checks (127.0.0.1:45691), so Live won't see it. In the Local app make sure it is connected, then Check again.", 'var(--warn)');
+  } else if (st.state === 'not-signed-in') {
+    setBsLiveStatus(key, 'BrowserStack Local is open but not signed in. Sign in in the app, then Check again.', 'var(--warn)');
+  } else {
+    setBsLiveStatus(key, `BrowserStack Local isn't running on this Mac. Open the BrowserStack Local app (in Applications), then Check again. <a href="${BS_LOCAL_DOWNLOAD}" target="_blank" rel="noopener">Get the app</a>`, 'var(--err)');
+  }
+}
+
+async function checkBsLocal(key) {
+  setBsLiveStatus(key, 'Checking BrowserStack Local…');
+  const st = await bsLocalStatus();
+  showBsLocalStatus(key, st);
+  return st;
+}
+
+async function openBsLive(key, presetId, targetKey) {
+  const preset = bsPresetById(presetId);
+  const target = BS_LIVE_SURFACES[key]?.targets().find(t => t.key === targetKey);
+  if (!preset || !target || !bsLive) return;
+  // Taken now, once: the link is built from these, and what the status line goes
+  // on to say about the launch is judged against the same two, not whatever the
+  // toggles read after the Local check below.
+  const local = !!bsLive.local;
+  const forceLocal = !!bsLive.forceLocal;
+  const what = `${target.label} on ${preset.label}`;
+  const url = bsLiveUrl(preset, target.url, { local, forceLocal });
+  if (!url) {
+    setBsLiveStatus(key, esc(target.noUrl), 'var(--err)');
+    return;
+  }
+  delete _bsLivePending[key];
+  if (local) {
+    // Checked before every launch, not once: the app can be quit or signed
+    // out between clicks, and Live given local=true without a tunnel starts a
+    // session that cannot reach the pages this is for.
+    setBsLiveStatus(key, 'Checking BrowserStack Local…');
+    const st = await bsLocalStatus();
+    if (!st.ready) {
+      showBsLocalStatus(key, st);
+      _bsLivePending[key] = { url, what, presetId: preset.id, pageUrl: target.url, local, forceLocal };
+      bsRole(key, 'status')?.insertAdjacentHTML('beforeend',
+        ` <button class="btn sm" data-bs-open-anyway title="Open ${esc(what).replace(/"/g, '&quot;')} in Live without a confirmed tunnel">Open anyway</button>`);
+      return;
+    }
+  }
+  await launchBsLiveTab(key, url, what, { presetId: preset.id, pageUrl: target.url, wantLocal: local, wantForceLocal: local && forceLocal });
+}
+
+// Live runs one session at a time, and a second dashboard tab would contend
+// with the first for it. So the Live tab Selenite opened last, from either
+// place, is closed first, but only while it is still on the dashboard: a tab
+// the user has since taken somewhere else is theirs. Launches run one after
+// another, so two quick clicks leave one tab (the later one), not two
+// dashboards fighting over the session.
+//
+// Opening the tab says nothing about what Live then did with it: a device it
+// refuses, a session that drops after ten seconds, or one that starts without
+// Local. So the worker watches the tab (bsWatchLaunch) and the status line
+// follows what it reports (renderBsLaunch), instead of announcing success the
+// moment the tab exists. `manual` opens Live with the page and Local in place
+// but no start=true, for the tester to pick the device: nothing to watch.
+let _bsLaunchChain = Promise.resolve();
+function launchBsLiveTab(key, url, what, opts) {
+  const run = _bsLaunchChain.then(() => launchBsLiveTabNow(key, url, what, opts || {}));
+  _bsLaunchChain = run.catch(() => {});
+  return run;
+}
+
+const _bsLastTab = {};        // place -> the Live tab its latest launch opened
+const _bsRenderedAt = {};     // place -> `at` of the report its line shows now
+
+async function launchBsLiveTabNow(key, url, what, { unconfirmed = false, manual = false, presetId = '', pageUrl = '', wantLocal = false, wantForceLocal = false } = {}) {
+  try {
+    const { bsLiveTabId } = await sessionNS.get('bsLiveTabId');
+    if (bsLiveTabId != null) {
+      const old = await chrome.tabs.get(bsLiveTabId).catch(() => null);
+      // A tab opened a moment ago has no url yet, only the pendingUrl it is loading.
+      if (old && bsIsLiveUrl(old.pendingUrl || old.url)) await chrome.tabs.remove(old.id).catch(() => {});
+    }
+    const tab = await chrome.tabs.create({ url, active: true, ...(WIN_ID != null ? { windowId: WIN_ID } : {}) });
+    await sessionNS.set({ bsLiveTabId: tab.id });
+    _bsLastTab[key] = tab.id;
+    if (manual) {
+      // Not a promise of Local: on 2026-10-09 a device picked this way, after Live had
+      // found the app, still started without it (in a fresh Chrome profile; on
+      // 2026-10-08, in an everyday one, it started with Local).
+      setBsLiveStatus(key, `Opened Live with Local on and the page for ${esc(what)} ready. When Live's Local Testing panel shows Local connected, pick the device in its list, then check that the page loads on it: Live doesn't always attach Local to a session started this way.`, 'var(--ok)');
+      return;
+    }
+    setBsLiveStatus(key, esc(bsLaunchLine({ state: 'starting' }, { what }).text), 'var(--fg3)');
+    const ack = await chrome.runtime.sendMessage({
+      action: 'bsWatchLaunch', winId: WIN_ID, tabId: tab.id, key, what, presetId, pageUrl,
+      wantLocal, wantForceLocal, unconfirmed,
+    }).catch(() => null);
+    if (!ack || ack.ok !== true) {
+      setBsLiveStatus(key, `Opened ${esc(what)} in BrowserStack Live. Reload Selenite in chrome://extensions so it can report what Live did with it.`, 'var(--warn)');
+      return;
+    }
+    // The worker can be reloaded or killed mid-watch, and then nothing would ever
+    // update this line again. Its own timeout is BS_LAUNCH_GIVE_UP_MS.
+    setTimeout(() => bsCheckLaunchLost(key, tab.id, what), BS_LAUNCH_GIVE_UP_MS + 20000);
+  } catch (e) {
+    setBsLiveStatus(key, 'Could not open BrowserStack Live: ' + esc(e?.message || String(e)), 'var(--err)');
+  }
+}
+
+// Past the watch's own deadline and still "starting": the watch died.
+async function bsCheckLaunchLost(key, tabId, what) {
+  if (_bsLastTab[key] !== tabId) return;                       // a newer launch from this place has its own line
+  const storeKey = 'bsLaunch_' + key;
+  const rec = (await sessionNS.get(storeKey).catch(() => ({})))[storeKey];
+  if (rec && rec.tabId === tabId && rec.verdict && rec.verdict.state !== 'starting') return;   // it reported something
+  setBsLiveStatus(key, esc(bsLaunchLine({ state: 'lost' }, { what }).text), 'var(--warn)');
+}
+
+// The worker's report on a launch from this place, as a status line.
+async function renderBsLaunch(rec) {
+  if (!rec || !rec.key || !rec.verdict || !bsRole(rec.key, 'status')) return;
+  // A reopened panel reads the last report back; an old one is history, not what is on screen.
+  if (!(Number(rec.at) > Date.now() - BS_LAUNCH_REPORT_MAX_AGE_MS)) return;
+  // A newer launch from this place has its own line.
+  if (_bsLastTab[rec.key] != null && _bsLastTab[rec.key] !== rec.tabId) return;
+  // A report that the Live tab was closed is about a tab that is gone, by definition.
+  // Any other report is about what is on screen, so its tab must still be the one
+  // Selenite opened last and must still exist.
+  if (rec.verdict.state !== 'closed') {
+    const { bsLiveTabId } = await sessionNS.get('bsLiveTabId');
+    if (rec.tabId !== bsLiveTabId) return;
+    if (!(await chrome.tabs.get(rec.tabId).catch(() => null))) return;
+  }
+  // Reports can be rendered out of order (each waits on the checks above).
+  if (rec.at < (_bsRenderedAt[rec.key] || 0)) return;
+  _bsRenderedAt[rec.key] = rec.at;
+  const line = bsLaunchLine(rec.verdict, { what: rec.what, wantLocal: rec.wantLocal, wantForceLocal: rec.wantForceLocal, unconfirmed: rec.unconfirmed });
+  const color = { ok: 'var(--ok)', warn: 'var(--warn)', err: 'var(--err)' }[line.tone] || 'var(--fg3)';
+  setBsLiveStatus(rec.key, esc(line.text), color);
+  if (line.offerManual && rec.presetId && rec.pageUrl) {
+    // The button carries what it opens, so it opens that and not whichever launch
+    // happens to be the latest on record.
+    const q = s => esc(s || '').replace(/"/g, '&quot;');
+    bsRole(rec.key, 'status').insertAdjacentHTML('beforeend',
+      ` <button class="btn sm" data-bs-open-manual data-bs-preset="${q(rec.presetId)}" data-bs-page="${q(rec.pageUrl)}" data-bs-what="${q(rec.what)}" title="Open Live with Local on and this page ready, then pick the device yourself once Live shows Local connected">Open Live and pick the device myself</button>`);
+  }
+}
+
+// "Open Live and pick the device myself", from the button renderBsLaunch wrote.
+async function openBsLiveManual(key, data) {
+  const preset = bsPresetById(data && data.bsPreset);
+  if (!preset || !data.bsPage || !bsLive) return;
+  const url = bsLiveUrl(preset, data.bsPage, { local: true, forceLocal: bsLive.forceLocal, start: false });
+  if (url) await launchBsLiveTab(key, url, data.bsWhat || preset.label, { manual: true });
 }
 
 let _abProgressPoller = null;
@@ -6059,7 +6584,7 @@ function rptAgenticNoteHtml(note, label) {
 //
 // Lifted out of rptAbVisualDiffSection so that section and rptAbSection cannot
 // disagree. They did: the A/B section's totalDeltas counts page basics, watched
-// selectors, metrics and console and NEVER looked at the visual diff, even
+// selectors and metrics, and NEVER looked at the visual diff, even
 // though the Visual Diff section is rendered as its child from the same
 // captures. On the OnDeck run that put a green PASS on page 2 — same title,
 // same URL, no selectors, no metrics fired, no console deltas — directly above
@@ -6415,7 +6940,7 @@ function vdVerdict(vd) {
   // returns skipped:true WITH a fully populated perVariant of controlDuplicate
   // entries, so bailing here returned before notCompared could be computed —
   // and totalDeltas is 0 by construction on that path (every target resolved to
-  // the same page, so same title, same URL, no selector/metric/console delta),
+  // the same page, so same title, same URL, no selector or metric delta),
   // which landed rptAbSection's ladder on a green PASS. That is the one verdict
   // this comment block has always said neither section may show for a
   // comparison that did not happen.
@@ -6676,7 +7201,10 @@ function abPageUrls(modes) {
 // inherits whatever was last configured — one OnDeck report carried ten rows of
 // "OAM | WOW! Offer Card Clicks  v0 ×0 · v1 ×0" and "Meta LP | Scroll Depth |
 // 25%", none related to the page under test and not one of them fired. Ten
-// zeros is not a QA result.
+// zeros is not a QA result. (Until the browserLog fix in background.js, no
+// metric could fire in ANY A/B run, because every capture's console came back
+// empty. Those zeros said nothing about the metrics; hiding a row that fired
+// nowhere is still right.)
 //
 // A metric that DID fire earns its row: whether a conversion event fires on
 // both variants is exactly what this report should say. So this suppresses the
@@ -6694,11 +7222,19 @@ function rptAbSection(entry) {
 
   const d = diffAbCaptures(captures, metricsList, selectors);
   const errCount = d.errors.reduce((n, e) => n + (e.loadError ? 1 : 0) + e.jsErrors.length, 0);
+  // Console lines are deliberately NOT counted. A variant logging a line Control
+  // does not ("[PJS] variation 2 applied") is what a working variant does, and
+  // lines are compared by exact text, so a timestamp or an id in one differs on
+  // every run. Counted, they would badge a correctly served variant ISSUES FOUND
+  // (measured in a real worker: one differing line turned PASS into ISSUES
+  // FOUND), and the report renders no console lines that could explain why. Not
+  // reachable until the per-variant buffer worked (browserLog, background.js);
+  // every capture before that was empty. Metric deltas stay: whether a
+  // conversion event fires differently is a QA result.
   const totalDeltas =
     d.basics.filter(b => b.titleDiff || b.urlDiff).length +
     d.selectorRows.filter(s => !s.allSame).length +
-    d.metricRows.filter(m => !m.allSame).length +
-    d.consoleRows.filter(v => v.added.length || v.missing.length).length;
+    d.metricRows.filter(m => !m.allSame).length;
   // The Visual Diff is this section's own child, built from these same
   // captures, so its result belongs in this badge. Without it this section
   // reported PASS on a run whose next page said ISSUES FOUND.
@@ -6734,7 +7270,7 @@ function rptAbSection(entry) {
   // meant zero differences IN WHAT THIS SECTION CHECKS, and read as zero
   // differences full stop. Name the scope, and name the visual half.
   const summary = `Baseline: ${captures[0].label} · ${errCount ? errCount + ' error(s) · ' : ''}`
-    + `${totalDeltas} difference(s) in page basics, watched selectors, metrics and console`
+    + `${totalDeltas} difference(s) in page basics, watched selectors and metrics`
     + (vv.ran
         ? ` · ${vdVerdictSummary(vv)} — see Visual Diff below`
         : '')

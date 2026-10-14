@@ -12,10 +12,11 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - Universal delay override — set a single delay across all steps
 - Two execution modes: **close after run** or **loop continuously**
 - Tab targeting: run on the **active tab** or open a **new tab**
-- Console tab — a live step-execution log with INFO / WARN / ERR filtering, plus a live mirror of the captured tab's browser console with a CRO (`[PJS]`/`[cro]`) filter, a JavaScript command input, and **Quick Commands**: one-click buttons for the Optimizely, Convert, AB Tasty and other platform debugging commands QA runs all day
+- Console tab — a live step-execution log with INFO / WARN / ERR filtering, plus a live mirror of the captured tab's browser console (or, on a BrowserStack Live tab, the device's) with a CRO (`[PJS]`/`[cro]`) filter, a JavaScript command input, and **Quick Commands**: one-click buttons for the Optimizely, Convert, AB Tasty and other platform debugging commands QA runs all day
 - Visual Regression — full-page screenshot baselines per URL with pixel diffing, ignore regions, and a mismatch threshold (Functional Testing tab)
 - **Test Agent** tab — run WCAG, Performance, or Funnel Crawl one at a time, batch the first two together via **Also Run**, and get a single combined report with an optional AI-written summary
 - **A/B** tab — load each experiment variant once and diff page state, metric fires, and tagged console output against control, with an optional per-variant interaction heatmap, an AI-powered full-page visual diff, and a WCAG audit of every variant diffed against control (introduced / resolved / pre-existing)
+- **BrowserStack Live** (A/B tab and Functional Testing's Target) — open any variant, or a queue's start URL, on a real iPhone, iPad or Android device, or in Safari, Edge or Firefox, in your own BrowserStack Live session, optionally through BrowserStack Local so the device can reach staging pages, and Selenite tells you what Live actually did with the launch
 - WCAG / Accessibility mode — full WCAG 2.2 audit (heuristics + axe-core) with region scoping, check presets, click-to-highlight findings, JSON export, and per-URL run history
 - Performance/Load mode — median page-load metrics (TTFB, FCP, LCP, CLS, long tasks, resources) over N runs, checked against Core Web Vitals budgets, with per-URL history
 - Funnel Crawl — an AI agent clicks through Start → Middle waypoint(s) → End to verify a funnel actually connects
@@ -27,7 +28,9 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
-### 0.7.7 — 2026-10-07
+### 0.7.18 — 2026-10-14
+
+Brings in `main`'s Test Agent queue (released on `main` as 0.7.7) alongside the BrowserStack releases below.
 
 The Function Queue can run through the Test Agent: a step whose selector no longer finds anything is done by an AI agent, and the run opens a report that lists every heal as a finding.
 
@@ -41,6 +44,86 @@ The Function Queue can run through the Test Agent: a step whose selector no long
 
 **Funnel Crawl**
 - A `type` action now records whether the text landed.
+### 0.7.17 — 2026-10-14
+
+**BrowserStack Live**
+- **Fixed:** for a few seconds while a Live tab loaded, Browser Console could name the session by the tab's own address ("mirror live.browserstack.com's console", or the whole launch link, your page's address in it). The address is no longer taken as a device name.
+
+### 0.7.16 — 2026-10-14
+
+**BrowserStack Live**
+- **Fixed:** in the last minute before Live closes an idle session, it retitles the tab "60 seconds to session timeout", "59 seconds…", and Browser Console used that as the device's name ("mirror 37 seconds to session timeout's console"), as did the label on device console lines. The device keeps its name now.
+
+### 0.7.15 — 2026-10-14
+
+**A/B**
+- **Fixed:** JS errors a variant throws while its page is still loading (and promises it rejects then) were missing from its errors; only errors after the page had loaded were recorded. They are now caught from the moment the page starts loading, like console lines in 0.7.14.
+
+### 0.7.14 — 2026-10-14
+
+**A/B**
+- **Fixed:** console lines a variant logs while its page is still loading (a `[PJS] variation applied` from a snippet in the page's head, say) were never captured; only lines logged after the page had loaded were. They are now caught from the moment the page starts loading.
+
+### 0.7.13 — 2026-10-13
+
+**BrowserStack Live**
+- **Fixed:** when Live's DevTools broke ("Developer tools have experienced an unexpected issue. Please try a new session."), Browser Console said "Open DevTools in the Live session" for 30 seconds and then "Can't read this version of Live's DevTools", and a command said the page had no script context. It now says Live's DevTools failed, in Live's words, as soon as Live shows the notice, and a command gives the same reason.
+
+### 0.7.12 — 2026-10-13
+
+**BrowserStack Live**
+- **Fixed:** on an iPhone 17 (iOS 26) Browser Console said it was mirroring the device and enabled the command input, but Live's Chrome DevTools was attached to an empty Safari tab (about:blank), not the page under test, so nothing could be read and every command failed with advice to reload. The status line now says DevTools is on an empty tab and keeps the input disabled. It switches to mirroring by itself if a page ever comes up. Android devices are unchanged.
+
+### 0.7.11 — 2026-10-09
+
+First test of 0.7.10 on real BrowserStack Live with the extension itself; it held up apart from the two things below.
+
+**BrowserStack Live**
+- **Fixed:** the status line went on saying "running" after you stopped the session in Live, or Live dropped it, more than 40 seconds in. Selenite now keeps checking a running session every 5 seconds, until it ends, the tab is closed, or 4 hours pass.
+- **Changed:** **Open Live and pick the device myself** no longer promises that the device you pick starts with Local. On one Chrome profile it did, on another it didn't, so the line now tells you to check that the page loads on the device, and to look at Live's Local Testing panel.
+
+### 0.7.10 — 2026-10-08
+
+BrowserStack Live launches report what Live did with them, instead of announcing success when the tab opens. Found on real Live sessions (an iPhone 18 Pro, iPhone 17, Galaxy S26, Pixel 10, an iPad Pro, a Galaxy Tab and four desktop browsers).
+
+**BrowserStack Live**
+- **The status line follows the session.** After a launch it says whether Live started the device, refused it with its own words ("Device is temporarily disabled…"), dropped it after it had started ("Connection to the remote device failed…"), or started it **without Local**. It also says when you closed the Live tab, or when Live sent the tab to a sign-in page (and then follows the session if you sign in and it starts). It no longer says "through BrowserStack Local" because the tab opened.
+- **One odd reading changes nothing.** A refusal or an end is reported only when two readings a second apart agree, and an error toast Live raises while a session is running (a recording that wouldn't start, say) is not treated as the launch failing. Once a session has started, "ended" also waits for the device picker to be back on screen, because Live takes its toolbar away for a few seconds early in a session (measured on iOS 27 and on desktop browsers). The A/B tab and Functional Testing each keep their own report, so a launch from one never overwrites the other's.
+- **Local is only reported once Live can say.** A phone's tab says it is running 5 to 10 s before Live records whether Local was on, so the status line says "running" and nothing about Local until the session toolbar is up; it no longer shows the "started without Local" warning in that gap.
+- **Local is checked where Live checks it.** The check asks the Local app's own port (`127.0.0.1:45691`, which Live polls every two seconds) as well as its console. A signed-in app that Live can't see is now reported as not connected, where it used to pass as running.
+- **Started without Local.** On the account this was measured on, Live starts a session about a second before its own check finds the Local app, so `localhost`, staging and VPN pages show BrowserStack's "Unable to connect" page. Selenite says so and offers **Open Live and pick the device myself**: Live opens with Local and the page ready, and you pick the device once Live shows Local connected (in 0.7.11 this stopped promising that the device starts with Local).
+- **All traffic through this Mac** is only a request. Live does not apply it from a link, and Selenite says when it didn't; you can switch it on in the session's Local panel (it reconnects the session).
+- **iPhone 17** now opens (it was refused every time at iOS 26.1; it opens at 26).
+- **Console mirror, the real states.** No DevTools on iOS 27, on desktop browser sessions or on some Android devices: the status line says so in Live's words, and the checklist marks the iOS 27 and desktop presets. A DevTools frame with no device behind it reads as attaching, not connected. On an iPhone or iPad Live's DevTools item opens a menu; choose **Chrome DevTools**, the only one Selenite can read.
+- **Fixed:** the device's name in the status line was "Dashboard" once Live renamed the tab. A Live tab that was still loading when Selenite first looked at it was never followed, so its console mirror never started.
+
+### 0.7.9 — 2026-10-07
+
+**A/B**
+- **Fixed:** a variant's tagged console lines (`[PJS]`, `[cro]`) now reach the capture. They never had, so every A/B run showed an empty console per variant.
+- **Changed:** console lines no longer count toward the badge. A variant that logs its own variation line is working, and the lines differ run to run. Page basics, watched selectors and metrics still do.
+
+### 0.7.8 — 2026-10-07
+
+Browser Console mirrors a BrowserStack Live device.
+
+**Browser Console**
+- **The device's console.** On a Live tab on an iPhone or Android device, Browser Console shows the device's console, labelled with the device, instead of the Live page's own. It reads Live's DevTools, so open it in the session first; what the device logged earlier is replayed.
+- **Commands run on the device.** The command input and Quick Commands answer from the phone. `$click` and `$hover` don't work there.
+- **Fixed:** the feed no longer drops lines that arrive in a burst, and no longer freezes at 1,000 lines.
+
+### 0.7.7 — 2026-10-06
+
+Open an A/B variant, or a queue's start URL, on a real phone, tablet or another desktop browser in BrowserStack Live, through BrowserStack Local.
+
+**A/B**
+- **Devices — BrowserStack Live.** A new section under the A/B card. Tick the browsers and devices you QA on, grouped Desktop, Mobile and Tablet, and each gets a button per variant that opens that variant's URL in your own BrowserStack Live session. No more pasting preview links into a Live session's console.
+
+**Functional Testing**
+- **Cross-browser — BrowserStack Live**, in the Target section. A button per ticked device opens the queue's start URL (the Open URL step, with its parameters and QA Mode) in Live, so you can walk the steps on that device. Execute still runs the queue here. The device selection is the same one the A/B tab uses.
+
+**BrowserStack Local**
+- **Through your Mac.** On by default, so the device can reach staging, VPN and allowlisted pages. With **All traffic through this Mac**, its visits also come from your IP, as an IP-targeted QA audience needs. You start the BrowserStack Local app, and Selenite checks it's running and signed in before each launch.
 
 ### 0.7.6 — 2026-10-06
 
@@ -157,6 +240,8 @@ Earlier versions: see [`CHANGELOG.md`](CHANGELOG.md) and `git log`. The version 
    - Use the checkbox to enable/disable individual steps.
 6. Click **Execute** to run the queue.
 
+**Cross-browser (BrowserStack Live)** — the Target section's **Cross-browser — BrowserStack Live** block opens the queue's start URL on another browser or a real device in BrowserStack Live. The start URL is the Open URL step's URL, with its parameters and QA Mode. Tick the browsers and devices you QA on (Desktop, Mobile, Tablet) and click one to open it. Live can't run the steps, so walk them by hand on the device; **Execute** still runs the queue here. A device can't be opened while the Open URL step's URL is blank. The selection, the BrowserStack Local check and both toggles work as in the A/B tab's Devices section (see [A/B Variant Comparison](#ab-variant-comparison)), and are shared with it.
+
 #### Engine: Classic or Test Agent
 
 The **Engine** setting in the Target section chooses how a failing step is handled.
@@ -196,6 +281,14 @@ In **Browser Console**, top to bottom:
   - A button marked `✎` with a dashed border needs a value from you (an experiment ID, a selector, a URL). It fills the command input with the cursor on the placeholder instead of running; edit it and press Enter.
   - Opt-out and debug-flag buttons (the Convert, Optimizely, VWO and AB Tasty opt-outs, **Enable CRO logs**, **Cro-debug param**) set the matching URL parameter or hash for you. AB Tasty uses a hash, so reload to apply; the others navigate. (Optimizely Edge's opt-out calls its API instead.) None of the built-in buttons force a variation or register a tracked exposure.
   - **+ Add** saves your own command: a label and a JavaScript expression (or `$click(...)` / `$hover(...)`). Saved commands appear under every tab, are stored in Chrome local storage, and are removed with a two-click **×**. While the form is open it replaces the tabs and buttons.
+
+**BrowserStack Live devices.** When the captured tab is a BrowserStack Live session on an iPhone or Android device, Browser Console mirrors the device's console instead of the Live page's own.
+- Open Live's **DevTools** (in the session's toolbar). The device's console lines then appear here, each labelled with the device (📱 iPhone 14 16.3). That includes what the device logged before you opened DevTools. The CRO toggle and the level filters work on them as usual.
+- The command input and Quick Commands run on the device, through Live's DevTools, so an Optimizely or Convert Quick Command answers from the iPhone or Android page. `$click` and `$hover` don't work on a device, and a device result can't be expanded.
+- The status line says which device is mirrored, or that DevTools needs opening, and the input is disabled until it is open. If DevTools is open but has no device behind it, it says it is waiting for it to attach, and after about 15 seconds to close and reopen it in Live.
+- Live has no DevTools on iOS 27, in desktop browser sessions, or on some Android devices (the Pixel 10 had none when it was checked, the Galaxy S26 on the same Android did). Then the status line says Live has none, in Live's words, and commands can't run; there is nothing to read.
+- On iOS 26 (the iPhone 17) Live's Chrome DevTools does attach to the device, but to an empty Safari tab (about:blank) rather than the page under test, so there is nothing to mirror. The status line says so and the input stays disabled. It switches to mirroring by itself if a page ever comes up in DevTools.
+- When Live's DevTools breaks ("Developer tools have experienced an unexpected issue. Please try a new session."), the status line says so in Live's words as soon as Live shows it, and a command answers with the same reason. It was seen on a session Live had started without Local, with the phone on Live's "Unable to connect" page.
 
 ### Visual Regression
 
@@ -258,7 +351,7 @@ The **A/B** tab QAs an A/B experiment (Optimizely, Convert, or similar) by loadi
 2. Define at least two **Variant Targets**. The first is the baseline (typically Control). Each target has a label and an **Override** — the query string that forces the variant, e.g. Optimizely's `optimizely_x=<variationId>`.
 3. Optionally add **Watched Selectors** (use `🎯` to pick them from the page) — each is compared across variants for existence, visibility, text, and key computed styles.
 4. Optional settings: **QA Mode** appends `cro_mode=qa` to every variant URL; **Settle** waits after load so experiment scripts can apply changes (default 3s); **Keep tabs open** leaves each variant tab open for manual inspection; **Accessibility audit** (on by default) runs the WCAG audit on each variant, described below; **Agentic Testing (Sonnet)** takes a viewport screenshot per variant and asks Claude to judge whether a visual difference looks intended or like a bug; **Visual Diff (AI)** does a full-page, region-level AI visual comparison against Control, requires an active reviewed ticket context.
-5. Click **Run Comparison**. Each variant loads sequentially in its own tab; captures include page title/URL, `[PJS]`/`[cro]`-tagged console lines, Metrics fires (from the Functional Testing tab's Metrics list), JS errors, and watched-selector state.
+5. Click **Run Comparison**. Each variant loads sequentially in its own tab; captures include page title/URL, `[PJS]`/`[cro]`-tagged console lines, Metrics fires (from the Functional Testing tab's Metrics list), JS errors, and watched-selector state. Console lines and JS errors are caught from the moment the page starts loading, so a snippet that logs or throws while the page loads is caught too.
 6. Results are grouped diffs vs the baseline — identical facts are greyed and collapsed, deltas are highlighted, and errors are always flagged red.
 
 Variant target sets can be saved by name (stored in Chrome sync storage) and re-run in one click. The comparison never touches the Functional Testing tab's queue.
@@ -273,6 +366,12 @@ Variant target sets can be saved by name (stored in Chrome sync storage) and re-
 A variant the experiment platform says was not served its variation is marked not compared rather than counted, and the section never badges PASS while any variant was not compared. Issue matching is exact (normalized whitespace) within each check, so an axe node-target string that differs between runs for the same issue counts as introduced on one side and resolved on the other. The exception is a summary line that leads with a count ("2 <img> missing an alt attribute"): when only the count moved, it is one issue that got worse or better, not one fixed and one new. Untick the option for a visual-only run, a few seconds per variant faster.
 
 **Optional: interaction heatmap** — with **Keep tabs open** checked, also check **Record interaction heatmap**. After the comparison, each variant's kept-open tab gets a small recorder control: click **Record walk**, interact with that tab the way a real visitor would, then **Stop Recording**; **Show heatmap overlay** draws click-density dots, a mouse-trail line, and a scroll-depth gutter onto that tab. Only one variant can record at a time, and recordings are kept in memory only for the current run (nothing is saved to disk, and nothing ever leaves the browser — keystrokes and typed values are never captured). Off by default; a normal A/B run is unaffected.
+
+**Devices (BrowserStack Live)** — the **Devices — BrowserStack Live** section under the A/B card opens a variant on a real phone or tablet, or in another desktop browser, in BrowserStack Live. Tick the devices you QA on, grouped as **Desktop** (Safari on macOS; Edge, Chrome and Firefox on Windows 11), **Mobile** (iPhone 18 Pro, iPhone 17, Galaxy S26, Pixel 10) and **Tablet** (iPad Pro 13, Galaxy Tab S11). Each ticked device gets a row with a button per variant target. A button opens that variant's URL, with its override and QA Mode as the comparison would use them, in a new tab, and starts the Live session. You need to be signed in to BrowserStack in Chrome; Selenite needs no BrowserStack username or access key. Live runs one session at a time, so a new launch closes the Live tab Selenite opened before.
+- **Use BrowserStack Local** (on by default) asks Live to route the session through BrowserStack Local, so the device can reach staging, VPN and allowlisted pages. You start the BrowserStack Local app on your Mac. Before every launch Selenite asks the address Live itself checks (`127.0.0.1:45691`) and the app's console (`localhost:45454`). If Live couldn't see the app, Selenite says why and offers **Open anyway** instead of opening. **Check** asks on demand.
+- **What Live did.** After a launch the status line follows the session: running, refused or dropped (with Live's own words), the tab closed or sent to sign in, or running **without Local**. On the account this was measured on, Live starts a session about a second before its own check finds the Local app, and BrowserStack's wait-for-Local mode needs an account setting (`waitForPollingInIntegrationFlow`) that was off, so a link can't get Local there. Selenite then offers **Open Live and pick the device myself**: Live opens with Local and the page ready but doesn't start; once Live's Local Testing panel shows Local connected, pick the device in its list and check that the page loads on it. That worked in one Chrome profile and not in another (Live found the Local app but didn't attach it to the session), so it is a route to try, not a guarantee. BrowserStack support can say whether the account setting can be turned on, which would let the link do it. A running session is checked every 5 s after its first 40 s, so the line also follows a session you stop in Live later.
+- **All traffic through this Mac** (on by default; needs Local) asks Live for "Resolve all URLs through my network", so the device's visits come from your IP. Live doesn't apply it from a link, so it is a request: the status line says when Live ignored it, and you can switch it on in the session's Local panel (that reconnects the session and closes DevTools).
+- Your device choices and both toggles are remembered, and shared with the Functional Testing tab's Target section.
 
 ## Available Functions
 
@@ -304,12 +403,15 @@ extension/
 ├── sidepanel.html      # Panel UI (Chrome's side panel, or the floating window when unpinned)
 ├── popup.html          # Popup UI (same layout as the side panel)
 ├── popup.js            # Queue builder, Metrics section, UI logic (shared by both UIs)
+├── browserstack.js     # BrowserStack Live links, device presets, the Local check and what Live did with a launch (A/B tab's Devices section)
 ├── background.js       # Service worker (queue execution, console capture, metrics)
 ├── picker.js           # In-page element picker (injected on demand)
 ├── selector.js         # Shared CSS-selector builder (used by picker.js and recorder.js)
 ├── recorder.js         # Interaction recorder for A/B's heatmap (clicks/scroll/movement, injected on demand)
 ├── console-capture.js  # MAIN-world console patch (relays [PJS]/[cro] tagged output)
 ├── console-bridge.js   # ISOLATED-world bridge to the service worker
+├── bs-live-tap.js      # MAIN-world reader of a BrowserStack Live session's DevTools: the device's console, and commands run on the device
+├── bs-live-bridge.js   # ISOLATED-world bridge from bs-live-tap.js to the service worker
 ├── axe.min.js          # axe-core, used by the WCAG audit suite
 └── icons/              # Extension icons (16, 48, 128px)
 ```

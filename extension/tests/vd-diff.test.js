@@ -5340,6 +5340,241 @@ section('queue steps through the Test Agent');
   ok('a named gate becomes the same blockedBy shape the classifier makes', /out\.blockedBy = \{ gate: out\.report\.blocker, evidence: 'reported by the agent' \}/.test(segSrc));
 })();
 
+// ── A/B per-variant console buffer ─────────────────────────────────────────
+section('A/B console buffer: the run-owned variant tab is never mapped to a window');
+(function abCaptureBuffersBeforeTheWindowLookup() {
+  // All 208 captures in the 106 recorded logs read consoleLineCount 0. A run
+  // owns its window (beginTmRun), so followTab never maps the variant tab, and
+  // the browserLog branch returned at its tabToWin lookup before reaching the
+  // _abCapture buffer. A real worker showed it: every tagged line from both
+  // variant tabs arrived unmapped, and captureVariant returned console [].
+  var slice = function (from, to) {
+    var a = _bg.indexOf(from), b = _bg.indexOf(to, a + 1);
+    if (a === -1 || b === -1) throw new Error('slice marker missing: ' + from);
+    return _bg.slice(a, b);
+  };
+  var _abCapture = null, _srSession = null, fed = [], replies = [];
+  var tabToWin = new Map(), winFollow = new Map();
+  var restoreFollowState = function () { return Promise.resolve(); };
+  var addLog = function (winId, level, text) { fed.push('log ' + winId + ' ' + text); return Promise.resolve(); };
+  var addMetric = function (winId, level, text) { fed.push('metric ' + winId + ' ' + text); return Promise.resolve(); };
+  var srAppendEvents = function () {};
+  // The listener's browserLog branch as a function; the slice ends just before
+  // the `}` that closes it, so that brace is put back here.
+  var branch = slice("} else if (msg.action === 'browserLog') {", "} else if (msg.action === 'bcEval') {");
+  var handle = eval('(function (msg, sender, sendResponse) {' + branch.replace(/^\} else /, '') + '}})');
+  var line = function (text, tagged) { return { action: 'browserLog', level: 'BROWSER', text: text, tagged: tagged }; };
+  var reply = function (r) { replies.push(r); };
+
+  // The run's variant tab 7: capturing, and unmapped, as in every real run.
+  _abCapture = { tabId: 7, lines: [] };
+  handle(line('[PJS] exp 123: variation 2 applied', true), { tab: { id: 7 } }, reply);
+  var beforeAwait = _abCapture.lines.length;
+  drainMicrotasks();
+  eq('a tagged line from the unmapped variant tab is buffered', JSON.stringify(_abCapture.lines),
+     '[{"level":"BROWSER","text":"[PJS] exp 123: variation 2 applied"}]');
+  eq('  synchronously, before the handler awaits anything', beforeAwait, 1);
+  eq('  and the feed routing is unchanged: an unmapped tab feeds nothing', fed.join(' | '), '');
+  eq('  the message is still answered', JSON.stringify(replies), '[{"ok":true}]');
+
+  var n = _abCapture.lines.length;
+  handle(line('untagged noise', false), { tab: { id: 7 } }, reply);
+  eq('an untagged line is not buffered', _abCapture.lines.length, n);
+
+  // The panel's followed tab 5 keeps logging during the run.
+  tabToWin.set(5, 1); winFollow.set(1, { tabId: 5, attached: true });
+  handle(line('[PJS] followed tab heartbeat', true), { tab: { id: 5 } }, reply);
+  drainMicrotasks();
+  eq('another tab\'s line is not buffered into the variant', _abCapture.lines.length, n);
+  eq('  and still reaches its own window\'s feed, as before', fed.join(' | '), 'log 1 [browser] [PJS] followed tab heartbeat');
+
+  // A variant tab that IS mapped (its window had a panel following it) is
+  // buffered once, not once per path.
+  fed = [];
+  _abCapture = { tabId: 9, lines: [] };
+  tabToWin.set(9, 2);
+  handle(line('[CRO] metric: hero_cta_view', true), { tab: { id: 9 } }, reply);
+  drainMicrotasks();
+  eq('a mapped variant tab is buffered exactly once', _abCapture.lines.length, 1);
+  eq('  and fed to its window as before', fed.join(' | '), 'log 2 [browser] [CRO] metric: hero_cta_view | metric 2 [CRO] metric: hero_cta_view');
+
+  // After captureVariant's finally has copied the buffer and cleared it.
+  _abCapture = null;
+  var threw = null;
+  try { handle(line('[PJS] late line', true), { tab: { id: 9 } }, reply); drainMicrotasks(); } catch (e) { threw = String(e); }
+  eq('a line after the capture ends is dropped without a throw', threw, null);
+})();
+
+// ── A/B early console capture ──────────────────────────────────────────────
+section('A/B early capture: console and error hooks are in the page before its own scripts');
+(function abEarlyCaptureAroundEachVariant() {
+  // A page that logged only while loading read consoleLineCount 0 (measured
+  // 2026-10-13): injectCapture lands after load. captureVariant now registers
+  // both capture scripts at document_start for the variant's host, for the
+  // length of the capture. Chrome's side (document_start in the MAIN world, a
+  // pattern without a port matching any port, tabs.create resolving 20-40 ms
+  // before the first line) was measured on 2026-10-14; this pins the worker's
+  // side: what is registered, and that it is always taken away.
+  var slice = function (from, to) {
+    var a = _bg.indexOf(from), b = _bg.indexOf(to, a + 1);
+    if (a === -1 || b === -1) throw new Error('slice marker missing: ' + from);
+    return _bg.slice(a, b);
+  };
+  // jsc has no URL; enough of one for a scheme and a host.
+  function URL(u) {
+    var m = /^([a-z][a-z0-9+.-]*:)\/\/([^\/:?#]*)/i.exec(String(u));
+    if (!m) throw new TypeError('Invalid URL');
+    this.protocol = m[1].toLowerCase(); this.hostname = m[2].toLowerCase();
+  }
+  var events, registered, registerFails, createFails, loadFails;
+  function reset() { events = []; registered = {}; registerFails = false; createFails = false; loadFails = false; }
+  reset();
+  var chrome = {
+    scripting: {
+      registerContentScripts: function (list) {
+        if (registerFails) return Promise.reject(new Error('Duplicate script ID'));
+        list.forEach(function (s) { registered[s.id] = s; });
+        events.push('register ' + list.map(function (s) { return s.id; }).join(','));
+        return Promise.resolve();
+      },
+      getRegisteredContentScripts: function (filter) {
+        return Promise.resolve(filter.ids.filter(function (id) { return registered[id]; }).map(function (id) { return registered[id]; }));
+      },
+      unregisterContentScripts: function (filter) {
+        var missing = filter.ids.filter(function (id) { return !registered[id]; });
+        if (missing.length) return Promise.reject(new Error('Nonexistent script ID ' + missing[0]));
+        filter.ids.forEach(function (id) { delete registered[id]; });
+        events.push('unregister ' + filter.ids.join(','));
+        return Promise.resolve();
+      },
+      executeScript: function () { return Promise.resolve([{ result: [] }]); },
+    },
+    tabs: {
+      create: function (o) {
+        events.push('create ' + o.url);
+        return createFails ? Promise.reject(new Error('No current window')) : Promise.resolve({ id: 7 });
+      },
+      get: function () { return Promise.resolve({ id: 7, url: 'https://shop.example.com/p?v=1', title: 'P' }); },
+      remove: function () { events.push('remove'); return Promise.resolve(); },
+    },
+  };
+  var _abCapture = null;
+  var injectCapture = function () { events.push('inject'); return Promise.resolve(); };
+  var injectAbErrorCollector = function () { return Promise.resolve(); };
+  var waitForLoadTimeout = function () { events.push('load'); return loadFails ? Promise.reject(new Error('Page load timed out after 30s')) : Promise.resolve(); };
+  var runTabWindow = function () { return {}; };
+  var exec = function () { return Promise.resolve([]); };
+  eval(slice('function normalizeUrl(url) {', '\n// scheme://host:port only'));
+  // A worker stopped mid-capture: both scripts still registered when the next one starts.
+  registered['selenite-ab-early-bridge'] = { id: 'selenite-ab-early-bridge' };
+  registered['selenite-ab-early-capture'] = { id: 'selenite-ab-early-capture' };
+  registered['selenite-ab-early-errors'] = { id: 'selenite-ab-early-errors' };
+  eval(slice('// Console lines and JS errors a variant produces while it loads.', 'async function captureVariant('));
+  drainMicrotasks();
+  eq('a starting worker clears what a stopped one left', events.join(' | ') + ' / left: ' + Object.keys(registered).length,
+     'unregister selenite-ab-early-bridge,selenite-ab-early-capture,selenite-ab-early-errors / left: 0');
+  eval(slice('async function captureVariant(', '\nasync function runVariantComparison('));
+
+  eq('the pattern is the scheme and host', JSON.stringify(abEarlyCaptureMatches('https://shop.example.com/p?optimizely_x=1#top')), '["https://shop.example.com/*"]');
+  eq('without the port, which Chrome would ignore anyway', JSON.stringify(abEarlyCaptureMatches('http://localhost:8777/ab.html')), '["http://localhost/*"]');
+  eq('only http(s)', abEarlyCaptureMatches('chrome://settings') + ':' + abEarlyCaptureMatches('file:///tmp/a.html'), 'null:null');
+  eq('nothing for something that is not a URL', abEarlyCaptureMatches('not a url'), null);
+
+  function run(url) {
+    var out = null;
+    captureVariant({ label: 'v1', url: url }, { settleMs: 0, selectors: [], keepTabs: false, captureForVision: false, captureFullPage: false, a11yChecks: null, winId: 1 })
+      .then(function (o) { out = o; });
+    drainMicrotasks();
+    return out;
+  }
+
+  reset();
+  var o1 = run('shop.example.com/p?v=1');
+  eq('registered before the tab opens, taken away after it closes',
+     events.join(' | '),
+     'register selenite-ab-early-bridge,selenite-ab-early-capture,selenite-ab-early-errors | create https://shop.example.com/p?v=1 | inject | load | inject | unregister selenite-ab-early-bridge,selenite-ab-early-capture,selenite-ab-early-errors | remove');
+  eq('for the variant\'s host, as normalizeUrl opens it', JSON.stringify(registered), '{}');
+  ok('the capture itself is unchanged', o1 && o1.loadError === null && o1.finalUrl === 'https://shop.example.com/p?v=1', o1);
+
+  reset();
+  var seen = null;
+  var realRegister = chrome.scripting.registerContentScripts;
+  chrome.scripting.registerContentScripts = function (list) { seen = list; return realRegister(list); };
+  run('https://shop.example.com/p');
+  chrome.scripting.registerContentScripts = realRegister;
+  ok('the bridge first, in the isolated world; the console capture and the error collector in the MAIN world; all at document_start, top frame, this session only',
+     seen && seen.length === 3 &&
+     seen[0].id === 'selenite-ab-early-bridge' && seen[0].js.join() === 'console-bridge.js' && seen[0].world === undefined &&
+     seen[1].id === 'selenite-ab-early-capture' && seen[1].js.join() === 'console-capture.js' && seen[1].world === 'MAIN' &&
+     seen[2].id === 'selenite-ab-early-errors' && seen[2].js.join() === 'ab-error-collector.js' && seen[2].world === 'MAIN' &&
+     seen.every(function (s) { return s.runAt === 'document_start' && s.allFrames === false && s.persistAcrossSessions === false && JSON.stringify(s.matches) === '["https://shop.example.com/*"]'; }),
+     seen);
+
+  reset();
+  loadFails = true;
+  var o2 = run('https://shop.example.com/p');
+  eq('a page that never loads still has it taken away', events.filter(function (e) { return /register/.test(e); }).join(' | '),
+     'register selenite-ab-early-bridge,selenite-ab-early-capture,selenite-ab-early-errors | unregister selenite-ab-early-bridge,selenite-ab-early-capture,selenite-ab-early-errors');
+  eq('  and its load error is what it was', o2 && o2.loadError, 'Page load timed out after 30s');
+
+  reset();
+  createFails = true;
+  var o3 = run('https://shop.example.com/p');
+  eq('a tab that cannot be opened: taken away too', Object.keys(registered).length + ':' + (o3 && o3.loadError), '0:No current window');
+
+  reset();
+  registerFails = true;
+  var o4 = run('https://shop.example.com/p');
+  ok('a registration Chrome refuses costs nothing: the capture runs as it did before', o4 && o4.loadError === null && events.indexOf('create https://shop.example.com/p') > -1 && Object.keys(registered).length === 0, [o4 && o4.loadError, events]);
+
+  reset();
+  registered['selenite-ab-early-capture'] = { id: 'selenite-ab-early-capture' };
+  run('https://shop.example.com/p');
+  eq('a leftover half is cleared before registering (Chrome refuses a duplicate id)', events[0], 'unregister selenite-ab-early-capture');
+})();
+
+section('A/B error collector (ab-error-collector.js)');
+(function abErrorCollectorFile() {
+  // The collector was a func inside injectAbErrorCollector; registered scripts
+  // must be files, so it moved, and both the early registration and the
+  // post-load injection use the file. The same records as before, once however
+  // many times it runs (it runs at document_start and again after load).
+  var src = readFile('../ab-error-collector.js');
+  function page() {
+    var w = { listeners: {} };
+    w.addEventListener = function (t, fn) { (w.listeners[t] = w.listeners[t] || []).push(fn); };
+    w.fire = function (t, e) { (w.listeners[t] || []).forEach(function (fn) { fn(e); }); };
+    return w;
+  }
+  var w = page();
+  new Function('window', src)(w);
+  w.fire('error', { message: 'Uncaught Error: boom while loading', filename: 'https://shop.example.com/p', lineno: 4 });
+  w.fire('unhandledrejection', { reason: new Error('rejected while loading') });
+  new Function('window', src)(w);
+  w.fire('error', { message: 'Uncaught Error: boom later', filename: 'https://shop.example.com/p', lineno: 8 });
+  eq('the errors measured on a real page, in order, once each though it ran twice', JSON.stringify(w.__abErrors),
+     '["Uncaught Error: boom while loading (https://shop.example.com/p:4)","Unhandled rejection: rejected while loading","Uncaught Error: boom later (https://shop.example.com/p:8)"]');
+  eq('  one listener of each kind', (w.listeners.error || []).length + ':' + (w.listeners.unhandledrejection || []).length, '1:1');
+  var w2 = page();
+  new Function('window', src)(w2);
+  w2.fire('error', { message: '' });
+  w2.fire('error', { message: 'Script error.', filename: '' });
+  w2.fire('unhandledrejection', { reason: 'plain string' });
+  w2.fire('unhandledrejection', { reason: undefined });
+  eq('no message, no file, a string reason and no reason read as before', JSON.stringify(w2.__abErrors),
+     '["Script error","Script error.","Unhandled rejection: plain string","Unhandled rejection: "]');
+
+  var calls = [];
+  var chrome = { scripting: { executeScript: function (o) { calls.push(o); return Promise.resolve([{}]); } } };
+  var a = _bg.indexOf('async function injectAbErrorCollector(tabId) {'), b = _bg.indexOf('\n}\n', a);
+  if (a === -1 || b === -1) throw new Error('slice marker missing: injectAbErrorCollector');
+  eval(_bg.slice(a, b + 3));
+  injectAbErrorCollector(7);
+  drainMicrotasks();
+  eq('the post-load injection runs the same file, in the MAIN world', JSON.stringify(calls),
+     '[{"target":{"tabId":7},"world":"MAIN","files":["ab-error-collector.js"]}]');
+})();
+
 // ── report ─────────────────────────────────────────────────────────────────
 print('');
 if (failures.length) {

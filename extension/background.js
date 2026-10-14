@@ -18,7 +18,7 @@
 // captureFullPageAndViewport/vdShowCandidateOverlay below (a separate
 // executeScript call, not this importScripts) — see domCandidateWalkFn's
 // own header comment for why.
-importScripts('metric-match.js', 'pixelmatch.js', 'vd-config.js', 'vd-diff.js', 'figma.js');
+importScripts('metric-match.js', 'pixelmatch.js', 'vd-config.js', 'vd-diff.js', 'figma.js', 'browserstack.js');
 
 // ── Toolbar icon: the side panel, or the floating window when unpinned ────
 // Pinned, the default, Selenite docks in Chrome's side panel: with
@@ -196,7 +196,7 @@ function ns(win) {
 // Each window's panel passively follows whatever tab is focused in that window
 // — no manual toggle, no test run required. winFollow/tabToWin replace the old
 // single global "one captured tab, extension-wide" model.
-const winFollow = new Map();       // winId -> { tabId, attached, attaching, capturable, error }
+const winFollow = new Map();       // winId -> { tabId, attached, attaching, capturable, error, bsLive }
 const tabToWin  = new Map();       // tabId -> winId (a tab is the active tab of at most one window)
 const connectedPanels = new Map(); // winId -> Port, which windows currently have a panel open
 const followLocks = new Map();     // winId -> Promise, serializes follow/unfollow per window
@@ -214,7 +214,7 @@ const resolveFeedWin = (winId) => (_runWin != null ? _runWin : winId);
 // just need reconstructing so events route to the right window again.)
 async function persistWins() {
   const follow = {};
-  for (const [winId, rec] of winFollow) follow[winId] = { tabId: rec.tabId, attached: rec.attached };
+  for (const [winId, rec] of winFollow) follow[winId] = { tabId: rec.tabId, attached: rec.attached, bsLive: !!rec.bsLive };
   await chrome.storage.session.set({ _wins: { run: _runWin, sr: _srWin, pick: _pickWin, follow } });
 }
 async function restoreWins() {
@@ -246,7 +246,7 @@ async function restoreFollowState() {
   for (const [winIdStr, rec] of Object.entries(follow)) {
     const winId = Number(winIdStr);
     if (winFollow.has(winId)) continue;
-    winFollow.set(winId, { tabId: rec.tabId, attached: !!rec.attached, attaching: false, capturable: true, error: null });
+    winFollow.set(winId, { tabId: rec.tabId, attached: !!rec.attached, attaching: false, capturable: true, error: null, bsLive: !!rec.bsLive });
     if (rec.tabId != null) tabToWin.set(rec.tabId, winId);
   }
 }
@@ -258,6 +258,16 @@ async function restoreFollowState() {
 async function injectCapture(tabId) {
   await chrome.scripting.executeScript({ target: { tabId }, files: ['console-capture.js'], world: 'MAIN' });
   await chrome.scripting.executeScript({ target: { tabId }, files: ['console-bridge.js'] });
+}
+
+// A BrowserStack Live tab: bs-live-tap.js reads the device's console out of
+// Live's own DevTools frame and runs commands through it (MAIN world), and
+// bs-live-bridge.js relays it here as bsDeviceLog / bsDeviceState (ISOLATED).
+// The bridge goes first so the tap's first batch, the replay of what the
+// device has already logged, has a listener. Both are idempotent.
+async function injectBsLiveTap(tabId) {
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['bs-live-bridge.js'] });
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['bs-live-tap.js'], world: 'MAIN' });
 }
 
 // ── Full live-console mirror (Browser Console tab) via chrome.debugger/CDP ──
@@ -597,22 +607,42 @@ Never invent a URL, id, or value that doesn't appear in the content below. If so
 
 const BROWSER_CONSOLE_CAP = 1000;
 
-async function addBrowserConsoleLog(winId, entry) {
-  const store = ns(winId);
-  const { browserConsoleLogs = [] } = await store.get('browserConsoleLogs');
-  browserConsoleLogs.push({ ts: new Date().toLocaleTimeString(), ...entry });
-  if (browserConsoleLogs.length > BROWSER_CONSOLE_CAP) {
-    const evicted = browserConsoleLogs.splice(0, browserConsoleLogs.length - BROWSER_CONSOLE_CAP);
-    // Release remote object handles for evicted expandable entries so long
-    // sessions don't pin objects in the page's memory indefinitely.
-    const tabId = winFollow.get(winId)?.tabId;
-    for (const e of evicted) {
-      if (e.objectId && tabId) {
-        chrome.debugger.sendCommand({ tabId }, 'Runtime.releaseObject', { objectId: e.objectId }).catch(() => {});
+// Serializes the browserConsoleLogs read-modify-write per window, the
+// mtQueue idiom. The debugger handler calls addBrowserConsoleLog without
+// awaiting it, so two events landing together used to read the same array
+// and the second write dropped the first's line. A BrowserStack device sends
+// its console in batches beside that, which made the race likelier.
+const bcLocks = new Map();
+let _bcSeq = 0;   // lets the panel see a change once the cap holds the length still
+function bcQueue(winId, fn) {
+  const next = (bcLocks.get(winId) || Promise.resolve()).then(fn).catch(() => {});
+  bcLocks.set(winId, next);
+  return next;
+}
+
+function addBrowserConsoleLog(winId, entry) {
+  return addBrowserConsoleLogs(winId, [entry]);
+}
+
+function addBrowserConsoleLogs(winId, entries) {
+  return bcQueue(winId, async () => {
+    const store = ns(winId);
+    const { browserConsoleLogs = [] } = await store.get('browserConsoleLogs');
+    const ts = new Date().toLocaleTimeString();
+    for (const entry of entries) browserConsoleLogs.push({ ts, seq: ++_bcSeq, ...entry });
+    if (browserConsoleLogs.length > BROWSER_CONSOLE_CAP) {
+      const evicted = browserConsoleLogs.splice(0, browserConsoleLogs.length - BROWSER_CONSOLE_CAP);
+      // Release remote object handles for evicted expandable entries so long
+      // sessions don't pin objects in the page's memory indefinitely.
+      const tabId = winFollow.get(winId)?.tabId;
+      for (const e of evicted) {
+        if (e.objectId && tabId) {
+          chrome.debugger.sendCommand({ tabId }, 'Runtime.releaseObject', { objectId: e.objectId }).catch(() => {});
+        }
       }
     }
-  }
-  await store.set({ browserConsoleLogs });
+    await store.set({ browserConsoleLogs });
+  });
 }
 
 // ── Metrics (Build tab) ─────────────────────────────────────────────────────
@@ -1183,7 +1213,12 @@ async function doFollow(winId, tabId) {
   }
 
   winFollow.set(winId, { tabId, attached: false, attaching: true, capturable: true, error: null });
-  try { await injectCapture(tabId); } catch (_) {}
+  // A Live dashboard's own console is BrowserStack's app, not the page under
+  // test, so it gets no capture scripts: the device tap is injected instead,
+  // below (refreshBsLive).
+  if (!bsIsLiveDashboardUrl(tab.url)) {
+    try { await injectCapture(tabId); } catch (_) {}
+  }
   try {
     await attachDebugger(tabId, winId);
   } catch (e) {
@@ -1193,8 +1228,59 @@ async function doFollow(winId, tabId) {
   }
   const rec = winFollow.get(winId);
   if (rec) rec.attaching = false;
-  await ns(winId).set({ captureTabId: tabId, captureStatus: { tabId, title: tab.title || '', url: tab.url || '', capturable: true } });
+  // bsLive is written from the start, not only by refreshBsLive below: the
+  // panel reads its absence as an older worker that predates device mirroring.
+  const { captureStatus: prevStatus } = await ns(winId).get('captureStatus');
+  await ns(winId).set({ captureTabId: tabId, captureStatus: { tabId, title: captureTitle(tab, prevStatus), url: tab.url || '', capturable: true, bsLive: bsIsLiveDashboardUrl(tab.url) } });
+  await refreshBsLive(winId, tabId, tab);
   await persistWins();
+}
+
+// The title that names a captured tab in the panel ("Samsung Galaxy S26 v16.0").
+// Live's idle countdown ("37 seconds to session timeout") and the tab's own
+// address while it loads ("live.browserstack.com/dashboard#…") name nothing
+// (bsTitleNamesNothing): the name the tab had stands, or none for a tab not
+// seen before.
+function captureTitle(tab, prev) {
+  const t = (tab && tab.title) || '';
+  if (!bsTitleNamesNothing(t)) return t;
+  return prev && tab && prev.tabId === tab.id ? (prev.title || '') : '';
+}
+
+// Whether the tab a window captures is a BrowserStack Live session, and if so
+// the device tap in it. Runs after every follow and every load of the captured
+// tab. doFollow returns early for a tab it is already attached to, so without
+// this a Live dashboard that reloads would lose its tap, and a captured tab
+// that navigates to or from one would keep a stale flag.
+// bsDeviceStatus is written on every Live follow, which is how a panel tells
+// an older worker (no key at all) from a tap still coming up ("waiting").
+async function refreshBsLive(winId, tabId, tab) {
+  const rec = winFollow.get(winId);
+  if (!rec || rec.tabId !== tabId) return;
+  // The tab as it is now, not the one the caller fetched before it attached the
+  // debugger: Live renames its tab after the session starts, and writing the
+  // earlier title back would undo it.
+  try { tab = await chrome.tabs.get(tabId); } catch (_) { if (!tab) return; }
+  const live = rec.capturable !== false && bsIsLiveDashboardUrl(tab.url);
+  rec.bsLive = live;
+  const { captureStatus } = await ns(winId).get('captureStatus');
+  if (captureStatus && captureStatus.tabId === tabId) {
+    await ns(winId).set({ captureStatus: { ...captureStatus, title: captureTitle(tab, captureStatus), url: tab.url || '', bsLive: live } });
+  }
+  await persistWins();
+  if (!live) return;
+  await ns(winId).set({ bsDeviceStatus: { state: 'waiting', version: null, tabId } });
+  try { await injectBsLiveTap(tabId); } catch (_) {}
+}
+
+// The window whose Browser Console mirrors this Live tab: the one capturing it
+// right now. Device lines from any other tab are dropped, because the mirror
+// only ever shows the captured tab.
+function bsLiveWinFor(tabId) {
+  for (const [winId, rec] of winFollow) {
+    if (rec.tabId === tabId && rec.bsLive) return winId;
+  }
+  return null;
 }
 
 // Detach + restore console for the tab winId was following, without touching
@@ -1256,6 +1342,168 @@ async function dispatchTrustedClick(tabId, x, y) {
   await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
 }
 
+// The command input and Quick Commands on a BrowserStack Live tab run on the
+// device, through Live's own DevTools (bs-live-tap.js's eval), not in the
+// dashboard page the debugger is attached to. The echo and the result are
+// written like a local command's. A result is text only: a device object
+// lives in the DevTools frame, where there is nothing for bcExpand to reach.
+// $click/$hover need the Input domain of a tab in this browser, which a
+// remote device doesn't have.
+const BS_EVAL_TIMEOUT_MS = 15000;
+async function bsDeviceEval(winId, tabId, expression) {
+  await addBrowserConsoleLog(winId, { level: 'CMD', text: expression, source: 'eval-input' });
+  let res;
+  if (/^\s*\$(click|hover)\(/.test(expression)) {
+    res = { ok: false, error: '$click and $hover work only on a page in this browser, not on a BrowserStack device.' };
+  } else {
+    let timer;
+    try {
+      const [inj] = await Promise.race([
+        chrome.scripting.executeScript({
+          target: { tabId },
+          world: 'MAIN',
+          func: (expr) => (window.__seleniteBsTap
+            ? window.__seleniteBsTap.eval(expr)
+            : { ok: false, error: 'Selenite is not connected to this Live session yet. Click into the tab, then try again.' }),
+          args: [expression],
+        }),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('The device did not answer within 15 s.')), BS_EVAL_TIMEOUT_MS); }),
+      ]);
+      res = inj?.result || { ok: false, error: 'No answer from the Live session.' };
+    } catch (e) {
+      res = { ok: false, error: e.message };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  if (!res.ok) {
+    await addBrowserConsoleLog(winId, { level: 'ERROR', text: String(res.error), source: 'eval-result' });
+    return { ok: false, error: String(res.error) };
+  }
+  await addBrowserConsoleLog(winId, { level: res.exception ? 'ERROR' : 'BROWSER', text: String(res.text), source: 'eval-result' });
+  return { ok: true };
+}
+
+// ── BrowserStack Live: what became of a launch ──────────────────────────────
+// The panel opens a Live tab and cannot see what Live then does with it: a
+// device it refuses ("Device is temporarily disabled"), a session that drops
+// ten seconds in ("Connection to the remote device failed"), or one it starts
+// without Local. The worker watches the tab instead of the panel, because the
+// panel may be the toolbar popup, which closes the moment the tab takes focus,
+// and writes the outcome to the window's session storage, which the panel's
+// status line follows. One record per place that launched ('ab', 'ft'), so a
+// launch from one never overwrites the other's report. What it reads is
+// browserstack.js's bsLiveReadOutcome (run in the page); what it concludes is
+// bsLaunchVerdict.
+const bsLaunchWatchers = new Map();      // tabId -> token of the watch in force
+const BS_LAUNCH_POLL_MS = 1000;
+// After the session starts: long enough to catch a late failure and for the
+// toolbar and Local state to settle, polling every second. A phone's tab says
+// "running" 5 to 10 s before its toolbar exists, and on iOS 27 and desktop the
+// toolbar is then rendered, goes for about 4 s and comes back, so the state is
+// not final until about 15 s after the title (measured 2026-10-08).
+const BS_LAUNCH_SETTLE_MS = 40000;
+// Then every 5 s for as long as the session runs, so the line does not go on
+// saying "running" after the tester stopped it in Live or Live dropped it
+// (seen on real Live, 2026-10-09: Stop Session at 50 s, line unchanged). An
+// end that is not yet believed is checked again a second later. The cap only
+// stops a watch on a tab left open for hours.
+const BS_LAUNCH_SLOW_POLL_MS = 5000;
+const BS_LAUNCH_WATCH_MAX_MS = 4 * 60 * 60 * 1000;
+// "Refused" and "ended" are believed only when this many readings in a row say
+// so: the dashboard re-renders and raises toasts of its own, and one odd
+// reading must not end the launch or tell the tester something false. (That
+// alone is not enough for "ended": see the picker test in bsLaunchVerdict.)
+const BS_LAUNCH_CONFIRM = 2;
+function bsLaunchStoreKey(ctx) {
+  return 'bsLaunch_' + (String(ctx && ctx.key || '').replace(/[^a-z]/gi, '').slice(0, 10) || 'ab');
+}
+async function bsWatchLaunch(winId, tabId, ctx) {
+  const token = {};
+  bsLaunchWatchers.set(tabId, token);
+  const store = ns(winId);
+  const storeKey = bsLaunchStoreKey(ctx);
+  const t0 = Date.now();
+  let startedAt = 0;
+  let lastSig = '';
+  let lastVerdict = null;
+  let seen = null;           // the last verdict made with the session toolbar on screen
+  let pending = { state: '', n: 0 };
+  const nap = (ms = BS_LAUNCH_POLL_MS) => new Promise(r => setTimeout(r, ms));
+  // False when a newer launch from the same place has taken the record: this
+  // watch is history then, and must not write over it.
+  const write = async (verdict) => {
+    try {
+      const cur = (await store.get(storeKey))[storeKey];
+      if (cur && cur.tabId !== tabId && cur.at >= t0) return false;
+      await store.set({ [storeKey]: { tabId, ...ctx, verdict, at: Date.now() } });
+    } catch (_) {}
+    return true;
+  };
+  while (bsLaunchWatchers.get(tabId) === token) {
+    let tab;
+    try {
+      tab = await chrome.tabs.get(tabId);
+    } catch (_) {
+      // Gone: the tester closed it, or a newer launch did. Say so, or the line
+      // would go on saying "waiting" or "running" for a tab that no longer exists.
+      await write({ state: 'closed', wasStarted: !!startedAt });
+      break;
+    }
+    // A tab that has just been created has no url yet, only the pendingUrl it is
+    // loading; judging it by tab.url alone ends the watch before it begins. It
+    // counts as taken elsewhere only once it has finished loading something that
+    // is not the dashboard.
+    const url = tab.pendingUrl || tab.url || '';
+    if (tab.status === 'complete' && url && url !== 'about:blank' && !bsIsLiveDashboardUrl(url)) {
+      // After it started, a session whose tab went somewhere else is over.
+      if (startedAt) { await write({ state: 'ended' }); break; }
+      // Before it started, Live may have sent the tester to sign in, and they
+      // may come back and the session start: say where it went and keep watching.
+      const left = bsLaunchLeft(url);
+      const sigLeft = JSON.stringify(left);
+      if (sigLeft !== lastSig) {
+        lastSig = sigLeft;
+        if (!(await write(left))) break;
+      }
+      if (Date.now() - t0 >= BS_LAUNCH_GIVE_UP_MS) break;
+      await nap();
+      continue;
+    }
+    let read = null;
+    try {
+      const [inj] = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: bsLiveReadOutcome });
+      read = inj?.result || null;
+    } catch (_) {}
+    // A reading that failed says nothing: once it has started that stays "started"
+    // with what the toolbar last said, and before it started every poll still counts,
+    // or an unreadable page would keep the watch "starting" past its own timeout for
+    // as long as the tab stayed open.
+    let v = bsLaunchVerdict(read, { elapsedMs: Date.now() - t0, wasStarted: !!startedAt, seen });
+    if (v.state === 'refused' || v.state === 'ended') {
+      pending = pending.state === v.state ? { state: v.state, n: pending.n + 1 } : { state: v.state, n: 1 };
+      // Not believed yet: carry on with what was believed before, so the record
+      // still gets its first write at once and a blip never changes it.
+      if (pending.n < BS_LAUNCH_CONFIRM) v = lastVerdict || bsLaunchVerdict(null, { elapsedMs: Date.now() - t0 });
+    } else {
+      pending = { state: '', n: 0 };
+    }
+    lastVerdict = v;
+    if (v.state === 'started' && v.toolbar) seen = v;
+    if (v.state === 'started' && !startedAt) startedAt = Date.now();
+    const sig = JSON.stringify(v);
+    if (sig !== lastSig) {
+      lastSig = sig;
+      if (!(await write(v))) break;
+    }
+    if (v.state === 'refused' || v.state === 'timeout' || v.state === 'ended') break;
+    if (Date.now() - t0 >= BS_LAUNCH_WATCH_MAX_MS) break;
+    const settled = startedAt && Date.now() - startedAt >= BS_LAUNCH_SETTLE_MS;
+    await nap(settled && !pending.n ? BS_LAUNCH_SLOW_POLL_MS : BS_LAUNCH_POLL_MS);
+  }
+  if (bsLaunchWatchers.get(tabId) === token) bsLaunchWatchers.delete(tabId);
+}
+
 chrome.debugger.onEvent.addListener((source, method, params) => {
   // Performance-measurement tabs get their own short-lived CDP attach; route
   // their uncaught exceptions to the active run, not the console mirror.
@@ -1269,6 +1517,11 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   }
   const winId = tabToWin.get(source.tabId);
   if (winId == null) return;
+  // While a window captures a BrowserStack Live tab, Browser Console mirrors
+  // the device's console (bsDeviceLog), not the dashboard page's own:
+  // BrowserStack's app logging is not the page under test.
+  if (winFollow.get(winId)?.bsLive &&
+      (method === 'Runtime.consoleAPICalled' || method === 'Runtime.exceptionThrown' || method === 'Log.entryAdded')) return;
   if (method === 'Runtime.consoleAPICalled') {
     const level  = CONSOLE_TYPE_MAP[params.type] || 'BROWSER';
     const text   = formatConsoleArgs(params.args || []);
@@ -1306,6 +1559,24 @@ chrome.debugger.onDetach.addListener(async (source, reason) => {
 });
 
 const _activateDebounce = new Map(); // windowId -> timer
+// The window that follows this tab, for a navigation event. tabToWin only holds
+// tabs the debugger attached to, so a tab first looked at before it was
+// capturable has a winFollow record and no tabToWin entry. That is every tab
+// opened for a slow site: the follow runs 250 ms after the tab is activated,
+// tab.url is '' until the navigation commits (only pendingUrl is set), and the
+// tab was recorded as not capturable and never looked at again when its page
+// loaded. A BrowserStack Live tab opened by Selenite hit exactly this, so its
+// console mirror never started. Only a tab recorded as not capturable counts:
+// one that is capturable but failed to attach is the attach's business.
+function followedWinFor(tabId) {
+  const w = tabToWin.get(tabId);
+  if (w != null) return w;
+  for (const [winId, rec] of winFollow) {
+    if (rec.tabId === tabId && rec.capturable === false) return winId;
+  }
+  return null;
+}
+
 chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
   if (!connectedPanels.has(windowId)) return; // no panel open for this window — nothing to follow
   // Debounced so fast tab-cycling (e.g. Ctrl+Tab) doesn't thrash the native
@@ -1318,6 +1589,24 @@ chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, info) => {
+  if (info.title !== undefined) {
+    // Live renames its tab after the session starts ("iPhone 18 Pro v27.0"),
+    // seconds after the page finished loading, so the title captureStatus took at
+    // load names nothing ("Dashboard"). The panel names the device by it.
+    await restoreFollowState();
+    const bsWin = bsLiveWinFor(tabId);
+    if (bsWin != null) {
+      const { captureStatus } = await ns(bsWin).get('captureStatus');
+      // Live's idle countdown retitles the tab every second for a minute, and a
+      // loading tab can carry its own address; neither is a name, and the
+      // device's stands (measured 2026-10-14: the console line read "mirror 37
+      // seconds to session timeout's console", and "mirror live.browserstack.com's
+      // console").
+      if (captureStatus && captureStatus.tabId === tabId && captureStatus.title !== info.title && !bsTitleNamesNothing(info.title)) {
+        await ns(bsWin).set({ captureStatus: { ...captureStatus, title: info.title } });
+      }
+    }
+  }
   if (info.url && info.status !== 'complete') {
     // A client-side route change (history.pushState/replaceState, hashchange)
     // fires onUpdated with changeInfo.url but never reaches 'complete' — for
@@ -1341,7 +1630,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, info) => {
     try { await srInjectRecorder(tabId); } catch (_) {}
   }
   await restoreFollowState();
-  const winId = tabToWin.get(tabId);
+  const winId = followedWinFor(tabId);
   // Re-runs capturability/inject/attach idempotently — also correctly handles
   // the followed tab navigating across the capturable/non-capturable boundary.
   // Forced because tabToWin only maps a window to whatever tab it's ALREADY
@@ -1351,6 +1640,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, info) => {
   // any prior tab for this window before the run's own attach took its place).
   if (winId != null) {
     await followTab(winId, tabId, { force: true });
+    await refreshBsLive(winId, tabId);
     // Two probes per navigation, not one: Optimizely/Convert both decide
     // bucketing asynchronously after load, so a single probe right at
     // 'complete' routinely reads an undecided state. The later probe catches
@@ -1358,6 +1648,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, info) => {
     // one is nearly free if the first already found a stable answer.
     expSchedule(winId, 'nav', 600);
     expSchedule(winId, 'nav-late', 2500);
+  } else {
+    // A captured Live tab whose debugger attach failed has no tabToWin entry,
+    // but its device tap works without the debugger: keep it after a reload.
+    const bsWin = bsLiveWinFor(tabId);
+    if (bsWin != null) await refreshBsLive(bsWin, tabId);
   }
 });
 
@@ -3850,22 +4145,68 @@ function waitForLoadTimeout(tabId, ms) {
 }
 
 // MAIN-world collector for uncaught errors and unhandled rejections during the
-// variant load. console-capture.js only sees console.* calls, so this fills
-// the JS-error gap without needing the debugger attached.
+// variant load (ab-error-collector.js). console-capture.js only sees console.*
+// calls, so this fills the JS-error gap without needing the debugger attached.
 async function injectAbErrorCollector(tabId) {
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    world: 'MAIN',
-    func: () => {
-      if (window.__abErrors) return;
-      window.__abErrors = [];
-      window.addEventListener('error', e =>
-        window.__abErrors.push(String(e.message || 'Script error') + (e.filename ? ` (${e.filename}:${e.lineno})` : '')));
-      window.addEventListener('unhandledrejection', e =>
-        window.__abErrors.push('Unhandled rejection: ' + String((e.reason && e.reason.message) || e.reason || '')));
-    },
-  });
+  await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', files: ['ab-error-collector.js'] });
 }
+
+// Console lines and JS errors a variant produces while it loads. injectCapture
+// and injectAbErrorCollector only land once the page has loaded, so a line
+// logged during the load ("[PJS] variation 2 applied" from a snippet in
+// <head>) was never seen: the run read consoleLineCount 0 for a page that
+// logged only then (measured 2026-10-13), and an error thrown or a promise
+// rejected while it parsed was missing from its errors too (2026-10-14: 3 of 3
+// loads caught only the error thrown after load). For the length of one
+// capture the three scripts are registered for the variant's host at
+// document_start, so they are in the page before its own scripts run. Measured
+// 2026-10-14 in Chrome 154: a page that logs only as it parses had both tagged
+// lines caught, in 16 of 16 loads; a page that throws and rejects as it parses
+// and throws again later had all three recorded, once each, in 5 of 5; a
+// pattern without a port matches every port; and tabs.create had resolved
+// 20-40 ms before the first line arrived, so _abCapture is set in time. Other
+// tabs on the same host that load meanwhile get the same tag-only console hook,
+// as a followed tab already does (the browserLog branch keeps only the variant
+// tab's lines for the run), and an error list nothing reads.
+const AB_EARLY_CAPTURE_IDS = ['selenite-ab-early-bridge', 'selenite-ab-early-capture', 'selenite-ab-early-errors'];
+
+function abEarlyCaptureMatches(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    return [`${u.protocol}//${u.hostname}/*`];
+  } catch (_) {
+    return null;
+  }
+}
+
+async function unregisterAbEarlyCapture() {
+  try {
+    const live = await chrome.scripting.getRegisteredContentScripts({ ids: AB_EARLY_CAPTURE_IDS });
+    if (live.length) await chrome.scripting.unregisterContentScripts({ ids: live.map(s => s.id) });
+  } catch (_) {}
+}
+
+// Best-effort: without it the capture is what it was, the post-load injection.
+async function registerAbEarlyCapture(url) {
+  const matches = abEarlyCaptureMatches(url);
+  if (!matches) return false;
+  await unregisterAbEarlyCapture();
+  try {
+    await chrome.scripting.registerContentScripts([
+      // The bridge first: it listens for the capture's messages.
+      { id: AB_EARLY_CAPTURE_IDS[0], matches, js: ['console-bridge.js'], runAt: 'document_start', allFrames: false, persistAcrossSessions: false },
+      { id: AB_EARLY_CAPTURE_IDS[1], matches, js: ['console-capture.js'], runAt: 'document_start', world: 'MAIN', allFrames: false, persistAcrossSessions: false },
+      { id: AB_EARLY_CAPTURE_IDS[2], matches, js: ['ab-error-collector.js'], runAt: 'document_start', world: 'MAIN', allFrames: false, persistAcrossSessions: false },
+    ]);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+// A worker that stopped mid-capture left them registered.
+unregisterAbEarlyCapture();
 
 async function captureVariant(target, { settleMs, selectors, keepTabs, captureForVision, captureFullPage, a11yChecks, winId }) {
   const out = {
@@ -3884,11 +4225,14 @@ async function captureVariant(target, { settleMs, selectors, keepTabs, captureFo
   };
   let tab = null;
   try {
+    await registerAbEarlyCapture(normalizeUrl(target.url));
     tab = await chrome.tabs.create({ url: normalizeUrl(target.url), active: true, ...runTabWindow() });
     _abCapture = { tabId: tab.id, lines: [] };
     // Inject as early as possible, then again after load — both scripts are
     // idempotent, and experiment scripts typically log after DOMContentLoaded,
-    // so the post-load injection is the one that matters on slow pages.
+    // so the post-load injection is the one that matters on slow pages, and
+    // the only one on a page served from a host the early hook doesn't match
+    // (a redirect to another host).
     try { await injectCapture(tab.id); await injectAbErrorCollector(tab.id); } catch (_) {}
     await waitForLoadTimeout(tab.id, 30000);
     try {
@@ -4003,6 +4347,7 @@ async function captureVariant(target, { settleMs, selectors, keepTabs, captureFo
   } finally {
     out.console = _abCapture ? _abCapture.lines.slice() : [];
     _abCapture = null;
+    await unregisterAbEarlyCapture();
     if (tab) {
       if (keepTabs) out.tabId = tab.id;
       else { try { await chrome.tabs.remove(tab.id); } catch (_) {} }
@@ -7582,16 +7927,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
 
   } else if (msg.action === 'browserLog') {
+    // While a variant comparison is capturing, tagged lines from the variant's
+    // own tab are buffered per variant for the post-run diff. This must run
+    // before the window lookup below. A run owns its window (beginTmRun), so
+    // followTab never maps the variant tab, and the lookup's early return
+    // dropped every line: all 208 recorded captures read consoleLineCount 0,
+    // from 36a0022 until this fix. Kept synchronous, so a line is either in
+    // captureVariant's copy of the buffer or arrives after it and is dropped.
+    if (_abCapture && sender?.tab?.id === _abCapture.tabId && msg.tagged) {
+      _abCapture.lines.push({ level: msg.level, text: msg.text });
+    }
     (async () => {
       await restoreFollowState();
       const winId = tabToWin.get(sender?.tab?.id);
       if (winId == null) { sendResponse({ ok: true }); return; } // stray relay from an unfollowed/just-detached tab
       addLog(winId, msg.level, `[browser] ${msg.text}`, { browser: true, tagged: !!msg.tagged });
-      // While a variant comparison is capturing, tagged lines from the variant's
-      // own tab are also buffered per variant for the post-run diff.
-      if (_abCapture && sender?.tab?.id === _abCapture.tabId && msg.tagged) {
-        _abCapture.lines.push({ level: msg.level, text: msg.text });
-      }
       // While a session recording is live, tagged lines from the recorded tab
       // interleave into the session timeline as metric-fire events.
       if (_srSession && sender?.tab?.id === _srSession.tabId && msg.tagged) {
@@ -7608,10 +7958,79 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
 
+  } else if (msg.action === 'bsDeviceLog') {
+    // A batch of the device's console from a captured Live tab
+    // (bs-live-tap.js → bs-live-bridge.js). Labelled with the tab's title,
+    // which Live sets to the device ("Samsung Galaxy S23 13.0"), or, while the
+    // title names nothing (Live's idle countdown, the tab's own address), with
+    // the name the panel already has for it. Device
+    // lines do not feed the Tracker: addMetric would fire probes and on-page
+    // notices at the dashboard, not at the device.
+    (async () => {
+      await restoreFollowState();
+      const tabId = sender?.tab?.id;
+      const winId = bsLiveWinFor(tabId);
+      if (winId != null && Array.isArray(msg.lines)) {
+        let device = sender.tab.title || '';
+        if (bsTitleNamesNothing(device)) {
+          const { captureStatus } = await ns(winId).get('captureStatus');
+          device = captureStatus && captureStatus.tabId === tabId ? (captureStatus.title || '') : '';
+        }
+        device = device || 'BrowserStack device';
+        const entries = msg.lines.slice(0, 200).map(l => bsDeviceEntry(l, device, TAGS)).filter(Boolean);
+        if (entries.length) await addBrowserConsoleLogs(winId, entries);
+      }
+      sendResponse({ ok: true });
+    })();
+    return true;
+
+  } else if (msg.action === 'bsDeviceState') {
+    (async () => {
+      await restoreFollowState();
+      const tabId = sender?.tab?.id;
+      const winId = bsLiveWinFor(tabId);
+      if (winId != null && ['connected', 'closed', 'unsupported', 'attaching', 'nopage', 'unavailable', 'failed'].includes(msg.state)) {
+        const status = { state: msg.state, version: msg.version ? String(msg.version).slice(0, 60) : null, tabId };
+        // Live's own words for why there is no DevTools (or why it broke), and
+        // whether a frame has waited for its device longer than it should.
+        if (typeof msg.reason === 'string' && msg.reason) status.reason = msg.reason.slice(0, 200);
+        if (msg.late === true) status.late = true;
+        // A device with no page context: is its tab empty, or some other page?
+        if (msg.page === 'blank' || msg.page === 'other') status.page = msg.page;
+        await ns(winId).set({ bsDeviceStatus: status });
+      }
+      sendResponse({ ok: true });
+    })();
+    return true;
+
+  } else if (msg.action === 'bsWatchLaunch') {
+    // The panel opened a Live tab and wants to know what Live does with it.
+    // Not awaited: the watch outlives this message, and the answer is the
+    // bsLaunch it writes to the window's session storage.
+    const tabId = Number(msg.tabId);
+    if (Number.isInteger(tabId)) {
+      bsWatchLaunch(msg.winId ?? null, tabId, {
+        key: String(msg.key || '').slice(0, 20),
+        what: String(msg.what || '').slice(0, 160),
+        presetId: String(msg.presetId || '').slice(0, 40),
+        // A page URL cut short would reopen as a different page, so one that is
+        // too long is not kept at all (and the manual route is not offered).
+        pageUrl: String(msg.pageUrl || '').length <= 8000 ? String(msg.pageUrl || '') : '',
+        wantLocal: !!msg.wantLocal,
+        wantForceLocal: !!msg.wantForceLocal,
+        unconfirmed: !!msg.unconfirmed,
+      }).catch(() => {});
+    }
+    sendResponse({ ok: Number.isInteger(tabId) });
+
   } else if (msg.action === 'bcEval') {
     (async () => {
       await restoreFollowState();
       const rec = winFollow.get(msg.winId);
+      if (rec?.bsLive) {
+        sendResponse(await bsDeviceEval(msg.winId, rec.tabId, msg.expression));
+        return;
+      }
       if (!rec || !rec.attached) { sendResponse({ ok: false, error: 'Not attached' }); return; }
       const tabId = rec.tabId;
       await addBrowserConsoleLog(msg.winId, { level: 'CMD', text: msg.expression, source: 'eval-input' });

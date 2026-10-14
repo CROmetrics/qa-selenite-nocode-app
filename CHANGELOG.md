@@ -2,7 +2,22 @@
 
 All notable changes to Selenite are documented here.
 
-## 2026-10-07 — 0.7.7
+## 2026-10-14 — 0.7.18
+
+Merges `main` into the BrowserStack line. `main`'s one release since 0.7.6, the Function Queue through the Test Agent, was numbered 0.7.7 there (2026-10-07), as was the first BrowserStack release here (2026-10-06), so it ships in this build as 0.7.18. Its notes follow as they were written for `main`, after the merge's own.
+
+### The merge
+
+- **Conflicts, resolved as a union:** CI runs both new suites (`queue-agent` and `browserstack`). In Functional Testing's Target section the order is Tab Target, **Cross-browser — BrowserStack Live** (collapsed), **Engine**, then Save/Execute, so Engine sits next to the Execute it governs and the Live block stays inside Target before Save/Execute, as the gate checks; popup.html and sidepanel.html differ only as before (55 cosmetic lines). `persistQueue` calls both hooks: `syncEngineControl()` and `renderBsLiveGrid('ft')`. vd-diff.test.js keeps both lines' new sections. The README's Functional Testing section has the Cross-browser paragraph, then the Engine section.
+- **Auto-merged `background.js` and `popup.js` checked:** every function and message handler either line added is present, none is defined twice, and the Anthropic messages URL still appears once.
+- **One semantic conflict, in a test:** queue-agent.test.js loaded the worker's imports by a hand-kept list (its harness's `importScripts` does nothing) that predates `browserstack.js`. In the merged worker `doFollow` calls `bsIsLiveDashboardUrl` before attaching the console mirror, so in the test the mirror never attached and a heal took its own debugger session (4 failures). Real Chrome loads `browserstack.js`; the test now reads the list from `background.js`'s `importScripts` line.
+
+### Verification of the merged build
+
+- **jsc, all nine CI suites:** jira-extract 19, figma 104, vd-diff 1350 (981 at the split, +341 from `main`, +28 from the BrowserStack line), qa-report 719, real-runs 972, matrix 182, floating 10, queue-agent 163 (as on `main`), browserstack 778 (as on the BrowserStack line).
+- **Real Chrome against the fake Live:** 121 of 121, the real panel booting in both UI files with Execute and A/B Run bound.
+- **Real Chrome, a Classic queue:** Open URL, a Click that navigates, and a Click on a selector that does not exist: the page was reached, `main`'s new warning appeared ("⚠ CSS selector not found: #nope — the step did nothing, and Classic goes on."), and the run completed. The Engine control showed Classic. The Test Agent engine was not run (it needs the API key, and `main`'s own real-Chrome gate for it was not kept).
+- **Real Live:** a Galaxy S26 from the Cross-browser block: running, the console mirror connected, `location.href` from the phone exact, and "Live ended the session" after Stop.
 
 The Function Queue can run through the Test Agent. A step that fails because its selector no longer finds anything is done by the agent instead, and the run says so in a report. Two new steps are the agent itself.
 
@@ -41,6 +56,377 @@ The Function Queue can run through the Test Agent. A step that fails because its
 - **Real Chrome 154** (system Chrome, the real unpacked extension loaded over a pipe, a Retina page, a scripted model in place of the API): 39 checks pass. Heal inside the console mirror's session (Active tab), New tab, New tab after `SPA: Resize`, a fill that replaces a pre-filled field and reads back exactly, a native `<select>`, Prompt Function (run before its Done-when was removed), Navigate (host + path), a disabled control not healed, Funnel Crawl unchanged, one queue at a time, Classic's missing selector, and **Execute from the panel opening the report tab by itself**.
 - **The jsc harness had the one thing wrong that mattered.** It modelled `executeScript` as rejecting on a throw, so every "not found" test passed for a step that could never have failed in a browser. The real-Chrome gate found it; the harness now swallows throws as Chrome does.
 - Not yet verified on a real run: the model itself. The vision loop needs an Anthropic key and a reloaded extension; everything around it has run in real Chrome.
+## 2026-10-14 — 0.7.17
+
+A Live tab's own address is not a device name either.
+
+### Measured (2026-10-14)
+
+- On a real Mac Safari launch the Browser Console line read "○ Open DevTools in the Live session to mirror live.browserstack.com's console" for about 3 s.
+- Opening Live links in a tab and reading its title every 25 ms: in 1 of 4 loads `chrome.tabs.get` gave "live.browserstack.com/dashboard#os=android…" (the tab's address without the scheme) between "" and "Dashboard"; `tabs.onUpdated` reported only "Dashboard". Chrome titles a page with its address until the page sets one, and the dashboard sets its title from script.
+
+### Changed
+
+- **`browserstack.js`:** `bsTitleNamesNothing`: 0.7.16's idle countdown, or a title that is Live's own host or address (`live.browserstack.com`, optionally with a scheme, then a path, query, fragment or nothing).
+- **`background.js`, `popup.js`:** the four places that name the device from the tab's title (the `tabs.onUpdated` title-follow, `captureTitle` for follows and refreshes, the `bsDeviceLog` label, `bcDeviceName`) use it in place of the countdown check alone, so the device keeps the name it had, or none.
+
+### Verification
+
+- **jsc:** browserstack.test.js 770 → 778 assertions: the measured address, the host, with a scheme or capitals; the countdown still; device names, "Dashboard" and other hosts not caught; `captureTitle`, the real title-follow branch and the real `bsDeviceLog` branch with the address; `bcDeviceName`. 9 mutations of the change (back to the countdown check at each use, the pattern unanchored, needing a scheme, a path, or the case) all fail the suite. All eight CI suites pass.
+- **Real Chrome against the fake Live:** 121 checks (118 before). `fake_live.TITLE_LATE` serves the dashboard without its `<title>`, as the real one is titled from script; the new `loading-title` scenario launches Mac Safari under it, checks the tab really was titled with its address, and that nothing in the panel named it so. On 0.7.16 it fails: the console line carried the whole launch link, the page's own URL inside it.
+- **Real Live:** three Mac Safari launches, the console line sampled every 100 ms: it never named the address. The raw tab titles were not sampled, so these runs show the glitch gone without proving it was triggered; the gate scenario forces it.
+
+## 2026-10-14 — 0.7.16
+
+Live's idle countdown no longer takes the device's name.
+
+### Measured on real Live (2026-10-14)
+
+- The account's `BrowserStack.user.idle_timeout_for_devices` is 10. A Galaxy S26 session left untouched: about 9 minutes after the last input Live retitled the tab "60 seconds to session timeout", then "59 …" down to "1 seconds to session timeout" (Live's spelling), once a second, with the session toolbar gone and the device picker still hidden; then the title "Dashboard", the picker back, and "Your remote session has been closed due to inactivity."
+- 0.7.15's launch line handled it: "running" through the countdown (the picker never came back, so no false end), then "Live ended the session on the start URL on Galaxy S26." a second after Live closed it, and the watch stopped. But the worker follows the tab's title to name the device, so for that minute the Browser Console line read "○ Open DevTools in the Live session to mirror 37 seconds to session timeout's console", changing every second, and a device line logged then would have been labelled with the countdown.
+
+### Changed
+
+- **`browserstack.js`:** `bsIsCountdownTitle`, the countdown's title as measured (`<n> second(s) to session timeout`, whole title, any case).
+- **`background.js`:** the `tabs.onUpdated` title-follow leaves the captured tab's name as it was when the new title is the countdown; `captureTitle`, used where a follow or a refresh copies the tab's title in, keeps the name that tab had (or none, for a tab not named before); `bsDeviceLog` labels device lines with that name while the tab's own title is the countdown.
+- **`popup.js`:** `bcDeviceName` treats the countdown as no name ("this session"), for a status that was stored before this change.
+
+### Verification
+
+- **jsc:** browserstack.test.js 753 → 770 assertions: all sixty measured titles and near misses; the real title-follow branch kept on the device's name through 60 → 1 and following "Dashboard" afterwards; `captureTitle`; the real `refreshBsLive` run mid-countdown; the real `bsDeviceLog` branch labelling a line during the countdown, with no stored name, and with another tab's; `bcDeviceName`. 10 mutations of the change all fail the suite. All eight CI suites pass.
+- **Real Chrome against the fake Live:** 118 checks (114 before), including a new `countdown` scenario that retitles the fake dashboard through a countdown and logs a device line during it. It fails 3 of its 4 checks on 0.7.15 (captureStatus, the console line, and the line's label all "56 seconds to session timeout").
+- **Real Live:** a Galaxy S26 left untouched until Live closed it "due to inactivity": Browser Console said "mirroring Samsung Galaxy S26 v16.0" up to the close, and the 18 device lines logged from 13:55:30 to 13:58:20, the countdown minute among them, were all labelled "Samsung Galaxy S26 v16.0". Live's own tab title was not sampled in that run; the countdown is inferred from the inactivity close, which it preceded in the measured run.
+
+## 2026-10-14 — 0.7.15
+
+The A/B capture now records the JS errors a variant throws while its page is loading, the blind spot 0.7.14 left open.
+
+### Measured in Chrome 154 (2026-10-14), before the change
+
+- A local page that throws while it parses, rejects a promise while it parses, and throws again 1.5 s later. With the collector injected after load only, as before, 3 of 3 loads recorded only the later error. Registered at `document_start` in the MAIN world and injected again after load, 5 of 5 loads recorded all three, once each, and nothing was left registered.
+
+### Changed
+
+- **`ab-error-collector.js`** (new): the collector that was a `func` inside `injectAbErrorCollector`, unchanged (`window.__abErrors`, uncaught errors with file and line, unhandled rejections), because a registered content script must be a file. It records once however many times it runs.
+- **`background.js`:** `injectAbErrorCollector` runs that file after load, and `registerAbEarlyCapture` registers it beside 0.7.14's console scripts (`selenite-ab-early-errors`, MAIN world, `document_start`, top frame, not kept across restarts), with the same clean-up: taken away when the capture ends and cleared by a starting worker. Other tabs on the same host that load during a capture get an error list nothing reads.
+- The README's A/B section says console lines and JS errors are both caught from the start of the load.
+
+### Verification
+
+- **jsc:** vd-diff.test.js 1005 → 1009 assertions: the collector file against a fake window (the three errors measured above, in order, once each though it ran twice; one listener of each kind; a missing message, file or reason reading as before), the post-load injection running the same file in the MAIN world, and the early registration now three scripts. 7 mutations of the change all fail the suite. All eight CI suites pass.
+- **Real Chrome, the real extension, a real A/B run:** the throwing page gave both variants all three errors (the later one only, before); the 0.7.14 console page still gave its `[CRO]`/`[PJS]` lines and no errors; nothing was left registered. The BrowserStack gate passes 114 of 114.
+
+## 2026-10-14 — 0.7.14
+
+The A/B capture now catches the console lines a variant logs while its page is loading.
+
+### Found (2026-10-13)
+
+- Field-checking 0.7.9's console fix in a real A/B run: a local page that logs `[CRO]`/`[PJS]` lines only while it parses read `consoleLineCount` 0 for both variants; the same lines logged 1 s and 2.5 s after load were caught. `captureVariant` injects the capture scripts right after `tabs.create` (before the page has a document Selenite can script) and again after load, so anything logged in between was lost. An experiment snippet in the page's head logs exactly then.
+
+### Measured in Chrome 154 (2026-10-14), before the change
+
+- `chrome.scripting.registerContentScripts` with console-capture.js in the MAIN world at `document_start` and console-bridge.js beside it caught both tagged lines of a page that logs only while it parses, in 16 of 16 loads.
+- A match pattern without a port (`http://localhost/*`) matched a page on `localhost:8777`, as did one with the port.
+- `tabs.create` resolved 5 to 15 ms after the call and the first line reached the worker 25 to 55 ms after it: 20 to 40 ms later, every time. So `_abCapture` is set before the first line arrives, and no buffering of lines from a not-yet-known tab is needed.
+
+### Changed
+
+- **`background.js`:** `captureVariant` registers both capture scripts for the variant's host (`scheme://host/*`, top frame only, `document_start`, the bridge first, not kept across browser restarts) before it opens the tab, and takes them away in its `finally`, so a capture that fails or a tab that never opens leaves nothing registered. A worker that starts clears any it finds, since one stopped mid-capture would have left them. A registration Chrome refuses leaves the capture as it was. The post-load injection stays, for a variant that redirects to another host, which the early hook does not cover. Both scripts are idempotent, so a line is captured once.
+- Other tabs on the same host that load during a capture get the same tag-only hook a followed tab already gets; the `browserLog` branch keeps only the variant tab's lines for the run.
+- The README's A/B section says lines are caught from the start of the load.
+
+### Verification
+
+- **jsc:** vd-diff.test.js 991 → 1005 assertions. The real `abEarlyCaptureMatches`, `registerAbEarlyCapture`, `unregisterAbEarlyCapture` and `captureVariant`, sliced out of background.js, run against a stubbed `chrome` with an event log: registered before the tab opens and taken away after it closes; the registration's shape; taken away when the page never loads and when the tab cannot be opened; a refused registration costing nothing; a leftover half cleared before registering; a starting worker clearing leftovers. 13 mutations of the change all fail the suite. All eight CI suites pass.
+- **Real Chrome, the real extension, a real A/B run:** the page that logs only while loading gave v0 `[CRO] page ready 0` and v1 `[CRO] page ready 1` + `[PJS] variation 1 applied` (0 and 0 before); a page logging both while loading and 2 s later gave each variant both lines, once each; no registration was left after either run. The BrowserStack gate passes 114 of 114.
+
+### Not changed
+
+- JS errors a page throws while loading have the same blind spot: `injectAbErrorCollector` still attaches after load.
+
+## 2026-10-13 — 0.7.13
+
+When Live's DevTools breaks, Browser Console now says so instead of blaming its own reading of it.
+
+### Measured on a real session (2026-10-13)
+
+- A Galaxy S26 launched with Local, which Live started without it (the phone was on Live's "Unable to connect… Trying to test a private URL or localhost?" page). Live's DevTools pane opened to "Developer tools have experienced an unexpected issue. Please try a new session." That text is in the dashboard's `document.body.innerText`, over two lines. The `iframe.devtools-iframe` kept a same-origin `src` path but its document was cross-origin: reading anything in it threw SecurityError.
+- 0.7.12's tap could not hook that frame, and it only looked for Live's notice when there was no frame at all or a hooked one with no device. So the status line read "○ Open DevTools in the Live session to mirror Samsung Galaxy S26 v16.0's console" for 30 s, then "○ Can't read this version of Live's DevTools (unknown version)", and a command answered "The device page has no script context yet… reload it on the device".
+- A second launch set up the same way did not break: DevTools opened, was readable, and Selenite mirrored the phone. The failure is not reproducible on demand.
+
+### Changed
+
+- **`bs-live-tap.js`:** when a DevTools frame is on the page but none can be read, Live's notice is checked before anything else, and if it is there the state is **failed** with Live's sentence, at once, and stays failed (never "unsupported", which is about a frontend Selenite doesn't know). A device attached with no page context while the notice is up is also **failed**, without reading the page. A device with a page context stays connected whatever the notice says, so a notice left over from earlier cannot hide a working mirror.
+- **Commands** on a frame that cannot be read answer "Live's DevTools failed: <Live's sentence>" when the notice is up, "Live's DevTools is still opening. Try again in a moment." in its first 30 s otherwise, and after that "Selenite can't read this version of Live's DevTools, so commands can't run through it." A device with no page context and the notice up gets Live's sentence too.
+- The README's Browser Console section has a line on it.
+
+### Verification
+
+- **jsc:** browserstack.test.js 740 → 753 assertions, against the page as measured: a frame whose window throws SecurityError on every property and the notice split over two lines of body text. The notice from the start, arriving later, absent for 30 scans (still "unsupported"), with a pageless device, and with a working one; the command replies in each case; and the frame's `src` (the token) never read. 7 mutations of this change all fail the suite. All eight CI suites pass.
+- **Real Chrome against the fake Live:** 114 checks (109 before), including a new `mirror-failed` scenario whose fake DevTools is a sandboxed frame (same `src` path, cross-origin document) with Live's notice on the dashboard: failed in Live's words within seconds, the panel line, the input disabled, a command refused with Live's reason, and still failed 32 s on. It fails 4 of its 5 checks on 0.7.12 ("closed", then "unsupported", and "no script context yet").
+
+### Not yet verified
+
+- The fixed path on a real broken DevTools: it did not break again when tried.
+
+## 2026-10-13 — 0.7.12
+
+On an iPhone 17 (iOS 26) Browser Console said "● Live — mirroring iPhone 17 v26.6" and enabled the command input while Live's DevTools was attached to an empty tab. This release says so instead.
+
+### Measured on real sessions (2026-10-13)
+
+- **iPhone 17, three sessions (iOS 26.5 and 26.6):** choosing **Chrome DevTools** in Live's DevTools menu attaches it to the device (one target, 0.2 s later), but for the 40 s sampled the frontend never had a selected execution context, its target's inspected URL stayed empty, and its console model had no messages. `location.href`, read through the target's runtime agent (`runtimeAgent().invoke_evaluate`, which answers without a selected context), was `about:blank`: Safari's Start Page, not the page under test. A reload through DevTools changed nothing. The old status line called this "connected" because a target existed, and a command answered "The device page has no script context yet… reload it on the device", which did not help.
+- **Galaxy S26, the working case, sampled every 100 ms:** the target appears 0.4 s after DevTools opens and the page's context and URL 0.2 s after that; a reload leaves the page without a context for 0.1 s, with its URL kept; a navigation showed no gap. The runtime agent's `location.href` read works there too.
+
+### Changed
+
+- **"Connected" needs a page to run in** (`bs-live-tap.js`). A device whose frontend has no selected context is reported as **attaching** for up to three scans (a session already connected stays connected through them, which covers the Galaxy's reload gap), then the tap reads `location.href` once through the runtime agent and reports a new state, **nopage**, with `page: 'blank'` (about:blank or empty) or `'other'`. It reads again every 10 scans in case the tab is navigated, gives a read 5 s, and keeps the last answer when a later read fails. A context that arrives later turns it back to connected. This is the only expression the tap evaluates of its own accord.
+- **The status line** (`bcDeviceLine`): "○ Live's DevTools on iPhone 17 v26.6 is attached to an empty tab (about:blank), not the page under test, so there's nothing to mirror and commands can't run." For a page other than about:blank it claims less: "○ Live's DevTools is attached to … but gives Selenite no page to run commands in." The command input stays disabled ("> Live's DevTools has no page on the device to run commands in"), and a command that still reaches the device on an empty tab is refused with that reason rather than "wait, or reload".
+- `bs-live-bridge.js` and the worker's `bsDeviceState` handler accept `nopage`, and pass `page` only as `blank` or `other` (never a URL).
+
+### Also tested on real Live (2026-10-13, 0.7.11)
+
+- **Functional Testing's Cross-browser block**, until then run only against the fake Live: its buttons are disabled while the Open URL step is blank; with a URL, parameters and QA Mode set, a Galaxy S26 launch opened exactly the start URL (`https://` added, `cro_mode=qa` last, read back from the phone with `location.href` through Selenite's console), its own line followed the session to "Live ended the session", and the A/B line and record were untouched.
+- **The side panel and the floating window**, the two surfaces a tester launches from (there is no toolbar popup since 0.7.3, so 0.7.10's "the `bsWatchLaunch` message from the toolbar popup" no longer applies): a launch from each opened the Live tab in the browser window Selenite belongs to, the line followed the session from start to end, and the console mirror connected within about a second of DevTools opening. The 📌 button moved Selenite from the floating window to the side panel.
+- **iOS 27** (iPhone 18 Pro, iPad Pro 13) through the extension: "Live has no DevTools for …" with Live's reason, the input disabled, held through the toolbar's absence.
+
+### Verification
+
+- **jsc:** browserstack.test.js 687 → 740 assertions: the tap against the measured timelines (the Galaxy's attach and reload gaps, the iPhone's 40 s without a context and its about:blank answer), reads that are refused, throw, answer a thrown value, never answer, or answer a page later; the bridge; the panel line; and the worker's `bsDeviceState` branch, sliced out of background.js (its state list had no test). 18 mutations of this change all fail the suite, each with readable failures. All eight CI suites pass.
+- **Real Chrome against the fake Live:** 109 checks (101 before), including a new `mirror-nopage` scenario whose fake DevTools has a device, no context and an about:blank answer. It fails 6 checks on 0.7.11, showing what real Live showed: "mirroring", the input enabled, the old advice.
+- **Real Live:** on an iPhone 17 (iOS 26.6) the line read "waiting for it to attach", then, about 4 s after Chrome DevTools was chosen, the empty-tab line, with the input disabled. On a Galaxy S26 the mirror connected, `location.href` and `location.reload()` ran from Selenite's input, and the reload did not change the line.
+
+### Not yet verified
+
+- Whether a Live iOS session loads the link's page at all: screenshots of the device stream froze in the test harness (the device clock stopped), so they cannot show it. Someone has to look at the Live window.
+- Whether **Safari Web Inspector**, the other item in Live's iOS DevTools menu, attaches to the right tab. Selenite cannot read that inspector either way.
+
+## 2026-10-09 — 0.7.11
+
+0.7.10 was tested on real BrowserStack Live with the extension itself for the first time (until then the real pieces had been run inside Live pages by hand). It held up, apart from two things this release fixes.
+
+### Tested on real Live (2026-10-09)
+
+- **In Will's own Chrome:** a Galaxy S26 launched from the A/B tab; the status line, the console mirror (a `[cro]` line logged on the phone appeared in Browser Console) and a command typed into Selenite's console that ran on the phone.
+- **In a separate Chrome driven over its debugging pipe** (`extension/tests/browserstack-gate/live.py`, signed in once): the Check button against the real Local app; a Galaxy S26 with Local on ("Waiting", then "running" at 5.6 s with no claim about Local, then at 7.6 s "Live started it before it found your BrowserStack Local app" with the manual button; the phone really showed BrowserStack's "Unable to connect" for a page served only on this Mac); the manual button's link (Local on, no `start=true`) and line; the console mirror and a command from Selenite's input on a Galaxy S26 Ultra; a Windows Chrome session with no false "ended" while Live's toolbar was away; a real refusal on Windows Chrome ("Connection to the remote device failed", reported as didn't start); and a tab closed before the session started.
+- **Found:** (1) the watch stopped 40 s after a session started, so Stop Session pressed at about 50 s left the line saying "running"; (2) a device picked by hand through the manual route, after Live had detected the Local app (`LocalTesting.bsLocalSuccess` true), still started without Local: Live never completed its handshake with the app (`commandLineTunnelExists` stayed false) and the phone could not reach this Mac. On 2026-10-08, in an everyday Chrome profile (which also has the BrowserStack extension), the same route did reach it.
+
+### Changed
+
+- **The launch watch follows a running session to its end** (`bsWatchLaunch`): every second for the first 40 s as before, then every 5 s (`BS_LAUNCH_SLOW_POLL_MS`) until the session ends, drops or its tab closes, with a 4-hour cap (`BS_LAUNCH_WATCH_MAX_MS`). An end that is not yet believed is read again a second later, so the report comes 1 to 6 s after the session stops.
+- **The manual route's line no longer promises Local:** "When Live's Local Testing panel shows Local connected, pick the device in its list, then check that the page loads on it: Live doesn't always attach Local to a session started this way."
+- **`extension/tests/browserstack-gate/live.py`** (new): runs the real extension against real Live in a persistent Chrome profile of its own and exposes a small control server (`panel`, `ev`, `shot`, `tabs`, `open`, `front`, `stop`). Each start uninstalls and reloads the extension, because that profile otherwise reuses the background script it cached on the previous run (it ran 0.7.10's worker under 0.7.11's panel until this was added). Two one-time steps for a fresh profile: a password manager for passkeys, and allowing Local network access on live.browserstack.com, without which the page's requests to the Local app hang and Live never finds it.
+
+### Verification
+
+- **jsc:** browserstack.test.js 679 → 687 assertions (the watch after the 40 s: an end, a drop, a closed tab, one odd reading, the 4-hour cap; the manual-route line). 18 mutations of this change and of the 0.7.10 rules all fail the suite. All eight CI suites pass.
+- **Real Chrome 154 against the fake Live:** 101 checks, including a new `ended-late` scenario (Stop Session 45 s in).
+- **Real Live:** a Windows Chrome session launched from Selenite in the separate Chrome; 55 s in the watch was still on, and Stop Session pressed then gave "Live ended the session on v0 on Windows Chrome." 2.5 s later.
+
+### Not yet verified
+
+- The manual route in Will's everyday Chrome since this release; why Live attaches Local there and not in a fresh profile.
+- A session dropped by Live (rather than stopped) more than 40 s in, on real Live.
+
+## 2026-10-08 — 0.7.10
+
+BrowserStack Live launches now report what Live did with them. The 0.7.7 and 0.7.8 changelogs listed Local, force-local, `start=true` and the device console as "not yet verified"; on 2026-10-08 they were run for the first time on real sessions (an iPhone 18 Pro, iPhone 17, Galaxy S26, Pixel 10, iPad Pro 13, Galaxy Tab S11 and Mac Safari, Windows Chrome, Edge and Firefox) with the Local app connected, and several of them did not do what they claimed.
+
+### Measured on real sessions (2026-10-08)
+
+- **`start=true`** starts the session. Lowercase `os=ios|android`, `device_browser`, `device=Samsung+Galaxy+S26` and `os_version=27.0` are accepted, and Live rewrites the hash to `os=iOS…` once it has read it. It reads the link at page load only: changing the fragment afterwards does nothing.
+- **Local through a link failed in all 6 launches checked on the device**, cold and warm browser, with and without `force-local=true`, and with `use_cmd_local=true` added: the device showed BrowserStack's "Unable to connect to the page you requested… Trying to test a private URL or localhost?" and a server on this Mac saw nothing. Cause, from the dashboard's own source: it starts the session about 6.5 s after load, while its Local check (first `https://bs-local.com:45690`, which fails in ~25 ms, then `http://127.0.0.1:45691`) only completes at about 7.6 s. Its wait-for-Local mode needs `always_enable_force_local && waitForPollingInIntegrationFlow`; this account has the second off, so it gets a 5 s hold on a single pre-start request and then starts anyway. The same page loaded without `start=true` detects the app in ~7 s, and a device picked by hand afterwards reaches a server on this Mac (the log showed the request).
+- **Two things that did not help:** applying the app's answer early through the dashboard's own `commandLineTunnel` callback turned the dashboard's "Local at start" on, but the phone then landed on Google (the page URL was dropped), with or without `use_cmd_local`; and calling its legacy `startSessionWithPolling()` left the session booting indefinitely.
+- **`force-local=true` in a link** set the dashboard's legacy flag but not the state behind its "Resolve all URLs through my network" switch, and the device's public IP was not this Mac's. Flipping the switch by hand turned the state on and reconnected the session, after which DevTools showed "Developer tools have experienced an unexpected issue." The effect on the device's IP was **not** verified.
+- **The real Local signal** is the binary's own port, which the dashboard polls every 2 s: `GET http://127.0.0.1:45691/?_=<ts>` answers JSONP, `commandLineTunnel('<key-masked>-nativeapp:<id>', …)`. The app console's `/status` on 45454 only says it is signed in.
+- **A session that ran without Local is detectable** from the page: `Reactor.localTesting.getLocalStatusAtStart()` is the dashboard's own record, `false` after a lost race. It read `true` in 5 of the 8 launches read this way (iPhone 18 Pro, iPad, and three desktop sessions, none of which asked for Local) and `false` in 3 (Galaxy S26, iPhone 17, Tab S11): the race is sometimes won, so Selenite only reports what it reads.
+- **iPhone 17 at `os_version=26.1`** (in BrowserStack's catalogue) was refused every time with "Device is temporarily disabled. Please try again in some time."; `26.0` starts (the tab read "iPhone 17 v26.5"), once dropping ~10 s in with "Connection to the remote device failed."
+- **DevTools.** iOS 27: the toolbar item `li.switchDevtools-menu-wrapper` has `aria-disabled="true"`, the tooltip reads "Currently DevTools is unavailable for iOS 27.0 Safari" and `#devtools_message` reads "Developer tools are disabled because of multiple browser tabs on iOS 27.0 devices. Please close all other tabs to enable." (Safari opens two tabs: a default Google tab and the link's page). Desktop browsers (Mac Safari, Windows Chrome, Edge, Firefox): a toolbar of eleven items and none for DevTools. Pixel 10: "unavailable for Android 16.0 Chrome", while the Galaxy S26 on the same had it. A frame can be on screen with `SDK.targetManager.targets().length === 0` (no device behind it) while its console model exists, which the tap reported as connected; this happened in 2 of 5 Android DevTools opens (one right after the force-local switch).
+- **A desktop session keeps the tab title "Dashboard"**; a phone or tablet renames it "<device> v<os>" seconds after it starts.
+- **How a session's page unfolds, sampled every 100 ms** on an iPhone 18 Pro (iOS 27, three runs), a Galaxy S26 and Windows Chrome: the device picker's search box (`#device-search-field`, 101×24 on screen) is there at first, gone from boot until the session ends, and back, with the title "Dashboard", within 2.5 s of Stop Session. A phone's tab is renamed "<device> v<os>" **5 to 10 s before anything else**. The session toolbar then appears (7 or 15 items on iOS 27, 11 on desktop, 15 on Android), and **only at that moment does `getLocalStatusAtStart()` read true**: it reads false from page load. On iOS 27 and on desktop the toolbar is rendered, **goes away for about 4 s, and comes back** (its first appearance lasted 1 s); on the Android 16 session it stayed.
+- **What that would have done** (found by running the watcher on those timelines, not by any earlier test): a desktop session, whose only "running" sign is its toolbar, would have been reported "Live ended the session" about 2 s in, and the watch would have stopped; and a phone that gets Local would have shown "Live started it before it found your BrowserStack Local app" with the manual button for 5 to 10 s, because the title said running while Local still read false.
+
+### Changed
+
+- **The launch status line follows the session.** `launchBsLiveTab` no longer reports success when the tab opens. The worker (`bsWatchLaunch`) reads the Live tab every second (`bsLiveReadOutcome`, run in the page) until the session has settled, and writes the result as `bsLaunch_<place>` (`ab` or `ft`) in the window's session storage; the panel renders it (`bsLaunchLine`): waiting, running, refused with Live's own banner text, dropped (it had started), closed (the tab went), left (Live sent the tab to sign in, host only), ended, timed out after 75 s, or lost (the watch died and nothing reported). It runs in the worker because the toolbar popup closes when the tab takes focus.
+- **What it will and won't believe.** *Refused* and *ended* need two readings in a row (the dashboard re-renders and raises toasts of its own); an unbelieved reading leaves the record as it was. An error banner counts only when no session is running, because a toast beside a running session (a recording that would not start) is some other business. **Once a session has started, "ended" and "dropped" also need the device picker to be visibly back on screen**: "not running" alone is what a toolbar that is re-rendering looks like for seconds. **Local, force-local and the DevTools verdict are read only once the session toolbar is on the page**, since the dashboard's Local-at-start record is false until then, and what the toolbar said is kept while it is away. A phone is "running" from its title, so the line says that without a word about Local until the toolbar can say it. A tab that has gone elsewhere is reported as *left* and watched on, because a signed-out tester returns from sign-in and the session starts; once a session had started, a tab elsewhere is *ended*. A watch writes only while its launch is the newest from its place; a later launch's record is never overwritten. It settles 40 s after the session starts: in the three iPhone runs the toolbar was final about 15 s after the title said running, and 40 s leaves room for a slower start.
+- **Launches are serialized and each place has its own report.** Two quick clicks run one after the other (the later closes the earlier's tab, including one that has only a `pendingUrl` yet), a launch from the A/B tab never overwrites Functional Testing's report, a report is shown only while its Live tab is still the one opened last (or says it was closed), and one more than ten minutes old is history.
+- **"Open anyway"** (Local not found before the launch) asks the watcher about Local like any other launch and says, if the session lacks it, that Local wasn't connected when it was opened, instead of offering a manual route that could not help.
+- **Started without Local** is reported, with the manual route: **Open Live and pick the device myself** opens Live with Local and the page in the link but no `start=true`.
+- **The Local check asks the binary's port** as well as the console; a signed-in console with a silent binary port is "not connected", where `/status` alone passed it. The README and the toggles' tooltips no longer promise that force-local works from a link.
+- **Console mirror states.** `bs-live-tap.js` reports `attaching` (a frame with no device; `late` after ~15 s), `unavailable` (with Live's reason, from the toolbar item or, for desktop sessions, a rendered toolbar with no DevTools item on two scans in a row, since a phone's toolbar renders item by item) and `failed` (Live's own notice), and `connected` only when a target exists. While the toolbar is away (above) an `unavailable` is kept for 8 scans, and an item-less toolbar needs two scans in a row, so the status line does not flip to "open DevTools" and back. Commands on a frame with no device, or with a device but no script context (iOS 26.5, one target and no execution context), say so and what to try. The panel's device wording is a tested pure function (`bcDeviceLine`; on an iPhone or iPad it says to choose Chrome DevTools in Live's menu), and the checklist marks the iOS 27 and desktop presets "no console mirror".
+- **iPhone 17** is `os_version=26.0`.
+- **Fixed:** `captureStatus.title` followed the page load only, so the panel named a phone "Dashboard" once Live renamed its tab. The worker now keeps it current.
+- **Fixed:** a Live tab that was still loading when Selenite first looked at it (no committed `url` yet, as with Live's real first-load delay) was recorded as not capturable and never looked at again, so a tab Selenite opened itself never got its console mirror. `followedWinFor` finds it again when its page finishes loading. Found by the real-Chrome gate and again by review.
+
+### Verification
+
+- **jsc:** browserstack.test.js 238 → 679 assertions: the page reader, verdict and status line against pages shaped as measured; the real `bsWatchLaunch` (debounce, supersession, closed, left and back, the 75 s deadline), its message handler and the title branch sliced out of background.js and run against a fake `chrome` with a virtual clock; the real `openBsLive`, `launchBsLiveTab` (serialization), `renderBsLaunch`, `bsCheckLaunchLost`, `openBsLiveManual`, the status-line buttons and the report listener sliced out of popup.js; the tap against fake Live pages with a target list. The measured timelines above are fed through the real watcher (a desktop toolbar away for 4 s and for 12 s, a phone whose title runs 10 s ahead of its toolbar, a drop that waits for the picker). 154 mutations of the code (each fix reverted, each claim weakened, each guard removed) all fail the suite; three passes of them left ten alive in total, each a missing test, now written. All eight CI suites pass.
+- **Real Chrome 154, the real extension, a fake Live built from the measurements above** (the harness is `extension/tests/browserstack-gate/`, with a README; it builds its own certificate and fake Local app and takes about five minutes; CI does not run it because it needs branded Chrome; 97 checks, all passing on the final code, including the toolbar vanishing for 4 s, a phone's title running ahead of its toolbar, and Stop Session): the real panel (popup.html and sidepanel.html) boots with no exception and the Check button asks this Mac's real Local app; a launch ends in the right line for Local missed (with the manual button, which opens a link without `start=true`), iOS 27, refused, dropped after starting, a desktop session, "Open anyway", the tab closed before and after it started, the tab sent to sign in and back (the line follows the session when it starts), an error toast beside a running session, two quick launches (one tab, no "closed" for the earlier), and a Functional Testing launch with its own record; the worker follows the Live tab, injects the real tap and bridge, and the panel shows closed → connected → attaching → late → connected, with the device's console line in the feed and a command refused while detached. This found three bugs in the first version: the watcher judged a just-created tab by its empty `url` and quit before starting (fixed: judge by `pendingUrl` until it has finished loading), a desktop session was never recognised as running, and a stored report outlived its closed tab.
+- **Real BrowserStack Live:** the page reader returned what the unit tests assume on the real picker, a refused launch, a running iOS 27, iPad, iPhone 17, Tab S11, Pixel 10 and Android session, and the four desktop sessions; the new tap on the real iOS 27 session posted `unavailable` with Live's sentence, and on a real Android session went `closed` → `connected realios 91.0.4472.101` with one target. All ten presets started on real Live (the Pixel 10 on its second try: the first showed neither a session nor a banner after 20 s). **The real, unmodified watcher, verdict, reader and status line** (sliced out of background.js and browserstack.js, run inside real Live pages) were then driven through four launches: Windows Chrome (starting → started with Local from the toolbar → ended 4 s after Stop; nothing during the toolbar's absence), iPhone 18 Pro (running with no claim about Local at 5 s, Local and the iOS 27 sentence at 20 and 22 s, ended after Stop), Galaxy S26 with Local requested (running at 5 s, then the "started before it found your Local app" warning with the manual button at 10 s, once the toolbar existed) and iPhone 17 at 26.1 (refused in 5 s with Live's words).
+
+### Not yet verified
+
+- The panel's own buttons driving a **real** Live session end to end (the gate used a fake Live; the real watcher, verdict and line were run on real Live pages, but not through the extension's worker and panel).
+- A real **drop after start** ("Connection to the remote device failed") under the new rule that it needs the picker back on screen: that is what a session ending looks like (measured), but a drop has not been reproduced on demand since.
+- Whether switching "Resolve all URLs through my network" on actually makes the device's IP this Mac's, and whether DevTools can be used after it.
+- The tap's `attaching` state on a real frame with no target, and the DOM where Live draws its "unexpected issue" notice (it is matched by its text).
+- The `bsWatchLaunch` message from the toolbar **popup**, which can close before it is sent; the side panel and the floating window stay open.
+
+## 2026-10-07 — 0.7.9
+
+The A/B tab's per-variant console was empty on every run, and counting it in the badge would have made it wrong the moment it filled.
+
+### Fixed
+
+- **A/B captures never held a console line.** All 208 captures in the 106 recorded logs read `consoleLineCount` 0, back to 36a0022. A run owns its window, so `followTab` never maps the variant tab, and the `browserLog` handler returned at its window lookup before it reached the per-variant buffer. The buffer is now filled first, synchronously, so a line is either in `captureVariant`'s copy or arrives after it and is dropped. Which window a line feeds is unchanged.
+
+### Changed
+
+- **Console lines no longer count toward the A/B badge.** A variant logging a line control doesn't (`[PJS] variation 2 applied`) is what a working variant does, and lines are compared by exact text, so a timestamp or an id differs on every run. With the buffer working, one differing line turned PASS into ISSUES FOUND, and the report renders no console lines that could explain why. Page basics, watched selectors and metrics still count: whether a conversion event fires differently is a QA result. The summary now reads "difference(s) in page basics, watched selectors and metrics".
+
+### Verification
+
+- **jsc (CI):** qa-report.test.js and vd-diff.test.js each gain a block. They run the real `rptAbSection` and `diffAbCaptures`, and the real `browserLog` branch sliced out of background.js. They fail without the fix (3 and 2 assertions) and pass with it. All eight CI suites pass.
+- **Not yet verified:** a real A/B run in Chrome with this build, and whether a variant's tagged lines now arrive in the debug log.
+
+## 2026-10-07 — 0.7.8
+
+Browser Console now mirrors a BrowserStack Live device. On a Live tab it shows the iPhone's or Android's console, labelled with the device, instead of the Live page's own, and the command input and Quick Commands run on the device. Before this, focusing a Live tab mirrored BrowserStack's dashboard page, and a Quick Command ran there.
+
+### Added
+
+- **The device's console, read from Live's own DevTools.** Measured on real iOS and Android sessions (2026-10-06):
+  - Live's DevTools is a same-origin iframe in the Live tab (`iframe.devtools-iframe`). It holds a pinned Chrome DevTools 91 frontend at `/devtools/realios/91.0.4472.101/` (`realdroid` on Android).
+  - Its console model (`SDK.ConsoleModel.instance()`, event `MessageAdded`) is where the device's console arrives: `console.log('[cro] test')` on the iPhone is `{source:'console-api', level:'info', type:'log'}`.
+- **`bs-live-tap.js` (MAIN world) and `bs-live-bridge.js` (ISOLATED).** Injected into a captured Live tab instead of the console-capture scripts.
+  - **Hooking:** the tap polls for the DevTools frame, since it can be opened and closed at any time. When the frame comes up it replays what the device already logged (the last 200 lines), then subscribes.
+  - **Relaying:** it sends lines in batches (200 ms, 50 at most), and posts `connected`, `closed` or `unsupported` with the frontend's version.
+  - **The token:** the iframe's `wss=` parameter carries a session token, and nothing reads it. The version comes from the frame's own `location.pathname`.
+  - **The bridge** accepts only messages the page posted to itself, under its own marker. console-bridge.js trusts any `__selenite` message, so the separate marker keeps the two apart.
+- **Device lines in the feed** (`bsDeviceEntry` in browserstack.js; the worker now loads browserstack.js).
+  - Each line is labelled with the Live tab's title, which Live sets to the device: "iPhone 14 16.3".
+  - Levels follow the local mapping. Network, violation and other lines read `[network] …`, like local `Log.entryAdded` lines.
+  - `[PJS]`/`[cro]` lines are tagged, so the CRO toggle keeps them. Live's own command and result echoes are dropped, and a line is cut at 4,000 characters.
+  - Device lines don't feed the Tracker: that would fire probes and notices at the dashboard, not the device.
+- **Commands on the device** (`bsDeviceEval`). The command input and Quick Commands run through Live's DevTools, in its selected execution context (the page under test), with the console API, awaiting promises.
+  - Results read like local ones ("Object {123: Object}", `ƒ name()`). A device exception is an ERROR line.
+  - `$click`/`$hover` are refused with a reason, and nothing on a device is expandable.
+  - A device that doesn't answer within 15 s says so.
+- **Status line.** On a Live tab it reads one of:
+  - "● Live — mirroring iPhone 14 16.3 through BrowserStack Live's DevTools"
+  - "○ Open DevTools in the Live session to mirror …"
+  - "○ Can't read this version of Live's DevTools (…)" when the frontend changes
+  - "○ Reload Selenite in chrome://extensions …" when the worker predates this
+
+  The command input and Quick Commands are enabled only while the device is connected.
+
+### Changed
+
+- **Device only on a Live tab.** The dashboard page's own console (BrowserStack's app logging) is no longer mirrored, and the dashboard no longer gets the console-capture scripts.
+- **The Live flag survives a worker restart.** It is kept in `_wins`, so device lines keep landing after the worker sleeps and wakes. The worker also re-injects the tap when the dashboard reloads, which `doFollow` had skipped for a tab it was already attached to.
+
+### Fixed
+
+- **Browser Console lost lines in a burst.** The debugger handler wrote the feed without awaiting, so two events landing together read the same array, and the second write dropped the first's line. Writes are now queued per window, and a device batch is one write. In the worker harness, 30 events in a burst landed one line before and all 30 now.
+- **Browser Console froze at 1,000 lines.** The panel re-rendered only when the length changed, and the cap holds the length at 1,000, so the view stopped until Clear. It now also watches the newest entry; the worker numbers entries with `seq`.
+- **sidepanel.html had no style for the `[tag]` label.** popup.html had one; both do now, plus the device label.
+
+### Verification
+
+- **jsc (CI):** browserstack.test.js now has 238 assertions. They run the real `bs-live-tap.js` and `bs-live-bridge.js` against a fake Live page whose frontend has the measured shapes, and cover:
+  - the replay, the cap of 200, the batches, and close/reopen with a new frame
+  - the unsupported report, and `eval` results and exceptions
+  - the token never being read
+  - the bridge's filters
+  - the entry mapping, and the panel's state reading
+
+  They fail against seven broken copies: hooking twice, reading the frame's `src`, no replay cap, no state de-duplication, no command-line API, a bridge that trusts any source, and command echoes kept. All eight CI suites pass.
+- **jsc, the whole worker:** 28 checks drive the real background.js through its own listeners:
+  - Live follow, injection order, and lines from the captured tab only
+  - the dashboard's console hidden
+  - commands routed to the device, and `$click` refused
+  - re-injection after a reload, and a worker restart
+  - leaving the Live tab
+  - a 30-event burst
+
+  It fails against the 0.7.7 worker and against four single changes (no write queue, `bsLive` not persisted, no dashboard suppression, no re-inject on reload).
+- **Real Chrome:** system Chrome 154 with the real extension. `live.browserstack.com` was mapped to a local HTTPS server serving a fake dashboard and a fake DevTools 91 frontend, and the real panel was bound to the dashboard's window. 28 checks pass, covering:
+  - status "open DevTools", then connected, closed and unsupported
+  - the replayed history, device lines with labels and tags, and the dashboard's noise hidden
+  - the CRO filter
+  - a typed command, an object result, an exception, and the Optimizely "Variations (table)" Quick Command running in the device frame
+  - `$click` refused
+  - the view still moving past 1,000 lines
+  - the token absent everywhere
+
+  On 0.7.7 the same gate fails from the first device check: the feed shows the dashboard's "dashboard noise".
+- **Not yet verified:** a real Live session end to end with this build.
+
+## 2026-10-06 — 0.7.7
+
+The A/B tab can open any variant, and Functional Testing's Target section a queue's start URL, on a real phone, tablet or another desktop browser in BrowserStack Live. Until now QA covered those device columns by pasting each preview URL into a Live session's console (the "Open URL (BrowserStack)" Quick Command). This is the first BrowserStack milestone: Live only, through BrowserStack Local. Automate comes later.
+
+### Added
+
+- **Devices — BrowserStack Live, in the A/B tab.** A collapsed section under the A/B card: a checklist of ten device presets in three groups, Desktop, Mobile and Tablet, and for each ticked device a row with a button per variant target. The rows come out in the same groups. A button builds the variant's URL exactly as the comparison does (`abComposeUrl`: the target's URL or the Base URL, the override, `cro_mode=qa`), wraps it in a Live link, and opens it in a new tab.
+  - **The link** is Live's documented integration URL: `live.browserstack.com/dashboard#os=…&os_version=…`, then `device=…&device_browser=…` (mobile) or `browser=…&browser_version=…` (desktop), `url=…`, `start=true`, and `local=true` / `force-local=true` when they are on. Values are form-encoded, so a preview URL's own `?`, `&` and `#` stay inside `url=`. A forcing query cut off at its first `&` would open the page un-forced, which looks like the variant failing on that device.
+  - **Presets** are pinned from BrowserStack's Live catalogue as of 2026-10-06, spelled exactly as it lists them, because the dashboard matches on those strings. Desktop: Safari 27 on macOS Golden Gate, and Edge 154, Chrome 154 and Firefox 157 on Windows 11. Mobile: iPhone 18 Pro, iPhone 17, Galaxy S26, Pixel 10. Tablet: iPad Pro 13, Galaxy Tab S11. `browserstack.js` has the one-liner that refreshes them.
+  - **One Live session at a time.** Live runs one session per user, so before opening a new tab Selenite closes the Live tab it opened last, but only while that tab is still on the dashboard.
+  - **No credentials.** The links open in the user's own logged-in Live session.
+- **Cross-browser — BrowserStack Live, in Functional Testing's Target.** A collapsed block between Tab Target and Save/Execute, with one button per ticked device. A button opens the queue's start URL on that device: the Open URL step's URL, with its parameters and QA Mode.
+  - **The start URL** is built by `queueStartUrl`, by the same rules the worker's `ACTIONS.open_url` uses to navigate: parameters trimmed and blanks dropped, and with QA Mode any `cro_mode=` replaced by `cro_mode=qa`, last. The worker is unchanged. The test suite slices the worker's lines out of background.js and checks that the two agree.
+  - **A blank Open URL step** (locally, "use the active tab") gives Live nothing to open, so the buttons are disabled and say why.
+  - **Live can't run the steps.** The tester walks them by hand on the device, and Execute still runs the queue in this browser.
+  - **One selection, two places.** The device checklist and both Local toggles are shared with the A/B tab: one `bsLivePrefs` record, and a change made in either place is redrawn in both. Each place has its own status line. They also share the one Live tab per window: a launch from either place closes the Live tab Selenite opened last.
+  - The two places are one component in popup.js: each section is a root marked `data-bs-live` (`ab`, `ft`), with its parts marked `data-bs-role`.
+- **A BrowserStack Local check before every launch.** With **Use BrowserStack Local** on (the default), Selenite first asks the BrowserStack Local app on this Mac whether it is running: `GET http://localhost:45454/status`, the app's own console API, which needs no auth. In the console's own code `status: true` means running and signed in. If it isn't, Selenite says what to do and offers **Open anyway** instead of opening a session that could not reach the page. That response also carries a session token and a user id. Only `status` is read, and nothing else from the response is kept.
+- **All traffic through this Mac** (`force-local`, on by default, needs Local). Every request from the session goes through this Mac, so an experiment whose QA audience is our IP counts the device's visits as ours.
+- **`browserstack.js`.** Pure: no DOM, no network, no URL/URLSearchParams, the figma.js convention. It is loaded before popup.js in both UIs, and uses nothing panel-only, so the Automate milestone can `importScripts` it into the worker.
+- **`tests/browserstack.test.js`**, added to CI. 156 assertions:
+  - exact links
+  - preview URLs round-tripping (query, fragment, a space, a literal `+`, non-ASCII)
+  - force-local never sent without local
+  - https normalization
+  - every preset well-formed, and listed group by group, so the rows of buttons can't interleave the groups
+  - the status reader returning only its two booleans
+  - the queue's start URL, against explicit expectations and against the worker's own `open_url` lines, sliced from background.js
+
+### Not changed
+
+- No new permissions: `<all_urls>` already covers the console and the dashboard.
+- No service-worker change. Everything runs in the panel.
+
+### Verification
+
+- **jsc:** the new suite passes. It fails named cases against five broken copies of browserstack.js:
+  - spaces not written as `+`
+  - force-local sent without local
+  - the token leaking into the status result
+  - `encodeURI` in place of `encodeURIComponent`
+  - a desktop preset listed after the tablets
+
+  It also fails against a popup.js without the `cro_mode=` filter, and against a background.js whose `open_url` stops trimming parameters.
+
+  All eight CI suites pass.
+- **Real Chrome:** system Chrome 154, headless, with the real unpacked extension. The real `sidepanel.html` was driven over CDP, with `live.browserstack.com` mapped to localhost so no launch reached BrowserStack. 46 checks pass, covering:
+  - both places rendering with the same grouped defaults; the Functional Testing block inside Target, before Save/Execute
+  - one selection: a device ticked in Functional Testing appears in A/B, one unticked in A/B disappears from Functional Testing, and the Local toggles follow both ways
+  - Functional Testing's buttons disabled while the Open URL step is blank, enabled once its URL, a parameter and QA Mode are set, and disabled again when it's cleared
+  - a Functional Testing launch opening exactly the start-URL link (https added, `cro_mode=qa` last), with its status in Functional Testing's line only
+  - the A/B grid following the Base URL, overrides, relabels, and added or removed variants
+  - an A/B launch, override included, closing the Live tab a Functional Testing launch opened
+  - with Local off, an exact link carrying neither `local` nor `force-local`
+  - the extension page reaching the running BrowserStack Local app (`running`, `signedIn`)
+  - a closed console port blocking a Functional Testing launch, Open anyway opening the same link without claiming a tunnel, and the A/B line left alone
+  - one shared preferences record
+  - the token and user id absent from every storage area and from the page
+  - the init chain still running, with Execute and A/B Run still holding their click listeners (read with `DOMDebugger.getEventListeners`)
+
+  It fails named checks against a build without the `persistQueue` hook and against one that redraws only the place a change was made in. On 0.7.6 it fails at its first check.
+- **Isolation:** with `browserstack.js` removed, both Live sections stay empty, and everything else still works: Execute and A/B Run keep their listeners, Settings opens, Open URL edits save, and Add Variant renders. 10 checks pass.
+- **Not yet verified:** a real Live session. Whether `start=true` auto-starts the session, the lowercase `ios`/`android`, `device_browser` and `force-local=true` all need a launch from a logged-in BrowserStack account.
 
 ## 2026-10-06 — 0.7.6
 

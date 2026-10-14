@@ -16,7 +16,16 @@
 // storage is a worker restart.
 
 load('queue-agent-harness.js');
-['metric-match.js', 'pixelmatch.js', 'vd-config.js', 'vd-diff.js', 'figma.js'].forEach(function (f) { load('../' + f); });
+// The worker's own imports (the harness's importScripts is a no-op), read from
+// background.js's importScripts line so a file added there is loaded here too.
+// Listing them by hand missed browserstack.js when the BrowserStack line was
+// merged: doFollow calls bsIsLiveDashboardUrl before attaching the console
+// mirror, so the mirror never attached and every heal took its own session.
+(function () {
+  var m = /importScripts\(([^)]*)\)/.exec(readFile('../background.js'));
+  if (!m) throw new Error('importScripts line not found in background.js');
+  m[1].match(/'[^']+'/g).map(function (s) { return s.slice(1, -1); }).forEach(function (f) { load('../' + f); });
+})();
 
 var pass = 0, fail = 0, failures = [];
 function ok(label, cond, detail) {

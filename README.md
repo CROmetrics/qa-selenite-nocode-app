@@ -28,6 +28,11 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.19 — 2026-10-14
+
+**Function Queue**
+- **Prompt Function** instructions are at most 120 characters. The box stops typing at 120 and shows a counter; a queue saved or imported with a longer prompt is refused before any step runs, with the step named and the length given (never the prompt itself).
+
 ### 0.7.18 — 2026-10-14
 
 Brings in `main`'s Test Agent queue (released on `main` as 0.7.7) alongside the BrowserStack releases below.
@@ -253,7 +258,7 @@ The **Engine** setting in the Target section chooses how a failing step is handl
 - It cannot run with **Loop continuously**, which has no end to report on.
 - **Classic and a missing selector.** In Chrome a step whose element does not exist does not fail: the page swallows the error, so Classic goes on to the next step (it now says so in the Console with a `⚠`). The Test Agent engine treats the same step as failed and hands it to the agent.
 
-**Navigate to (Test Agent)** takes a URL and optional notes, and gets the tab there by clicking the page's real UI, the way Funnel Crawl does. It passes when the tab arrives (host and path). **Prompt Function** takes a free-text instruction and runs it where it sits in the queue. It has the instruction and the step's usual **Delay (s)**, and nothing else. Nothing measures what a free-text instruction asked for, so a finished step reads *done (agent-reported)*, never *passed*. A queue that contains either step always runs on the Test Agent. In the Test Agent tab, **Open as Function Queue** turns a funnel's waypoints into a queue of these steps, so other steps can sit between them.
+**Navigate to (Test Agent)** takes a URL and optional notes, and gets the tab there by clicking the page's real UI, the way Funnel Crawl does. It passes when the tab arrives (host and path). **Prompt Function** takes a free-text instruction of up to 120 characters and runs it where it sits in the queue. It has the instruction and the step's usual **Delay (s)**, and nothing else. The box stops at 120 and counts as you type; a queue saved with a longer prompt is refused before any step runs, naming the step. Nothing measures what a free-text instruction asked for, so a finished step reads *done (agent-reported)*, never *passed*. A queue that contains either step always runs on the Test Agent. In the Test Agent tab, **Open as Function Queue** turns a funnel's waypoints into a queue of these steps, so other steps can sit between them.
 
 ### Tracking Metrics
 
@@ -391,7 +396,7 @@ A variant the experiment platform says was not served its variation is marked no
 | `alert` | Accepts, dismisses, or reads a browser alert dialog |
 | `track_metric` | Checks the run's console output for a metric defined in the Metrics section |
 | `agent_navigate` | **Navigate to (Test Agent)** — an AI agent gets the tab to a URL by clicking the page's real UI (needs an Anthropic API key) |
-| `agent_prompt` | **Prompt Function** — an AI agent carries out a typed instruction at this point in the queue, (needs an Anthropic API key) |
+| `agent_prompt` | **Prompt Function** — an AI agent carries out a typed instruction (up to 120 characters) at this point in the queue, (needs an Anthropic API key) |
 
 ## Project Structure
 

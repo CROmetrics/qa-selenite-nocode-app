@@ -482,6 +482,25 @@ section('Prompt Function');
   ok('  with no model call', w5.requests.length === 0);
   w5.restore();
 
+  // At most 120 characters. The panel's maxlength cannot shorten a prompt saved
+  // before the limit, so the worker refuses one before any step has acted.
+  var long = 'Log in with the password hunter2 ' + new Array(100).join('x');
+  var w8 = world();
+  var r8 = w8.run([WAIT(1), promptStep(long), WAIT(1)], { engine: 'agent' });
+  eq('a prompt over 120 characters stops the queue before anything acts', statuses(r8.record), 'not-attempted,not-attempted,not-attempted');
+  ok('  and says which step, how long it is and what the limit is',
+     /^Prompt Function #1: the prompt is 132 characters and the limit is 120\./.test(r8.record.error || ''), r8.record.error);
+  ok('  as an error in the Console', w8.logs().some(function (l) { return /^ERROR ✖ .*limit is 120/.test(l); }));
+  ok('  with no model call', w8.requests.length === 0);
+  ok('  and without the prompt in what is stored', JSON.stringify(w8.store.session['w1:queueRun']).indexOf('hunter2') === -1);
+  w8.restore();
+
+  var w9 = world();
+  w9.replies = [w9.report('done', 'Done.')];
+  var r9 = w9.run([promptStep(long, { enabled: false }), promptStep(new Array(121).join('y'))], { engine: 'agent' });
+  eq('a disabled long prompt does not block the queue, and one of exactly 120 runs', statuses(r9.record), 'skipped,done-agent-reported');
+  w9.restore();
+
   // Nothing the tester wrote leaves the machine inside the record.
   var w6 = world();
   w6.replies = [w6.click(200, 125), w6.report('done', 'Done.')];

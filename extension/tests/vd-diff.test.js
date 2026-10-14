@@ -4972,6 +4972,15 @@ section('queue steps through the Test Agent');
   eq('a report with nothing in it is a could_not too', fnNormalizeReport(null).status, 'could_not');
   eq('a long summary is capped', fnNormalizeReport({ status: 'done', summary: new Array(900).join('x') }).summary.length, 400);
 
+  // ---- a Prompt Function's prompt is at most 120 characters ----
+  var p120 = new Array(121).join('x');
+  eq('a 120-character prompt may run', fnPromptTooLong(p120, 'Prompt Function #1'), null);
+  eq('  and an empty one is not this check\'s to refuse', fnPromptTooLong(undefined, 'Prompt Function #1'), null);
+  eq('a 121-character prompt may not, and the step is named',
+     fnPromptTooLong(p120 + 'x', 'Prompt Function #2'), 'Prompt Function #2: the prompt is 121 characters and the limit is 120. Shorten it and run again.');
+  ok('  counted untrimmed, as the panel counts it', fnPromptTooLong(p120 + ' ', 'P') !== null);
+  ok('  and the message never quotes the prompt', fnPromptTooLong(p120 + 'hunter2', 'P').indexOf('hunter2') === -1);
+
   // ---- what an export calls a step: never what a tester typed ----
   eq('a click names its selector', fnStepLabel('click', 'Click', { selector: '#cta' }, 0, ''), 'Click · #cta');
   var fillLabel = fnStepLabel('fill', 'Fill Field', { selector: '#email', text: 'hunter2-secret' }, 0, '');

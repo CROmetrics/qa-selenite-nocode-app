@@ -2481,6 +2481,11 @@ async function runQueue({ queue, mode, targetTabId, universalDelay, winId, track
     // or Prompt step cannot run without one, and says so BEFORE any step has
     // acted; for the engine switch alone the run just stays Classic, once, loudly.
     const hasAgentSteps = fullQueue.some(st => st.enabled && AGENT_ONLY_FUNCS.indexOf(st.func) !== -1);
+    // A prompt over the limit, the same way: before anything has acted.
+    fullQueue.forEach((st, i) => {
+      const tooLong = st.enabled && st.func === 'agent_prompt' && fnPromptTooLong((st.inputs || {}).prompt, labels[i]);
+      if (tooLong) throw new Error(tooLong);
+    });
     let healOn = false;
     if (agentEngine || hasAgentSteps) {
       const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
@@ -4452,7 +4457,7 @@ const DESCRIPTIONS = {
   spa_back_forth:            'Navigates back one page, waits 3 seconds, then navigates forward again — back to the page the step started on.',
   spa_resize:                'Sets the page\'s CSS viewport to a specific width (a responsive/device breakpoint), leaving height and pixel density untouched. Persists for the rest of the run so subsequent steps see the resized layout, and is automatically cleared when the run ends.',
   agent_navigate:            'Hands the tab to the Test Agent (an AI agent, Sonnet) to get from the current page to this URL by clicking the page\'s real UI, the way a visitor would — the funnel crawl as one step. Passes only when the tab arrives (host and path match). Needs an Anthropic API key; screenshots go to Anthropic. Notes are optional instructions for the agent (test credentials, paths to avoid).',
-  agent_prompt:              'Type an instruction and the Test Agent (an AI agent, Sonnet) carries it out here, in sequence, by looking at the page and clicking it. Nothing measures what the prompt asked for, so a finished step reads "done (agent-reported)", never "passed". Needs an Anthropic API key; screenshots and your prompt go to Anthropic.',
+  agent_prompt:              'Type an instruction and the Test Agent (an AI agent, Sonnet) carries it out here, in sequence, by looking at the page and clicking it. Up to 120 characters. Nothing measures what the prompt asked for, so a finished step reads "done (agent-reported)", never "passed". Needs an Anthropic API key; screenshots and your prompt go to Anthropic.',
   clear_session_data:       "Clears cookies, local storage, session storage, IndexedDB, and cache for the current page's origin — the same as DevTools' Application panel \"Clear site data\" button. The already-loaded page isn't reloaded, so its in-memory state is untouched; follow with a Refresh Page or Open URL step to test as a fresh session.",
 };
 
@@ -5494,7 +5499,19 @@ const FN_HEAL_MODEL_TIMEOUT_MS = 30000;  // a heal's vision call (the funnel all
 const FN_HEAL_MODEL_RETRIES = 1;         // ...and one retry, not two
 const FN_MAX_HEALS = 5;                  // per run: a page this far off wants a human
 const FN_PROMPT_BUDGET_MS = 300000;      // a Prompt Function gets the funnel's hop budget
+const FN_PROMPT_MAX_CHARS = 120;         // the panel's limit too (PROMPT_FUNCTION_MAX_CHARS)
 const FN_REPORT_TOOL = 'report_result';  // how a step or prompt goal ENDS
+
+// Why a Prompt Function's prompt may not run, or null. The panel's maxlength
+// cannot shorten a prompt saved or imported before the limit, so runQueue checks
+// every prompt before any step acts. Counted as typed, untrimmed, the way the
+// panel counts it.
+function fnPromptTooLong(prompt, label) {
+  const n = String(prompt == null ? '' : prompt).length;
+  return n > FN_PROMPT_MAX_CHARS
+    ? `${label || 'Prompt Function'}: the prompt is ${n} characters and the limit is ${FN_PROMPT_MAX_CHARS}. Shorten it and run again.`
+    : null;
+}
 
 // What the agent may take over, and nothing else. A failed Open URL, Wait or
 // Track Metric is a real failure, not a selector that drifted.

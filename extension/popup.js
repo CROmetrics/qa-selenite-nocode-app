@@ -2577,13 +2577,26 @@ function buildAgentNavigateArgsHTML(step) {
 }
 
 // Prompt Function: free text, carried out by the Test Agent when the queue gets here.
+// At most PROMPT_FUNCTION_MAX_CHARS. maxlength stops typing and trims a paste, but
+// it never shortens a value that is already there (a queue saved or imported
+// before the limit), so the counter says when one is over and the worker refuses
+// to run it (FN_PROMPT_MAX_CHARS in background.js).
+const PROMPT_FUNCTION_MAX_CHARS = 120;
+
+function promptCountHTML(text) {
+  const n = String(text || '').length;
+  const over = n > PROMPT_FUNCTION_MAX_CHARS;
+  return `<span style="color:var(${over ? '--err' : '--fg3'})">${n}/${PROMPT_FUNCTION_MAX_CHARS}${over ? ': too long, shorten it to run' : ''}</span>`;
+}
+
 function buildPromptFunctionArgsHTML(step) {
   return `
     <div class="arg-row" style="align-items:flex-start">
       <span class="arg-lbl">Prompt</span>
-      <textarea data-arg="prompt" rows="3" placeholder="e.g. Close the cookie banner, open the first product and add it to the cart" style="flex:1;min-width:0;font-family:monospace;font-size:11px">${esc(step.inputs.prompt || '')}</textarea>
+      <textarea data-arg="prompt" rows="3" maxlength="${PROMPT_FUNCTION_MAX_CHARS}" placeholder="e.g. Close the cookie banner, open the first product and add it to the cart" style="flex:1;min-width:0;font-family:monospace;font-size:11px">${esc(step.inputs.prompt || '')}</textarea>
     </div>
-    <div style="font-size:10px;color:var(--fg3);line-height:1.5">An AI agent (Sonnet) does this by looking at the page. The step reads "done (agent-reported)", never "passed": nothing measures what a prompt asked for. Needs an API key; screenshots and this prompt go to Anthropic. The prompt is never put in a report.</div>`;
+    <div class="prompt-count" style="font-size:10px;text-align:right">${promptCountHTML(step.inputs.prompt)}</div>
+    <div style="font-size:10px;color:var(--fg3);line-height:1.5">An AI agent (Sonnet) does this by looking at the page. Up to ${PROMPT_FUNCTION_MAX_CHARS} characters. The step reads "done (agent-reported)", never "passed": nothing measures what a prompt asked for. Needs an API key; screenshots and this prompt go to Anthropic. The prompt is never put in a report.</div>`;
 }
 
 function buildArgsHTML(step) {
@@ -2653,6 +2666,11 @@ function wireArgs(el, step) {
         const info = SWITCH_TARGETS.find(t => t.value === e.target.value);
         const row  = el.querySelector('.switch-value-row');
         if (row) row.style.display = info?.hasValue ? 'flex' : 'none';
+      }
+
+      if (step.func === 'agent_prompt' && inp.dataset.arg === 'prompt') {
+        const count = el.querySelector('.prompt-count');
+        if (count) count.innerHTML = promptCountHTML(e.target.value);
       }
 
       persistQueue();

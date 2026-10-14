@@ -2,6 +2,21 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-14 — 0.7.19
+
+A Prompt Function's instruction is capped at 120 characters. The work was written on `main` on 2026-10-09 and kept in a stash while the checkout was on the BrowserStack branch; it is committed here on top of the 0.7.18 merge, unchanged.
+
+### Changed
+
+- **`popup.js`:** the Prompt Function's prompt box has `maxlength` 120 (`PROMPT_FUNCTION_MAX_CHARS`) and a live counter, "57/120", red with "too long, shorten it to run" for a prompt already over the limit. `maxlength` stops typing and trims a paste, but never shortens a value already there (a queue saved or imported before the limit), which is why the worker checks too. The step's description says "Up to 120 characters".
+- **`background.js`:** `runQueue` checks every enabled Prompt Function before any step acts (`fnPromptTooLong`, `FN_PROMPT_MAX_CHARS` 120, counted untrimmed as the panel counts it) and refuses the run with "Prompt Function #1: the prompt is 132 characters and the limit is 120. Shorten it and run again." The message names the step and the length, never the prompt. A disabled step is not checked; an empty prompt is not this check's to refuse.
+- The README says so where it describes Prompt Function.
+
+### Verification
+
+- **jsc:** queue-agent.test.js 163 → 169 (an over-limit prompt stops the queue with every step not attempted, the error in the Console, no model call, and the prompt absent from what is stored; a disabled long prompt does not block, and one of exactly 120 runs) and vd-diff.test.js 1350 → 1355 (`fnPromptTooLong` at 120, 121, empty, untrimmed, and never quoting the prompt). All nine CI suites pass on the merged `main`.
+- **Not run in real Chrome**, and not against the real model (as for the rest of the Test Agent queue).
+
 ## 2026-10-14 — 0.7.18
 
 Merges `main` into the BrowserStack line. `main`'s one release since 0.7.6, the Function Queue through the Test Agent, was numbered 0.7.7 there (2026-10-07), as was the first BrowserStack release here (2026-10-06), so it ships in this build as 0.7.18. Its notes follow as they were written for `main`, after the merge's own.

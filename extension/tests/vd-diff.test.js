@@ -4767,7 +4767,7 @@ section('A/B console buffer: the run-owned variant tab is never mapped to a wind
 })();
 
 // ── A/B early console capture ──────────────────────────────────────────────
-section('A/B early console capture: the hook is in the page before its own scripts');
+section('A/B early capture: console and error hooks are in the page before its own scripts');
 (function abEarlyCaptureAroundEachVariant() {
   // A page that logged only while loading read consoleLineCount 0 (measured
   // 2026-10-13): injectCapture lands after load. captureVariant now registers
@@ -4829,10 +4829,11 @@ section('A/B early console capture: the hook is in the page before its own scrip
   // A worker stopped mid-capture: both scripts still registered when the next one starts.
   registered['selenite-ab-early-bridge'] = { id: 'selenite-ab-early-bridge' };
   registered['selenite-ab-early-capture'] = { id: 'selenite-ab-early-capture' };
-  eval(slice('// Console lines a variant logs while it loads.', 'async function captureVariant('));
+  registered['selenite-ab-early-errors'] = { id: 'selenite-ab-early-errors' };
+  eval(slice('// Console lines and JS errors a variant produces while it loads.', 'async function captureVariant('));
   drainMicrotasks();
   eq('a starting worker clears what a stopped one left', events.join(' | ') + ' / left: ' + Object.keys(registered).length,
-     'unregister selenite-ab-early-bridge,selenite-ab-early-capture / left: 0');
+     'unregister selenite-ab-early-bridge,selenite-ab-early-capture,selenite-ab-early-errors / left: 0');
   eval(slice('async function captureVariant(', '\nasync function runVariantComparison('));
 
   eq('the pattern is the scheme and host', JSON.stringify(abEarlyCaptureMatches('https://shop.example.com/p?optimizely_x=1#top')), '["https://shop.example.com/*"]');
@@ -4852,7 +4853,7 @@ section('A/B early console capture: the hook is in the page before its own scrip
   var o1 = run('shop.example.com/p?v=1');
   eq('registered before the tab opens, taken away after it closes',
      events.join(' | '),
-     'register selenite-ab-early-bridge,selenite-ab-early-capture | create https://shop.example.com/p?v=1 | inject | load | inject | unregister selenite-ab-early-bridge,selenite-ab-early-capture | remove');
+     'register selenite-ab-early-bridge,selenite-ab-early-capture,selenite-ab-early-errors | create https://shop.example.com/p?v=1 | inject | load | inject | unregister selenite-ab-early-bridge,selenite-ab-early-capture,selenite-ab-early-errors | remove');
   eq('for the variant\'s host, as normalizeUrl opens it', JSON.stringify(registered), '{}');
   ok('the capture itself is unchanged', o1 && o1.loadError === null && o1.finalUrl === 'https://shop.example.com/p?v=1', o1);
 
@@ -4862,10 +4863,11 @@ section('A/B early console capture: the hook is in the page before its own scrip
   chrome.scripting.registerContentScripts = function (list) { seen = list; return realRegister(list); };
   run('https://shop.example.com/p');
   chrome.scripting.registerContentScripts = realRegister;
-  ok('the bridge first, in the isolated world; the capture in the MAIN world; both at document_start, top frame, this session only',
-     seen && seen.length === 2 &&
+  ok('the bridge first, in the isolated world; the console capture and the error collector in the MAIN world; all at document_start, top frame, this session only',
+     seen && seen.length === 3 &&
      seen[0].id === 'selenite-ab-early-bridge' && seen[0].js.join() === 'console-bridge.js' && seen[0].world === undefined &&
      seen[1].id === 'selenite-ab-early-capture' && seen[1].js.join() === 'console-capture.js' && seen[1].world === 'MAIN' &&
+     seen[2].id === 'selenite-ab-early-errors' && seen[2].js.join() === 'ab-error-collector.js' && seen[2].world === 'MAIN' &&
      seen.every(function (s) { return s.runAt === 'document_start' && s.allFrames === false && s.persistAcrossSessions === false && JSON.stringify(s.matches) === '["https://shop.example.com/*"]'; }),
      seen);
 
@@ -4873,7 +4875,7 @@ section('A/B early console capture: the hook is in the page before its own scrip
   loadFails = true;
   var o2 = run('https://shop.example.com/p');
   eq('a page that never loads still has it taken away', events.filter(function (e) { return /register/.test(e); }).join(' | '),
-     'register selenite-ab-early-bridge,selenite-ab-early-capture | unregister selenite-ab-early-bridge,selenite-ab-early-capture');
+     'register selenite-ab-early-bridge,selenite-ab-early-capture,selenite-ab-early-errors | unregister selenite-ab-early-bridge,selenite-ab-early-capture,selenite-ab-early-errors');
   eq('  and its load error is what it was', o2 && o2.loadError, 'Page load timed out after 30s');
 
   reset();
@@ -4890,6 +4892,48 @@ section('A/B early console capture: the hook is in the page before its own scrip
   registered['selenite-ab-early-capture'] = { id: 'selenite-ab-early-capture' };
   run('https://shop.example.com/p');
   eq('a leftover half is cleared before registering (Chrome refuses a duplicate id)', events[0], 'unregister selenite-ab-early-capture');
+})();
+
+section('A/B error collector (ab-error-collector.js)');
+(function abErrorCollectorFile() {
+  // The collector was a func inside injectAbErrorCollector; registered scripts
+  // must be files, so it moved, and both the early registration and the
+  // post-load injection use the file. The same records as before, once however
+  // many times it runs (it runs at document_start and again after load).
+  var src = readFile('../ab-error-collector.js');
+  function page() {
+    var w = { listeners: {} };
+    w.addEventListener = function (t, fn) { (w.listeners[t] = w.listeners[t] || []).push(fn); };
+    w.fire = function (t, e) { (w.listeners[t] || []).forEach(function (fn) { fn(e); }); };
+    return w;
+  }
+  var w = page();
+  new Function('window', src)(w);
+  w.fire('error', { message: 'Uncaught Error: boom while loading', filename: 'https://shop.example.com/p', lineno: 4 });
+  w.fire('unhandledrejection', { reason: new Error('rejected while loading') });
+  new Function('window', src)(w);
+  w.fire('error', { message: 'Uncaught Error: boom later', filename: 'https://shop.example.com/p', lineno: 8 });
+  eq('the errors measured on a real page, in order, once each though it ran twice', JSON.stringify(w.__abErrors),
+     '["Uncaught Error: boom while loading (https://shop.example.com/p:4)","Unhandled rejection: rejected while loading","Uncaught Error: boom later (https://shop.example.com/p:8)"]');
+  eq('  one listener of each kind', (w.listeners.error || []).length + ':' + (w.listeners.unhandledrejection || []).length, '1:1');
+  var w2 = page();
+  new Function('window', src)(w2);
+  w2.fire('error', { message: '' });
+  w2.fire('error', { message: 'Script error.', filename: '' });
+  w2.fire('unhandledrejection', { reason: 'plain string' });
+  w2.fire('unhandledrejection', { reason: undefined });
+  eq('no message, no file, a string reason and no reason read as before', JSON.stringify(w2.__abErrors),
+     '["Script error","Script error.","Unhandled rejection: plain string","Unhandled rejection: "]');
+
+  var calls = [];
+  var chrome = { scripting: { executeScript: function (o) { calls.push(o); return Promise.resolve([{}]); } } };
+  var a = _bg.indexOf('async function injectAbErrorCollector(tabId) {'), b = _bg.indexOf('\n}\n', a);
+  if (a === -1 || b === -1) throw new Error('slice marker missing: injectAbErrorCollector');
+  eval(_bg.slice(a, b + 3));
+  injectAbErrorCollector(7);
+  drainMicrotasks();
+  eq('the post-load injection runs the same file, in the MAIN world', JSON.stringify(calls),
+     '[{"target":{"tabId":7},"world":"MAIN","files":["ab-error-collector.js"]}]');
 })();
 
 // ── report ─────────────────────────────────────────────────────────────────

@@ -3817,36 +3817,30 @@ function waitForLoadTimeout(tabId, ms) {
 }
 
 // MAIN-world collector for uncaught errors and unhandled rejections during the
-// variant load. console-capture.js only sees console.* calls, so this fills
-// the JS-error gap without needing the debugger attached.
+// variant load (ab-error-collector.js). console-capture.js only sees console.*
+// calls, so this fills the JS-error gap without needing the debugger attached.
 async function injectAbErrorCollector(tabId) {
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    world: 'MAIN',
-    func: () => {
-      if (window.__abErrors) return;
-      window.__abErrors = [];
-      window.addEventListener('error', e =>
-        window.__abErrors.push(String(e.message || 'Script error') + (e.filename ? ` (${e.filename}:${e.lineno})` : '')));
-      window.addEventListener('unhandledrejection', e =>
-        window.__abErrors.push('Unhandled rejection: ' + String((e.reason && e.reason.message) || e.reason || '')));
-    },
-  });
+  await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', files: ['ab-error-collector.js'] });
 }
 
-// Console lines a variant logs while it loads. injectCapture only lands once
-// the page has loaded, so a line logged during the load ("[PJS] variation 2
-// applied" from a snippet in <head>) was never seen: the run read
-// consoleLineCount 0 for a page that logged only then (measured 2026-10-13).
-// For the length of one capture both capture scripts are registered for the
-// variant's host at document_start, so they are in the page before its own
-// scripts run. Measured 2026-10-14 in Chrome 154: a page that logs only as it
-// parses had both tagged lines caught, in 16 of 16 loads; a pattern without a
-// port matches every port; and tabs.create had resolved 20-40 ms before the
-// first line arrived, so _abCapture is set in time. Other tabs on the same host
-// that load meanwhile get the same tag-only hook, as a followed tab already
-// does; the browserLog branch keeps only the variant tab's lines for the run.
-const AB_EARLY_CAPTURE_IDS = ['selenite-ab-early-bridge', 'selenite-ab-early-capture'];
+// Console lines and JS errors a variant produces while it loads. injectCapture
+// and injectAbErrorCollector only land once the page has loaded, so a line
+// logged during the load ("[PJS] variation 2 applied" from a snippet in
+// <head>) was never seen: the run read consoleLineCount 0 for a page that
+// logged only then (measured 2026-10-13), and an error thrown or a promise
+// rejected while it parsed was missing from its errors too (2026-10-14: 3 of 3
+// loads caught only the error thrown after load). For the length of one
+// capture the three scripts are registered for the variant's host at
+// document_start, so they are in the page before its own scripts run. Measured
+// 2026-10-14 in Chrome 154: a page that logs only as it parses had both tagged
+// lines caught, in 16 of 16 loads; a page that throws and rejects as it parses
+// and throws again later had all three recorded, once each, in 5 of 5; a
+// pattern without a port matches every port; and tabs.create had resolved
+// 20-40 ms before the first line arrived, so _abCapture is set in time. Other
+// tabs on the same host that load meanwhile get the same tag-only console hook,
+// as a followed tab already does (the browserLog branch keeps only the variant
+// tab's lines for the run), and an error list nothing reads.
+const AB_EARLY_CAPTURE_IDS = ['selenite-ab-early-bridge', 'selenite-ab-early-capture', 'selenite-ab-early-errors'];
 
 function abEarlyCaptureMatches(url) {
   try {
@@ -3875,6 +3869,7 @@ async function registerAbEarlyCapture(url) {
       // The bridge first: it listens for the capture's messages.
       { id: AB_EARLY_CAPTURE_IDS[0], matches, js: ['console-bridge.js'], runAt: 'document_start', allFrames: false, persistAcrossSessions: false },
       { id: AB_EARLY_CAPTURE_IDS[1], matches, js: ['console-capture.js'], runAt: 'document_start', world: 'MAIN', allFrames: false, persistAcrossSessions: false },
+      { id: AB_EARLY_CAPTURE_IDS[2], matches, js: ['ab-error-collector.js'], runAt: 'document_start', world: 'MAIN', allFrames: false, persistAcrossSessions: false },
     ]);
     return true;
   } catch (_) {

@@ -2,6 +2,25 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-14 — 0.7.15
+
+The A/B capture now records the JS errors a variant throws while its page is loading, the blind spot 0.7.14 left open.
+
+### Measured in Chrome 154 (2026-10-14), before the change
+
+- A local page that throws while it parses, rejects a promise while it parses, and throws again 1.5 s later. With the collector injected after load only, as before, 3 of 3 loads recorded only the later error. Registered at `document_start` in the MAIN world and injected again after load, 5 of 5 loads recorded all three, once each, and nothing was left registered.
+
+### Changed
+
+- **`ab-error-collector.js`** (new): the collector that was a `func` inside `injectAbErrorCollector`, unchanged (`window.__abErrors`, uncaught errors with file and line, unhandled rejections), because a registered content script must be a file. It records once however many times it runs.
+- **`background.js`:** `injectAbErrorCollector` runs that file after load, and `registerAbEarlyCapture` registers it beside 0.7.14's console scripts (`selenite-ab-early-errors`, MAIN world, `document_start`, top frame, not kept across restarts), with the same clean-up: taken away when the capture ends and cleared by a starting worker. Other tabs on the same host that load during a capture get an error list nothing reads.
+- The README's A/B section says console lines and JS errors are both caught from the start of the load.
+
+### Verification
+
+- **jsc:** vd-diff.test.js 1005 → 1009 assertions: the collector file against a fake window (the three errors measured above, in order, once each though it ran twice; one listener of each kind; a missing message, file or reason reading as before), the post-load injection running the same file in the MAIN world, and the early registration now three scripts. 7 mutations of the change all fail the suite. All eight CI suites pass.
+- **Real Chrome, the real extension, a real A/B run:** the throwing page gave both variants all three errors (the later one only, before); the 0.7.14 console page still gave its `[CRO]`/`[PJS]` lines and no errors; nothing was left registered. The BrowserStack gate passes 114 of 114.
+
 ## 2026-10-14 — 0.7.14
 
 The A/B capture now catches the console lines a variant logs while its page is loading.

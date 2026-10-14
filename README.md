@@ -27,6 +27,11 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.15 — 2026-10-14
+
+**A/B**
+- **Fixed:** JS errors a variant throws while its page is still loading (and promises it rejects then) were missing from its errors; only errors after the page had loaded were recorded. They are now caught from the moment the page starts loading, like console lines in 0.7.14.
+
 ### 0.7.14 — 2026-10-14
 
 **A/B**
@@ -306,7 +311,7 @@ The **A/B** tab QAs an A/B experiment (Optimizely, Convert, or similar) by loadi
 2. Define at least two **Variant Targets**. The first is the baseline (typically Control). Each target has a label and an **Override** — the query string that forces the variant, e.g. Optimizely's `optimizely_x=<variationId>`.
 3. Optionally add **Watched Selectors** (use `🎯` to pick them from the page) — each is compared across variants for existence, visibility, text, and key computed styles.
 4. Optional settings: **QA Mode** appends `cro_mode=qa` to every variant URL; **Settle** waits after load so experiment scripts can apply changes (default 3s); **Keep tabs open** leaves each variant tab open for manual inspection; **Accessibility audit** (on by default) runs the WCAG audit on each variant, described below; **Agentic Testing (Sonnet)** takes a viewport screenshot per variant and asks Claude to judge whether a visual difference looks intended or like a bug; **Visual Diff (AI)** does a full-page, region-level AI visual comparison against Control, requires an active reviewed ticket context.
-5. Click **Run Comparison**. Each variant loads sequentially in its own tab; captures include page title/URL, `[PJS]`/`[cro]`-tagged console lines (from the moment the page starts loading, so a snippet that logs while the page loads is caught too), Metrics fires (from the Functional Testing tab's Metrics list), JS errors, and watched-selector state.
+5. Click **Run Comparison**. Each variant loads sequentially in its own tab; captures include page title/URL, `[PJS]`/`[cro]`-tagged console lines, Metrics fires (from the Functional Testing tab's Metrics list), JS errors, and watched-selector state. Console lines and JS errors are caught from the moment the page starts loading, so a snippet that logs or throws while the page loads is caught too.
 6. Results are grouped diffs vs the baseline — identical facts are greyed and collapsed, deltas are highlighted, and errors are always flagged red.
 
 Variant target sets can be saved by name (stored in Chrome sync storage) and re-run in one click. The comparison never touches the Functional Testing tab's queue.

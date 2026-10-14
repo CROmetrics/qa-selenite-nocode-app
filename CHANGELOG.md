@@ -2,6 +2,26 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-14 — 0.7.17
+
+A Live tab's own address is not a device name either.
+
+### Measured (2026-10-14)
+
+- On a real Mac Safari launch the Browser Console line read "○ Open DevTools in the Live session to mirror live.browserstack.com's console" for about 3 s.
+- Opening Live links in a tab and reading its title every 25 ms: in 1 of 4 loads `chrome.tabs.get` gave "live.browserstack.com/dashboard#os=android…" (the tab's address without the scheme) between "" and "Dashboard"; `tabs.onUpdated` reported only "Dashboard". Chrome titles a page with its address until the page sets one, and the dashboard sets its title from script.
+
+### Changed
+
+- **`browserstack.js`:** `bsTitleNamesNothing`: 0.7.16's idle countdown, or a title that is Live's own host or address (`live.browserstack.com`, optionally with a scheme, then a path, query, fragment or nothing).
+- **`background.js`, `popup.js`:** the four places that name the device from the tab's title (the `tabs.onUpdated` title-follow, `captureTitle` for follows and refreshes, the `bsDeviceLog` label, `bcDeviceName`) use it in place of the countdown check alone, so the device keeps the name it had, or none.
+
+### Verification
+
+- **jsc:** browserstack.test.js 770 → 778 assertions: the measured address, the host, with a scheme or capitals; the countdown still; device names, "Dashboard" and other hosts not caught; `captureTitle`, the real title-follow branch and the real `bsDeviceLog` branch with the address; `bcDeviceName`. 9 mutations of the change (back to the countdown check at each use, the pattern unanchored, needing a scheme, a path, or the case) all fail the suite. All eight CI suites pass.
+- **Real Chrome against the fake Live:** 121 checks (118 before). `fake_live.TITLE_LATE` serves the dashboard without its `<title>`, as the real one is titled from script; the new `loading-title` scenario launches Mac Safari under it, checks the tab really was titled with its address, and that nothing in the panel named it so. On 0.7.16 it fails: the console line carried the whole launch link, the page's own URL inside it.
+- **Real Live:** three Mac Safari launches, the console line sampled every 100 ms: it never named the address. The raw tab titles were not sampled, so these runs show the glitch gone without proving it was triggered; the gate scenario forces it.
+
 ## 2026-10-14 — 0.7.16
 
 Live's idle countdown no longer takes the device's name.

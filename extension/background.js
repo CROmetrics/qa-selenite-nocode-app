@@ -1183,11 +1183,13 @@ async function doFollow(winId, tabId) {
 }
 
 // The title that names a captured tab in the panel ("Samsung Galaxy S26 v16.0").
-// Live's idle countdown ("37 seconds to session timeout", bsIsCountdownTitle)
-// names nothing: the name the tab had stands, or none for a tab not seen before.
+// Live's idle countdown ("37 seconds to session timeout") and the tab's own
+// address while it loads ("live.browserstack.com/dashboard#…") name nothing
+// (bsTitleNamesNothing): the name the tab had stands, or none for a tab not
+// seen before.
 function captureTitle(tab, prev) {
   const t = (tab && tab.title) || '';
-  if (!bsIsCountdownTitle(t)) return t;
+  if (!bsTitleNamesNothing(t)) return t;
   return prev && tab && prev.tabId === tab.id ? (prev.title || '') : '';
 }
 
@@ -1541,10 +1543,12 @@ chrome.tabs.onUpdated.addListener(async (tabId, info) => {
     const bsWin = bsLiveWinFor(tabId);
     if (bsWin != null) {
       const { captureStatus } = await ns(bsWin).get('captureStatus');
-      // Live's idle countdown retitles the tab every second for a minute; it is
-      // not a name, and the device's stands (measured 2026-10-14: the console line
-      // read "mirror 37 seconds to session timeout's console").
-      if (captureStatus && captureStatus.tabId === tabId && captureStatus.title !== info.title && !bsIsCountdownTitle(info.title)) {
+      // Live's idle countdown retitles the tab every second for a minute, and a
+      // loading tab can carry its own address; neither is a name, and the
+      // device's stands (measured 2026-10-14: the console line read "mirror 37
+      // seconds to session timeout's console", and "mirror live.browserstack.com's
+      // console").
+      if (captureStatus && captureStatus.tabId === tabId && captureStatus.title !== info.title && !bsTitleNamesNothing(info.title)) {
         await ns(bsWin).set({ captureStatus: { ...captureStatus, title: info.title } });
       }
     }
@@ -6964,8 +6968,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   } else if (msg.action === 'bsDeviceLog') {
     // A batch of the device's console from a captured Live tab
     // (bs-live-tap.js → bs-live-bridge.js). Labelled with the tab's title,
-    // which Live sets to the device ("Samsung Galaxy S23 13.0"), or during
-    // Live's idle countdown with the name the panel already has for it. Device
+    // which Live sets to the device ("Samsung Galaxy S23 13.0"), or, while the
+    // title names nothing (Live's idle countdown, the tab's own address), with
+    // the name the panel already has for it. Device
     // lines do not feed the Tracker: addMetric would fire probes and on-page
     // notices at the dashboard, not at the device.
     (async () => {
@@ -6974,7 +6979,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const winId = bsLiveWinFor(tabId);
       if (winId != null && Array.isArray(msg.lines)) {
         let device = sender.tab.title || '';
-        if (bsIsCountdownTitle(device)) {
+        if (bsTitleNamesNothing(device)) {
           const { captureStatus } = await ns(winId).get('captureStatus');
           device = captureStatus && captureStatus.tabId === tabId ? (captureStatus.title || '') : '';
         }

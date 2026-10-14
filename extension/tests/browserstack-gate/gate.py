@@ -462,6 +462,31 @@ def scen_countdown(g):
     chk('when Live closes the session the line says it ended', t == 'Live ended the session on Control on Galaxy S26.', t)
     g.close_live_tabs()
 
+def scen_loading_title(g):
+    print("a Live tab titled with its own address while it loads is not a device (measured 2026-10-14 on Mac Safari)")
+    fake_live.TITLE_LATE = True
+    try:
+        g.open_panel(); g.setup_ab(['mac-safari'], local=False)
+        g.click_open('mac-safari')
+        named, titles, raw = set(), set(), set()
+        end = time.time() + 25
+        while time.time() < end:
+            named.add(bc_line(g))
+            cs = g.pev("sessionNS.get('captureStatus').then(r => r.captureStatus || null)") or {}
+            titles.add(cs.get('title'))
+            for t in g.live_tabs():
+                raw.add(t.get('title'))
+            if 'is running' in g.status():
+                break
+            time.sleep(0.1)
+        chk("the tab really was titled with its address for a while (the condition is real)", any('live.browserstack.com' in (x or '') for x in raw), sorted(x for x in raw if x))
+        chk('nothing in the panel named it by that address', not any('browserstack.com' in (x or '') for x in named | titles), sorted(x for x in named | titles if x and 'browserstack.com' in x))
+        t = bc_line(g)
+        chk('and the line ends on the desktop wording', t.startswith('○ Live has no DevTools for this session') or t.startswith("○ Open DevTools in the Live session to mirror this session's console"), t)
+    finally:
+        fake_live.TITLE_LATE = False
+        g.close_live_tabs()
+
 def scen_mirror_slow(g):
     print('the mirror when Live is slow to answer: the tab has no committed url when Selenite first looks at it')
     fake_live.DELAY = 1.3
@@ -724,7 +749,7 @@ def scen_ended_late(g):
 
 SCENARIOS = {'smoke': scen_smoke, 'check': scen_check, 'local-missed': scen_local_missed, 'ios27': scen_ios27,
              'refused': scen_refused, 'dropped': scen_dropped, 'desktop': scen_desktop, 'not-ready': scen_not_ready,
-             'mirror': scen_mirror, 'mirror-unavailable': scen_mirror_unavailable, 'mirror-nopage': scen_mirror_nopage, 'mirror-failed': scen_mirror_failed, 'countdown': scen_countdown, 'panels': scen_panels, 'mirror-slow': scen_mirror_slow,
+             'mirror': scen_mirror, 'mirror-unavailable': scen_mirror_unavailable, 'mirror-nopage': scen_mirror_nopage, 'mirror-failed': scen_mirror_failed, 'countdown': scen_countdown, 'loading-title': scen_loading_title, 'panels': scen_panels, 'mirror-slow': scen_mirror_slow,
              'closed': scen_closed, 'left': scen_left, 'toast': scen_toast, 'relaunch': scen_relaunch, 'places': scen_places,
              'vanish': scen_vanish, 'early-title': scen_early_title, 'ended': scen_ended, 'ended-late': scen_ended_late}
 

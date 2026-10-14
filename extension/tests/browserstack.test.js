@@ -1074,6 +1074,7 @@ eq('no title at all', bcDeviceName(''), 'this session');
 eq('whitespace is not a name', bcDeviceName('   '), 'this session');
 eq('undefined', bcDeviceName(undefined), 'this session');
 eq("Live's idle countdown is not a device name", bcDeviceName('37 seconds to session timeout'), 'this session');
+eq('nor is a loading tab\'s own address (measured: "mirror live.browserstack.com\'s console")', bcDeviceName('live.browserstack.com') + ' / ' + bcDeviceName('live.browserstack.com/dashboard#os=android&os_version=16.0'), 'this session / this session');
 eq('so a desktop line reads naturally', bcDeviceLine('unavailable', { reason: 'its toolbar has no DevTools item (desktop browser sessions have none).' }, bcDeviceName('Dashboard')).text, "○ Live has no DevTools for this session: its toolbar has no DevTools item (desktop browser sessions have none).");
 eq('the new states pass through bcDeviceState from the worker', ['unavailable', 'attaching', 'failed'].map(function (st) {
   return bcDeviceState(LIVE_CS, { state: st, tabId: 11 }, undefined);
@@ -2201,6 +2202,24 @@ eq('a countdown on a tab not seen before names nothing', captureTitle({ id: 12, 
 eq('  nor with no earlier status at all', captureTitle({ id: 12, title: '12 seconds to session timeout' }, undefined), '');
 eq('a tab with no title is empty, as before', captureTitle({ id: 11 }, null), '');
 
+// The other title that names nothing: a Live tab's own address, before the page
+// has set a title. Measured 2026-10-14: chrome.tabs.get read
+// "live.browserstack.com/dashboard#os=android…" between "" and "Dashboard" in 1
+// of 4 loads, and a Mac Safari launch's console line read "mirror
+// live.browserstack.com's console" for about 3 s (0.7.16).
+var LIVE_ADDR = 'live.browserstack.com/dashboard#os=android&os_version=16.0&device=Samsung+Galaxy+S26&device_browser=chrome&url=https%3A%2F%2Fexample.com%2F%3Ftitleprobe%3D2';
+ok('a Live tab\'s address, its host, or either with a scheme names nothing',
+  [LIVE_ADDR, 'live.browserstack.com', 'https://live.browserstack.com/dashboard', 'LIVE.BrowserStack.com/dashboard'].every(bsTitleNamesNothing));
+ok('the countdown still names nothing', COUNTDOWN.every(bsTitleNamesNothing));
+ok('device names, Dashboard and other hosts are names (or not this rule\'s business)',
+  ['Samsung Galaxy S26 v16.0', 'iPhone 17 v26.6', 'Google Pixel 10 v16.0', 'Dashboard', 'live.browserstack.community', 'www.browserstack.com/users/sign_in', 'Live — browserstack.com'].every(function (t) { return !bsTitleNamesNothing(t); }));
+eq('captureTitle keeps the tab\'s name over its own address', captureTitle({ id: 11, title: LIVE_ADDR }, { tabId: 11, title: 'Samsung Galaxy S26 v16.0' }), 'Samsung Galaxy S26 v16.0');
+eq('  and names nothing for a tab first seen loading', captureTitle({ id: 11, title: 'live.browserstack.com' }, { tabId: 9, title: 'Some other page' }), '');
+var RW7 = renameWorld({ captureStatus: { tabId: 11, title: 'Dashboard', url: 'https://live.browserstack.com/dashboard#os=OS+X', capturable: true, bsLive: true } });
+RW7.run(11, { title: 'live.browserstack.com' });
+RW7.run(11, { title: LIVE_ADDR });
+eq('the title-follow skips the address too', RW7.store.captureStatus.title + ':' + RW7.writes.length, 'Dashboard:0');
+
 // refreshBsLive, the real one, run for the Live tab mid-countdown (it runs after
 // every follow and every load of the captured tab).
 (function () {
@@ -2267,6 +2286,7 @@ eq('during the countdown, with the name the panel has for it', devLog('37 second
 eq('with nothing to go on, the generic label', devLog('37 seconds to session timeout', undefined), 'BrowserStack device');
 eq('  and not another tab\'s name', devLog('37 seconds to session timeout', S26, 12), 'BrowserStack device');
 eq('a tab with no title, as before', devLog('', S26), 'BrowserStack device');
+eq('a line from a tab whose title is its own address gets the stored name', devLog('live.browserstack.com/dashboard#os=android', S26), 'Samsung Galaxy S26 v16.0');
 
 // The real branch of background.js's onMessage, sliced out: what the bridge
 // forwards is stored as the window's bsDeviceStatus only for known states.

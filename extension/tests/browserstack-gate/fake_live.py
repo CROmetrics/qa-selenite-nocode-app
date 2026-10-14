@@ -22,6 +22,10 @@ import http.server, os, ssl, subprocess, sys, threading, time
 # Seconds the dashboard takes to answer. The real one needs DNS, TLS and a round trip, so a tab
 # opened for it has no committed url for a while (tab.url is '' and only pendingUrl is set).
 DELAY = 0.0
+# Serve the dashboard without its <title>, so the tab is titled with its own address until the
+# page's script names it, as the real one is for a moment (measured 2026-10-14:
+# "live.browserstack.com/dashboard#…" between "" and "Dashboard").
+TITLE_LATE = False
 
 DASHBOARD = r"""<!doctype html>
 <html><head><meta charset="utf-8"><title>Dashboard</title></head>
@@ -207,6 +211,8 @@ class H(http.server.BaseHTTPRequestHandler):
         if path.startswith('/dashboard'):
             if DELAY: time.sleep(DELAY)
             body, ctype = DASHBOARD, 'text/html; charset=utf-8'
+            if TITLE_LATE:
+                body = body.replace('<title>Dashboard</title>', '')
         elif path.startswith('/devtools/'):
             body, ctype = FRAME, 'text/html; charset=utf-8'
         elif path.startswith('/users/sign_in'):

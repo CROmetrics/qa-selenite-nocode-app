@@ -349,6 +349,19 @@
   // device from the tab's title keeps the name it had.
   var BS_TITLE_COUNTDOWN = /^\s*\d+\s+seconds?\s+to\s+session\s+timeout\s*$/i;
   function bsIsCountdownTitle(title) { return BS_TITLE_COUNTDOWN.test(String(title == null ? '' : title)); }
+  // Chrome's title for a Live tab that has not set its own yet: the tab's
+  // address without the scheme. Measured 2026-10-14: chrome.tabs.get read
+  // "live.browserstack.com/dashboard#os=android…" for a moment between "" and
+  // "Dashboard" in 1 of 4 loads, and a Mac Safari launch's console line read
+  // "mirror live.browserstack.com's console" for about 3 s.
+  var BS_TITLE_LIVE_ADDRESS = /^\s*(?:https?:\/\/)?live\.browserstack\.com(?:[\/?#:]|\s*$)/i;
+  // A Live tab's title that names no device: the idle countdown, or the
+  // tab's own address while it loads. Whatever names the device from the
+  // title keeps the name it had.
+  function bsTitleNamesNothing(title) {
+    var t = String(title == null ? '' : title);
+    return BS_TITLE_COUNTDOWN.test(t) || BS_TITLE_LIVE_ADDRESS.test(t);
+  }
   var BS_LAUNCH_GIVE_UP_MS = 75000;
   // The panel shows a stored launch report only this long (a reopened panel
   // reads it back): a "running" line from an hour ago is not what is on screen.
@@ -511,6 +524,7 @@
   g.bsIsLiveUrl = bsIsLiveUrl;
   g.bsIsLiveDashboardUrl = bsIsLiveDashboardUrl;
   g.bsIsCountdownTitle = bsIsCountdownTitle;
+  g.bsTitleNamesNothing = bsTitleNamesNothing;
   g.bsDeviceEntry = bsDeviceEntry;
   g.bsLocalStatusFrom = bsLocalStatusFrom;
   g.bsLocalBinaryAnswer = bsLocalBinaryAnswer;

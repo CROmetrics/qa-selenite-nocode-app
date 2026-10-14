@@ -27,6 +27,11 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.17 — 2026-10-14
+
+**BrowserStack Live**
+- **Fixed:** for a few seconds while a Live tab loaded, Browser Console could name the session by the tab's own address ("mirror live.browserstack.com's console", or the whole launch link, your page's address in it). The address is no longer taken as a device name.
+
 ### 0.7.16 — 2026-10-14
 
 **BrowserStack Live**

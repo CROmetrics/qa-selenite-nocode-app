@@ -3834,6 +3834,57 @@ async function injectAbErrorCollector(tabId) {
   });
 }
 
+// Console lines a variant logs while it loads. injectCapture only lands once
+// the page has loaded, so a line logged during the load ("[PJS] variation 2
+// applied" from a snippet in <head>) was never seen: the run read
+// consoleLineCount 0 for a page that logged only then (measured 2026-10-13).
+// For the length of one capture both capture scripts are registered for the
+// variant's host at document_start, so they are in the page before its own
+// scripts run. Measured 2026-10-14 in Chrome 154: a page that logs only as it
+// parses had both tagged lines caught, in 16 of 16 loads; a pattern without a
+// port matches every port; and tabs.create had resolved 20-40 ms before the
+// first line arrived, so _abCapture is set in time. Other tabs on the same host
+// that load meanwhile get the same tag-only hook, as a followed tab already
+// does; the browserLog branch keeps only the variant tab's lines for the run.
+const AB_EARLY_CAPTURE_IDS = ['selenite-ab-early-bridge', 'selenite-ab-early-capture'];
+
+function abEarlyCaptureMatches(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    return [`${u.protocol}//${u.hostname}/*`];
+  } catch (_) {
+    return null;
+  }
+}
+
+async function unregisterAbEarlyCapture() {
+  try {
+    const live = await chrome.scripting.getRegisteredContentScripts({ ids: AB_EARLY_CAPTURE_IDS });
+    if (live.length) await chrome.scripting.unregisterContentScripts({ ids: live.map(s => s.id) });
+  } catch (_) {}
+}
+
+// Best-effort: without it the capture is what it was, the post-load injection.
+async function registerAbEarlyCapture(url) {
+  const matches = abEarlyCaptureMatches(url);
+  if (!matches) return false;
+  await unregisterAbEarlyCapture();
+  try {
+    await chrome.scripting.registerContentScripts([
+      // The bridge first: it listens for the capture's messages.
+      { id: AB_EARLY_CAPTURE_IDS[0], matches, js: ['console-bridge.js'], runAt: 'document_start', allFrames: false, persistAcrossSessions: false },
+      { id: AB_EARLY_CAPTURE_IDS[1], matches, js: ['console-capture.js'], runAt: 'document_start', world: 'MAIN', allFrames: false, persistAcrossSessions: false },
+    ]);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+// A worker that stopped mid-capture left them registered.
+unregisterAbEarlyCapture();
+
 async function captureVariant(target, { settleMs, selectors, keepTabs, captureForVision, captureFullPage, a11yChecks, winId }) {
   const out = {
     label: target.label, url: target.url,
@@ -3851,11 +3902,14 @@ async function captureVariant(target, { settleMs, selectors, keepTabs, captureFo
   };
   let tab = null;
   try {
+    await registerAbEarlyCapture(normalizeUrl(target.url));
     tab = await chrome.tabs.create({ url: normalizeUrl(target.url), active: true, ...runTabWindow() });
     _abCapture = { tabId: tab.id, lines: [] };
     // Inject as early as possible, then again after load — both scripts are
     // idempotent, and experiment scripts typically log after DOMContentLoaded,
-    // so the post-load injection is the one that matters on slow pages.
+    // so the post-load injection is the one that matters on slow pages, and
+    // the only one on a page served from a host the early hook doesn't match
+    // (a redirect to another host).
     try { await injectCapture(tab.id); await injectAbErrorCollector(tab.id); } catch (_) {}
     await waitForLoadTimeout(tab.id, 30000);
     try {
@@ -3970,6 +4024,7 @@ async function captureVariant(target, { settleMs, selectors, keepTabs, captureFo
   } finally {
     out.console = _abCapture ? _abCapture.lines.slice() : [];
     _abCapture = null;
+    await unregisterAbEarlyCapture();
     if (tab) {
       if (keepTabs) out.tabId = tab.id;
       else { try { await chrome.tabs.remove(tab.id); } catch (_) {} }

@@ -2,6 +2,35 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-14 — 0.7.14
+
+The A/B capture now catches the console lines a variant logs while its page is loading.
+
+### Found (2026-10-13)
+
+- Field-checking 0.7.9's console fix in a real A/B run: a local page that logs `[CRO]`/`[PJS]` lines only while it parses read `consoleLineCount` 0 for both variants; the same lines logged 1 s and 2.5 s after load were caught. `captureVariant` injects the capture scripts right after `tabs.create` (before the page has a document Selenite can script) and again after load, so anything logged in between was lost. An experiment snippet in the page's head logs exactly then.
+
+### Measured in Chrome 154 (2026-10-14), before the change
+
+- `chrome.scripting.registerContentScripts` with console-capture.js in the MAIN world at `document_start` and console-bridge.js beside it caught both tagged lines of a page that logs only while it parses, in 16 of 16 loads.
+- A match pattern without a port (`http://localhost/*`) matched a page on `localhost:8777`, as did one with the port.
+- `tabs.create` resolved 5 to 15 ms after the call and the first line reached the worker 25 to 55 ms after it: 20 to 40 ms later, every time. So `_abCapture` is set before the first line arrives, and no buffering of lines from a not-yet-known tab is needed.
+
+### Changed
+
+- **`background.js`:** `captureVariant` registers both capture scripts for the variant's host (`scheme://host/*`, top frame only, `document_start`, the bridge first, not kept across browser restarts) before it opens the tab, and takes them away in its `finally`, so a capture that fails or a tab that never opens leaves nothing registered. A worker that starts clears any it finds, since one stopped mid-capture would have left them. A registration Chrome refuses leaves the capture as it was. The post-load injection stays, for a variant that redirects to another host, which the early hook does not cover. Both scripts are idempotent, so a line is captured once.
+- Other tabs on the same host that load during a capture get the same tag-only hook a followed tab already gets; the `browserLog` branch keeps only the variant tab's lines for the run.
+- The README's A/B section says lines are caught from the start of the load.
+
+### Verification
+
+- **jsc:** vd-diff.test.js 991 → 1005 assertions. The real `abEarlyCaptureMatches`, `registerAbEarlyCapture`, `unregisterAbEarlyCapture` and `captureVariant`, sliced out of background.js, run against a stubbed `chrome` with an event log: registered before the tab opens and taken away after it closes; the registration's shape; taken away when the page never loads and when the tab cannot be opened; a refused registration costing nothing; a leftover half cleared before registering; a starting worker clearing leftovers. 13 mutations of the change all fail the suite. All eight CI suites pass.
+- **Real Chrome, the real extension, a real A/B run:** the page that logs only while loading gave v0 `[CRO] page ready 0` and v1 `[CRO] page ready 1` + `[PJS] variation 1 applied` (0 and 0 before); a page logging both while loading and 2 s later gave each variant both lines, once each; no registration was left after either run. The BrowserStack gate passes 114 of 114.
+
+### Not changed
+
+- JS errors a page throws while loading have the same blind spot: `injectAbErrorCollector` still attaches after load.
+
 ## 2026-10-13 — 0.7.13
 
 When Live's DevTools breaks, Browser Console now says so instead of blaming its own reading of it.

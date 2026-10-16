@@ -12398,5 +12398,6409 @@
 ],
 "sharedFindings": [],
 "skipped": false
+},
+"1790699058543": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": 0.9857142857142858,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "BEST DEAL"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+}
+],
+"near": 0,
+"total": 2,
+"verbatim": 1
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "redesign",
+"error": null,
+"findings": [
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": null
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.2714285714285714,
+"noVerdictCount": 1,
+"notServed": false,
+"requirements": {
+"absent": 14,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Download & watch offline"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Cancel anytime"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Unconditionally ad free"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Most Popular"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Don’t Miss Another Moment"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "GET STARTED"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Select Plan"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Limited Time Offer"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "LOG IN"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+}
+],
+"near": 0,
+"total": 27,
+"verbatim": 13
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "redesign",
+"error": null,
+"findings": [
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v3",
+"matchedFraction": 0.2714285714285714,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+}
+],
+"near": 0,
+"total": 1,
+"verbatim": 0
+},
+"skipped": false
+}
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1790959147029": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": 0.9861111111111112,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "BEST DEAL"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+}
+],
+"near": 0,
+"total": 2,
+"verbatim": 1
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "redesign",
+"error": null,
+"findings": [
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.2916666666666667,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 13,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Download & watch offline"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Cancel anytime"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Unconditionally ad free"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Don’t Miss Another Moment"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Select Plan"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Most Popular"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Limited Time Offer"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "GET STARTED"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "LOG IN"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+}
+],
+"near": 0,
+"total": 27,
+"verbatim": 14
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "redesign",
+"error": null,
+"findings": [
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v3",
+"matchedFraction": 0.2916666666666667,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+}
+],
+"near": 0,
+"total": 1,
+"verbatim": 0
+},
+"skipped": false
+}
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1790961049985": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": 0.9861111111111112,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "BEST DEAL"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+}
+],
+"near": 0,
+"total": 2,
+"verbatim": 1
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "redesign",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.4861111111111111,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 3,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Don’t Miss Another Moment"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Limited Time Offer"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Unconditionally ad free"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Cancel anytime"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Download & watch offline"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "GET STARTED"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "LOG IN"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 27,
+"verbatim": 23
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v3",
+"matchedFraction": 0.5,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+}
+],
+"near": 0,
+"total": 1,
+"verbatim": 0
+},
+"skipped": false
+}
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1790961823925": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": 0.9861111111111112,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "BEST DEAL"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+}
+],
+"near": 0,
+"total": 2,
+"verbatim": 1
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "redesign",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.4861111111111111,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 3,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Don’t Miss Another Moment"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Limited Time Offer"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Unconditionally ad free"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Cancel anytime"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Download & watch offline"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "GET STARTED"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "LOG IN"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 27,
+"verbatim": 23
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v3",
+"matchedFraction": 0.5,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+}
+],
+"near": 0,
+"total": 1,
+"verbatim": 0
+},
+"skipped": false
+}
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1790963410722": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": 0.9861111111111112,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "BEST DEAL"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+}
+],
+"near": 0,
+"total": 2,
+"verbatim": 1
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "redesign",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.4861111111111111,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 2,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Don’t Miss Another Moment"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Limited Time Offer"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Unconditionally ad free"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Cancel anytime"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Download & watch offline"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "GET STARTED"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "LOG IN"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 26,
+"verbatim": 23
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v3",
+"matchedFraction": 0.5,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 3,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Get Started"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 20,
+"verbatim": 16
+},
+"skipped": false
+}
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1790966163146": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": 0.9861111111111112,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "BEST DEAL"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+}
+],
+"near": 0,
+"total": 2,
+"verbatim": 1
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "redesign",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.4861111111111111,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 2,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Don’t Miss Another Moment"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Limited Time Offer"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Unconditionally ad free"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Cancel anytime"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Download & watch offline"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "GET STARTED"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "LOG IN"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 26,
+"verbatim": 23
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v3",
+"matchedFraction": 0.5,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 3,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Get Started"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 20,
+"verbatim": 16
+},
+"skipped": false
+}
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1791216757295": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": 0.9861111111111112,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "BEST DEAL"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+}
+],
+"near": 0,
+"total": 2,
+"verbatim": 1
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "redesign",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.4861111111111111,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 2,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Don’t Miss Another Moment"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Limited Time Offer"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Unconditionally ad free"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Cancel anytime"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Download & watch offline"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "GET STARTED"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "LOG IN"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 26,
+"verbatim": 23
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v3",
+"matchedFraction": 0.5,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 3,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Get Started"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 20,
+"verbatim": 16
+},
+"skipped": false
+}
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1791218328696": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": 0.9861111111111112,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "BEST DEAL"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+}
+],
+"near": 0,
+"total": 2,
+"verbatim": 1
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "redesign",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.4861111111111111,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 2,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Don’t Miss Another Moment"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Limited Time Offer"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Unconditionally ad free"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Cancel anytime"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Download & watch offline"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "GET STARTED"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "LOG IN"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 26,
+"verbatim": 23
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v3",
+"matchedFraction": 0.5,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 3,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Get Started"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 20,
+"verbatim": 16
+},
+"skipped": false
+}
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1791221055240": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [
+"Did not complete — The service worker is older than this popup and ignored the accessibili"
+],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": 0.9861111111111112,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "BEST DEAL"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+}
+],
+"near": 0,
+"total": 2,
+"verbatim": 1
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "redesign",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.4861111111111111,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 2,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Don’t Miss Another Moment"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Limited Time Offer"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Unconditionally ad free"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Cancel anytime"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Download & watch offline"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "GET STARTED"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "LOG IN"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 26,
+"verbatim": 23
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v3",
+"matchedFraction": 0.5,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 3,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Get Started"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 20,
+"verbatim": 16
+},
+"skipped": false
+}
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1791222173138": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": 0.9861111111111112,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "BEST DEAL"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+}
+],
+"near": 0,
+"total": 2,
+"verbatim": 1
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "redesign",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.4861111111111111,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 2,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Don’t Miss Another Moment"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Limited Time Offer"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Unconditionally ad free"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Cancel anytime"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Download & watch offline"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "GET STARTED"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "LOG IN"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 26,
+"verbatim": 23
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v3",
+"matchedFraction": 0.5,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 3,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Get Started"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 20,
+"verbatim": 16
+},
+"skipped": false
+}
+],
+"sharedFindings": [],
+"skipped": false
+},
+"1791225305511": {
+"baselineLabel": "v0",
+"baselineWarning": null,
+"errorProblems": [],
+"perVariant": [
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v1",
+"matchedFraction": 0.9861111111111112,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 1,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "BEST DEAL"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+}
+],
+"near": 0,
+"total": 2,
+"verbatim": 1
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "redesign",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v2",
+"matchedFraction": 0.4861111111111111,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 2,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Most Popular"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Don’t Miss Another Moment"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Limited Time Offer"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Unconditionally ad free"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Cancel anytime"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Download & watch offline"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "GET STARTED"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "LOG IN"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 26,
+"verbatim": 23
+},
+"skipped": false
+},
+{
+"controlDuplicate": false,
+"diffMode": "normal",
+"error": null,
+"findings": [
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unexpected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "unclear"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+},
+{
+"classification": "expected"
+}
+],
+"gradingFailed": null,
+"label": "v3",
+"matchedFraction": 0.5,
+"noVerdictCount": 0,
+"notServed": false,
+"requirements": {
+"absent": 3,
+"items": [
+{
+"fragment": false,
+"status": "absent",
+"text": "Best Value"
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "FPQ. This is dummy text..."
+},
+{
+"fragment": false,
+"status": "absent",
+"text": "Gritty Crime Dramas"
+},
+{
+"fragment": false,
+"status": "near",
+"text": "Save 58% for the first 3 months"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Monthly"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Annual"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "For more information, please see the Offer Terms."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Ready for More? We’ve Got It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Trending Now"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "New Movies"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Hit Series"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Thrillers"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch Anywhere, Anytime. We Like It."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Watch anywhere, ad-free on up to four devices at once. Download and watch offline on your mobile device with all plans."
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "We’re All Adults Here"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "And there’s no commitment. So what are you waiting for?"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "SIGN UP TODAY"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Get Started"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Sign Up"
+},
+{
+"fragment": false,
+"status": "verbatim",
+"text": "Select Plan"
+}
+],
+"near": 1,
+"total": 20,
+"verbatim": 16
+},
+"skipped": false
+}
+],
+"sharedFindings": [],
+"skipped": false
 }
 }

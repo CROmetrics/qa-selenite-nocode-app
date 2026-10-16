@@ -406,5 +406,109 @@
 "present": true,
 "source": "ticket",
 "specTicketKey": "ENOC-97"
+},
+"1790699058543": {
+"activeTicketKey": "STRZ-1658",
+"hasText": true,
+"length": 5016,
+"present": true,
+"source": "ticket",
+"specTicketKey": "STRZ-1658"
+},
+"1790959147029": {
+"activeTicketKey": "STRZ-1658",
+"hasText": true,
+"length": 7917,
+"present": true,
+"source": "ticket",
+"specTicketKey": "STRZ-1658"
+},
+"1790961049985": {
+"activeTicketKey": "STRZ-1658",
+"hasText": true,
+"length": 7917,
+"present": true,
+"source": "ticket",
+"specTicketKey": "STRZ-1658"
+},
+"1790961823925": {
+"activeTicketKey": "STRZ-1658",
+"hasText": true,
+"length": 7917,
+"present": true,
+"source": "ticket",
+"specTicketKey": "STRZ-1658"
+},
+"1790963410722": {
+"activeTicketKey": "STRZ-1658",
+"hasText": true,
+"length": 7917,
+"present": true,
+"source": "ticket",
+"specTicketKey": "STRZ-1658"
+},
+"1790966163146": {
+"activeTicketKey": "STRZ-1658",
+"hasText": true,
+"length": 7917,
+"present": true,
+"source": "ticket",
+"specTicketKey": "STRZ-1658"
+},
+"1791216757295": {
+"activeTicketKey": "STRZ-1658",
+"hasText": true,
+"length": 7917,
+"present": true,
+"source": "ticket",
+"specTicketKey": "STRZ-1658"
+},
+"1791218328696": {
+"activeTicketKey": "STRZ-1658",
+"hasText": true,
+"length": 7917,
+"present": true,
+"source": "ticket",
+"specTicketKey": "STRZ-1658"
+},
+"1791218328696 (1)": {
+"activeTicketKey": "STRZ-1658",
+"hasText": true,
+"length": 7917,
+"present": true,
+"source": "ticket",
+"specTicketKey": "STRZ-1658"
+},
+"1791221055240": {
+"activeTicketKey": "STRZ-1658",
+"hasText": true,
+"length": 7917,
+"present": true,
+"source": "ticket",
+"specTicketKey": "STRZ-1658"
+},
+"1791222173138": {
+"activeTicketKey": "STRZ-1658",
+"hasText": true,
+"length": 7917,
+"present": true,
+"source": "ticket",
+"specTicketKey": "STRZ-1658"
+},
+"1791222173138 (1)": {
+"activeTicketKey": "STRZ-1658",
+"hasText": true,
+"length": 7917,
+"present": true,
+"source": "ticket",
+"specTicketKey": "STRZ-1658"
+},
+"1791225305511": {
+"activeTicketKey": "STRZ-1658",
+"hasText": true,
+"length": 7917,
+"present": true,
+"source": "ticket",
+"specTicketKey": "STRZ-1658"
 }
 }

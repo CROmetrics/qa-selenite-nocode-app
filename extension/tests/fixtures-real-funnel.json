@@ -4474,5 +4474,4719 @@
 }
 ],
 "status": "ran"
+},
+"1789760985258": {
+"error": null,
+"reachedEnd": false,
+"segments": [
+{
+"actions": [
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1768,
+682
+],
+"delivered": true,
+"deliveredTo": "span.grid.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"span.grid.w-full",
+"p.mx-auto.flex",
+"button.w-full.rounded-full",
+"div"
+],
+"top": "span.grid.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1642,
+634
+],
+"modelMs": 3572,
+"modelTransient": null,
+"ms": 1289,
+"mutations": 457,
+"outOfRange": false,
+"page": {
+"textLen": 9398,
+"url": "https://www.wowway.com/"
+},
+"step": 1,
+"structuralMutations": 446,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1129,
+646
+],
+"delivered": true,
+"deliveredTo": "input.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"input.w-full",
+"div.smartySuggest",
+"div.inputField",
+"div.inputGroup.type-text"
+],
+"top": "input.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1049,
+600
+],
+"modelMs": 2343,
+"modelTransient": null,
+"ms": 1237,
+"mutations": 11,
+"outOfRange": false,
+"page": {
+"textLen": 9456,
+"url": "https://www.wowway.com/"
+},
+"step": 2,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "type",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 1839,
+"modelTransient": null,
+"ms": 60,
+"mutations": 11,
+"outOfRange": false,
+"page": {
+"textLen": 9456,
+"url": "https://www.wowway.com/"
+},
+"step": 3,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1511,
+646
+],
+"delivered": true,
+"deliveredTo": "input.max-w-32.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"input.max-w-32.w-full",
+"div.inputField",
+"div.inputGroup.type-text",
+"div.w-full.md:w-fit"
+],
+"top": "input.max-w-32.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1404,
+600
+],
+"modelMs": 2287,
+"modelTransient": null,
+"ms": 1243,
+"mutations": 17,
+"outOfRange": false,
+"page": {
+"textLen": 9751,
+"url": "https://www.wowway.com/"
+},
+"step": 4,
+"structuralMutations": 9,
+"typed": null
+},
+{
+"action": "type",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 1795,
+"modelTransient": null,
+"ms": 29,
+"mutations": 5,
+"outOfRange": false,
+"page": {
+"textLen": 9751,
+"url": "https://www.wowway.com/"
+},
+"step": 5,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1714,
+646
+],
+"delivered": true,
+"deliveredTo": "span.leading-[20px].sm:whitespace-nowrap",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"span.leading-[20px].sm:whitespace-nowrap",
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"div.w-full.md:w-fit"
+],
+"top": "span.leading-[20px].sm:whitespace-nowrap"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1592,
+600
+],
+"modelMs": 2207,
+"modelTransient": null,
+"ms": 1269,
+"mutations": 213,
+"outOfRange": false,
+"page": {
+"textLen": 9679,
+"url": "https://www.wowway.com/"
+},
+"step": 6,
+"structuralMutations": 196,
+"typed": null
+},
+{
+"action": "screenshot",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 1725,
+"modelTransient": null,
+"ms": 3,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9611,
+"url": "https://www.wowway.com/"
+},
+"step": 7,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1516,
+550
+],
+"delivered": true,
+"deliveredTo": "a.font-medium.min-w-fit",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"a.font-medium.min-w-fit",
+"div.bg-brandGray.p-4",
+"div.h-full.flex",
+"div.w-full.flex"
+],
+"top": "a.font-medium.min-w-fit"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1408,
+511
+],
+"modelMs": 3379,
+"modelTransient": null,
+"ms": 1250,
+"mutations": 14,
+"outOfRange": false,
+"page": {
+"textLen": 9693,
+"url": "https://www.wowway.com/"
+},
+"step": 8,
+"structuralMutations": 13,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1129,
+646
+],
+"delivered": true,
+"deliveredTo": "input.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"input.w-full",
+"div.smartySuggest",
+"div.inputField",
+"div.inputGroup.type-text"
+],
+"top": "input.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1049,
+600
+],
+"modelMs": 3160,
+"modelTransient": null,
+"ms": 1233,
+"mutations": 12,
+"outOfRange": false,
+"page": {
+"textLen": 9751,
+"url": "https://www.wowway.com/"
+},
+"step": 9,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1040,
+699
+],
+"delivered": true,
+"deliveredTo": "li.geosuggest__item.geosuggest__item--active",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"li.geosuggest__item.geosuggest__item--active",
+"#smartySuggestList",
+"div.geosuggest__suggests.opacity-100",
+"div.h-full.flex"
+],
+"top": "li.geosuggest__item.geosuggest__item--active"
+},
+"modelAttempts": 1,
+"modelCoord": [
+966,
+649
+],
+"modelMs": 2085,
+"modelTransient": null,
+"ms": 1236,
+"mutations": 6,
+"outOfRange": false,
+"page": {
+"textLen": 9693,
+"url": "https://www.wowway.com/"
+},
+"step": 10,
+"structuralMutations": 2,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1714,
+646
+],
+"delivered": true,
+"deliveredTo": "span.leading-[20px].sm:whitespace-nowrap",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"span.leading-[20px].sm:whitespace-nowrap",
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"div.w-full.md:w-fit"
+],
+"top": "span.leading-[20px].sm:whitespace-nowrap"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1592,
+600
+],
+"modelMs": 2239,
+"modelTransient": null,
+"ms": 1257,
+"mutations": 200,
+"outOfRange": false,
+"page": {
+"textLen": 9679,
+"url": "https://www.wowway.com/"
+},
+"step": 11,
+"structuralMutations": 191,
+"typed": null
+},
+{
+"action": "screenshot",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 1744,
+"modelTransient": null,
+"ms": 3,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9613,
+"url": "https://www.wowway.com/"
+},
+"step": 12,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1983,
+425
+],
+"delivered": true,
+"deliveredTo": "svg.svg-inline--fa.fa-xmark",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"svg.svg-inline--fa.fa-xmark",
+"button.border-brandGray2.btn-outline",
+"div.w-full.flex",
+"div.ReactModal__Content.ReactModal__Content--after-open"
+],
+"top": "svg.svg-inline--fa.fa-xmark"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1842,
+395
+],
+"modelMs": 2525,
+"modelTransient": null,
+"ms": 1251,
+"mutations": 11,
+"outOfRange": false,
+"page": {
+"textLen": 9434,
+"url": "https://www.wowway.com/"
+},
+"step": 13,
+"structuralMutations": 7,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1515,
+185
+],
+"delivered": true,
+"deliveredTo": "a.font-medium.min-w-fit",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 26,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"a.font-medium.min-w-fit",
+"div.bg-brandGray.p-4",
+"div.h-full.flex",
+"#serviceabilitySticky"
+],
+"top": "a.font-medium.min-w-fit"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1407,
+172
+],
+"modelMs": 4389,
+"modelTransient": null,
+"ms": 1247,
+"mutations": 6,
+"outOfRange": false,
+"page": {
+"textLen": 9445,
+"url": "https://www.wowway.com/"
+},
+"step": 14,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1221,
+141
+],
+"delivered": true,
+"deliveredTo": "input.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 8,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"input.w-full",
+"div.smartySuggest",
+"div.inputField",
+"div.inputGroup.type-text"
+],
+"top": "input.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1134,
+131
+],
+"modelMs": 3137,
+"modelTransient": null,
+"ms": 1236,
+"mutations": 12,
+"outOfRange": false,
+"page": {
+"textLen": 9503,
+"url": "https://www.wowway.com/"
+},
+"step": 15,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1138,
+301
+],
+"delivered": true,
+"deliveredTo": "li.geosuggest__item",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 8,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"li.geosuggest__item",
+"#smartySuggestList",
+"div.geosuggest__suggests.opacity-100",
+"span.color-highlight-text.pill"
+],
+"top": "li.geosuggest__item"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1057,
+280
+],
+"modelMs": 2277,
+"modelTransient": null,
+"ms": 1243,
+"mutations": 6,
+"outOfRange": false,
+"page": {
+"textLen": 9445,
+"url": "https://www.wowway.com/"
+},
+"step": 16,
+"structuralMutations": 2,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1784,
+141
+],
+"delivered": true,
+"deliveredTo": "span.leading-[20px].sm:whitespace-nowrap",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 8,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"span.leading-[20px].sm:whitespace-nowrap",
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"div.lg:ml-2.lg:w-fit"
+],
+"top": "span.leading-[20px].sm:whitespace-nowrap"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1657,
+131
+],
+"modelMs": 2203,
+"modelTransient": null,
+"ms": 1257,
+"mutations": 201,
+"outOfRange": false,
+"page": {
+"textLen": 9438,
+"url": "https://www.wowway.com/"
+},
+"step": 17,
+"structuralMutations": 191,
+"typed": null
+},
+{
+"action": "screenshot",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 2875,
+"modelTransient": null,
+"ms": 1,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9442,
+"url": "https://www.wowway.com/"
+},
+"step": 18,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1553,
+185
+],
+"delivered": true,
+"deliveredTo": "a.font-medium.min-w-fit",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 26,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"a.font-medium.min-w-fit",
+"div.bg-brandGray.p-4",
+"div.h-full.flex",
+"#serviceabilitySticky"
+],
+"top": "a.font-medium.min-w-fit"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1443,
+172
+],
+"modelMs": 4739,
+"modelTransient": null,
+"ms": 1246,
+"mutations": 6,
+"outOfRange": false,
+"page": {
+"textLen": 9445,
+"url": "https://www.wowway.com/"
+},
+"step": 19,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1221,
+141
+],
+"delivered": true,
+"deliveredTo": "input.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 8,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"input.w-full",
+"div.smartySuggest",
+"div.inputField",
+"div.inputGroup.type-text"
+],
+"top": "input.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1134,
+131
+],
+"modelMs": 2112,
+"modelTransient": null,
+"ms": 1228,
+"mutations": 12,
+"outOfRange": false,
+"page": {
+"textLen": 9503,
+"url": "https://www.wowway.com/"
+},
+"step": 20,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "key",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 4670,
+"modelTransient": null,
+"ms": 407,
+"mutations": 2,
+"outOfRange": false,
+"page": {
+"textLen": 9503,
+"url": "https://www.wowway.com/"
+},
+"step": 21,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1221,
+141
+],
+"delivered": true,
+"deliveredTo": "input.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 8,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"input.w-full",
+"div.smartySuggest",
+"div.inputField",
+"div.inputGroup.type-text"
+],
+"top": "input.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1134,
+131
+],
+"modelMs": 2651,
+"modelTransient": null,
+"ms": 1227,
+"mutations": 2,
+"outOfRange": false,
+"page": {
+"textLen": 9503,
+"url": "https://www.wowway.com/"
+},
+"step": 22,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+856,
+614
+],
+"delivered": true,
+"deliveredTo": "p.flex.justify-center",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"div.w-full.flex",
+"div.flex.flex-col"
+],
+"top": "p.flex.justify-center"
+},
+"modelAttempts": 1,
+"modelCoord": [
+795,
+570
+],
+"modelMs": 4998,
+"modelTransient": null,
+"ms": 1274,
+"mutations": 190,
+"outOfRange": false,
+"page": {
+"textLen": 9693,
+"url": "https://www.wowway.com/"
+},
+"step": 23,
+"structuralMutations": 183,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1129,
+646
+],
+"delivered": true,
+"deliveredTo": "input.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"input.w-full",
+"div.smartySuggest",
+"div.inputField",
+"div.inputGroup.type-text"
+],
+"top": "input.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1049,
+600
+],
+"modelMs": 3134,
+"modelTransient": null,
+"ms": 1233,
+"mutations": 12,
+"outOfRange": false,
+"page": {
+"textLen": 9751,
+"url": "https://www.wowway.com/"
+},
+"step": 24,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1052,
+861
+],
+"delivered": true,
+"deliveredTo": "li.geosuggest__item",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"li.geosuggest__item",
+"#smartySuggestList",
+"div.geosuggest__suggests.opacity-100",
+"div.ReactModal__Overlay.ReactModal__Overlay--after-open"
+],
+"top": "li.geosuggest__item"
+},
+"modelAttempts": 1,
+"modelCoord": [
+977,
+800
+],
+"modelMs": 2276,
+"modelTransient": null,
+"ms": 1240,
+"mutations": 6,
+"outOfRange": false,
+"page": {
+"textLen": 9693,
+"url": "https://www.wowway.com/"
+},
+"step": 25,
+"structuralMutations": 2,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1714,
+646
+],
+"delivered": true,
+"deliveredTo": "span.leading-[20px].sm:whitespace-nowrap",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"span.leading-[20px].sm:whitespace-nowrap",
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"div.w-full.md:w-fit"
+],
+"top": "span.leading-[20px].sm:whitespace-nowrap"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1592,
+600
+],
+"modelMs": 2264,
+"modelTransient": null,
+"ms": 1259,
+"mutations": 200,
+"outOfRange": false,
+"page": {
+"textLen": 9679,
+"url": "https://www.wowway.com/"
+},
+"step": 26,
+"structuralMutations": 191,
+"typed": null
+},
+{
+"action": "screenshot",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 1720,
+"modelTransient": null,
+"ms": 1,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9617,
+"url": "https://www.wowway.com/"
+},
+"step": 27,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1982,
+425
+],
+"delivered": true,
+"deliveredTo": "svg.svg-inline--fa.fa-xmark",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"svg.svg-inline--fa.fa-xmark",
+"button.border-brandGray2.btn-outline",
+"div.w-full.flex",
+"div.ReactModal__Content.ReactModal__Content--after-open"
+],
+"top": "svg.svg-inline--fa.fa-xmark"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1841,
+395
+],
+"modelMs": 3873,
+"modelTransient": null,
+"ms": 1250,
+"mutations": 11,
+"outOfRange": false,
+"page": {
+"textLen": 9436,
+"url": "https://www.wowway.com/"
+},
+"step": 28,
+"structuralMutations": 7,
+"typed": null
+},
+{
+"action": "scroll",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1381,
+646
+],
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 3,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"h1",
+"div.content-typography.text-left",
+"div.flex.flex-col",
+"div.w-full.flex"
+],
+"top": "h1"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1283,
+600
+],
+"modelMs": 2971,
+"modelTransient": null,
+"ms": 409,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9436,
+"url": "https://www.wowway.com/"
+},
+"step": 29,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+856,
+334
+],
+"delivered": true,
+"deliveredTo": "p.flex.justify-center",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"div.w-full.flex",
+"div.flex.flex-col"
+],
+"top": "p.flex.justify-center"
+},
+"modelAttempts": 1,
+"modelCoord": [
+795,
+310
+],
+"modelMs": 3345,
+"modelTransient": null,
+"ms": 1243,
+"mutations": 187,
+"outOfRange": false,
+"page": {
+"textLen": 9617,
+"url": "https://www.wowway.com/"
+},
+"step": 30,
+"structuralMutations": 182,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1982,
+425
+],
+"delivered": true,
+"deliveredTo": "svg.svg-inline--fa.fa-xmark",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"svg.svg-inline--fa.fa-xmark",
+"button.border-brandGray2.btn-outline",
+"div.w-full.flex",
+"div.ReactModal__Content.ReactModal__Content--after-open"
+],
+"top": "svg.svg-inline--fa.fa-xmark"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1841,
+395
+],
+"modelMs": 3606,
+"modelTransient": null,
+"ms": 1255,
+"mutations": 11,
+"outOfRange": false,
+"page": {
+"textLen": 9436,
+"url": "https://www.wowway.com/"
+},
+"step": 31,
+"structuralMutations": 7,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1381,
+804
+],
+"delivered": true,
+"deliveredTo": "p.flex.justify-center",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"p",
+"div.content-typography.text-center"
+],
+"top": "p.flex.justify-center"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1283,
+747
+],
+"modelMs": 2910,
+"modelTransient": null,
+"ms": 1260,
+"mutations": 188,
+"outOfRange": false,
+"page": {
+"textLen": 9617,
+"url": "https://www.wowway.com/"
+},
+"step": 32,
+"structuralMutations": 183,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1537,
+550
+],
+"delivered": true,
+"deliveredTo": "a.font-medium.min-w-fit",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"a.font-medium.min-w-fit",
+"div.bg-brandGray.p-4",
+"div.h-full.flex",
+"div.w-full.flex"
+],
+"top": "a.font-medium.min-w-fit"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1428,
+511
+],
+"modelMs": 6851,
+"modelTransient": null,
+"ms": 1252,
+"mutations": 14,
+"outOfRange": false,
+"page": {
+"textLen": 9693,
+"url": "https://www.wowway.com/"
+},
+"step": 33,
+"structuralMutations": 13,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1129,
+646
+],
+"delivered": true,
+"deliveredTo": "input.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"input.w-full",
+"div.smartySuggest",
+"div.inputField",
+"div.inputGroup.type-text"
+],
+"top": "input.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1049,
+600
+],
+"modelMs": 2074,
+"modelTransient": null,
+"ms": 1225,
+"mutations": 12,
+"outOfRange": false,
+"page": {
+"textLen": 9751,
+"url": "https://www.wowway.com/"
+},
+"step": 34,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1056,
+752
+],
+"delivered": true,
+"deliveredTo": "li.geosuggest__item",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"li.geosuggest__item",
+"#smartySuggestList",
+"div.geosuggest__suggests.opacity-100",
+"div.w-full.flex"
+],
+"top": "li.geosuggest__item"
+},
+"modelAttempts": 1,
+"modelCoord": [
+981,
+699
+],
+"modelMs": 1942,
+"modelTransient": null,
+"ms": 1242,
+"mutations": 6,
+"outOfRange": false,
+"page": {
+"textLen": 9693,
+"url": "https://www.wowway.com/"
+},
+"step": 35,
+"structuralMutations": 2,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1714,
+646
+],
+"delivered": true,
+"deliveredTo": "span.leading-[20px].sm:whitespace-nowrap",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"span.leading-[20px].sm:whitespace-nowrap",
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"div.w-full.md:w-fit"
+],
+"top": "span.leading-[20px].sm:whitespace-nowrap"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1592,
+600
+],
+"modelMs": 2075,
+"modelTransient": null,
+"ms": 1259,
+"mutations": 207,
+"outOfRange": false,
+"page": {
+"textLen": 9679,
+"url": "https://www.wowway.com/"
+},
+"step": 36,
+"structuralMutations": 194,
+"typed": null
+},
+{
+"action": "screenshot",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 1630,
+"modelTransient": null,
+"ms": 2,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9621,
+"url": "https://www.wowway.com/"
+},
+"step": 37,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1982,
+425
+],
+"delivered": true,
+"deliveredTo": "svg.svg-inline--fa.fa-xmark",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"svg.svg-inline--fa.fa-xmark",
+"button.border-brandGray2.btn-outline",
+"div.w-full.flex",
+"div.ReactModal__Content.ReactModal__Content--after-open"
+],
+"top": "svg.svg-inline--fa.fa-xmark"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1841,
+395
+],
+"modelMs": 6080,
+"modelTransient": null,
+"ms": 1263,
+"mutations": 11,
+"outOfRange": false,
+"page": {
+"textLen": 9438,
+"url": "https://www.wowway.com/"
+},
+"step": 38,
+"structuralMutations": 7,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1530,
+97
+],
+"delivered": true,
+"deliveredTo": "a.font-medium.min-w-fit",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 26,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"a.font-medium.min-w-fit",
+"div.bg-brandGray.p-4",
+"div.h-full.flex",
+"#serviceabilitySticky"
+],
+"top": "a.font-medium.min-w-fit"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1421,
+90
+],
+"modelMs": 6523,
+"modelTransient": null,
+"ms": 1249,
+"mutations": 6,
+"outOfRange": false,
+"page": {
+"textLen": 9445,
+"url": "https://www.wowway.com/"
+},
+"step": 39,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1217,
+52
+],
+"delivered": true,
+"deliveredTo": "input.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 8,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"input.w-full",
+"div.smartySuggest",
+"div.inputField",
+"div.inputGroup.type-text"
+],
+"top": "input.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1131,
+48
+],
+"modelMs": 4331,
+"modelTransient": null,
+"ms": 1232,
+"mutations": 12,
+"outOfRange": false,
+"page": {
+"textLen": 9503,
+"url": "https://www.wowway.com/"
+},
+"step": 40,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1106,
+104
+],
+"delivered": true,
+"deliveredTo": "li.geosuggest__item.geosuggest__item--active",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 8,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"li.geosuggest__item.geosuggest__item--active",
+"#smartySuggestList",
+"div.geosuggest__suggests.opacity-100",
+"span.color-highlight-text.pill"
+],
+"top": "li.geosuggest__item.geosuggest__item--active"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1027,
+97
+],
+"modelMs": 9711,
+"modelTransient": null,
+"ms": 1237,
+"mutations": 6,
+"outOfRange": false,
+"page": {
+"textLen": 9445,
+"url": "https://www.wowway.com/"
+},
+"step": 41,
+"structuralMutations": 2,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1784,
+52
+],
+"delivered": true,
+"deliveredTo": "span.leading-[20px].sm:whitespace-nowrap",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 8,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"span.leading-[20px].sm:whitespace-nowrap",
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"div.lg:ml-2.lg:w-fit"
+],
+"top": "span.leading-[20px].sm:whitespace-nowrap"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1657,
+48
+],
+"modelMs": 5104,
+"modelTransient": null,
+"ms": 1256,
+"mutations": 194,
+"outOfRange": false,
+"page": {
+"textLen": 9438,
+"url": "https://www.wowway.com/"
+},
+"step": 42,
+"structuralMutations": 188,
+"typed": null
+},
+{
+"action": "screenshot",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 1637,
+"modelTransient": null,
+"ms": 2,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9434,
+"url": "https://www.wowway.com/"
+},
+"step": 43,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1552,
+354
+],
+"delivered": true,
+"deliveredTo": "span.grid.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"span.grid.w-full",
+"p.mx-auto.flex",
+"button.w-full.rounded-full",
+"div"
+],
+"top": "span.grid.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1442,
+329
+],
+"modelMs": 6615,
+"modelTransient": null,
+"ms": 1292,
+"mutations": 381,
+"outOfRange": false,
+"page": {
+"textLen": 9613,
+"url": "https://www.wowway.com/"
+},
+"step": 44,
+"structuralMutations": 368,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1517,
+550
+],
+"delivered": true,
+"deliveredTo": "a.font-medium.min-w-fit",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"a.font-medium.min-w-fit",
+"div.bg-brandGray.p-4",
+"div.h-full.flex",
+"div.w-full.flex"
+],
+"top": "a.font-medium.min-w-fit"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1409,
+511
+],
+"modelMs": 4346,
+"modelTransient": null,
+"ms": 1253,
+"mutations": 14,
+"outOfRange": false,
+"page": {
+"textLen": 9693,
+"url": "https://www.wowway.com/"
+},
+"step": 45,
+"structuralMutations": 13,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1129,
+646
+],
+"delivered": true,
+"deliveredTo": "input.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"input.w-full",
+"div.smartySuggest",
+"div.inputField",
+"div.inputGroup.type-text"
+],
+"top": "input.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1049,
+600
+],
+"modelMs": 2168,
+"modelTransient": null,
+"ms": 1220,
+"mutations": 12,
+"outOfRange": false,
+"page": {
+"textLen": 9751,
+"url": "https://www.wowway.com/"
+},
+"step": 46,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "type",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 5538,
+"modelTransient": null,
+"ms": 35,
+"mutations": 23,
+"outOfRange": false,
+"page": {
+"textLen": 9456,
+"url": "https://www.wowway.com/"
+},
+"step": 47,
+"structuralMutations": 10,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1511,
+646
+],
+"delivered": true,
+"deliveredTo": "input.max-w-32.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"input.max-w-32.w-full",
+"div.inputField",
+"div.inputGroup.type-text",
+"div.w-full.md:w-fit"
+],
+"top": "input.max-w-32.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1404,
+600
+],
+"modelMs": 1925,
+"modelTransient": null,
+"ms": 1237,
+"mutations": 16,
+"outOfRange": false,
+"page": {
+"textLen": 9741,
+"url": "https://www.wowway.com/"
+},
+"step": 48,
+"structuralMutations": 8,
+"typed": null
+},
+{
+"action": "type",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 1950,
+"modelTransient": null,
+"ms": 28,
+"mutations": 5,
+"outOfRange": false,
+"page": {
+"textLen": 9741,
+"url": "https://www.wowway.com/"
+},
+"step": 49,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1714,
+646
+],
+"delivered": true,
+"deliveredTo": "span.leading-[20px].sm:whitespace-nowrap",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"span.leading-[20px].sm:whitespace-nowrap",
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"div.w-full.md:w-fit"
+],
+"top": "span.leading-[20px].sm:whitespace-nowrap"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1592,
+600
+],
+"modelMs": 2031,
+"modelTransient": null,
+"ms": 1266,
+"mutations": 204,
+"outOfRange": false,
+"page": {
+"textLen": 9669,
+"url": "https://www.wowway.com/"
+},
+"step": 50,
+"structuralMutations": 194,
+"typed": null
+},
+{
+"action": "screenshot",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 1714,
+"modelTransient": null,
+"ms": 2,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9629,
+"url": "https://www.wowway.com/"
+},
+"step": 51,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1983,
+425
+],
+"delivered": true,
+"deliveredTo": "svg.svg-inline--fa.fa-xmark",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"svg.svg-inline--fa.fa-xmark",
+"button.border-brandGray2.btn-outline",
+"div.w-full.flex",
+"div.ReactModal__Content.ReactModal__Content--after-open"
+],
+"top": "svg.svg-inline--fa.fa-xmark"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1842,
+395
+],
+"modelMs": 6760,
+"modelTransient": null,
+"ms": 1255,
+"mutations": 11,
+"outOfRange": false,
+"page": {
+"textLen": 9442,
+"url": "https://www.wowway.com/"
+},
+"step": 52,
+"structuralMutations": 7,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+853,
+553
+],
+"delivered": true,
+"deliveredTo": "p.flex.justify-center",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"div.w-full.flex",
+"div.flex.flex-col"
+],
+"top": "p.flex.justify-center"
+},
+"modelAttempts": 1,
+"modelCoord": [
+792,
+514
+],
+"modelMs": 5612,
+"modelTransient": null,
+"ms": 1266,
+"mutations": 188,
+"outOfRange": false,
+"page": {
+"textLen": 9629,
+"url": "https://www.wowway.com/"
+},
+"step": 53,
+"structuralMutations": 183,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1982,
+425
+],
+"delivered": true,
+"deliveredTo": "svg.svg-inline--fa.fa-xmark",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"svg.svg-inline--fa.fa-xmark",
+"button.border-brandGray2.btn-outline",
+"div.w-full.flex",
+"div.ReactModal__Content.ReactModal__Content--after-open"
+],
+"top": "svg.svg-inline--fa.fa-xmark"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1841,
+395
+],
+"modelMs": 8770,
+"modelTransient": null,
+"ms": 1249,
+"mutations": 11,
+"outOfRange": false,
+"page": {
+"textLen": 9442,
+"url": "https://www.wowway.com/"
+},
+"step": 54,
+"structuralMutations": 7,
+"typed": null
+},
+{
+"action": "scroll",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1381,
+431
+],
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"p",
+"div.content-typography.text-left",
+"div.flex.flex-col",
+"div.w-full.flex"
+],
+"top": "p"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1283,
+400
+],
+"modelMs": 5529,
+"modelTransient": null,
+"ms": 409,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9442,
+"url": "https://www.wowway.com/"
+},
+"step": 55,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1012,
+44
+],
+"delivered": true,
+"deliveredTo": "a.flex.items-center",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"a.flex.items-center",
+"div",
+"li.flex.items-center",
+"div.flex.items-center"
+],
+"top": "a.flex.items-center"
+},
+"modelAttempts": 1,
+"modelCoord": [
+940,
+41
+],
+"modelMs": 3700,
+"modelTransient": null,
+"ms": 1317,
+"mutations": 427,
+"outOfRange": false,
+"page": {
+"textLen": 9500,
+"url": "https://www.wowway.com/#offers"
+},
+"step": 56,
+"structuralMutations": 385,
+"typed": null
+},
+{
+"action": "screenshot",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 5258,
+"modelTransient": null,
+"ms": 3,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9500,
+"url": "https://www.wowway.com/#offers"
+},
+"step": 57,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+940,
+630
+],
+"delivered": true,
+"deliveredTo": "span",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"span",
+"p",
+"div.content-typography.text-left",
+"div.w-full.flex"
+],
+"top": "span"
+},
+"modelAttempts": 1,
+"modelCoord": [
+873,
+585
+],
+"modelMs": 3409,
+"modelTransient": null,
+"ms": 1228,
+"mutations": 2,
+"outOfRange": false,
+"page": {
+"textLen": 9500,
+"url": "https://www.wowway.com/#offers"
+},
+"step": 58,
+"structuralMutations": 0,
+"typed": null
+}
+],
+"apiStopReason": null,
+"blockedBy": null,
+"elapsedMs": 271647,
+"error": "Stopped",
+"finalText": "",
+"from": "https://www.wowway.com/",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"reached": false,
+"steps": 58,
+"stopReason": "user-stopped",
+"summary": "Stopped by the tester after 58 agent step(s) — no verdict for this segment.",
+"to": "https://sales.wowway.com/?LeadId=4f18d22e-37c4-4a72-b5e4-4b949bfc587d"
+}
+],
+"status": "ran"
+},
+"1789761071265": {
+"error": null,
+"reachedEnd": false,
+"segments": [
+{
+"actions": [
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1557,
+185
+],
+"delivered": true,
+"deliveredTo": "a.font-medium.min-w-fit",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 26,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"a.font-medium.min-w-fit",
+"div.bg-brandGray.p-4",
+"div.h-full.flex",
+"#serviceabilitySticky"
+],
+"top": "a.font-medium.min-w-fit"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1446,
+172
+],
+"modelMs": 3443,
+"modelTransient": null,
+"ms": 1246,
+"mutations": 7,
+"outOfRange": false,
+"page": {
+"textLen": 9440,
+"url": "https://www.wowway.com/"
+},
+"step": 1,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1224,
+140
+],
+"delivered": true,
+"deliveredTo": "input.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 8,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"input.w-full",
+"div.smartySuggest",
+"div.inputField",
+"div.inputGroup.type-text"
+],
+"top": "input.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1137,
+130
+],
+"modelMs": 2090,
+"modelTransient": null,
+"ms": 1224,
+"mutations": 12,
+"outOfRange": false,
+"page": {
+"textLen": 9498,
+"url": "https://www.wowway.com/"
+},
+"step": 2,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "type",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 2029,
+"modelTransient": null,
+"ms": 188,
+"mutations": 131,
+"outOfRange": false,
+"page": {
+"textLen": 9342,
+"url": "https://www.wowway.com/"
+},
+"step": 3,
+"structuralMutations": 81,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1156,
+194
+],
+"delivered": true,
+"deliveredTo": "li.geosuggest__item.geosuggest__item--active",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 8,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"li.geosuggest__item.geosuggest__item--active",
+"#smartySuggestList",
+"div.geosuggest__suggests.opacity-100",
+"div.flex.justify-end"
+],
+"top": "li.geosuggest__item.geosuggest__item--active"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1074,
+180
+],
+"modelMs": 2217,
+"modelTransient": null,
+"ms": 1245,
+"mutations": 7,
+"outOfRange": false,
+"page": {
+"textLen": 9451,
+"url": "https://www.wowway.com/"
+},
+"step": 4,
+"structuralMutations": 1,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1788,
+141
+],
+"delivered": true,
+"deliveredTo": "span.leading-[20px].sm:whitespace-nowrap",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 8,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"span.leading-[20px].sm:whitespace-nowrap",
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"div.lg:ml-2.lg:w-fit"
+],
+"top": "span.leading-[20px].sm:whitespace-nowrap"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1661,
+131
+],
+"modelMs": 1965,
+"modelTransient": null,
+"ms": 1258,
+"mutations": 190,
+"outOfRange": false,
+"page": {
+"textLen": 9444,
+"url": "https://www.wowway.com/"
+},
+"step": 5,
+"structuralMutations": 184,
+"typed": null
+},
+{
+"action": "wait",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": "Action \"wait\" is not implemented — nothing was dispatched.",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 2675,
+"modelTransient": null,
+"ms": 2,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9444,
+"url": "https://www.wowway.com/"
+},
+"step": 6,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "screenshot",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 1905,
+"modelTransient": null,
+"ms": 2,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9444,
+"url": "https://www.wowway.com/"
+},
+"step": 7,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "wait",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": "Action \"wait\" is not implemented — nothing was dispatched.",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 1951,
+"modelTransient": null,
+"ms": 2,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9444,
+"url": "https://www.wowway.com/"
+},
+"step": 8,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "wait",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": "Action \"wait\" is not implemented — nothing was dispatched.",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 2152,
+"modelTransient": null,
+"ms": 3,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9444,
+"url": "https://www.wowway.com/"
+},
+"step": 9,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "screenshot",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 2016,
+"modelTransient": null,
+"ms": 2,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9447,
+"url": "https://www.wowway.com/"
+},
+"step": 10,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1768,
+902
+],
+"delivered": true,
+"deliveredTo": "span.grid.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"span.grid.w-full",
+"p.mx-auto.flex",
+"button.w-full.rounded-full",
+"div"
+],
+"top": "span.grid.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1642,
+838
+],
+"modelMs": 6745,
+"modelTransient": null,
+"ms": 1288,
+"mutations": 377,
+"outOfRange": false,
+"page": {
+"textLen": 9639,
+"url": "https://www.wowway.com/"
+},
+"step": 11,
+"structuralMutations": 363,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1984,
+425
+],
+"delivered": true,
+"deliveredTo": "path",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"path",
+"svg.svg-inline--fa.fa-xmark",
+"button.border-brandGray2.btn-outline",
+"div.w-full.flex"
+],
+"top": "path"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1843,
+395
+],
+"modelMs": 2584,
+"modelTransient": null,
+"ms": 1251,
+"mutations": 11,
+"outOfRange": false,
+"page": {
+"textLen": 9447,
+"url": "https://www.wowway.com/"
+},
+"step": 12,
+"structuralMutations": 7,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1766,
+902
+],
+"delivered": true,
+"deliveredTo": "span.grid.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"span.grid.w-full",
+"p.mx-auto.flex",
+"button.w-full.rounded-full",
+"div"
+],
+"top": "span.grid.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1641,
+838
+],
+"modelMs": 3187,
+"modelTransient": null,
+"ms": 1289,
+"mutations": 366,
+"outOfRange": false,
+"page": {
+"textLen": 9639,
+"url": "https://www.wowway.com/"
+},
+"step": 13,
+"structuralMutations": 357,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1984,
+425
+],
+"delivered": true,
+"deliveredTo": "path",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "div.ReactModal__Overlay.ReactModal__Overlay--after-open",
+"coversPct": 100,
+"position": "fixed"
+},
+"position": "static",
+"stack": [
+"path",
+"svg.svg-inline--fa.fa-xmark",
+"button.border-brandGray2.btn-outline",
+"div.w-full.flex"
+],
+"top": "path"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1843,
+395
+],
+"modelMs": 6188,
+"modelTransient": null,
+"ms": 1255,
+"mutations": 11,
+"outOfRange": false,
+"page": {
+"textLen": 9447,
+"url": "https://www.wowway.com/"
+},
+"step": 14,
+"structuralMutations": 7,
+"typed": null
+}
+],
+"apiStopReason": null,
+"blockedBy": null,
+"elapsedMs": 54356,
+"error": "Stopped",
+"finalText": "",
+"from": "https://www.wowway.com/",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"reached": false,
+"steps": 14,
+"stopReason": "user-stopped",
+"summary": "Stopped by the tester after 14 agent step(s) — no verdict for this segment.",
+"to": "https://sales.wowway.com/?LeadId=4f18d22e-37c4-4a72-b5e4-4b949bfc587d"
+}
+],
+"status": "ran"
+},
+"1789761141108": {
+"error": null,
+"reachedEnd": false,
+"segments": [
+{
+"actions": [
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1571,
+185
+],
+"delivered": true,
+"deliveredTo": "a.font-medium.min-w-fit",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 26,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"a.font-medium.min-w-fit",
+"div.bg-brandGray.p-4",
+"div.h-full.flex",
+"#serviceabilitySticky"
+],
+"top": "a.font-medium.min-w-fit"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1459,
+172
+],
+"modelMs": 3351,
+"modelTransient": null,
+"ms": 1246,
+"mutations": 7,
+"outOfRange": false,
+"page": {
+"textLen": 9451,
+"url": "https://www.wowway.com/"
+},
+"step": 1,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1224,
+141
+],
+"delivered": true,
+"deliveredTo": "input.w-full",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 1,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 8,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"input.w-full",
+"div.smartySuggest",
+"div.inputField",
+"div.inputGroup.type-text"
+],
+"top": "input.w-full"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1137,
+131
+],
+"modelMs": 3066,
+"modelTransient": null,
+"ms": 1228,
+"mutations": 12,
+"outOfRange": false,
+"page": {
+"textLen": 9509,
+"url": "https://www.wowway.com/"
+},
+"step": 2,
+"structuralMutations": 6,
+"typed": null
+},
+{
+"action": "type",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 2513,
+"modelTransient": null,
+"ms": 96,
+"mutations": 37,
+"outOfRange": false,
+"page": {
+"textLen": 9355,
+"url": "https://www.wowway.com/"
+},
+"step": 3,
+"structuralMutations": 5,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1788,
+141
+],
+"delivered": true,
+"deliveredTo": "span.leading-[20px].sm:whitespace-nowrap",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 8,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"span.leading-[20px].sm:whitespace-nowrap",
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"div.lg:ml-2.lg:w-fit"
+],
+"top": "span.leading-[20px].sm:whitespace-nowrap"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1661,
+131
+],
+"modelMs": 2473,
+"modelTransient": null,
+"ms": 1280,
+"mutations": 194,
+"outOfRange": false,
+"page": {
+"textLen": 9475,
+"url": "https://www.wowway.com/"
+},
+"step": 4,
+"structuralMutations": 183,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1595,
+141
+],
+"delivered": true,
+"deliveredTo": "input.error",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 12,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"input.error",
+"div.inputField",
+"div.inputGroup.type-text",
+"div.lg:[--input-width:112px].w-full"
+],
+"top": "input.error"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1482,
+131
+],
+"modelMs": 2496,
+"modelTransient": null,
+"ms": 1224,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 9475,
+"url": "https://www.wowway.com/"
+},
+"step": 5,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "type",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 2047,
+"modelTransient": null,
+"ms": 53,
+"mutations": 10,
+"outOfRange": false,
+"page": {
+"textLen": 9450,
+"url": "https://www.wowway.com/"
+},
+"step": 6,
+"structuralMutations": 2,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1788,
+141
+],
+"delivered": true,
+"deliveredTo": "span.leading-[20px].sm:whitespace-nowrap",
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": {
+"brief": "#serviceabilitySticky",
+"coversPct": 8,
+"position": "sticky"
+},
+"position": "static",
+"stack": [
+"span.leading-[20px].sm:whitespace-nowrap",
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"div.lg:ml-2.lg:w-fit"
+],
+"top": "span.leading-[20px].sm:whitespace-nowrap"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1661,
+131
+],
+"modelMs": 2173,
+"modelTransient": null,
+"ms": 1252,
+"mutations": 198,
+"outOfRange": false,
+"page": {
+"textLen": 9443,
+"url": "https://www.wowway.com/"
+},
+"step": 7,
+"structuralMutations": 187,
+"typed": null
+},
+{
+"action": "wait",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": "Action \"wait\" is not implemented — nothing was dispatched.",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 2223,
+"modelTransient": null,
+"ms": 3,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 11553,
+"url": "https://www.wowway.com/"
+},
+"step": 8,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "scroll",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1387,
+431
+],
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 10,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": false,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"div.w-full.lg:max-w-[629px]",
+"div.flex.md:flex-row",
+"div.w-full.max-w-design",
+"#hero"
+],
+"top": "div.w-full.lg:max-w-[629px]"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1288,
+400
+],
+"modelMs": 3424,
+"modelTransient": null,
+"ms": 410,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 11553,
+"url": "https://www.wowway.com/"
+},
+"step": 9,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "left_click",
+"choice": null,
+"coordConverted": true,
+"coordReason": null,
+"cssCoord": [
+1794,
+658
+],
+"delivered": null,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": 0,
+"innerH": 1225,
+"innerW": 2773,
+"interactive": true,
+"isIframe": false,
+"nothingAtPoint": false,
+"overlay": null,
+"position": "static",
+"stack": [
+"span.grid.grid-flow-col",
+"p.flex.justify-center",
+"button.rounded-full.whitespace-nowrap",
+"div"
+],
+"top": "span.grid.grid-flow-col"
+},
+"modelAttempts": 1,
+"modelCoord": [
+1667,
+611
+],
+"modelMs": 2796,
+"modelTransient": null,
+"ms": 2528,
+"mutations": null,
+"outOfRange": false,
+"page": {
+"textLen": 14,
+"url": "https://sales.wowway.com/?LeadId=802b6d21-bf0f-4820-b7c9-6481344e6991"
+},
+"step": 10,
+"structuralMutations": null,
+"typed": null
+},
+{
+"action": "wait",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": "Action \"wait\" is not implemented — nothing was dispatched.",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 3215,
+"modelTransient": null,
+"ms": 2,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 146,
+"url": "https://sales.wowway.com/address-serviceable"
+},
+"step": 11,
+"structuralMutations": 0,
+"typed": null
+},
+{
+"action": "screenshot",
+"choice": null,
+"coordConverted": false,
+"coordReason": "no-coordinate",
+"cssCoord": null,
+"delivered": false,
+"deliveredTo": null,
+"error": null,
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"hit": {
+"control": null,
+"coversPct": null,
+"innerH": null,
+"innerW": null,
+"interactive": null,
+"isIframe": null,
+"nothingAtPoint": true,
+"overlay": null,
+"position": null,
+"stack": [],
+"top": null
+},
+"modelAttempts": 1,
+"modelCoord": null,
+"modelMs": 2353,
+"modelTransient": null,
+"ms": 3,
+"mutations": 0,
+"outOfRange": false,
+"page": {
+"textLen": 2515,
+"url": "https://sales.wowway.com/yourplan"
+},
+"step": 12,
+"structuralMutations": 0,
+"typed": null
+}
+],
+"apiStopReason": "max_tokens",
+"blockedBy": null,
+"elapsedMs": 54591,
+"error": null,
+"finalText": "I've reached the sales funnel page on sales.wowway.com, showing \"Let's get started - Customize your plan\" with the confirmed address (1207 Travis Rd, Dothan AL, 36301) and the Internet 300 plan selected. This is step 1 of 6 in the sales flow (\"Your Plan\"), which matches the destination URL pattern (sales.wowway.com with a LeadId parameter for this specific lead/plan configuration).\n\n**Summary of the path taken:**\n1. Started at wowway.com, which initially showed a different address than specified in the tester's notes.\n2. Clicked \"Change\" to update the address, then entered \"1207 Travis Rd, Dothan, AL 36301\" into the address field and \"36301\" into the separate ZIP field (the ZIP wasn't auto-parsed from the full address string — worth noting as a minor UX quirk).\n3. Clicked \"Check Availability,\" which confirmed service availability and displayed the Internet 300 plan for that address.\n4. Clicked \"Get Started\" on that plan, which transitioned through a brief \"applying discounts\" loading state and landed on the sales.wowway.com funnel's \"Your Plan\" step, with the address and plan carried over correctly.\n\nI've stopped here since this page matches the destination funnel state — I did not proceed further into equip",
+"from": "https://www.wowway.com/",
+"geometry": {
+"coordScaleX": 1.076475155279503,
+"coordScaleY": 1.0764499121265378,
+"imageH": 1138,
+"imageW": 2576,
+"viewportH": 1225,
+"viewportW": 2773
+},
+"reached": false,
+"steps": 13,
+"stopReason": "agent-stopped",
+"summary": "The agent's reply was cut off by the token limit on step 13 before it issued an action, so the crawl stalled on a tooling limit rather than on anything about the site. Re-run.",
+"to": "https://sales.wowway.com/?LeadId=4f18d22e-37c4-4a72-b5e4-4b949bfc587d"
+}
+],
+"status": "ran"
 }
 }

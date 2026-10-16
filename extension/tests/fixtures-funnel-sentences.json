@@ -48,6 +48,9 @@
   "1789752263211#0": "The agent stopped after 11 step(s) and reported a CAPTCHA / bot check, which it is instructed not to attempt (matched \"Verify you are human\"). In its own words: \"I've reached a point in the funnel where all the form fields are filled in (Pet Name: Buddy, Dog, Boy, Breed: Mixed Breed Medium, Age: 5 years, Email: qa-test@example.com, ZIP: 98101), but the page displays a Cloudflare \"Verify you are huma\"",
   "1789754996870#0": "The crawl could not run: Failed to fetch (after 4 agent step(s)). This is a Selenite or API failure, not a finding about the site.",
   "1789755806034#0": "Reached https://www.toryburch.com/es-us/sale/categories/sport-sale/ in 12 agent step(s).",
-  "1789760144515#0": "Reached https://www.toryburch.com/es-us/sale/categories/sport-sale/ in 9 agent step(s)."
+  "1789760144515#0": "Reached https://www.toryburch.com/es-us/sale/categories/sport-sale/ in 9 agent step(s).",
+  "1789760985258#0": "Stopped by the tester after 58 agent step(s) — no verdict for this segment.",
+  "1789761071265#0": "Stopped by the tester after 14 agent step(s) — no verdict for this segment.",
+  "1789761141108#0": "The agent's reply was cut off by the token limit on step 13 before it issued an action, so the crawl stalled on a tooling limit rather than on anything about the site. Re-run."
  }
 }

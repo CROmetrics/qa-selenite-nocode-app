@@ -28,6 +28,10 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.20 — 2026-10-16
+
+No change to the extension. The tests now cover the debug logs recorded since mid-September, including starz.com (STRZ-1658) as a sixth site.
+
 ### 0.7.19 — 2026-10-14
 
 **Function Queue**

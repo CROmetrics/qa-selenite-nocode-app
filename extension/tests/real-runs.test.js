@@ -704,9 +704,17 @@ section('spec suppression cause across every recorded run');
   // graded-unverified rungs. The other two buckets are unmoved throughout --
   // nothing new arrived without a spec, and no ticket mismatch. A new run
   // that does NOT follow that pattern must fail here rather than be absorbed.
+  //
+  // 2026-10-14 refresh: graded 28 -> 41, the thirteen STRZ-1658 (starz.com)
+  // logs 1790699058543, 1790959147029, 1790961049985, 1790961823925,
+  // 1790963410722, 1790966163146, 1791216757295, 1791218328696 (and its "(1)"
+  // download), 1791221055240, 1791222173138 (and its "(1)") and 1791225305511.
+  // Checked one by one against the fixture before the pin moved: each spec is
+  // present, source 'ticket', and specTicketKey === activeTicketKey ===
+  // 'STRZ-1658'. The other two buckets are unmoved again.
   eq('every recorded run resolves to a cause',
      Object.keys(census).sort().map(function (k) { return k + '=' + census[k]; }).join(','),
-     'graded=28,graded-unverified=17,none=6');
+     'graded=41,graded-unverified=17,none=6');
   eq('  and every log carrying a designReference is accounted for',
      Object.keys(census).reduce(function (n, k) { return n + census[k]; }, 0),
      Object.keys(SPECS).length);
@@ -913,10 +921,11 @@ section('funnel crawl coordinate space (real runs)');
   // the read-back" -- not "did not land". Every log on record predates it, so the
   // projection must carry the key (as null) on every action, and the `type`
   // actions in those logs must still show the BLIND signature the read-back
-  // exists to fix: no delivery, "nothing at that point" (a type is probed at
-  // (-1,-1), so that reading was noise), no structural mutation. That signature
-  // is identical whether the text landed or not -- r_1789752263211 typed three
-  // times, got nothing back, and ended with the form incomplete.
+  // exists to fix: no delivery, and "nothing at that point" (a type is probed at
+  // (-1,-1), so that reading was noise). Those two read the same whether the
+  // text landed or not -- r_1789752263211 typed three times, got nothing back,
+  // and ended with the form incomplete. The structural mutation count is not
+  // blind (see the four below).
   var typeActs = [], noTypedKey = 0, badVerdict = 0;
   fids.forEach(function (rid) {
     (FUNNEL[rid].segments || []).forEach(function (sg) {
@@ -939,8 +948,34 @@ section('funnel crawl coordinate space (real runs)');
      blindTypes.filter(function (a) { return a.delivered !== false; }).length, 0);
   eq('  every one as "nothing at that point"',
      blindTypes.filter(function (a) { return !(a.hit && a.hit.nothingAtPoint === true); }).length, 0);
-  eq('  and none moved the page structurally',
-     blindTypes.filter(function (a) { return a.structuralMutations > 0; }).length, 0);
+  // Until 2026-10-14 this read "and none moved the page structurally", and the
+  // comment above said the whole signature was identical whether the text
+  // landed or not. The refresh that day brought in three walks (1789760985258,
+  // 1789761071265, 1789761141108) whose blind type actions DID move the page --
+  // 10, 81, 5 and 2 structural mutations -- while every quiet action in the same
+  // walks (20 screenshot, wait, scroll and key actions) moved nothing. So the
+  // typing landed there, even though delivery read false and the probe "nothing
+  // at that point": the two readings above are the blind part; the mutation
+  // count is not. fnDidSomething already counts these as the walk making
+  // progress, which is right. Pinned by name, so a fifth one is looked at
+  // rather than absorbed.
+  var movedBlind = [];
+  fids.forEach(function (rid) {
+    (FUNNEL[rid].segments || []).forEach(function (sg, si) {
+      var acts = sg.actions || [];
+      acts.forEach(function (a, ai) {
+        if (a.action === 'type' && a.typed === null && a.structuralMutations > 0) {
+          var quietMoved = acts.filter(function (q) {
+            return ['screenshot', 'wait', 'scroll', 'key'].indexOf(q.action) !== -1 && q.structuralMutations > 0;
+          }).length;
+          movedBlind.push(rid + '#' + si + ':' + ai + '=' + a.structuralMutations + (quietMoved ? ' (quiet moved ' + quietMoved + ')' : ''));
+        }
+      });
+    });
+  });
+  eq('  four of them moved the page, in walks where nothing quiet did',
+     movedBlind.sort().join(', '),
+     '1789760985258#0:46=10, 1789761071265#0:2=81, 1789761141108#0:2=5, 1789761141108#0:5=2');
   if (typeof fnTypedOutcome === 'function') {
     eq('an old log, replayed through the verdict, is "could not tell" -- never a failure',
        fnTypedOutcome(null).landed, null);

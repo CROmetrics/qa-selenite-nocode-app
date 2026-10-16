@@ -2,6 +2,21 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-16 — 0.7.20
+
+A test-fixture refresh; nothing under `extension/` outside `tests/` changes. `regen-fixtures.py --write` was run on 2026-10-14 against the debug logs in `~/Downloads`, after verify-only had shown every existing fixture reproduced. The diff is insertions only: no existing record moved.
+
+### Changed
+
+- **Fixtures:** captures 63 → 74, clusters 43 → 76, runs 31 → 42, specs 51 → 64, funnel 12 → 15. A sixth site enters the corpus: starz.com, thirteen spec logs, all STRZ-1658 (two of them second downloads of the same run). `fixtures-funnel-sentences.json` gains the three new walks' sentences (real 12 → 15); its 35 cases and every existing sentence are unchanged.
+- **`real-runs.test.js`, spec suppression census:** graded 28 → 41. Each of the thirteen STRZ-1658 logs was checked against the fixture before the pin moved: the spec is present, its source is `ticket`, and `specTicketKey === activeTicketKey === 'STRZ-1658'`. The other two buckets (graded-unverified 17, none 6) are unmoved.
+- **`real-runs.test.js`, funnel `type` actions:** the assertion "none moved the page structurally" is replaced. Three Sept-18 walks (1789760985258, 1789761071265, 1789761141108) have four blind `type` actions (no delivery, "nothing at that point") that recorded 10, 81, 5 and 2 structural mutations, while every quiet action in the same walks (20 screenshot, wait, scroll and key actions) recorded none. So the typing landed there although delivery read false: delivery and the probe are the blind readings, the mutation count is not. The old assertion held only because the earlier logs happened to be quieter. The four are pinned by name, so a fifth gets looked at rather than absorbed; `fnDidSomething` already counts them as progress, which is right.
+
+### Verification
+
+- **jsc:** real-runs.test.js 972 → 1665. All nine CI suites pass (19 / 104 / 1355 / 719 / 1665 / 182 / 10 / 169 / 778).
+- **`regen-fixtures.py` verify-only** on 2026-10-16: all five fixtures reproduced, +0 pending.
+
 ## 2026-10-14 — 0.7.19
 
 A Prompt Function's instruction is capped at 120 characters. The work was written on `main` on 2026-10-09 and kept in a stash while the checkout was on the BrowserStack branch; it is committed here on top of the 0.7.18 merge, unchanged.

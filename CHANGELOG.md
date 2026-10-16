@@ -2,6 +2,19 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-16 — 0.7.21
+
+The Test Agent report's summary moves to the current Opus. The rule for models is that anything that acts or perceives (the Test Agent engine, Funnel Crawl, the agentic vision checks, reading a Figma comp) runs on Sonnet, and only analysis runs on Opus. This call is analysis: its prompt reviews every mode's results and separates real issues from likely noise. It had been on `claude-opus-4-8` since the Test Agent tab was added (2a5f20c), and the later move of the other Opus calls to `claude-opus-5` missed it.
+
+### Changed
+
+- **`background.js`:** `summarizeTestAgentResults` (Agentic Analysis) requests `claude-opus-5`, the same model as `runVisualReport` and `aiExtractInitFields`. The request is otherwise unchanged (`max_tokens` 1024, one user message, no `temperature`), so nothing the current family rejects is sent. Every Claude call now uses `claude-sonnet-5` or `claude-opus-5`, all with the one Anthropic key from Settings.
+
+### Verification
+
+- **jsc:** all nine CI suites pass. No test pins this call's model, so none of them can catch a wrong model here.
+- **Not run against the API.** The first Test Agent report with Agentic Analysis on is the real check. The worker needs an extension reload to pick it up.
+
 ## 2026-10-16 — 0.7.20
 
 A test-fixture refresh; nothing under `extension/` outside `tests/` changes. `regen-fixtures.py --write` was run on 2026-10-14 against the debug logs in `~/Downloads`, after verify-only had shown every existing fixture reproduced. The diff is insertions only: no existing record moved.

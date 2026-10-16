@@ -8688,7 +8688,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const { anthropicApiKey } = await chrome.storage.sync.get('anthropicApiKey');
         if (!anthropicApiKey) { sendResponse({ ok: false, error: 'No API key configured' }); return; }
         const r = await anthropicFetch({
-          model: 'claude-opus-4-8',
+          model: 'claude-opus-5',
           max_tokens: 1024,
           messages: [{ role: 'user', content: buildTestAgentSummaryPrompt(msg.payload?.modeResults || [], msg.payload?.ticketContext || null) }],
         }, { apiKey: anthropicApiKey });

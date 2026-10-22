@@ -1,0 +1,5570 @@
+{
+ "version": 1,
+ "ts": 1792685217643,
+ "startedAt": 1792684905751,
+ "finishedAt": 1792685217631,
+ "stopped": false,
+ "error": null,
+ "ticketKey": "QP-1",
+ "experimentId": "9001",
+ "settings": {
+  "checks": {
+   "A": true,
+   "B": true,
+   "C": true,
+   "D": true,
+   "E": true,
+   "F": true
+  },
+  "widths": [
+   300,
+   320,
+   340,
+   360,
+   375,
+   390,
+   402,
+   412,
+   430,
+   480,
+   600,
+   768,
+   820,
+   1024,
+   1280,
+   1440,
+   1920,
+   2080
+  ],
+  "quickSweep": false,
+  "prodMobile": true,
+  "combos": true,
+  "clearAllSiteData": false,
+  "workaroundsLength": 0
+ },
+ "platform": "optimizely",
+ "loads": [
+  {
+   "id": "L1",
+   "role": "preview",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1480,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L2",
+   "role": "preview",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa&optimizely_force_tracking=true",
+   "ms": 1503,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L3",
+   "role": "notrack",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1496,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L4",
+   "role": "itw",
+   "label": "ITW",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?cro_mode=qa",
+   "ms": 1516,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L5",
+   "role": "prod",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1471,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L6",
+   "role": "combo",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101,9201&cro_mode=qa",
+   "ms": 1504,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L7",
+   "role": "combo",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101,9202&cro_mode=qa",
+   "ms": 1497,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L8",
+   "role": "audience",
+   "label": "ITW",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?cro_mode=qa&utm_source=meta",
+   "ms": 1500,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L9",
+   "role": "audience",
+   "label": "ITW",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?cro_mode=qa&utm_campaign=impact",
+   "ms": 1506,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L10",
+   "role": "audience",
+   "label": "ITW",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?cro_mode=qa",
+   "ms": 1508,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L11",
+   "role": "audience",
+   "label": "ITW",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 390,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?cro_mode=qa",
+   "ms": 1502,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L12",
+   "role": "audience",
+   "label": "ITW",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?cro_mode=qa&utm_source=qa-selenite",
+   "ms": 1492,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L13",
+   "role": "audience",
+   "label": "ITW",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?cro_mode=qa&utm_campaign=qa-selenite",
+   "ms": 1488,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L14",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 768,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1495,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L15",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 820,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1497,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L16",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1024,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1493,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L17",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1280,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1500,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L18",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1499,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L19",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1920,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1493,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L20",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 2080,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1490,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L21",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 360,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1493,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L22",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 375,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1471,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L23",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 390,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1493,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L24",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 402,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1493,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L25",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 412,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1499,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L26",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 430,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1507,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L27",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 340,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1494,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L28",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 480,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1496,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L29",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 600,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1487,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L30",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 300,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1498,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L31",
+   "role": "sweep",
+   "label": "v0",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 320,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "ms": 1488,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L32",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 768,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1503,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L33",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 820,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1488,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L34",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1024,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1496,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L35",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1280,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1493,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L36",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1482,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L37",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1920,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1495,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L38",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 2080,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1501,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L39",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 360,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1476,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L40",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 375,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1495,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L41",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 390,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1512,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L42",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 402,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1498,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L43",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 412,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1499,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L44",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 430,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1500,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L45",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 340,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1494,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L46",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 480,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1500,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L47",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 600,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1493,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L48",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 300,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1494,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L49",
+   "role": "sweep",
+   "label": "v1",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 320,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa",
+   "ms": 1490,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L50",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 360,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1495,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L51",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 375,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1499,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L52",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 390,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1491,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L53",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 402,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1502,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L54",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 412,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1470,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L55",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 430,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1497,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L56",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 340,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1501,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L57",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 480,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1497,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L58",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 600,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1499,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L59",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 768,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1497,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L60",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 820,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1500,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L61",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1024,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1498,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L62",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1280,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1494,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L63",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1440,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1499,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L64",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 1920,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1485,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L65",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 2080,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1483,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L66",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 300,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1507,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L67",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "desktop",
+   "width": 320,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1486,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L68",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 360,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1507,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L69",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 375,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1487,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L70",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 390,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1507,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L71",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 402,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1510,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L72",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 412,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1508,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L73",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 430,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1501,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L74",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 340,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1484,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L75",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 480,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1502,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L76",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 600,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1510,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L77",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 300,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1480,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L78",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "iphone",
+   "width": 320,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1478,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L79",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "android",
+   "width": 360,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1507,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L80",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "android",
+   "width": 375,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1491,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L81",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "android",
+   "width": 390,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1500,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L82",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "android",
+   "width": 402,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1512,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L83",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "android",
+   "width": 412,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1498,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L84",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "android",
+   "width": 430,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1508,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L85",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "android",
+   "width": 340,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1499,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L86",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "android",
+   "width": 480,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1492,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L87",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "android",
+   "width": 600,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1482,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L88",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "android",
+   "width": 300,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1479,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  },
+  {
+   "id": "L89",
+   "role": "sweep",
+   "label": "PROD",
+   "path": "http://127.0.0.1:64433/shop/",
+   "profile": "android",
+   "width": 320,
+   "ok": true,
+   "loadError": null,
+   "blocked": null,
+   "finalUrl": "http://127.0.0.1:64433/shop/",
+   "ms": 1511,
+   "settle": {
+    "stable": true,
+    "polls": 1
+   },
+   "cleared": 0
+  }
+ ],
+ "links": [
+  {
+   "label": "v0",
+   "role": "preview",
+   "isControl": true,
+   "forcedIds": [
+    "9101"
+   ],
+   "trackingFlags": [],
+   "loadId": "L1",
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "loadError": null,
+   "blocked": null,
+   "probe": {
+    "platform": "optimizely",
+    "catalogComplete": true,
+    "activeIds": [
+     "9001",
+     "9002"
+    ],
+    "expId": "9001",
+    "active": true,
+    "bucketed": true,
+    "servedVariationId": "9101",
+    "servedVariationName": "v0: Control",
+    "servedForced": true
+   },
+   "probeNote": null,
+   "track": {
+    "events": [
+     {
+      "apiName": "111_shop",
+      "category": "other",
+      "name": "Shop",
+      "t": 1792684905794,
+      "type": "pageview"
+     }
+    ],
+    "listener": true,
+    "optimizely": true
+   },
+   "facts": {
+    "bot": {
+     "challenge": false,
+     "signal": null
+    },
+    "canonical": "http://127.0.0.1:64433/shop/",
+    "href": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+    "scrollHeight": 900,
+    "textHash": "45d482fd",
+    "textLen": 620,
+    "title": "QP Shop",
+    "widgets": {
+     "banner": 0,
+     "chat": 0,
+     "modal": 0
+    }
+   },
+   "noTrackServes": null
+  },
+  {
+   "label": "v1",
+   "role": "preview",
+   "isControl": false,
+   "forcedIds": [
+    "9102"
+   ],
+   "trackingFlags": [
+    "optimizely_force_tracking"
+   ],
+   "loadId": "L2",
+   "finalUrl": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa&optimizely_force_tracking=true",
+   "loadError": null,
+   "blocked": null,
+   "probe": {
+    "platform": "optimizely",
+    "catalogComplete": true,
+    "activeIds": [
+     "9001",
+     "9002"
+    ],
+    "expId": "9001",
+    "active": true,
+    "bucketed": true,
+    "servedVariationId": "9102",
+    "servedVariationName": "v1: Hero",
+    "servedForced": true
+   },
+   "probeNote": null,
+   "track": {
+    "events": [
+     {
+      "apiName": "111_shop",
+      "category": "other",
+      "name": "Shop",
+      "t": 1792684909454,
+      "type": "pageview"
+     },
+     {
+      "apiName": "hero_cta_click",
+      "category": "other",
+      "name": "hero_cta_click",
+      "t": 1792684909454,
+      "type": "click"
+     }
+    ],
+    "listener": true,
+    "optimizely": true
+   },
+   "facts": {
+    "bot": {
+     "challenge": false,
+     "signal": null
+    },
+    "canonical": "http://127.0.0.1:64433/shop/",
+    "href": "http://127.0.0.1:64433/shop/?optimizely_x=9102&cro_mode=qa&optimizely_force_tracking=true",
+    "scrollHeight": 900,
+    "textHash": "868b62f2",
+    "textLen": 655,
+    "title": "QP Shop",
+    "widgets": {
+     "banner": 0,
+     "chat": 0,
+     "modal": 0
+    }
+   },
+   "noTrackServes": true
+  },
+  {
+   "label": "ITW",
+   "role": "itw",
+   "isControl": false,
+   "forcedIds": [],
+   "trackingFlags": [],
+   "loadId": "L4",
+   "finalUrl": "http://127.0.0.1:64433/shop/?cro_mode=qa",
+   "loadError": null,
+   "blocked": null,
+   "probe": {
+    "platform": "optimizely",
+    "catalogComplete": true,
+    "activeIds": [
+     "9001",
+     "9002"
+    ],
+    "expId": "9001",
+    "active": true,
+    "bucketed": true,
+    "servedVariationId": "9101",
+    "servedVariationName": "v0: Control",
+    "servedForced": false
+   },
+   "probeNote": null,
+   "track": {
+    "events": [
+     {
+      "apiName": "111_shop",
+      "category": "other",
+      "name": "Shop",
+      "t": 1792684914624,
+      "type": "pageview"
+     }
+    ],
+    "listener": true,
+    "optimizely": true
+   },
+   "facts": {
+    "bot": {
+     "challenge": false,
+     "signal": null
+    },
+    "canonical": "http://127.0.0.1:64433/shop/",
+    "href": "http://127.0.0.1:64433/shop/?cro_mode=qa",
+    "scrollHeight": 900,
+    "textHash": "45d482fd",
+    "textLen": 620,
+    "title": "QP Shop",
+    "widgets": {
+     "banner": 0,
+     "chat": 0,
+     "modal": 0
+    }
+   },
+   "noTrackServes": null
+  }
+ ],
+ "catalog": {
+  "audiences": {
+   "aud-desktop": {
+    "conditions": [
+     "and",
+     [
+      "or",
+      [
+       "or",
+       {
+        "match": null,
+        "name": null,
+        "type": "device",
+        "value": "desktop"
+       }
+      ]
+     ]
+    ],
+    "id": "aud-desktop",
+    "name": "Desktop only"
+   },
+   "aud-noimpact": {
+    "conditions": [
+     "and",
+     [
+      "or",
+      [
+       "not",
+       [
+        "or",
+        {
+         "match": "exact",
+         "name": "utm_campaign",
+         "type": "query",
+         "value": "impact"
+        }
+       ]
+      ]
+     ]
+    ],
+    "id": "aud-noimpact",
+    "name": "Exclude impact"
+   },
+   "aud-nometa": {
+    "conditions": [
+     "and",
+     [
+      "or",
+      [
+       "not",
+       [
+        "or",
+        {
+         "match": "exact",
+         "name": "utm_source",
+         "type": "query",
+         "value": "meta"
+        }
+       ]
+      ]
+     ]
+    ],
+    "id": "aud-nometa",
+    "name": "Exclude meta"
+   },
+   "aud-qa": {
+    "conditions": [
+     "and",
+     [
+      "or",
+      [
+       "or",
+       {
+        "match": "exact",
+        "name": "cro_mode",
+        "type": "cookies",
+        "value": "qa"
+       }
+      ],
+      [
+       "or",
+       {
+        "match": "exact",
+        "name": "cro_mode",
+        "type": "query",
+        "value": "qa"
+       }
+      ]
+     ]
+    ],
+    "id": "aud-qa",
+    "name": "[QA] test cookie"
+   }
+  },
+  "campaigns": {
+   "c1": {
+    "experimentIds": [
+     "9001"
+    ],
+    "holdback": null,
+    "id": "c1",
+    "name": "QP-1 Hero test",
+    "pageIds": [
+     "p1"
+    ]
+   },
+   "c2": {
+    "experimentIds": [
+     "9002"
+    ],
+    "holdback": null,
+    "id": "c2",
+    "name": "QP-OTHER",
+    "pageIds": [
+     "p1"
+    ]
+   },
+   "c3": {
+    "experimentIds": [
+     "9003"
+    ],
+    "holdback": null,
+    "id": "c3",
+    "name": "QP-2",
+    "pageIds": [
+     "p1"
+    ]
+   }
+  },
+  "counts": {
+   "audiences": 4,
+   "campaigns": 3,
+   "events": 2,
+   "experiments": 3,
+   "pages": 1
+  },
+  "errors": [],
+  "events": [
+   {
+    "apiName": "hero_cta_click",
+    "eventType": "click",
+    "id": "e1",
+    "name": "Hero CTA Click",
+    "pageId": "p1",
+    "selector": ".hero-line"
+   },
+   {
+    "apiName": "purchase",
+    "eventType": "custom",
+    "id": "e2",
+    "name": "Purchase",
+    "pageId": null,
+    "selector": null
+   }
+  ],
+  "experiments": {
+   "9001": {
+    "allocationPolicy": "manual",
+    "audienceIds": [
+     "and",
+     "aud-qa",
+     "aud-nometa",
+     "aud-noimpact",
+     "aud-desktop"
+    ],
+    "audienceName": "QA, no meta, no impact, desktop",
+    "id": "9001",
+    "layerId": "c1",
+    "name": "QP-1 Hero test",
+    "variations": [
+     {
+      "id": "9101",
+      "name": "v0: Control"
+     },
+     {
+      "id": "9102",
+      "name": "v1: Hero"
+     }
+    ],
+    "weightDistributions": [
+     {
+      "endOfRange": 5000,
+      "entityId": "9101"
+     },
+     {
+      "endOfRange": 10000,
+      "entityId": "9102"
+     }
+    ]
+   },
+   "9002": {
+    "allocationPolicy": "manual",
+    "audienceIds": null,
+    "audienceName": "Everyone else",
+    "id": "9002",
+    "layerId": "c2",
+    "name": "QP-OTHER Live banner test",
+    "variations": [
+     {
+      "id": "9201",
+      "name": "Original"
+     },
+     {
+      "id": "9202",
+      "name": "Banner"
+     }
+    ],
+    "weightDistributions": null
+   },
+   "9003": {
+    "allocationPolicy": "manual",
+    "audienceIds": null,
+    "audienceName": "Everyone else",
+    "id": "9003",
+    "layerId": "c3",
+    "name": "QP-2 Softcoded promo",
+    "variations": [
+     {
+      "id": "9301",
+      "name": "Original"
+     }
+    ],
+    "weightDistributions": null
+   }
+  },
+  "ok": true,
+  "pages": {
+   "p1": {
+    "activationType": null,
+    "apiName": "111_shop",
+    "hasActivationCode": false,
+    "id": "p1",
+    "name": "Shop",
+    "staticConditions": [
+     "and",
+     [
+      "or",
+      {
+       "match": "substring",
+       "type": "url",
+       "value": "/shop"
+      }
+     ]
+    ]
+   }
+  },
+  "platform": "optimizely",
+  "projectId": "111",
+  "revision": "7",
+  "visitorCustom": [
+   {
+    "id": "a1",
+    "name": "qp_attr",
+    "value": "x"
+   }
+  ]
+ },
+ "catalogFrom": "v0",
+ "controlVsProd": {
+  "controlLabel": "v0",
+  "prodPath": "http://127.0.0.1:64433/shop/",
+  "prodFinalUrl": "http://127.0.0.1:64433/shop/",
+  "control": {
+   "bot": {
+    "challenge": false,
+    "signal": null
+   },
+   "canonical": "http://127.0.0.1:64433/shop/",
+   "href": "http://127.0.0.1:64433/shop/?optimizely_x=9101&cro_mode=qa",
+   "scrollHeight": 900,
+   "textHash": "45d482fd",
+   "textLen": 620,
+   "title": "QP Shop",
+   "widgets": {
+    "banner": 0,
+    "chat": 0,
+    "modal": 0
+   }
+  },
+  "prod": {
+   "bot": {
+    "challenge": false,
+    "signal": null
+   },
+   "canonical": "http://127.0.0.1:64433/shop/",
+   "href": "http://127.0.0.1:64433/shop/",
+   "scrollHeight": 900,
+   "textHash": "45d482fd",
+   "textLen": 620,
+   "title": "QP Shop",
+   "widgets": {
+    "banner": 0,
+    "chat": 0,
+    "modal": 0
+   }
+  },
+  "prodProbe": {
+   "platform": "optimizely",
+   "catalogComplete": true,
+   "activeIds": [],
+   "expId": "9001",
+   "active": false,
+   "bucketed": false,
+   "servedVariationId": null,
+   "servedVariationName": null,
+   "servedForced": false
+  },
+  "compare": {
+   "diffs": [],
+   "identicalText": true
+  },
+  "skipped": null
+ },
+ "combos": [
+  {
+   "link": "v0",
+   "experimentId": "9002",
+   "variationId": "9201",
+   "url": "http://127.0.0.1:64433/shop/?optimizely_x=9101,9201&cro_mode=qa",
+   "loadId": "L6",
+   "underTestActive": true,
+   "otherActive": true,
+   "textHash": "45d482fd",
+   "aloneTextHash": "45d482fd",
+   "changed": false
+  },
+  {
+   "link": "v0",
+   "experimentId": "9002",
+   "variationId": "9202",
+   "url": "http://127.0.0.1:64433/shop/?optimizely_x=9101,9202&cro_mode=qa",
+   "loadId": "L7",
+   "underTestActive": true,
+   "otherActive": true,
+   "textHash": "45d482fd",
+   "aloneTextHash": "45d482fd",
+   "changed": false
+  }
+ ],
+ "audiences": {
+  "experimentId": "9001",
+  "baselineActive": true,
+  "skipped": null,
+  "tests": [
+   {
+    "n": 1,
+    "kind": "query",
+    "param": "utm_source",
+    "value": "meta",
+    "profile": "desktop",
+    "expect": "inactive",
+    "role": "exclusion",
+    "audienceId": "aud-nometa",
+    "audienceName": "Exclude meta",
+    "got": false,
+    "ok": true,
+    "loadId": "L8"
+   },
+   {
+    "n": 2,
+    "kind": "query",
+    "param": "utm_campaign",
+    "value": "impact",
+    "profile": "desktop",
+    "expect": "inactive",
+    "role": "exclusion",
+    "audienceId": "aud-noimpact",
+    "audienceName": "Exclude impact",
+    "got": true,
+    "ok": false,
+    "loadId": "L9"
+   },
+   {
+    "n": 3,
+    "kind": "device",
+    "param": null,
+    "value": "desktop",
+    "profile": "desktop",
+    "expect": "active",
+    "role": "inclusion",
+    "audienceId": "aud-desktop",
+    "audienceName": "Desktop only",
+    "got": true,
+    "ok": true,
+    "loadId": "L10"
+   },
+   {
+    "n": 4,
+    "kind": "device",
+    "param": null,
+    "value": "desktop",
+    "profile": "iphone",
+    "expect": "inactive",
+    "role": "exclusion",
+    "audienceId": "aud-desktop",
+    "audienceName": "Desktop only",
+    "got": false,
+    "ok": true,
+    "loadId": "L11"
+   },
+   {
+    "n": 5,
+    "kind": "query",
+    "param": "utm_source",
+    "value": "qa-selenite",
+    "profile": "desktop",
+    "expect": "active",
+    "role": "companion",
+    "audienceId": "aud-nometa",
+    "audienceName": "Exclude meta",
+    "got": true,
+    "ok": true,
+    "loadId": "L12"
+   },
+   {
+    "n": 6,
+    "kind": "query",
+    "param": "utm_campaign",
+    "value": "qa-selenite",
+    "profile": "desktop",
+    "expect": "active",
+    "role": "companion",
+    "audienceId": "aud-noimpact",
+    "audienceName": "Exclude impact",
+    "got": true,
+    "ok": true,
+    "loadId": "L13"
+   }
+  ],
+  "notExercised": [
+   {
+    "audienceId": "aud-qa",
+    "audienceName": "[QA] test cookie",
+    "types": [
+     "cookies",
+     "query"
+    ],
+    "reason": "not decisive: OR-ed with other conditions"
+   }
+  ]
+ },
+ "sweep": {
+  "plan": {
+   "targets": [
+    {
+     "label": "v0",
+     "role": "variant",
+     "mode": "reload",
+     "url": "http://127.0.0.1:64433/shop/"
+    },
+    {
+     "label": "v1",
+     "role": "variant",
+     "mode": "reload",
+     "url": "http://127.0.0.1:64433/shop/"
+    },
+    {
+     "label": "PROD",
+     "role": "prod",
+     "mode": "reload",
+     "url": "http://127.0.0.1:64433/shop/"
+    }
+   ],
+   "profiles": [
+    "desktop",
+    "iphone",
+    "android"
+   ],
+   "widths": [
+    360,
+    375,
+    390,
+    402,
+    412,
+    430,
+    340,
+    480,
+    600,
+    768,
+    820,
+    1024,
+    1280,
+    1440,
+    1920,
+    2080,
+    300,
+    320
+   ]
+  },
+  "rows": [
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "desktop",
+    "width": 768,
+    "mode": "reload",
+    "loadId": "L14",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 768,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 768,
+     "truncated": false,
+     "vw": 768,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "desktop",
+    "width": 820,
+    "mode": "reload",
+    "loadId": "L15",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 820,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 820,
+     "truncated": false,
+     "vw": 820,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "desktop",
+    "width": 1024,
+    "mode": "reload",
+    "loadId": "L16",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 1024,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 1024,
+     "truncated": false,
+     "vw": 1024,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "desktop",
+    "width": 1280,
+    "mode": "reload",
+    "loadId": "L17",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 1280,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 1280,
+     "truncated": false,
+     "vw": 1280,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "desktop",
+    "width": 1440,
+    "mode": "reload",
+    "loadId": "L18",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 1440,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 1440,
+     "truncated": false,
+     "vw": 1440,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "desktop",
+    "width": 1920,
+    "mode": "reload",
+    "loadId": "L19",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 1920,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 1920,
+     "truncated": false,
+     "vw": 1920,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "desktop",
+    "width": 2080,
+    "mode": "reload",
+    "loadId": "L20",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 2080,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 2080,
+     "truncated": false,
+     "vw": 2080,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 360,
+    "mode": "reload",
+    "loadId": "L21",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 360,
+     "ms": 0,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 360,
+     "truncated": false,
+     "vw": 360,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 375,
+    "mode": "reload",
+    "loadId": "L22",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 375,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 375,
+     "truncated": false,
+     "vw": 375,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 390,
+    "mode": "reload",
+    "loadId": "L23",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 390,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 390,
+     "truncated": false,
+     "vw": 390,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 402,
+    "mode": "reload",
+    "loadId": "L24",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 402,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 402,
+     "truncated": false,
+     "vw": 402,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 412,
+    "mode": "reload",
+    "loadId": "L25",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 412,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 412,
+     "truncated": false,
+     "vw": 412,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 430,
+    "mode": "reload",
+    "loadId": "L26",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 430,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 430,
+     "truncated": false,
+     "vw": 430,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 340,
+    "mode": "reload",
+    "loadId": "L27",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 340,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 340,
+     "truncated": false,
+     "vw": 340,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 480,
+    "mode": "reload",
+    "loadId": "L28",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 480,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 480,
+     "truncated": false,
+     "vw": 480,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 600,
+    "mode": "reload",
+    "loadId": "L29",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 600,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 600,
+     "truncated": false,
+     "vw": 600,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 300,
+    "mode": "reload",
+    "loadId": "L30",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 300,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 1,
+     "offenders": [
+      {
+       "by": "overflow",
+       "clipBy": "div.legal-box",
+       "el": "span.legal",
+       "gapPx": -30,
+       "rect": {
+        "h": 18,
+        "w": 183,
+        "x": 147,
+        "y": 713
+       },
+       "side": "right",
+       "text": "LEGAL-LINE Terms apply"
+      }
+     ],
+     "pageOverflowPx": 0,
+     "sw": 300,
+     "truncated": false,
+     "vw": 300,
+     "worstGapPx": -30
+    },
+    "tile": 0
+   },
+   {
+    "target": "v0",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 320,
+    "mode": "reload",
+    "loadId": "L31",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 320,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 1,
+     "offenders": [
+      {
+       "by": "overflow",
+       "clipBy": "div.legal-box",
+       "el": "span.legal",
+       "gapPx": -10,
+       "rect": {
+        "h": 18,
+        "w": 183,
+        "x": 147,
+        "y": 713
+       },
+       "side": "right",
+       "text": "LEGAL-LINE Terms apply"
+      }
+     ],
+     "pageOverflowPx": 0,
+     "sw": 320,
+     "truncated": false,
+     "vw": 320,
+     "worstGapPx": -10
+    },
+    "tile": 1
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "desktop",
+    "width": 768,
+    "mode": "reload",
+    "loadId": "L32",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 768,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 768,
+     "truncated": false,
+     "vw": 768,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "desktop",
+    "width": 820,
+    "mode": "reload",
+    "loadId": "L33",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 820,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 820,
+     "truncated": false,
+     "vw": 820,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "desktop",
+    "width": 1024,
+    "mode": "reload",
+    "loadId": "L34",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 1024,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 1024,
+     "truncated": false,
+     "vw": 1024,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "desktop",
+    "width": 1280,
+    "mode": "reload",
+    "loadId": "L35",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 1280,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 1280,
+     "truncated": false,
+     "vw": 1280,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "desktop",
+    "width": 1440,
+    "mode": "reload",
+    "loadId": "L36",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 1440,
+     "ms": 0,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 1440,
+     "truncated": false,
+     "vw": 1440,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "desktop",
+    "width": 1920,
+    "mode": "reload",
+    "loadId": "L37",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 1920,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 1920,
+     "truncated": false,
+     "vw": 1920,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "desktop",
+    "width": 2080,
+    "mode": "reload",
+    "loadId": "L38",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 2080,
+     "ms": 0,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 2080,
+     "truncated": false,
+     "vw": 2080,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 360,
+    "mode": "reload",
+    "loadId": "L39",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 360,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 1,
+     "offenders": [
+      {
+       "by": "overflow",
+       "clipBy": "div.hero-box",
+       "el": "span.hero-line",
+       "gapPx": -36,
+       "rect": {
+        "h": 18,
+        "w": 256,
+        "x": 140,
+        "y": 90
+       },
+       "side": "right",
+       "text": "CLIPPED-HERO Start your free trial"
+      }
+     ],
+     "pageOverflowPx": 0,
+     "sw": 360,
+     "truncated": false,
+     "vw": 360,
+     "worstGapPx": -36
+    },
+    "tile": 2
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 375,
+    "mode": "reload",
+    "loadId": "L40",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 375,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 1,
+     "offenders": [
+      {
+       "by": "overflow",
+       "clipBy": "div.hero-box",
+       "el": "span.hero-line",
+       "gapPx": -21,
+       "rect": {
+        "h": 18,
+        "w": 256,
+        "x": 140,
+        "y": 90
+       },
+       "side": "right",
+       "text": "CLIPPED-HERO Start your free trial"
+      }
+     ],
+     "pageOverflowPx": 0,
+     "sw": 375,
+     "truncated": false,
+     "vw": 375,
+     "worstGapPx": -21
+    },
+    "tile": 3
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 390,
+    "mode": "reload",
+    "loadId": "L41",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 390,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 1,
+     "offenders": [
+      {
+       "by": "overflow",
+       "clipBy": "div.hero-box",
+       "el": "span.hero-line",
+       "gapPx": -6,
+       "rect": {
+        "h": 18,
+        "w": 256,
+        "x": 140,
+        "y": 90
+       },
+       "side": "right",
+       "text": "CLIPPED-HERO Start your free trial"
+      }
+     ],
+     "pageOverflowPx": 0,
+     "sw": 390,
+     "truncated": false,
+     "vw": 390,
+     "worstGapPx": -6
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 402,
+    "mode": "reload",
+    "loadId": "L42",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 402,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 402,
+     "truncated": false,
+     "vw": 402,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 412,
+    "mode": "reload",
+    "loadId": "L43",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 412,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 412,
+     "truncated": false,
+     "vw": 412,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 430,
+    "mode": "reload",
+    "loadId": "L44",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 430,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 430,
+     "truncated": false,
+     "vw": 430,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 340,
+    "mode": "reload",
+    "loadId": "L45",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 340,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 1,
+     "offenders": [
+      {
+       "by": "overflow",
+       "clipBy": "div.hero-box",
+       "el": "span.hero-line",
+       "gapPx": -56,
+       "rect": {
+        "h": 18,
+        "w": 256,
+        "x": 140,
+        "y": 90
+       },
+       "side": "right",
+       "text": "CLIPPED-HERO Start your free trial"
+      }
+     ],
+     "pageOverflowPx": 0,
+     "sw": 340,
+     "truncated": false,
+     "vw": 340,
+     "worstGapPx": -56
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 480,
+    "mode": "reload",
+    "loadId": "L46",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 480,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 480,
+     "truncated": false,
+     "vw": 480,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 600,
+    "mode": "reload",
+    "loadId": "L47",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 600,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 600,
+     "truncated": false,
+     "vw": 600,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 300,
+    "mode": "reload",
+    "loadId": "L48",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 300,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 2,
+     "offenders": [
+      {
+       "by": "overflow",
+       "clipBy": "div.hero-box",
+       "el": "span.hero-line",
+       "gapPx": -96,
+       "rect": {
+        "h": 18,
+        "w": 256,
+        "x": 140,
+        "y": 90
+       },
+       "side": "right",
+       "text": "CLIPPED-HERO Start your free trial"
+      },
+      {
+       "by": "overflow",
+       "clipBy": "div.legal-box",
+       "el": "span.legal",
+       "gapPx": -30,
+       "rect": {
+        "h": 18,
+        "w": 183,
+        "x": 147,
+        "y": 736
+       },
+       "side": "right",
+       "text": "LEGAL-LINE Terms apply"
+      }
+     ],
+     "pageOverflowPx": 0,
+     "sw": 300,
+     "truncated": false,
+     "vw": 300,
+     "worstGapPx": -96
+    },
+    "tile": null
+   },
+   {
+    "target": "v1",
+    "role": "variant",
+    "profile": "iphone",
+    "width": 320,
+    "mode": "reload",
+    "loadId": "L49",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 0,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 320,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 2,
+     "offenders": [
+      {
+       "by": "overflow",
+       "clipBy": "div.hero-box",
+       "el": "span.hero-line",
+       "gapPx": -76,
+       "rect": {
+        "h": 18,
+        "w": 256,
+        "x": 140,
+        "y": 90
+       },
+       "side": "right",
+       "text": "CLIPPED-HERO Start your free trial"
+      },
+      {
+       "by": "overflow",
+       "clipBy": "div.legal-box",
+       "el": "span.legal",
+       "gapPx": -10,
+       "rect": {
+        "h": 18,
+        "w": 183,
+        "x": 147,
+        "y": 736
+       },
+       "side": "right",
+       "text": "LEGAL-LINE Terms apply"
+      }
+     ],
+     "pageOverflowPx": 0,
+     "sw": 320,
+     "truncated": false,
+     "vw": 320,
+     "worstGapPx": -76
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 360,
+    "mode": "reload",
+    "loadId": "L50",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 360,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 360,
+     "truncated": false,
+     "vw": 360,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 375,
+    "mode": "reload",
+    "loadId": "L51",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 375,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 375,
+     "truncated": false,
+     "vw": 375,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 390,
+    "mode": "reload",
+    "loadId": "L52",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 390,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 390,
+     "truncated": false,
+     "vw": 390,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 402,
+    "mode": "reload",
+    "loadId": "L53",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 402,
+     "ms": 0,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 402,
+     "truncated": false,
+     "vw": 402,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 412,
+    "mode": "reload",
+    "loadId": "L54",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 412,
+     "ms": 0,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 412,
+     "truncated": false,
+     "vw": 412,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 430,
+    "mode": "reload",
+    "loadId": "L55",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 430,
+     "ms": 0,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 430,
+     "truncated": false,
+     "vw": 430,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 340,
+    "mode": "reload",
+    "loadId": "L56",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 340,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 340,
+     "truncated": false,
+     "vw": 340,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 480,
+    "mode": "reload",
+    "loadId": "L57",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 480,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 480,
+     "truncated": false,
+     "vw": 480,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 600,
+    "mode": "reload",
+    "loadId": "L58",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 600,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 600,
+     "truncated": false,
+     "vw": 600,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 768,
+    "mode": "reload",
+    "loadId": "L59",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 768,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 768,
+     "truncated": false,
+     "vw": 768,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 820,
+    "mode": "reload",
+    "loadId": "L60",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 820,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 820,
+     "truncated": false,
+     "vw": 820,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 1024,
+    "mode": "reload",
+    "loadId": "L61",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 1024,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 1024,
+     "truncated": false,
+     "vw": 1024,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 1280,
+    "mode": "reload",
+    "loadId": "L62",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 1280,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 1280,
+     "truncated": false,
+     "vw": 1280,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 1440,
+    "mode": "reload",
+    "loadId": "L63",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 1440,
+     "ms": 0,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 1440,
+     "truncated": false,
+     "vw": 1440,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 1920,
+    "mode": "reload",
+    "loadId": "L64",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 1920,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 1920,
+     "truncated": false,
+     "vw": 1920,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 2080,
+    "mode": "reload",
+    "loadId": "L65",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 2080,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 2080,
+     "truncated": false,
+     "vw": 2080,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 300,
+    "mode": "reload",
+    "loadId": "L66",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 300,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 1,
+     "offenders": [
+      {
+       "by": "overflow",
+       "clipBy": "div.legal-box",
+       "el": "span.legal",
+       "gapPx": -30,
+       "rect": {
+        "h": 18,
+        "w": 183,
+        "x": 147,
+        "y": 713
+       },
+       "side": "right",
+       "text": "LEGAL-LINE Terms apply"
+      }
+     ],
+     "pageOverflowPx": 0,
+     "sw": 300,
+     "truncated": false,
+     "vw": 300,
+     "worstGapPx": -30
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "desktop",
+    "width": 320,
+    "mode": "reload",
+    "loadId": "L67",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 320,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 1,
+     "offenders": [
+      {
+       "by": "overflow",
+       "clipBy": "div.legal-box",
+       "el": "span.legal",
+       "gapPx": -10,
+       "rect": {
+        "h": 18,
+        "w": 183,
+        "x": 147,
+        "y": 713
+       },
+       "side": "right",
+       "text": "LEGAL-LINE Terms apply"
+      }
+     ],
+     "pageOverflowPx": 0,
+     "sw": 320,
+     "truncated": false,
+     "vw": 320,
+     "worstGapPx": -10
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "iphone",
+    "width": 360,
+    "mode": "reload",
+    "loadId": "L68",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 360,
+     "ms": 0,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 360,
+     "truncated": false,
+     "vw": 360,
+     "worstGapPx": 0
+    },
+    "tile": 4
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "iphone",
+    "width": 375,
+    "mode": "reload",
+    "loadId": "L69",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 375,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 375,
+     "truncated": false,
+     "vw": 375,
+     "worstGapPx": 0
+    },
+    "tile": 5
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "iphone",
+    "width": 390,
+    "mode": "reload",
+    "loadId": "L70",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 390,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 390,
+     "truncated": false,
+     "vw": 390,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "iphone",
+    "width": 402,
+    "mode": "reload",
+    "loadId": "L71",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 402,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 402,
+     "truncated": false,
+     "vw": 402,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "iphone",
+    "width": 412,
+    "mode": "reload",
+    "loadId": "L72",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 412,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 412,
+     "truncated": false,
+     "vw": 412,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "iphone",
+    "width": 430,
+    "mode": "reload",
+    "loadId": "L73",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 430,
+     "ms": 0,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 430,
+     "truncated": false,
+     "vw": 430,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "iphone",
+    "width": 340,
+    "mode": "reload",
+    "loadId": "L74",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 340,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 340,
+     "truncated": false,
+     "vw": 340,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "iphone",
+    "width": 480,
+    "mode": "reload",
+    "loadId": "L75",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 480,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 480,
+     "truncated": false,
+     "vw": 480,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "iphone",
+    "width": 600,
+    "mode": "reload",
+    "loadId": "L76",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 600,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 600,
+     "truncated": false,
+     "vw": 600,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "iphone",
+    "width": 300,
+    "mode": "reload",
+    "loadId": "L77",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 300,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 1,
+     "offenders": [
+      {
+       "by": "overflow",
+       "clipBy": "div.legal-box",
+       "el": "span.legal",
+       "gapPx": -30,
+       "rect": {
+        "h": 18,
+        "w": 183,
+        "x": 147,
+        "y": 713
+       },
+       "side": "right",
+       "text": "LEGAL-LINE Terms apply"
+      }
+     ],
+     "pageOverflowPx": 0,
+     "sw": 300,
+     "truncated": false,
+     "vw": 300,
+     "worstGapPx": -30
+    },
+    "tile": 6
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "iphone",
+    "width": 320,
+    "mode": "reload",
+    "loadId": "L78",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 320,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 1,
+     "offenders": [
+      {
+       "by": "overflow",
+       "clipBy": "div.legal-box",
+       "el": "span.legal",
+       "gapPx": -10,
+       "rect": {
+        "h": 18,
+        "w": 183,
+        "x": 147,
+        "y": 713
+       },
+       "side": "right",
+       "text": "LEGAL-LINE Terms apply"
+      }
+     ],
+     "pageOverflowPx": 0,
+     "sw": 320,
+     "truncated": false,
+     "vw": 320,
+     "worstGapPx": -10
+    },
+    "tile": 7
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "android",
+    "width": 360,
+    "mode": "reload",
+    "loadId": "L79",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 360,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 360,
+     "truncated": false,
+     "vw": 360,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "android",
+    "width": 375,
+    "mode": "reload",
+    "loadId": "L80",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 375,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 375,
+     "truncated": false,
+     "vw": 375,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "android",
+    "width": 390,
+    "mode": "reload",
+    "loadId": "L81",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 390,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 390,
+     "truncated": false,
+     "vw": 390,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "android",
+    "width": 402,
+    "mode": "reload",
+    "loadId": "L82",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 402,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 402,
+     "truncated": false,
+     "vw": 402,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "android",
+    "width": 412,
+    "mode": "reload",
+    "loadId": "L83",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 412,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 412,
+     "truncated": false,
+     "vw": 412,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "android",
+    "width": 430,
+    "mode": "reload",
+    "loadId": "L84",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 430,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 430,
+     "truncated": false,
+     "vw": 430,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "android",
+    "width": 340,
+    "mode": "reload",
+    "loadId": "L85",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 340,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 340,
+     "truncated": false,
+     "vw": 340,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "android",
+    "width": 480,
+    "mode": "reload",
+    "loadId": "L86",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 480,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 480,
+     "truncated": false,
+     "vw": 480,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "android",
+    "width": 600,
+    "mode": "reload",
+    "loadId": "L87",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 600,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 0,
+     "offenders": [],
+     "pageOverflowPx": 0,
+     "sw": 600,
+     "truncated": false,
+     "vw": 600,
+     "worstGapPx": 0
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "android",
+    "width": 300,
+    "mode": "reload",
+    "loadId": "L88",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 300,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 1,
+     "offenders": [
+      {
+       "by": "overflow",
+       "clipBy": "div.legal-box",
+       "el": "span.legal",
+       "gapPx": -30,
+       "rect": {
+        "h": 18,
+        "w": 183,
+        "x": 147,
+        "y": 713
+       },
+       "side": "right",
+       "text": "LEGAL-LINE Terms apply"
+      }
+     ],
+     "pageOverflowPx": 0,
+     "sw": 300,
+     "truncated": false,
+     "vw": 300,
+     "worstGapPx": -30
+    },
+    "tile": null
+   },
+   {
+    "target": "PROD",
+    "role": "prod",
+    "profile": "android",
+    "width": 320,
+    "mode": "reload",
+    "loadId": "L89",
+    "ok": true,
+    "loadError": null,
+    "blocked": null,
+    "scan": {
+     "dpr": 1,
+     "ignored": {
+      "carousel": 0,
+      "ellipsis": 0,
+      "hidden": 1,
+      "offCanvas": 0,
+      "srOnly": 0
+     },
+     "iw": 320,
+     "ms": 1,
+     "nodes": 13,
+     "offenderCount": 1,
+     "offenders": [
+      {
+       "by": "overflow",
+       "clipBy": "div.legal-box",
+       "el": "span.legal",
+       "gapPx": -10,
+       "rect": {
+        "h": 18,
+        "w": 183,
+        "x": 147,
+        "y": 713
+       },
+       "side": "right",
+       "text": "LEGAL-LINE Terms apply"
+      }
+     ],
+     "pageOverflowPx": 0,
+     "sw": 320,
+     "truncated": false,
+     "vw": 320,
+     "worstGapPx": -10
+    },
+    "tile": null
+   }
+  ],
+  "tiles": [
+   {
+    "target": "v0",
+    "profile": "iphone",
+    "width": 300,
+    "gapPx": -30,
+    "text": "LEGAL-LINE Terms apply",
+    "img": "data:image/jpeg;base64,AAAA"
+   },
+   {
+    "target": "v0",
+    "profile": "iphone",
+    "width": 320,
+    "gapPx": -10,
+    "text": "LEGAL-LINE Terms apply",
+    "img": "data:image/jpeg;base64,AAAA"
+   },
+   {
+    "target": "v1",
+    "profile": "iphone",
+    "width": 360,
+    "gapPx": -36,
+    "text": "CLIPPED-HERO Start your free trial",
+    "img": "data:image/jpeg;base64,AAAA"
+   },
+   {
+    "target": "v1",
+    "profile": "iphone",
+    "width": 375,
+    "gapPx": -21,
+    "text": "CLIPPED-HERO Start your free trial",
+    "img": "data:image/jpeg;base64,AAAA"
+   },
+   {
+    "target": "PROD",
+    "profile": "iphone",
+    "width": 360,
+    "gapPx": 0,
+    "text": "CLIPPED-HERO Start your free trial",
+    "img": "data:image/jpeg;base64,AAAA"
+   },
+   {
+    "target": "PROD",
+    "profile": "iphone",
+    "width": 375,
+    "gapPx": 0,
+    "text": "CLIPPED-HERO Start your free trial",
+    "img": "data:image/jpeg;base64,AAAA"
+   },
+   {
+    "target": "PROD",
+    "profile": "iphone",
+    "width": 300,
+    "gapPx": -30,
+    "text": "LEGAL-LINE Terms apply",
+    "img": "data:image/jpeg;base64,AAAA"
+   },
+   {
+    "target": "PROD",
+    "profile": "iphone",
+    "width": 320,
+    "gapPx": -10,
+    "text": "LEGAL-LINE Terms apply",
+    "img": "data:image/jpeg;base64,AAAA"
+   }
+  ]
+ },
+ "checks": [
+  {
+   "id": "A.v0",
+   "group": "A",
+   "title": "Link map \u2014 v0",
+   "status": "passed",
+   "severity": null,
+   "note": "v0 preview link served \"v0: Control\" (9101)",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [
+     "L1"
+    ],
+    "widths": []
+   }
+  },
+  {
+   "id": "A.v1",
+   "group": "A",
+   "title": "Link map \u2014 v1",
+   "status": "passed",
+   "severity": null,
+   "note": "v1 preview link served \"v1: Hero\" (9102)",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [
+     "L2"
+    ],
+    "widths": []
+   }
+  },
+  {
+   "id": "A.itw",
+   "group": "A",
+   "title": "Link map \u2014 ITW",
+   "status": "passed",
+   "severity": null,
+   "note": "ITW: experiment 9001 is active (served \"v0: Control\")",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [
+     "L4"
+    ],
+    "widths": []
+   }
+  },
+  {
+   "id": "B.control-prod",
+   "group": "B",
+   "title": "Control matches PROD",
+   "status": "passed",
+   "severity": null,
+   "note": "Control matches PROD (title, canonical, widgets, text length and page height within tolerance; text identical)",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [],
+    "widths": []
+   }
+  },
+  {
+   "id": "C.goal.1",
+   "group": "C",
+   "title": "Goal \"Hero CTA click\" in the snippet",
+   "status": "passed",
+   "severity": null,
+   "note": "Goal \"Hero CTA click\" matches snippet event \"Hero CTA Click\" (hero_cta_click, click)",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [],
+    "widths": []
+   }
+  },
+  {
+   "id": "C.goal.2",
+   "group": "C",
+   "title": "Goal \"Purchase completed\" in the snippet",
+   "status": "in-progress",
+   "severity": null,
+   "note": "Goal \"Purchase completed\" has no matching event in the snippet (the metric list is only visible in the Optimizely UI)",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [],
+    "widths": []
+   }
+  },
+  {
+   "id": "C.softcoded.QP-2",
+   "group": "C",
+   "title": "Softcoded test QP-2 in the snippet",
+   "status": "passed",
+   "severity": null,
+   "note": "Softcoded test QP-2 found in the snippet: \"QP-2 Softcoded promo\" (9003)",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [],
+    "widths": []
+   }
+  },
+  {
+   "id": "C.unlisted.9002",
+   "group": "C",
+   "title": "Unlisted live test QP-OTHER Live banner test",
+   "status": "in-progress",
+   "severity": null,
+   "note": "Live test \"QP-OTHER Live banner test\" (9002) is active on the page but is not in Concurrent Tests. With it forced on v0: the experiment under test is still active, page text unchanged. With it forced on v0: the experiment under test is still active, page text unchanged.",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [],
+    "widths": []
+   }
+  },
+  {
+   "id": "D.1",
+   "group": "D",
+   "title": "Audience: ITW with utm_source=meta",
+   "status": "passed",
+   "severity": null,
+   "note": "ITW with utm_source=meta: the experiment did not activate, as expected (audience \"Exclude meta\")",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [
+     "L8"
+    ],
+    "widths": []
+   }
+  },
+  {
+   "id": "D.2",
+   "group": "D",
+   "title": "Audience: ITW with utm_campaign=impact",
+   "status": "failed",
+   "severity": null,
+   "note": "ITW with utm_campaign=impact: expected the experiment NOT to activate (audience \"Exclude impact\"), it activated",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [
+     "L9"
+    ],
+    "widths": []
+   }
+  },
+  {
+   "id": "D.3",
+   "group": "D",
+   "title": "Audience: ITW as Desktop (device is desktop)",
+   "status": "passed",
+   "severity": null,
+   "note": "ITW as Desktop (device is desktop): the experiment activated, as expected (audience \"Desktop only\")",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [
+     "L10"
+    ],
+    "widths": []
+   }
+  },
+  {
+   "id": "D.4",
+   "group": "D",
+   "title": "Audience: ITW as iPhone (device is desktop)",
+   "status": "passed",
+   "severity": null,
+   "note": "ITW as iPhone (device is desktop): the experiment did not activate, as expected (audience \"Desktop only\")",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [
+     "L11"
+    ],
+    "widths": []
+   }
+  },
+  {
+   "id": "D.5",
+   "group": "D",
+   "title": "Audience: ITW with utm_source=qa-selenite (companion)",
+   "status": "passed",
+   "severity": null,
+   "note": "ITW with utm_source=qa-selenite: the experiment activated, as expected (audience \"Exclude meta\")",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [
+     "L12"
+    ],
+    "widths": []
+   }
+  },
+  {
+   "id": "D.6",
+   "group": "D",
+   "title": "Audience: ITW with utm_campaign=qa-selenite (companion)",
+   "status": "passed",
+   "severity": null,
+   "note": "ITW with utm_campaign=qa-selenite: the experiment activated, as expected (audience \"Exclude impact\")",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [
+     "L13"
+    ],
+    "widths": []
+   }
+  },
+  {
+   "id": "E.v0.1",
+   "group": "E",
+   "title": "Clipping \u2014 v0: \"LEGAL-LINE Terms apply\"",
+   "status": "failed",
+   "severity": "low",
+   "note": "\"LEGAL-LINE Terms apply\" clipped at 300, 320 px (iPhone), worst \u221230 px at 300 px; also on PROD at 300, 320 px",
+   "alsoOnProd": true,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [
+     "L30",
+     "L31"
+    ],
+    "widths": [
+     300,
+     320
+    ]
+   }
+  },
+  {
+   "id": "E.v1.1",
+   "group": "E",
+   "title": "Clipping \u2014 v1: \"CLIPPED-HERO Start your free\u2026\"",
+   "status": "failed",
+   "severity": "high",
+   "note": "\"CLIPPED-HERO Start your free\u2026\" clipped at 300, 320, 340, 360, 375, 390 px (iPhone), worst \u221296 px at 300 px; also on PROD: no",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [
+     "L39",
+     "L40",
+     "L41",
+     "L45",
+     "L48",
+     "L49"
+    ],
+    "widths": [
+     300,
+     320,
+     340,
+     360,
+     375,
+     390
+    ]
+   }
+  },
+  {
+   "id": "E.v1.2",
+   "group": "E",
+   "title": "Clipping \u2014 v1: \"LEGAL-LINE Terms apply\"",
+   "status": "failed",
+   "severity": "low",
+   "note": "\"LEGAL-LINE Terms apply\" clipped at 300, 320 px (iPhone), worst \u221230 px at 300 px; also on PROD at 300, 320 px",
+   "alsoOnProd": true,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [
+     "L48",
+     "L49"
+    ],
+    "widths": [
+     300,
+     320
+    ]
+   }
+  },
+  {
+   "id": "F.v0",
+   "group": "F",
+   "title": "Metrics on load \u2014 v0",
+   "status": "passed",
+   "severity": null,
+   "note": "Listener registered; 1 event(s) fired on load, none is a click metric or a goal",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [
+     "L1"
+    ],
+    "widths": []
+   }
+  },
+  {
+   "id": "F.v1",
+   "group": "F",
+   "title": "Metrics on load \u2014 v1",
+   "status": "failed",
+   "severity": null,
+   "note": "Click metric \"hero_cta_click\" fired on load (1\u00d7)",
+   "alsoOnProd": false,
+   "blockedBy": null,
+   "evidence": {
+    "loads": [
+     "L2"
+    ],
+    "widths": []
+   }
+  }
+ ],
+ "notTested": [
+  {
+   "id": "X.optimizely-ui",
+   "what": "Metric list and order, attribute display names, integrations, results",
+   "reason": "Only visible in the Optimizely UI"
+  },
+  {
+   "id": "X.traffic",
+   "what": "Total traffic allocation",
+   "reason": "Not checked against the spec: the snippet's campaign holdback and variation weights are only used to keep a \"did not activate\" audience test In Progress (both are in the debug log)"
+  },
+  {
+   "id": "X.click-through",
+   "what": "CTA click-through, modals, metrics on their trigger, activation on a trigger",
+   "reason": "Needs the click agent (a later version)"
+  },
+  {
+   "id": "X.devices",
+   "what": "BrowserStack device matrix",
+   "reason": "Not in this version; iPhone and Android here are emulated widths in desktop Chrome"
+  },
+  {
+   "id": "X.time",
+   "what": "Time-based content",
+   "reason": "No time override in this version"
+  },
+  {
+   "id": "X.css",
+   "what": "Experiment CSS @media rules and data-attribute scans",
+   "reason": "Not in this version"
+  },
+  {
+   "id": "X.redirect",
+   "what": "Redirect-test destination check",
+   "reason": "Not in this version"
+  },
+  {
+   "id": "X.spec-audiences",
+   "what": "Spec audiences against the snippet",
+   "reason": "The ticket context carries no spec audiences"
+  },
+  {
+   "id": "X.custom-attributes",
+   "what": "Custom attributes (the visitor attributes the snippet exposes)",
+   "reason": "Read into the snippet catalog but not evaluated against the spec"
+  },
+  {
+   "id": "X.softcoded-ids",
+   "what": "Softcoded experiment and variation IDs from the spec",
+   "reason": "Softcoded tests are matched by ticket key (or by label, when there is no key) in the experiment names, not by the experiment and variation IDs the spec lists"
+  },
+  {
+   "id": "X.spec-page-id",
+   "what": "The spec's page ID (shared-page check)",
+   "reason": "Not in this version"
+  },
+  {
+   "id": "X.concurrency-params",
+   "what": "Concurrency re-check with the promo and UTM parameters the other tests key off",
+   "reason": "Not in this version: a combination loads the preview link with the other live test forced on, and no other query parameter"
+  },
+  {
+   "id": "X.copy",
+   "what": "Copy, markup, visual and accessibility differences between variants",
+   "reason": "Run the A/B tab"
+  },
+  {
+   "id": "X.sheet-parents",
+   "what": "Parent/child row mirroring in the test plan",
+   "reason": "Not in this version"
+  }
+ ],
+ "explain": null,
+ "sheet": {
+  "connected": false,
+  "reason": "no-test-plan-link",
+  "error": null,
+  "spreadsheetId": null,
+  "gid": null,
+  "tabTitle": null,
+  "readAt": null,
+  "model": null,
+  "statusCol": null,
+  "notesOn": false,
+  "retestInProgress": false,
+  "vocab": null,
+  "mapping": [],
+  "mappingSource": "none",
+  "mapError": null,
+  "proposal": null,
+  "paste": [
+   {
+    "checkId": "A.v0",
+    "status": "Passed",
+    "note": ""
+   },
+   {
+    "checkId": "A.v1",
+    "status": "Passed",
+    "note": ""
+   },
+   {
+    "checkId": "A.itw",
+    "status": "Passed",
+    "note": ""
+   },
+   {
+    "checkId": "B.control-prod",
+    "status": "Passed",
+    "note": ""
+   },
+   {
+    "checkId": "C.goal.1",
+    "status": "Passed",
+    "note": ""
+   },
+   {
+    "checkId": "C.goal.2",
+    "status": "In Progress",
+    "note": "Auto QA (10/22): Goal \"Purchase completed\" has no matching event in the snippet (the metric list is only visible in the Optimizely UI)"
+   },
+   {
+    "checkId": "C.softcoded.QP-2",
+    "status": "Passed",
+    "note": ""
+   },
+   {
+    "checkId": "C.unlisted.9002",
+    "status": "In Progress",
+    "note": "Auto QA (10/22): Live test \"QP-OTHER Live banner test\" (9002) is active on the page but is not in Concurrent Tests. With it forced on v0: the experiment under test is still active, page text unchanged. With it forced on v0: the experiment under test is still active, page text unchanged."
+   },
+   {
+    "checkId": "D.1",
+    "status": "Passed",
+    "note": ""
+   },
+   {
+    "checkId": "D.2",
+    "status": "Failed",
+    "note": "Auto QA (10/22): ITW with utm_campaign=impact: expected the experiment NOT to activate (audience \"Exclude impact\"), it activated"
+   },
+   {
+    "checkId": "D.3",
+    "status": "Passed",
+    "note": ""
+   },
+   {
+    "checkId": "D.4",
+    "status": "Passed",
+    "note": ""
+   },
+   {
+    "checkId": "D.5",
+    "status": "Passed",
+    "note": ""
+   },
+   {
+    "checkId": "D.6",
+    "status": "Passed",
+    "note": ""
+   },
+   {
+    "checkId": "E.v0.1",
+    "status": "Failed",
+    "note": "Auto QA (10/22): \"LEGAL-LINE Terms apply\" clipped at 300, 320 px (iPhone), worst \u221230 px at 300 px; also on PROD at 300, 320 px"
+   },
+   {
+    "checkId": "E.v1.1",
+    "status": "Failed",
+    "note": "Auto QA (10/22): \"CLIPPED-HERO Start your free\u2026\" clipped at 300, 320, 340, 360, 375, 390 px (iPhone), worst \u221296 px at 300 px; also on PROD: no"
+   },
+   {
+    "checkId": "E.v1.2",
+    "status": "Failed",
+    "note": "Auto QA (10/22): \"LEGAL-LINE Terms apply\" clipped at 300, 320 px (iPhone), worst \u221230 px at 300 px; also on PROD at 300, 320 px"
+   },
+   {
+    "checkId": "F.v0",
+    "status": "Passed",
+    "note": ""
+   },
+   {
+    "checkId": "F.v1",
+    "status": "Failed",
+    "note": "Auto QA (10/22): Click metric \"hero_cta_click\" fired on load (1\u00d7)"
+   }
+  ],
+  "applied": null
+ },
+ "abReport": null
+}

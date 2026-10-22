@@ -1,0 +1,1072 @@
+{
+ "measuredAt": "2026-10-21T16:35:39.166Z",
+ "url": "https://www.starz.com/us/en/",
+ "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+ "topKeys": [
+  "audiences",
+  "events",
+  "campaigns",
+  "pages",
+  "experiments",
+  "variations",
+  "projectId",
+  "snippetId",
+  "accountId",
+  "dcpServiceId",
+  "revision",
+  "clientName",
+  "clientVersion",
+  "groups"
+ ],
+ "counts": {
+  "experiments": 13,
+  "audiences": 10,
+  "pages": 37,
+  "events": 249,
+  "campaigns": 10
+ },
+ "experiments": [
+  {
+   "id": "5994827033083904",
+   "name": "[TEST COOKIE] [DEV/QA] [TEST COOKIE] STRZ-1587 [Winback][Non Meta ad Users] RK Prior Season Completer Winbacks",
+   "audienceIds": [
+    "and",
+    "5402503194345472",
+    "24560781639",
+    "4602279483932672",
+    "15899520422"
+   ],
+   "audienceName": "[PJS] Has watched >= 3 episodes of Raising Kanan,Lapsed Users Only,Exclude Users Landing from Meta Ads,[QA] Cro Metrics Test Cookie (OLI)",
+   "weightDistributions": [
+    {
+     "entityId": "6499846937378816",
+     "endOfRange": 3000
+    },
+    {
+     "entityId": "4670259588759552",
+     "endOfRange": 7000
+    },
+    {
+     "entityId": "6447880181907456",
+     "endOfRange": 8500
+    },
+    {
+     "entityId": "5431877079662592",
+     "endOfRange": 10000
+    }
+   ],
+   "experimentMetadata": {
+    "allocationPolicy": "manual",
+    "layerId": "4623872935329792"
+   },
+   "deployed": false,
+   "variations": [
+    {
+     "id": "6499846937378816",
+     "name": "v0: Control [STRZ-1553]"
+    },
+    {
+     "id": "4670259588759552",
+     "name": "v1: $7 for 3 months"
+    },
+    {
+     "id": "6447880181907456",
+     "name": "v2: $5 for 1 month"
+    },
+    {
+     "id": "5431877079662592",
+     "name": "v3: $6 for 1 month"
+    }
+   ]
+  },
+  {
+   "id": "4608781785497600",
+   "name": "STRZ-1641 [Sign Up Flow][Billing Step][All Devices] One Plan Picker, Everywhere",
+   "audienceIds": null,
+   "audienceName": "Everyone else",
+   "weightDistributions": [
+    {
+     "entityId": "6034890376871936",
+     "endOfRange": 3400
+    },
+    {
+     "entityId": "4848461227491328",
+     "endOfRange": 6700
+    },
+    {
+     "entityId": "5721854906728448",
+     "endOfRange": 10000
+    }
+   ],
+   "experimentMetadata": {
+    "allocationPolicy": "manual",
+    "layerId": "4692572302475264"
+   },
+   "deployed": false,
+   "variations": [
+    {
+     "id": "6034890376871936",
+     "name": "v0: Control (STRZ-1641)"
+    },
+    {
+     "id": "4848461227491328",
+     "name": "v1: Redesigned Plan Cards"
+    },
+    {
+     "id": "5721854906728448",
+     "name": "v2: New Plan Pickers - monthly focus"
+    }
+   ]
+  },
+  {
+   "id": "6659106310717440",
+   "name": "STRZ-1636 [Winback][Organic] Winback Price Point Test",
+   "audienceIds": [
+    "and",
+    "24560781639",
+    "4602279483932672",
+    "4702887421411328"
+   ],
+   "audienceName": "Lapsed Users Only,Exclude Users Landing from Meta Ads,[PJS] Has watched >= 3 episodes of Outlander OR Blood Of My Blood",
+   "weightDistributions": [
+    {
+     "entityId": "6096156357296128",
+     "endOfRange": 7000
+    },
+    {
+     "entityId": "6254407916978176",
+     "endOfRange": 8000
+    },
+    {
+     "entityId": "5433129605791744",
+     "endOfRange": 9000
+    },
+    {
+     "entityId": "5533206403874816",
+     "endOfRange": 10000
+    }
+   ],
+   "experimentMetadata": {
+    "allocationPolicy": "manual",
+    "layerId": "4941281560887296"
+   },
+   "deployed": false,
+   "variations": [
+    {
+     "id": "6096156357296128",
+     "name": "v0: Control"
+    },
+    {
+     "id": "6254407916978176",
+     "name": "v1: $5.99 for 3 months"
+    },
+    {
+     "id": "5433129605791744",
+     "name": "v2: $6.99 for 3 months"
+    },
+    {
+     "id": "5533206403874816",
+     "name": "v3: $7.99 for 3 months"
+    }
+   ]
+  },
+  {
+   "id": "6433095780401152",
+   "name": "[WEB-10875] Shaka Player (Dev)",
+   "audienceIds": null,
+   "audienceName": "Everyone else",
+   "weightDistributions": [
+    {
+     "entityId": "6462709177253888",
+     "endOfRange": 10000
+    }
+   ],
+   "experimentMetadata": {
+    "allocationPolicy": "manual",
+    "layerId": "4946709638283264"
+   },
+   "deployed": false,
+   "variations": [
+    {
+     "id": "6462709177253888",
+     "name": "Original"
+    },
+    {
+     "id": "5123675813314560",
+     "name": "Variation #1"
+    }
+   ]
+  }
+ ],
+ "audiences": [
+  {
+   "id": "15899520422",
+   "name": "[QA] Cro Metrics Test Cookie (OLI)",
+   "conditions": [
+    "and",
+    [
+     "or",
+     [
+      "or",
+      {
+       "match": "exact",
+       "name": "cro_mode",
+       "type": "cookies",
+       "value": "qa"
+      },
+      {
+       "match": "exact",
+       "name": "crometrics_test_cookie",
+       "type": "cookies",
+       "value": "true"
+      }
+     ],
+     [
+      "or",
+      {
+       "match": "exact",
+       "name": "crometrics_test_cookie",
+       "type": "query",
+       "value": "true"
+      },
+      {
+       "match": "exact",
+       "name": "cro_mode",
+       "type": "query",
+       "value": "qa"
+      }
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "24560781639",
+   "name": "Lapsed Users Only",
+   "conditions": [
+    "and",
+    [
+     "or",
+     [
+      "or",
+      {
+       "match": null,
+       "name": null,
+       "type": "code",
+       "value": "JSON.parse(window.sessionStorage.getItem('accountDetails') || '{}')?.storeSubscriptionState === 'Expired' || (!window.sessionStorage.getItem('accountDetails') &…"
+      }
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "4602279483932672",
+   "name": "Exclude Users Landing from Meta Ads",
+   "conditions": [
+    "and",
+    [
+     "or",
+     [
+      "not",
+      [
+       "or",
+       {
+        "match": "exact",
+        "name": "utm_source",
+        "type": "query",
+        "value": "meta"
+       },
+       {
+        "match": "exact",
+        "name": "utm_source",
+        "type": "query",
+        "value": "facebook"
+       }
+      ]
+     ]
+    ],
+    [
+     "or",
+     [
+      "not",
+      [
+       "or",
+       {
+        "match": null,
+        "name": "5565235193446400",
+        "type": "custom_attribute",
+        "value": "facebook"
+       }
+      ]
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "4702887421411328",
+   "name": "[PJS] Has watched >= 3 episodes of Outlander OR Blood Of My Blood",
+   "conditions": [
+    "and",
+    [
+     "or",
+     [
+      "or",
+      {
+       "match": null,
+       "name": null,
+       "type": "code",
+       "value": "(() => {\n  // Titles must be an exact match to the API. See starz/_projectjs/user-episode-data.module.ts for the API call.\n  try {\n    const PJS = window.CRO_PJ…"
+      }
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "5042449733648384",
+   "name": "UTM Content Offer: $6.99 for 3 months",
+   "conditions": [
+    "and",
+    [
+     "or",
+     [
+      "or",
+      {
+       "match": null,
+       "name": "5207402247618560",
+       "type": "custom_attribute",
+       "value": "7FOR3"
+      }
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "5246270896340992",
+   "name": "UTM Content Offer: Any 3-month Offer",
+   "conditions": [
+    "and",
+    [
+     "or",
+     [
+      "or",
+      {
+       "match": null,
+       "name": "5207402247618560",
+       "type": "custom_attribute",
+       "value": "1FOR3"
+      },
+      {
+       "match": null,
+       "name": "5207402247618560",
+       "type": "custom_attribute",
+       "value": "2FOR3"
+      },
+      {
+       "match": null,
+       "name": "5207402247618560",
+       "type": "custom_attribute",
+       "value": "3FOR3"
+      },
+      {
+       "match": null,
+       "name": "5207402247618560",
+       "type": "custom_attribute",
+       "value": "4FOR3"
+      },
+      {
+       "match": null,
+       "name": "5207402247618560",
+       "type": "custom_attribute",
+       "value": "5FOR3"
+      },
+      {
+       "match": null,
+       "name": "5207402247618560",
+       "type": "custom_attribute",
+       "value": "6FOR3"
+      },
+      {
+       "match": null,
+       "name": "5207402247618560",
+       "type": "custom_attribute",
+       "value": "7FOR3"
+      },
+      {
+       "match": null,
+       "name": "5207402247618560",
+       "type": "custom_attribute",
+       "value": "8FOR3"
+      },
+      {
+       "match": null,
+       "name": "5207402247618560",
+       "type": "custom_attribute",
+       "value": "9FOR3"
+      }
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "5402503194345472",
+   "name": "[PJS] Has watched >= 3 episodes of Raising Kanan",
+   "conditions": [
+    "and",
+    [
+     "or",
+     [
+      "or",
+      {
+       "match": null,
+       "name": null,
+       "type": "code",
+       "value": "window.CRO_PJS?._raisingKananEpsWatched >= 3"
+      }
+     ],
+     [
+      "or",
+      {
+       "match": "regex",
+       "name": "cro__raisingKananEpsWatched",
+       "type": "cookies",
+       "value": "^([3-9]|\\d{2,})$"
+      }
+     ],
+     [
+      "or",
+      {
+       "match": null,
+       "name": null,
+       "type": "code",
+       "value": "(() => {\n  // Titles must be an exact match to the API. See starz/_projectjs/user-episode-data.module.ts for the API call.\n  try {\n    const PJS = window.CRO_PJ…"
+      }
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "5535143417348096",
+   "name": "UTM Content Offer: $5.99 for 3 months",
+   "conditions": [
+    "and",
+    [
+     "or",
+     [
+      "or",
+      {
+       "match": null,
+       "name": "5207402247618560",
+       "type": "custom_attribute",
+       "value": "6FOR3"
+      }
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "5742714975682560",
+   "name": "UTM Content Offer: $7.99 for 3 months",
+   "conditions": [
+    "and",
+    [
+     "or",
+     [
+      "or",
+      {
+       "match": null,
+       "name": "5207402247618560",
+       "type": "custom_attribute",
+       "value": "8FOR3"
+      }
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "6523775659802624",
+   "name": "[PJS] Meta Ad Clickers",
+   "conditions": [
+    "and",
+    [
+     "or",
+     [
+      "or",
+      {
+       "match": null,
+       "name": "5565235193446400",
+       "type": "custom_attribute",
+       "value": "facebook"
+      },
+      {
+       "match": null,
+       "name": "5565235193446400",
+       "type": "custom_attribute",
+       "value": "meta"
+      }
+     ]
+    ]
+   ]
+  }
+ ],
+ "pages": [
+  {
+   "id": "15381620411",
+   "category": "other",
+   "apiName": "8392982325_buyflow_cc_payment_page",
+   "name": "Sign Up Flow | Billing Step [Step 2/3]",
+   "staticConditions": [
+    "and",
+    [
+     "or",
+     {
+      "match": "regex",
+      "type": "url",
+      "value": "https://www.starz.com/us/en/signup/billing(-next)?"
+     }
+    ]
+   ],
+   "deactivationEnabled": true,
+   "undoOnDeactivation": false,
+   "tags": []
+  },
+  {
+   "id": "17250893690",
+   "category": "other",
+   "apiName": "8392982325_buyflow_pw_page",
+   "name": "Sign Up Flow | Password Step [Step 3/3]",
+   "staticConditions": [
+    "and",
+    [
+     "or",
+     {
+      "match": "simple",
+      "type": "url",
+      "value": "https://www.starz.com/us/en/signup/password"
+     }
+    ]
+   ],
+   "deactivationEnabled": true,
+   "undoOnDeactivation": false,
+   "tags": [],
+   "activationType": "url_changed"
+  },
+  {
+   "id": "19310552122",
+   "category": "other",
+   "apiName": "8392982325_non_cali_cancel_page__content_step",
+   "name": "Non-Cali Cancel Flow | Content Step [Step 2 or 3 /5]",
+   "staticConditions": [
+    "and",
+    [
+     "or",
+     {
+      "match": "substring",
+      "type": "url",
+      "value": "/us/en/settings/cancel/yousure"
+     }
+    ]
+   ],
+   "deactivationEnabled": true,
+   "undoOnDeactivation": false,
+   "tags": [],
+   "activationType": "callback",
+   "activationCode": "[fn]"
+  },
+  {
+   "id": "27806640032",
+   "category": "other",
+   "apiName": "8392982325_homepage_logged_out",
+   "name": "Homepage [Logged Out]",
+   "staticConditions": [
+    "and",
+    [
+     "or",
+     {
+      "match": "simple",
+      "type": "url",
+      "value": "https://www.starz.com/us/en/"
+     }
+    ]
+   ],
+   "deactivationEnabled": false,
+   "undoOnDeactivation": false,
+   "tags": [],
+   "activationType": "callback",
+   "activationCode": "[fn]"
+  },
+  {
+   "id": "4945096051785728",
+   "category": "other",
+   "apiName": "8392982325_sign_up_flow_plan_picker_step",
+   "name": "Sign Up Flow | Plan Picker Step",
+   "staticConditions": [
+    "and",
+    [
+     "or",
+     {
+      "match": "simple",
+      "type": "url",
+      "value": "https://www.starz.com/us/en/signup/plan"
+     }
+    ]
+   ],
+   "deactivationEnabled": false,
+   "undoOnDeactivation": false,
+   "tags": []
+  },
+  {
+   "id": "5050378589306880",
+   "category": "other",
+   "apiName": "8392982325_winback_page_wait_for_watch_history",
+   "name": "[Prod] Winback Page (Wait For Watch History)",
+   "staticConditions": [
+    "and",
+    [
+     "or",
+     {
+      "match": "simple",
+      "type": "url",
+      "value": "https://www.starz.com/us/en/winback"
+     }
+    ]
+   ],
+   "deactivationEnabled": false,
+   "undoOnDeactivation": false,
+   "tags": [],
+   "activationType": "polling",
+   "activationCode": "[fn]"
+  },
+  {
+   "id": "5718781918445568",
+   "category": "other",
+   "apiName": "8392982325_devqaqa2_full_site",
+   "name": "[Dev/QA/QA2/mobile.starz.com] Full site",
+   "staticConditions": [
+    "and",
+    [
+     "or",
+     {
+      "match": "regex",
+      "type": "url",
+      "value": "(https://starzcom-(dev|qa|qa2).starz.com|http://mobile.starz.com:(3000|4200))/us/en/?"
+     }
+    ]
+   ],
+   "deactivationEnabled": false,
+   "undoOnDeactivation": false,
+   "tags": []
+  },
+  {
+   "id": "6187570132942848",
+   "category": "other",
+   "apiName": "8392982325_devqa_winback_page_wait_for_watch_history",
+   "name": "[Dev/QA] Winback Page (Wait For Watch History)",
+   "staticConditions": [
+    "and",
+    [
+     "or",
+     {
+      "match": "regex",
+      "type": "url",
+      "value": "https://starzcom-(dev|qa)\\d?.starz.com/us/en/winback"
+     }
+    ]
+   ],
+   "deactivationEnabled": false,
+   "undoOnDeactivation": false,
+   "tags": [],
+   "activationType": "polling",
+   "activationCode": "[fn]"
+  }
+ ],
+ "events": [
+  {
+   "id": "16794070108",
+   "viewId": null,
+   "name": "[PJS] Sitewide | Scroll Goals 25%",
+   "category": "other",
+   "apiName": "pjs_sitewide_scroll_25",
+   "eventType": "custom",
+   "eventFilter": null,
+   "pageId": null
+  },
+  {
+   "id": "16794270360",
+   "viewId": null,
+   "name": "[PJS] Sitewide | Scroll Goals 50%",
+   "category": "other",
+   "apiName": "pjs_sitewide_scroll_50",
+   "eventType": "custom",
+   "eventFilter": null,
+   "pageId": null
+  },
+  {
+   "id": "21286380933",
+   "viewId": "15381620411",
+   "name": "Sign Up | Billing [Step 2/3] | Clicks Continue with PayPal",
+   "category": "other",
+   "apiName": "8392982325_billing__paypal_payment_selected",
+   "eventType": "click",
+   "eventFilter": {
+    "filterType": "target_selector",
+    "selector": "#paypalForm button, section>form:first-of-type input+button"
+   },
+   "pageId": "15381620411"
+  },
+  {
+   "id": "21881671469",
+   "viewId": "20151542103",
+   "name": "Settings Page | Clicks Reactivate",
+   "category": "other",
+   "apiName": "8392982325_settings_page__reactivate_cta_clicks_prod",
+   "eventType": "click",
+   "eventFilter": {
+    "filterType": "target_selector",
+    "selector": ".settings-card button.btn-sm-1"
+   },
+   "pageId": "20151542103"
+  }
+ ],
+ "campaigns": [
+  {
+   "id": "4623872935329792",
+   "name": "[TEST COOKIE] [DEV/QA] [TEST COOKIE] STRZ-1587 [Winback][Non Meta ad Users] RK Prior Season Completer Winbacks",
+   "pageIds": [
+    "6187570132942848"
+   ],
+   "viewIds": [
+    "6187570132942848"
+   ],
+   "holdback": 0,
+   "policy": "single_experiment",
+   "activation": {},
+   "experimentIds": [
+    "5994827033083904"
+   ]
+  },
+  {
+   "id": "4692572302475264",
+   "name": "STRZ-1641 [Sign Up Flow][Billing Step][All Devices] One Plan Picker, Everywhere",
+   "pageIds": [
+    "4945096051785728"
+   ],
+   "viewIds": [
+    "4945096051785728"
+   ],
+   "holdback": null,
+   "policy": "single_experiment",
+   "activation": {},
+   "experimentIds": [
+    "4608781785497600"
+   ]
+  },
+  {
+   "id": "4941281560887296",
+   "name": "STRZ-1636 [Winback][Organic] Winback Price Point Test",
+   "pageIds": [
+    "5050378589306880",
+    "6187570132942848"
+   ],
+   "viewIds": [
+    "5050378589306880",
+    "6187570132942848"
+   ],
+   "holdback": null,
+   "policy": "single_experiment",
+   "activation": {},
+   "experimentIds": [
+    "6659106310717440"
+   ]
+  },
+  {
+   "id": "4946709638283264",
+   "name": "[WEB-10875] Shaka Player (Dev)",
+   "pageIds": [
+    "5718781918445568"
+   ],
+   "viewIds": [
+    "5718781918445568"
+   ],
+   "holdback": 0,
+   "policy": "single_experiment",
+   "activation": {},
+   "experimentIds": [
+    "6433095780401152"
+   ]
+  }
+ ],
+ "visitorCustom": {
+  "20474560436": {
+   "id": "20474560436",
+   "value": "www.starz.com",
+   "name": "pjs_domain"
+  },
+  "24729520083": {
+   "id": "24729520083",
+   "value": "No",
+   "name": "pjs_power_cohort"
+  },
+  "24721570031": {
+   "id": "24721570031",
+   "value": "No",
+   "name": "pjs_comedy_cohort"
+  },
+  "17803430464": {
+   "id": "17803430464",
+   "value": "New",
+   "name": "pjs_returning_visitor"
+  },
+  "23906780278": {
+   "id": "23906780278",
+   "value": "Direct",
+   "name": "pjs_traffic_source"
+  },
+  "19419760816": {
+   "id": "19419760816",
+   "value": "Home Page",
+   "name": "pjs_page_type"
+  }
+ },
+ "visitorKeys": [
+  "custom",
+  "visitorId",
+  "events",
+  "customBehavior",
+  "first_session",
+  "browserId",
+  "browserVersion",
+  "device",
+  "device_type",
+  "queryParams",
+  "referrer",
+  "source_type"
+ ],
+ "stateFns": [
+  "getTrafficExclusionStats",
+  "getCampaignStates",
+  "getExperimentStates",
+  "getCampaignStateLists",
+  "getPageStates",
+  "isGlobalHoldback",
+  "getActivationId",
+  "getVariationMap",
+  "getActiveExperimentIds",
+  "getRedirectInfo",
+  "getDecisionString",
+  "getDecisionObject"
+ ],
+ "activeExperimentIds": [],
+ "trackEventsOnLoad": [
+  {
+   "name": "Sitewide [Logged Out Only] + Exclude /signup",
+   "apiName": "8392982325_sitewide_logged_out_only__exclude_signup",
+   "type": "pageview",
+   "category": "other"
+  },
+  {
+   "name": "push_attribute",
+   "apiName": "",
+   "type": "custom",
+   "category": "other"
+  },
+  {
+   "name": "push_attribute",
+   "apiName": "",
+   "type": "custom",
+   "category": "other"
+  },
+  {
+   "name": "push_attribute",
+   "apiName": "",
+   "type": "custom",
+   "category": "other"
+  },
+  {
+   "name": "push_attribute",
+   "apiName": "",
+   "type": "custom",
+   "category": "other"
+  },
+  {
+   "name": "push_attribute",
+   "apiName": "",
+   "type": "custom",
+   "category": "other"
+  },
+  {
+   "name": "Homepage [Logged Out]",
+   "apiName": "8392982325_homepage_logged_out",
+   "type": "pageview",
+   "category": "other"
+  }
+ ],
+ "leafSurvey": {
+  "zapier.com": {
+   "types": {
+    "device": 3,
+    "cookies": 1,
+    "cookies(not)": 1
+   },
+   "examples": {
+    "device": {
+     "type": "device",
+     "name": null,
+     "value": "desktop",
+     "match": null
+    },
+    "cookies": {
+     "type": "cookies",
+     "name": "cro_mode",
+     "value": "qa",
+     "match": "exact"
+    },
+    "cookies(not)": {
+     "type": "cookies",
+     "name": "currentAccountId",
+     "value": null,
+     "match": "exists"
+    }
+   },
+   "audiences": 4
+  },
+  "www.wowway.com": {
+   "types": {
+    "device": 1,
+    "cookies": 5,
+    "query": 3
+   },
+   "examples": {
+    "device": {
+     "type": "device",
+     "name": null,
+     "value": "desktop",
+     "match": null
+    },
+    "cookies": {
+     "type": "cookies",
+     "name": "cro_mode",
+     "value": "qa",
+     "match": "exact"
+    },
+    "query": {
+     "type": "query",
+     "name": "crometrics_test_cookie",
+     "value": "true",
+     "match": "exact"
+    }
+   },
+   "audiences": 2
+  },
+  "www.toryburch.com": {
+   "types": {
+    "device": 2,
+    "code": 3,
+    "cookies": 7,
+    "query": 2,
+    "custom_attribute(not)": 2,
+    "custom_attribute": 1,
+    "ip(not)": 2,
+    "referrer": 1,
+    "campaign": 2,
+    "behavior": 1,
+    "dynamic_customer_profile(not)": 7,
+    "dynamic_customer_profile": 22,
+    "cookies(not)": 8,
+    "query(not)": 2,
+    "location": 1
+   },
+   "examples": {
+    "device": {
+     "type": "device",
+     "name": null,
+     "value": "mobile",
+     "match": null
+    },
+    "code": {
+     "type": "code",
+     "name": null,
+     "value": "window.innerWidth < 767",
+     "match": null
+    },
+    "cookies": {
+     "type": "cookies",
+     "name": "cro_mode",
+     "value": "qa",
+     "match": "exact"
+    },
+    "query": {
+     "type": "query",
+     "name": "crometrics_test_cookie",
+     "value": "true",
+     "match": "exact"
+    },
+    "custom_attribute(not)": {
+     "type": "custom_attribute",
+     "name": "22405161751",
+     "value": "Purchaser",
+     "match": null
+    },
+    "custom_attribute": {
+     "type": "custom_attribute",
+     "name": "22405161751",
+     "value": "Purchaser",
+     "match": null
+    },
+    "ip(not)": {
+     "type": "ip",
+     "name": null,
+     "value": "24.103.239.178",
+     "match": "exact"
+    },
+    "referrer": {
+     "type": "referrer",
+     "name": null,
+     "value": "google.com",
+     "match": "simple"
+    },
+    "campaign": {
+     "type": "campaign",
+     "name": null,
+     "value": "PaidSocial",
+     "match": "substring"
+    },
+    "behavior": {
+     "type": "behavior",
+     "name": "event",
+     "value": "{\"version\":\"0.1\",\"source\":\"events\",\"action\":{\"type\":\"pageview\",\"value\":\"14720940047_grid_pages\"},\"time\":{\"type\":\"last_days\",\"days\":1},\"count\":{\"comparator\":\"eq\"…",
+     "match": null
+    },
+    "dynamic_customer_profile(not)": {
+     "type": "dynamic_customer_profile",
+     "name": null,
+     "value": "{\"dcpServiceId\":23701400020,\"rule\":{\"where\":[\"and\",[\"or\",{\"op\":\"eq\",\"args\":[{\"field\":[\"25121680015\",\"27696700095\"]},{\"value\":\"deleted\"}]}]]}}",
+     "match": null
+    },
+    "dynamic_customer_profile": {
+     "type": "dynamic_customer_profile",
+     "name": null,
+     "value": "{\"dcpServiceId\":23701400020,\"rule\":{\"where\":[\"and\",[\"or\",{\"op\":\"exists\",\"args\":[{\"field\":[\"25121680015\",\"27696700095\"]},{\"value\":\"\"}]}]]}}",
+     "match": null
+    },
+    "cookies(not)": {
+     "type": "cookies",
+     "name": "code_checked_out",
+     "value": "tb1005",
+     "match": "exact"
+    },
+    "query(not)": {
+     "type": "query",
+     "name": "utm_medium",
+     "value": "sms",
+     "match": "exact"
+    },
+    "location": {
+     "type": "location",
+     "name": null,
+     "value": "MX",
+     "match": null
+    }
+   },
+   "audiences": 34
+  }
+ }
+}

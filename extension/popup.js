@@ -250,6 +250,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('Selenite: fill targets failed to initialize —', e);
   }
 
+  // QA Pass (Test Agent mode). Isolated like the inits above: a storage or
+  // identity fault here must not take the Settings and Test Agent bindings below with it.
+  try {
+    await initQaPass();
+  } catch (e) {
+    console.error('Selenite: QA Pass failed to initialize —', e);
+  }
+
   // ── Settings overlay ─────────────────────────────────────────────────────
   // Credentials are not a workflow step, so they are not a tab — a tab would
   // give them the same visual rank as the modes and bury them behind whichever
@@ -308,6 +316,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnId: 'btn-set-figma-save', inputId: 'set-figma-pat',
     statusId: 'set-figma-status', storageKey: 'figmaPat',
     verify: () => chrome.runtime.sendMessage({ action: 'figmaVerifyToken' }),
+  });
+
+  // No verify: a client ID can only be proven by a Google sign-in, which is the
+  // QA Pass panel's Connect button.
+  bindCredential({
+    btnId: 'btn-set-google-save', inputId: 'set-google-client',
+    statusId: 'set-google-status', storageKey: 'googleOAuthClientId',
   });
 
   document.getElementById('ta-primary-select').addEventListener('change', taShowPrimary);
@@ -514,9 +529,21 @@ const TA_MODES = {
   // Test-Agent-native — no bodyId/homeParentId (nothing is reparented for funnel).
   'funnel': {
     label: 'Funnel Crawl',
+    standalone: true,   // heavy, runs alone: never offered in "Also Run"
     run: () => runFunnelCrawl(),
     isConfigured: () => !!(funnelState.start.trim() && funnelState.end.trim()),
     getData: () => _funnelLastRun,
+  },
+  // QA Pass: platform, targeting, layout sweep and metrics-on-load checks on the
+  // active ticket's preview links (qa-pass.js + runQaPass in background.js).
+  // Complements the A/B tab; never captures variants for a diff.
+  'qapass': {
+    label: 'QA Pass (platform + layout)', bodyId: 'qp-body', homeParentId: 'ta-mode-homes',
+    standalone: true,
+    run: () => runQaPassMode(),
+    isConfigured: () => true,   // context is async; run() returns {ok:false,error} when it is missing
+    getData: () => _qpLastRun,
+    onShow: () => { qpUiRenderCtx().catch(() => {}); qpUiRefreshSheet().catch(() => {}); },
   },
 };
 let _taActiveBody = null;        // '4' | '6' | 'funnel' | null — which mode currently owns #ta-settings-slot
@@ -686,7 +713,10 @@ async function runFnDiscoverPath() {
     if (res.found) {
       funnelState.middles = res.path.slice(1, -1); // exclude Start/End, already their own fields
       persistFunnel();
-      taRenderFunnel();
+      // The crawl can outlive the Funnel card: a tester who switched to
+      // another mode meanwhile has that mode's settings in the slot, and
+      // rendering the Funnel card would overwrite them.
+      refreshFunnelDom();
       fnSetCrawlStatus(`Path found — ${res.path.length - 2} waypoint(s), ${res.scanned} page(s) scanned${res.failed ? `, ${res.failed} could not load` : ''}.`);
     } else {
       fnSetCrawlStatus(`${res.error} (${res.scanned} page(s) scanned${res.failed ? `, ${res.failed} could not load` : ''}) — add waypoints manually, or raise the limits below.`);
@@ -816,6 +846,503 @@ async function runFunnelCrawl() {
   if (resultsEl) renderFunnelResults(resultsEl, _funnelLastRun);
 }
 
+// ── QA Pass (Test Agent mode 'qapass') — panel side ────────────────────────
+// The shared logic is qa-pass.js (loaded before this file); the page loads and the sheet
+// calls are the worker's (runQaPass and the qp* actions in background.js). Names here are
+// qpUi*, plus runQaPassMode, initQaPass and _qpLastRun. The worker's run record is the
+// mode's getData(); nothing is written to the test plan until the tester clicks Apply.
+let _qpLastRun = null;
+const qpUiGroups = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+function qpUiEl(id) { return document.getElementById(id); }
+
+function qpUiReadSettings() {
+  const checks = {};
+  qpUiGroups.forEach((g) => {
+    const cb = document.querySelector('#qp-body .qp-check[value="' + g + '"]');
+    checks[g] = cb ? !!cb.checked : true;
+  });
+  const val = (id) => { const e = qpUiEl(id); return e ? e.value : ''; };
+  const on = (id, dflt) => { const e = qpUiEl(id); return e ? !!e.checked : dflt; };
+  return {
+    checks,
+    widths: qpParseWidths(val('qp-widths')),
+    quickSweep: on('qp-quick-sweep', false),
+    prodMobile: on('qp-prod-mobile', true),
+    combos: on('qp-combos', true),
+    clearAllSiteData: on('qp-clear-all', false),
+    workarounds: val('qp-workarounds'),
+  };
+}
+
+function qpUiApplySettings(s) {
+  if (!s) return;
+  qpUiGroups.forEach((g) => {
+    const cb = document.querySelector('#qp-body .qp-check[value="' + g + '"]');
+    if (cb && s.checks && typeof s.checks[g] === 'boolean') cb.checked = s.checks[g];
+  });
+  const setV = (id, v) => { const e = qpUiEl(id); if (e && typeof v === 'string') e.value = v; };
+  const setC = (id, v) => { const e = qpUiEl(id); if (e && typeof v === 'boolean') e.checked = v; };
+  setV('qp-widths', s.widthsText);
+  setC('qp-quick-sweep', s.quickSweep);
+  setC('qp-prod-mobile', s.prodMobile);
+  setC('qp-combos', s.combos);
+  setC('qp-clear-all', s.clearAllSiteData);
+  setV('qp-workarounds', s.workarounds);
+}
+
+function qpUiSaveSettings() {
+  const s = qpUiReadSettings();
+  const stored = { checks: s.checks, widthsText: (qpUiEl('qp-widths') || {}).value || '', quickSweep: s.quickSweep, prodMobile: s.prodMobile,
+    combos: s.combos, clearAllSiteData: s.clearAllSiteData, workarounds: s.workarounds };
+  try { Promise.resolve(chrome.storage.local.set({ qpSettings: stored })).catch(() => {}); } catch (_) {}
+}
+
+// "TICKET · 3 preview link(s) · ITW yes · experiment 123 · test plan: Google Sheet · 4 comment(s)"
+async function qpUiRenderCtx() {
+  const el = qpUiEl('qp-ctx');
+  if (!el) return;
+  const ctx = await getActiveContext().catch(() => null);
+  const v = qpValidateContext(ctx);
+  if (!v.ok) { el.textContent = v.error; return; }
+  const links = (ctx.previewLinks || []).filter((l) => l && l.url).length;
+  const plan = ctx.qaTestPlanUrl ? (qpSpreadsheetRef(ctx.qaTestPlanUrl) ? 'Google Sheet' : 'other link') : 'none';
+  el.textContent = ctx.ticketKey + ' · ' + links + ' preview link(s) · ITW ' + (ctx.itwLink ? 'yes' : 'no') + ' · experiment ' + (ctx.experimentId || 'none')
+    + ' · test plan: ' + plan + ' · ' + (ctx.comments || []).length + ' comment(s)';
+}
+
+// The newest A/B report of this ticket (IndexedDB `reports`): its id, date and first problems, so QA Pass
+// can say what the A/B tab already found. Any failure is "none".
+async function qpUiLastAbReport(ticketKey) {
+  try {
+    const keys = (await idbReq((await idb()).transaction('reports').objectStore('reports').getAllKeys())).sort().reverse();
+    for (const id of keys) {
+      const rec = await idbGet('reports', id);
+      const log = rec && rec.debugLog;
+      if (!log || !log.run) continue;
+      if (!(log.run.modes || []).some((m) => m.mode === 2)) continue;
+      const k = log.designReference && log.designReference.ticketContext && log.designReference.ticketContext.ticketKey;
+      if (!k || k !== ticketKey) continue;
+      return { id, generatedAt: Date.parse(log.generatedAt) || null,
+        problems: (log.problems || []).slice(0, 8).map((p) => ({ severity: p.severity || null, where: p.where || null, detail: String(p.detail || '').slice(0, 200) })) };
+    }
+  } catch (_) {}
+  return null;
+}
+
+// The record without the screenshots (they would outgrow chrome.storage.session).
+function qpUiSlim(rec) {
+  const c = JSON.parse(JSON.stringify(rec));
+  if (c.sweep && Array.isArray(c.sweep.tiles)) c.sweep.tiles.forEach((t) => { delete t.img; });
+  return c;
+}
+
+async function runQaPassMode() {
+  const resultsEl = qpUiEl('qp-results');
+  const ctx = await getActiveContext().catch(() => null);
+  const v = qpValidateContext(ctx);
+  if (!v.ok) {
+    if (resultsEl) resultsEl.innerHTML = '<div style="color:var(--err);font-size:11px">' + esc(v.error) + '</div>';
+    return { ok: false, error: v.error };
+  }
+  const settings = qpUiReadSettings();
+  const progressEl = qpUiEl('qp-progress'), statusEl = qpUiEl('ta-status');
+  const tick = async () => {
+    try {
+      const { qpProgress } = await sessionNS.get('qpProgress');
+      if (!qpProgress || !qpProgress.running) return;
+      const line = 'QA Pass — ' + (qpProgress.phase || '') + ' ' + (qpProgress.label || '') + ' · ' + (qpProgress.profile || '') + ' · ' + (qpProgress.width || '') + 'px (' + (qpProgress.loads || 0) + ' loads)';
+      if (progressEl) progressEl.textContent = line;
+      if (statusEl) statusEl.textContent = line;
+    } catch (_) {}
+  };
+  const timer = setInterval(tick, 800);
+  // Two causes, two sentences: a record of another version came from an older worker; a rejected message was never answered.
+  const STALE_WORKER = 'The service worker is older than this panel — reload Selenite in chrome://extensions and run again.';
+  const NO_ANSWER = 'The service worker did not answer the run: it is older than this panel, or Chrome stopped it mid-run. Reload Selenite in chrome://extensions and run again.';
+  try {
+    // The workarounds text goes only to the Opus explain, never into the worker's record: the
+    // worker gets its length.
+    const { workarounds, ...forWorker } = settings;
+    let res;
+    try {
+      res = await chrome.runtime.sendMessage({ action: 'runQaPass', payload: { ctx: qpCtxForWorker(ctx),
+        settings: { ...forWorker, workaroundsLength: (workarounds || '').length }, winId: WIN_ID } });
+    } catch (e) {
+      // A message nobody answered is rejected by Chrome ("message port closed", "no receiving end"): a worker that has no
+      // runQaPass (older than this panel), or one Chrome stopped mid-run (an extension reload). Say what to do.
+      const m = String((e && e.message) || e);
+      return { ok: false, error: /message port closed|Could not establish connection|Receiving end does not exist/i.test(m) ? NO_ANSWER : m };
+    }
+    if (!res || !res.ok || !res.record) return { ok: false, error: (res && res.error) || 'QA Pass failed' };
+    const record = res.record;
+    if (record.version !== QP_RECORD_VERSION) {
+      return { ok: false, error: STALE_WORKER };
+    }
+    if (record.error && !(record.loads || []).length) return { ok: false, error: record.error };
+    record.abReport = await qpUiLastAbReport(ctx.ticketKey);
+    const analysisOn = !!(qpUiEl('ta-agentic-analysis') || {}).checked;
+    if (analysisOn && !record.stopped && !_taStopRequested) {
+      const r = await chrome.runtime.sendMessage({ action: 'qpExplain', payload: qpExplainInput(record, ctx, record.abReport, workarounds) }).catch((e) => ({ ok: false, error: e.message }));
+      record.explain = r && r.ok ? r.explain : { ok: false, error: (r && r.error) || 'failed' };
+    } else {
+      record.explain = null;
+    }
+    record.sheet = await qpUiPrepareSheet(record, ctx, analysisOn);
+    record.ts = Date.now();
+    _qpLastRun = record;
+    try { await sessionNS.set({ qpLastRun: qpUiSlim(record) }); } catch (_) {}
+    qpUiRenderResults(record);
+    return { ok: true };
+  } finally {
+    clearInterval(timer);
+    if (progressEl) progressEl.textContent = '';
+  }
+}
+
+async function qpUiPrepareSheet(record, ctx, analysisOn) {
+  // Never throws: every way the test plan can be unavailable is a `reason` or an `error`, and
+  // every return carries the paste-ready table.
+  const paste = qpPasteRows(record.checks || [], new Date());
+  const sheet = { connected: false, reason: null, error: null, spreadsheetId: null, gid: null, tabTitle: null, readAt: null,
+    model: null, statusCol: null, notesOn: false, retestInProgress: false, vocab: null, mapping: [], mappingSource: 'none', mapError: null,
+    proposal: null, paste, applied: null };
+  try {
+    if (!ctx.qaTestPlanUrl) { sheet.reason = 'no-test-plan-link'; return sheet; }
+    const ref = qpSpreadsheetRef(ctx.qaTestPlanUrl);
+    if (!ref) { sheet.reason = 'not-a-google-sheet-link'; return sheet; }
+    sheet.spreadsheetId = ref.spreadsheetId; sheet.gid = ref.gid;
+    const st = await chrome.runtime.sendMessage({ action: 'qpGoogleStatus' });
+    if (!st || !st.clientIdSet) { sheet.reason = 'no-client-id'; return sheet; }
+    if (!st.connected) { sheet.reason = 'not-connected'; return sheet; }
+    const tabSel = qpUiEl('qp-sheet-tab');
+    const tabTitle = tabSel ? tabSel.value : '';
+    if (!tabTitle) { sheet.reason = 'no-tab-picked'; return sheet; }
+    sheet.tabTitle = tabTitle;
+    const rd = await chrome.runtime.sendMessage({ action: 'qpSheetRead', payload: { spreadsheetId: ref.spreadsheetId, tabTitle } });
+    if (!rd || !rd.ok) { sheet.error = (rd && rd.error) || 'The test plan could not be read.'; return sheet; }
+    sheet.readAt = rd.readAt;
+    const model = qpSheetModel(rd.values);
+    if (model.error) { sheet.error = model.error; return sheet; }
+    sheet.connected = true;
+    sheet.model = model;
+    sheet.vocab = qpSheetVocab(rd.valuesTab, model);
+    // The status column: the one the tester picked when it is a desktop-Chrome column, else the default.
+    // An enabled picker left on "(don't write statuses)" means no status column at all.
+    const colSel = qpUiEl('qp-sheet-col');
+    const picked = colSel && !colSel.disabled ? colSel.value : null;
+    let sc = null;
+    if (picked === '') sc = null;
+    else {
+      sc = model.envCols.filter((e) => e.header === picked && qpIsDesktopChromeHeader(e.header))[0] || qpDefaultStatusCol(model);
+    }
+    sheet.statusCol = sc ? { col: sc.col, header: sc.header, letter: qpColLetter(sc.col) } : null;
+    sheet.notesOn = !!(qpUiEl('qp-write-notes') || {}).checked;
+    sheet.retestInProgress = !!(qpUiEl('qp-retest-inprogress') || {}).checked;
+    let mapping = [];
+    if (analysisOn && !record.stopped) {
+      const input = qpMapInput(model, record.checks || []);
+      if (input.rows.length && input.checks.length) {
+        const r = await chrome.runtime.sendMessage({ action: 'qpMapRows', payload: input }).catch((e) => ({ ok: false, error: e.message }));
+        if (r && r.ok) { mapping = r.mappings || []; sheet.mappingSource = 'opus'; }
+        else sheet.mapError = (r && r.error) || 'failed';
+      }
+    }
+    sheet.mapping = mapping;
+    sheet.proposal = qpBuildProposal({ model, statusCol: sheet.statusCol, notesOn: sheet.notesOn, retestInProgress: sheet.retestInProgress,
+      vocab: sheet.vocab, checks: record.checks || [], mapping, date: new Date() });
+    return sheet;
+  } catch (e) {
+    sheet.error = String((e && e.message) || e);
+    return sheet;
+  }
+}
+
+// How many cells the included entries would write.
+function qpUiRecount(proposal) {
+  let s = 0, n = 0;
+  (proposal.entries || []).forEach((e) => {
+    if (!e.include) return;
+    if (e.status && e.status.writable) s++;
+    if (e.note) n++;
+  });
+  proposal.counts = { statusWrites: s, noteWrites: n };
+}
+
+function qpUiRenderResults(record) {
+  const el = qpUiEl('qp-results');
+  if (!el || !record) return;
+  const checks = record.checks || [];
+  const c = qpCounts(checks), badge = qpBadge(checks, record.stopped);
+  const color = badge.kind === 'fail' ? 'var(--err)' : badge.kind === 'pass' ? 'var(--ok)' : 'var(--warn)';
+  let h = '<style>#qp-results table{width:100%;border-collapse:collapse;font-size:10px}#qp-results td,#qp-results th{border-bottom:1px solid var(--border,#333);padding:2px 3px;text-align:left;vertical-align:top;word-break:break-word}#qp-results select{max-width:96px;font-size:10px}#qp-results .qp-sub{font-weight:700;font-size:10px;margin:6px 0 2px}#qp-results .qp-list{margin:0 0 4px 14px;padding:0;font-size:10px}#qp-results .qp-empty{font-size:10px;color:var(--fg3)}</style>'
+    + '<div style="font-size:11px;font-weight:700;color:' + color + ';margin-bottom:2px">' + qpEsc(badge.label) + '</div>'
+    + '<div style="font-size:11px;color:var(--fg2);margin-bottom:6px">' + c.failed + ' failed · ' + c.passed + ' passed · ' + c['in-progress'] + ' in progress · '
+    + c.blocked + ' blocked · ' + c['not-tested'] + ' not tested' + (record.stopped ? ' · stopped' : '') + '</div>';
+  // A record restored from chrome.storage.session, or stored by an older worker, can hold raw URL text: scrubbed again here.
+  if (record.error) h += '<div style="font-size:11px;color:var(--err);margin-bottom:4px">' + qpEsc(qpScrubUrls(record.error)) + '</div>';
+  const failed = checks.filter((x) => x.status === 'failed');
+  if (failed.length) {
+    h += '<div style="font-size:11px;margin-bottom:6px">' + failed.map((f) => '<div style="margin-bottom:2px"><b>' + qpEsc(f.id) + '</b> — ' + qpEsc(qpScrubUrls(f.note)) + '</div>').join('') + '</div>';
+  }
+  const sh = record.sheet;
+  const locked = !!(sh && sh.applied && sh.applied.ok);
+  if (sh && sh.connected && sh.proposal) {
+    h += '<div style="font-size:11px;font-weight:700;margin:6px 0 2px">Test plan changes (not written yet)</div>';
+    if (sh.mapError) h += '<div style="font-size:10px;color:var(--warn);margin-bottom:2px">Row mapping failed: ' + qpEsc(sh.mapError) + '. Map rows by hand below, or run again.</div>';
+    h += qpProposalHtml(sh, { editable: !locked, checks });
+    const n = qpWritesFromProposal(sh).length;
+    if (!locked) {
+      h += '<button class="btn primary sm" id="btn-qp-apply" type="button" style="margin-top:6px;' + (n ? '' : 'display:none') + '">Apply ' + n + ' change(s) to "' + qpEsc(sh.tabTitle) + '"</button>';
+    }
+    h += '<div id="qp-apply-status" style="font-size:10px;margin-top:4px"></div>';
+  } else if (sh) {
+    const why = { 'no-test-plan-link': 'The active ticket has no QA test plan link.', 'not-a-google-sheet-link': 'The QA test plan link is not a Google Sheet.',
+      'no-client-id': 'Add a Google OAuth client ID in Settings to read and write the test plan.', 'not-connected': 'Google is not connected: use Connect Google above.',
+      'no-tab-picked': 'Pick the test plan tab above to get a proposal.' };
+    h += '<div style="font-size:11px;font-weight:700;margin:6px 0 2px">Test plan</div>';
+    h += '<div style="font-size:10px;color:' + (sh.error ? 'var(--err)' : 'var(--fg3)') + ';margin-bottom:4px">' + qpEsc(sh.error ? 'The test plan could not be read: ' + sh.error : (why[sh.reason] || 'No test plan.')) + ' Paste-ready results:</div>';
+    h += qpPasteHtml(sh.paste || []);
+  }
+  el.innerHTML = h;
+  if (sh && sh.applied) qpUiShowApplied(sh.applied);
+}
+
+function qpUiShowApplied(a) {
+  const st = qpUiEl('qp-apply-status');
+  if (!st) return;
+  if (!a.ok) { st.style.color = 'var(--err)'; st.textContent = 'Not written: ' + (a.error || 'unknown error') + (a.needsConnect ? ' (use Connect Google, then Apply again)' : ''); return; }
+  const left = (a.dropped || []).map((d) => d.a1);
+  let t = 'Wrote ' + (a.written || 0) + ' cell(s)' + (a.verified != null ? ', verified ' + a.verified : ', not re-read (' + (a.verifyError || 'unknown') + ')') + '.';
+  if (left.length) t += ' Left alone, changed since read: ' + left.join(', ') + '.';
+  if ((a.mismatches || []).length) t += ' Mismatches: ' + a.mismatches.map((m) => m.a1 + ' holds "' + m.found + '"').join('; ') + '.';
+  if ((a.foreign || []).length) t += ' Also changed by someone else meanwhile: ' + a.foreign.map((f) => f.a1).join(', ') + '.';
+  st.style.color = ((a.mismatches || []).length || a.verified == null) ? 'var(--err)' : 'var(--ok)';
+  st.textContent = t;
+}
+
+function qpUiPersistLast() {
+  if (!_qpLastRun) return;
+  try { Promise.resolve(sessionNS.set({ qpLastRun: qpUiSlim(_qpLastRun) })).catch(() => {}); } catch (_) {}
+}
+
+// The proposal editor, one delegated handler for each event (bound once, on #qp-results).
+function qpUiOnResultsChange(e) {
+  const rec = _qpLastRun, sh = rec && rec.sheet;
+  if (!sh || !sh.proposal || (sh.applied && sh.applied.ok)) return;
+  const t = e.target;
+  if (t && t.matches && t.matches('select[data-qp-row]')) {
+    const row = parseInt(t.getAttribute('data-qp-row'), 10);
+    const ids = String(t.value || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const ent = qpRebuildEntry(sh, row, ids, rec.checks || [], new Date());
+    if (!ent) return;
+    const i = sh.proposal.entries.findIndex((x) => x.row === row);
+    if (i >= 0) sh.proposal.entries[i] = ent; else sh.proposal.entries.push(ent);
+    sh.mapping = (sh.mapping || []).filter((m) => m.row !== row).concat(ids.length ? [{ row, checkIds: ids }] : []);
+  } else if (t && t.matches && t.matches('input[data-qp-include]')) {
+    const row = parseInt(t.getAttribute('data-qp-include'), 10);
+    const ent = sh.proposal.entries.filter((x) => x.row === row)[0];
+    if (!ent) return;
+    ent.include = !!t.checked;
+  } else {
+    return;
+  }
+  qpUiRecount(sh.proposal);
+  qpUiRenderResults(rec);
+  qpUiPersistLast();
+}
+
+function qpUiOnResultsClick(e) {
+  const t = e.target && e.target.closest ? e.target.closest('#btn-qp-apply') : null;
+  if (t) qpUiApply();
+}
+
+async function qpUiApply() {
+  const rec = _qpLastRun, sh = rec && rec.sheet;
+  const say = (msg, err) => { const st = qpUiEl('qp-apply-status'); if (st) { st.textContent = msg; st.style.color = err ? 'var(--err)' : 'var(--fg2)'; } };
+  if (!sh || !sh.connected || !sh.proposal || (sh.applied && sh.applied.ok)) return;
+  const writes = qpWritesFromProposal(sh);
+  if (!writes.length) { say('Nothing selected to write.'); return; }
+  if (!confirm('Write ' + writes.length + ' cell(s) to the tab "' + sh.tabTitle + '" of the QA test plan?\n\nOnly cells that still hold what Selenite read are written; anything changed since is left alone.')) return;
+  const btn = qpUiEl('btn-qp-apply');
+  if (btn) btn.disabled = true;
+  say('Writing…');
+  // The two columns the worker may write: the one status column picked, and the Notes column (as letters).
+  const allowedCols = [sh.statusCol && sh.statusCol.letter, sh.model && sh.model.notesCol && qpColLetter(sh.model.notesCol.col)].filter(Boolean);
+  let res;
+  try {
+    res = await chrome.runtime.sendMessage({ action: 'qpSheetApply', payload: { spreadsheetId: sh.spreadsheetId, tabTitle: sh.tabTitle, textCols: sh.model.textCols, allowedCols, writes } });
+  } catch (e) {
+    res = { ok: false, error: e.message };
+  }
+  res = res || { ok: false, error: 'No answer from the service worker.' };
+  sh.applied = Object.assign({ at: Date.now() }, res);
+  try {
+    const { qpSheetWriteLog = [] } = await chrome.storage.local.get('qpSheetWriteLog');
+    qpSheetWriteLog.push({ at: sh.applied.at, spreadsheetId: sh.spreadsheetId, tabTitle: sh.tabTitle, written: res.written || 0, verified: res.verified == null ? null : res.verified,
+      dropped: res.dropped || [], mismatches: res.mismatches || [], error: res.ok ? null : (res.error || 'failed') });
+    await chrome.storage.local.set({ qpSheetWriteLog: qpSheetWriteLog.slice(-20) });
+  } catch (_) {}
+  qpUiPersistLast();
+  qpUiRenderResults(rec);
+}
+
+function qpUiSavePrefs() {
+  return (async () => {
+    try {
+      const ctx = await getActiveContext().catch(() => null);
+      const ref = ctx && ctx.qaTestPlanUrl ? qpSpreadsheetRef(ctx.qaTestPlanUrl) : null;
+      if (!ref) return;
+      const { qpSheetPrefs = {} } = await chrome.storage.local.get('qpSheetPrefs');
+      const tabSel = qpUiEl('qp-sheet-tab'), colSel = qpUiEl('qp-sheet-col');
+      const prev = qpSheetPrefs[ref.spreadsheetId] || {};
+      qpSheetPrefs[ref.spreadsheetId] = {
+        tabTitle: tabSel && tabSel.value ? tabSel.value : (prev.tabTitle || ''),
+        statusHeader: colSel && !colSel.disabled ? colSel.value : (prev.statusHeader == null ? null : prev.statusHeader),
+        writeNotes: !!(qpUiEl('qp-write-notes') || {}).checked,
+        retestInProgress: !!(qpUiEl('qp-retest-inprogress') || {}).checked,
+      };
+      await chrome.storage.local.set({ qpSheetPrefs });
+    } catch (_) {}
+  })();
+}
+
+// The Status column picker: desktop-Chrome columns of the picked tab only, plus "don't write statuses".
+async function qpUiOnTabChange() {
+  const tabSel = qpUiEl('qp-sheet-tab'), colSel = qpUiEl('qp-sheet-col'), statusEl = qpUiEl('qp-sheet-status');
+  if (!tabSel || !colSel) return;
+  const none = () => { colSel.innerHTML = '<option value="">—</option>'; colSel.disabled = true; };
+  const ctx = await getActiveContext().catch(() => null);
+  const ref = ctx && ctx.qaTestPlanUrl ? qpSpreadsheetRef(ctx.qaTestPlanUrl) : null;
+  const tabTitle = tabSel.value;
+  if (!ref || !tabTitle) { none(); await qpUiSavePrefs(); return; }
+  colSel.disabled = true;
+  colSel.innerHTML = '<option value="">reading…</option>';
+  const rd = await chrome.runtime.sendMessage({ action: 'qpSheetRead', payload: { spreadsheetId: ref.spreadsheetId, tabTitle } }).catch((e) => ({ ok: false, error: e.message }));
+  if (!rd || !rd.ok) { none(); if (statusEl) statusEl.textContent = 'Could not read the tab: ' + ((rd && rd.error) || 'unknown error'); return; }
+  const model = qpSheetModel(rd.values);
+  if (model.error) { none(); if (statusEl) statusEl.textContent = model.error; return; }
+  const cols = model.envCols.filter((e) => qpIsDesktopChromeHeader(e.header));
+  const def = qpDefaultStatusCol(model);
+  const { qpSheetPrefs = {} } = await chrome.storage.local.get('qpSheetPrefs');
+  const pref = qpSheetPrefs[ref.spreadsheetId] || {};
+  colSel.innerHTML = '<option value="">(don\'t write statuses)</option>' + cols.map((e) => '<option value="' + qpEsc(e.header) + '">' + qpEsc(e.header) + '</option>').join('');
+  const want = pref.statusHeader != null ? pref.statusHeader : (def ? def.header : '');
+  colSel.value = want === '' ? '' : (cols.some((e) => e.header === want) ? want : (def ? def.header : ''));
+  colSel.disabled = false;
+  await qpUiSavePrefs();
+}
+
+// The test plan block of the panel: Google status, Connect/Disconnect, the tab list.
+async function qpUiRefreshSheet(extraMsg) {
+  const statusEl = qpUiEl('qp-sheet-status');
+  if (!statusEl) return;
+  const conn = qpUiEl('btn-qp-google-connect'), disc = qpUiEl('btn-qp-google-disconnect');
+  const tabSel = qpUiEl('qp-sheet-tab'), colSel = qpUiEl('qp-sheet-col');
+  const show = (el, on) => { if (el) el.style.display = on ? '' : 'none'; };
+  const resetPickers = () => {
+    if (tabSel) { tabSel.innerHTML = '<option value="">—</option>'; tabSel.disabled = true; }
+    if (colSel) { colSel.innerHTML = '<option value="">—</option>'; colSel.disabled = true; }
+  };
+  const st = await chrome.runtime.sendMessage({ action: 'qpGoogleStatus' }).catch(() => null);
+  const tail = extraMsg ? ' ' + extraMsg : '';
+  if (!st || !st.ok) { statusEl.textContent = 'Google status unavailable: ' + ((st && st.error) || 'no answer from the service worker.') + tail; show(conn, false); show(disc, false); resetPickers(); return; }
+  if (!st.clientIdSet) {
+    statusEl.textContent = 'Add a Google OAuth client ID in Settings (gear) to read and write the test plan. Without it QA Pass gives a paste-ready table.' + tail;
+    show(conn, false); show(disc, false); resetPickers();
+    return;
+  }
+  if (!st.connected) {
+    statusEl.textContent = 'Google is not connected.' + tail;
+    show(conn, true); show(disc, false); resetPickers();
+    return;
+  }
+  show(conn, false); show(disc, true);
+  const ctx = await getActiveContext().catch(() => null);
+  const ref = ctx && ctx.qaTestPlanUrl ? qpSpreadsheetRef(ctx.qaTestPlanUrl) : null;
+  if (!ref) {
+    statusEl.textContent = 'Google connected. The active ticket\'s QA test plan link is ' + (ctx && ctx.qaTestPlanUrl ? 'not a Google Sheet' : 'missing') + ', so QA Pass gives a paste-ready table.' + tail;
+    resetPickers();
+    return;
+  }
+  const meta = await chrome.runtime.sendMessage({ action: 'qpSheetMeta', payload: { spreadsheetId: ref.spreadsheetId } }).catch((e) => ({ ok: false, error: e.message }));
+  if (!meta || !meta.ok) {
+    statusEl.textContent = 'Google connected, but the test plan tabs could not be listed: ' + ((meta && meta.error) || 'unknown error') + (meta && meta.needsConnect ? ' Use Connect Google.' : '') + tail;
+    show(conn, !!(meta && meta.needsConnect));
+    resetPickers();
+    return;
+  }
+  statusEl.textContent = 'Google connected. Test plan: "' + meta.title + '".' + tail;
+  const visible = (meta.tabs || []).filter((t) => !t.hidden);
+  const { qpSheetPrefs = {} } = await chrome.storage.local.get('qpSheetPrefs');
+  const pref = qpSheetPrefs[ref.spreadsheetId] || {};
+  const pick = visible.filter((t) => t.title === pref.tabTitle)[0]
+    || (ref.gid != null ? visible.filter((t) => String(t.sheetId) === String(ref.gid))[0] : null)
+    || visible.filter((t) => /qa/i.test(t.title) && !/^values$/i.test(t.title))[0] || null;
+  if (tabSel) {
+    tabSel.innerHTML = '<option value="">— pick a tab —</option>' + visible.map((t) => '<option value="' + qpEsc(t.title) + '">' + qpEsc(t.title) + '</option>').join('');
+    tabSel.value = pick ? pick.title : '';
+    tabSel.disabled = false;
+  }
+  const wn = qpUiEl('qp-write-notes'), rt = qpUiEl('qp-retest-inprogress');
+  if (wn && typeof pref.writeNotes === 'boolean') wn.checked = pref.writeNotes;
+  if (rt && typeof pref.retestInProgress === 'boolean') rt.checked = pref.retestInProgress;
+  if (pick) await qpUiOnTabChange();
+  else if (colSel) { colSel.innerHTML = '<option value="">—</option>'; colSel.disabled = true; }
+}
+
+async function qpUiConnectGoogle() {
+  const statusEl = qpUiEl('qp-sheet-status');
+  if (statusEl) statusEl.textContent = 'Opening Google sign-in…';
+  const r = await chrome.runtime.sendMessage({ action: 'qpGoogleConnect' }).catch((e) => ({ ok: false, error: e.message }));
+  await qpUiRefreshSheet(r && r.ok ? '' : 'Sign-in: ' + ((r && r.error) || 'failed.'));
+}
+
+async function qpUiDisconnectGoogle() {
+  await chrome.runtime.sendMessage({ action: 'qpGoogleDisconnect' }).catch(() => null);
+  await qpUiRefreshSheet();
+}
+
+async function initQaPass() {
+  if (!qpUiEl('qp-body')) return;
+  const { qpSettings } = await chrome.storage.local.get('qpSettings');
+  qpUiApplySettings(qpSettings);
+  const body = qpUiEl('qp-body');
+  const ignore = '#qp-sheet-tab, #qp-sheet-col, #qp-write-notes, #qp-retest-inprogress, #qp-results';
+  ['change', 'input'].forEach((ev) => body.addEventListener(ev, (e) => {
+    if (e.target && e.target.closest && e.target.closest(ignore)) return;
+    qpUiSaveSettings();
+  }));
+  qpUiEl('btn-qp-google-connect')?.addEventListener('click', () => { qpUiConnectGoogle(); });
+  qpUiEl('btn-qp-google-disconnect')?.addEventListener('click', () => { qpUiDisconnectGoogle(); });
+  qpUiEl('qp-sheet-tab')?.addEventListener('change', () => { qpUiOnTabChange(); });
+  qpUiEl('qp-sheet-col')?.addEventListener('change', () => { qpUiSavePrefs(); });
+  qpUiEl('qp-write-notes')?.addEventListener('change', () => { qpUiSavePrefs(); });
+  qpUiEl('qp-retest-inprogress')?.addEventListener('change', () => { qpUiSavePrefs(); });
+  const results = qpUiEl('qp-results');
+  if (results) {
+    results.addEventListener('change', qpUiOnResultsChange);
+    results.addEventListener('click', qpUiOnResultsClick);
+  }
+  // Settings: the OAuth client id this install uses, and the redirect URL to add to it.
+  const { googleOAuthClientId } = await chrome.storage.sync.get('googleOAuthClientId');
+  const idInput = qpUiEl('set-google-client');
+  if (idInput && googleOAuthClientId) idInput.value = googleOAuthClientId;
+  const redirect = (chrome.identity && chrome.identity.getRedirectURL && chrome.identity.getRedirectURL()) || null;
+  const redirectEl = qpUiEl('set-google-redirect');
+  if (redirectEl) redirectEl.textContent = redirect || '(reload the extension: the identity permission is missing)';
+  qpUiEl('btn-set-google-copy')?.addEventListener('click', async () => {
+    if (!redirect) return;
+    try { await navigator.clipboard.writeText(redirect); } catch (_) {}
+  });
+  // The last run survives a panel reopen (without its screenshots).
+  const { qpLastRun } = await sessionNS.get('qpLastRun');
+  if (qpLastRun && qpLastRun.version === QP_RECORD_VERSION) {
+    _qpLastRun = qpLastRun;
+    qpUiRenderResults(qpLastRun);
+  }
+}
+
 function taMoveBodyHome(n) {
   const mode = TA_MODES[n];
   if (!mode || !mode.bodyId) return;   // funnel is Test-Agent-native; nothing to move home
@@ -849,12 +1376,19 @@ function taShowPrimary() {
     taRenderFunnel();
     syncFunnelRunEnabled();
   } else if (TA_MODES[val]) {
-    slot.innerHTML = '';
     const mode = TA_MODES[val];
-    // Every remaining mode parks its settings body in #ta-mode-homes and has
-    // it reparented in here (WCAG/Perf); funnel is handled above and owns
-    // no parked body of its own.
-    if (mode.bodyId) slot.appendChild(document.getElementById(mode.bodyId));
+    const body = mode.bodyId ? document.getElementById(mode.bodyId) : null;
+    // Showing the mode again while it still owns the slot (a click on the Test Agent tab it is already showing) finds its
+    // body inside the slot. Emptying the slot would take the body out of the document, getElementById would then answer
+    // null and the append would throw, destroying the settings body (WCAG, Performance and QA Pass alike) until the panel
+    // reloads. So a body that is in the slot stays where it is, and only the refresh below runs.
+    if (!(body && slot.contains(body))) {
+      slot.innerHTML = '';
+      // Every remaining mode parks its settings body in #ta-mode-homes and has it reparented in here (WCAG/Perf/QA Pass);
+      // funnel is handled above and owns no parked body of its own. A body that cannot be found is skipped, never appended as null.
+      if (body) slot.appendChild(body);
+    }
+    if (typeof mode.onShow === 'function') { try { mode.onShow(); } catch (_) {} }
     _taActiveBody = val;
     runBtn.disabled = false;
   } else {
@@ -868,9 +1402,9 @@ function taShowPrimary() {
 function taRenderMultiList() {
   const card = document.getElementById('ta-multi-card');
   const list = document.getElementById('ta-multi-list');
-  // Funnel is a heavy standalone operation — no "Also Run" batching for it.
-  if (_taActiveBody === 'funnel') { card.style.display = 'none'; list.innerHTML = ''; taQueuedExtra.clear(); return; }
-  const others = Object.keys(TA_MODES).filter(n => n !== _taActiveBody && n !== 'funnel');
+  // Heavy standalone modes (standalone: true) — no "Also Run" batching.
+  if (TA_MODES[_taActiveBody]?.standalone) { card.style.display = 'none'; list.innerHTML = ''; taQueuedExtra.clear(); return; }
+  const others = Object.keys(TA_MODES).filter(n => n !== _taActiveBody && !TA_MODES[n].standalone);
 
   for (const n of [...taQueuedExtra]) if (!others.includes(n)) taQueuedExtra.delete(n);
 
@@ -7210,6 +7744,11 @@ function abPageUrls(modes) {
         if (!p.skipped) add(p.url);
       }
     }
+    // QA Pass: the pages it loaded as given, by where they ended up. `add` drops the query.
+    if (m?.mode === 'qapass') {
+      for (const l of m.data?.links || []) add(l.finalUrl);
+      add(m.data?.controlVsProd?.prodFinalUrl);
+    }
   }
   return out;
 }
@@ -8179,6 +8718,160 @@ function rptFunnelSection(entry) {
   return rptSection(entry.name, badge, summary, body);
 }
 
+// ── QA Pass (Test Agent mode 'qapass'): the report section ───────────────────
+// Every status here was decided by qpDeriveChecks. The Opus analysis only groups,
+// annotates and asks; it never adds, removes or changes a status, so the Bugs
+// table is built from the failed checks alone, whatever the analysis says.
+// Every URL printed comes from qpPathOnly(finalUrl): never `url` (the preview
+// link as the ticket gives it carries the forcing parameters) and never a query.
+// Every check note it prints goes through qpScrubUrls again: a record an older worker stored can hold a raw URL in one.
+function rptQaPassSection(entry) {
+  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
+  const d = entry.data || {};
+  const checks = d.checks || [];
+  const notTested = d.notTested || [];
+  const counts = qpCounts(checks);
+  const badge = qpBadge(checks, d.stopped);
+  const summary = `${counts.failed} bug(s) · ${counts.passed} passed · ${counts['in-progress']} need PGM · `
+    + `${counts.blocked} blocked · ${counts['not-tested'] + notTested.length} not tested`
+    + (d.stopped ? ' · stopped by the tester' : '');
+  const ex = d.explain && d.explain.ok ? d.explain : null;
+  const sweep = d.sweep || {};
+  const tiles = sweep.tiles || [];
+  const rows = sweep.rows || [];
+  const sevRank = { high: 3, medium: 2, low: 1 };
+  const h3 = t => `<h3 style="margin:14px 0 6px;font-size:14px">${esc(t)}</h3>`;
+  const none = t => `<p class="rpt-muted">${esc(t)}</p>`;
+  const minus = n => (n < 0 ? '−' + Math.abs(n) : String(n));
+  const profileLabel = p => (QP_PROFILES[p] && QP_PROFILES[p].label) || p || '';
+  // The ids an analysis item cites, as plain text: check ids, `comment <id>` (never a link), and a severity.
+  const cite = (checkIds, commentIds, severity) => [].concat((checkIds || []).map(esc),
+    (commentIds || []).map(id => 'comment ' + esc(id)), severity ? [esc(severity)] : []).join('; ');
+
+  // ── Bugs: the failed checks, high first, then medium, low and no severity.
+  const failed = checks.filter(c => c.status === 'failed').slice().sort((a, b) => {
+    const r = (sevRank[b.severity] || 0) - (sevRank[a.severity] || 0);
+    return r || String(a.id).localeCompare(String(b.id));
+  });
+  let bugs = h3('Bugs');
+  if (!failed.length) bugs += none('No check failed.');
+  else {
+    bugs += `<table class="rpt-table"><thead><tr><th>Check</th><th>Severity</th><th>What</th></tr></thead><tbody>`
+      + failed.map(c => `<tr><td>${esc(c.id)}<br><span class="rpt-muted">${esc(c.title)}</span></td>`
+        + `<td>${esc(c.severity || '—')}</td>`
+        + `<td>${esc(qpScrubUrls(c.note))}${c.alsoOnProd ? ' <strong>also on PROD</strong>' : ''}</td></tr>`).join('')
+      + `</tbody></table>`;
+  }
+  // Tiles: each variant tile with the PROD tile at the same profile and width above it
+  // (once per PROD tile when several variants share it).
+  const shownProd = new Set();
+  const figure = (t, caption) => {
+    const img = typeof t.img === 'string' && /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(t.img)
+      ? `<img src="${t.img}" alt="${qpEsc(caption)}" style="max-width:100%;display:block;border:1px solid #888">` : '';
+    return `<figure style="margin:8px 0">${img}<figcaption class="rpt-muted">${esc(caption)}</figcaption></figure>`;
+  };
+  let tileHtml = '';
+  tiles.forEach((t, i) => {
+    if (!t || t.target === 'PROD') return;
+    const prod = tiles.find(p => p && p.target === 'PROD' && p.profile === t.profile && p.width === t.width);
+    if (prod && !shownProd.has(prod)) {
+      shownProd.add(prod);
+      tileHtml += figure(prod, `PROD · ${profileLabel(prod.profile)} · ${prod.width} px`);
+    }
+    const row = rows.find(r => r && r.tile === i);
+    const off = row && row.scan && row.scan.offenders && row.scan.offenders[0];
+    const side = (off && off.side) || 'right';
+    const gap = typeof t.gapPx === 'number' ? t.gapPx : 0;
+    tileHtml += figure(t, `${t.target} · ${profileLabel(t.profile)} · ${t.width} px`
+      + (t.text ? ` · ${side} edge ${minus(gap)} px · "${t.text}"` : (gap < 0 ? ` · page overflows by ${Math.abs(gap)} px` : '')));
+  });
+  bugs += tileHtml;
+  if (ex) {
+    let a = `<p class="rpt-muted"><strong>Analysis (Opus): grouping only, statuses above are unchanged.</strong></p>`;
+    if ((ex.bugs || []).length) {
+      a += '<ul>' + ex.bugs.map(b => `<li>${esc(b.summary)} <span class="rpt-muted">(${cite(b.checkIds, b.commentIds, b.severity)})</span></li>`).join('') + '</ul>';
+    } else a += none('The analysis grouped no failed check into a bug.');
+    if ((ex.noise || []).length) {
+      a += `<p class="rpt-muted"><strong>Possible environment noise (advisory)</strong></p><ul>`
+        + ex.noise.map(n => `<li>${esc(n.reason)} <span class="rpt-muted">(${cite(n.checkIds, null, null)})</span></li>`).join('') + '</ul>';
+    }
+    bugs += a;
+  }
+
+  // ── Passed: one line per group.
+  const groupName = { A: 'Link map', B: 'Control matches PROD', C: 'Snippet vs ticket', D: 'Audience targeting', E: 'Clipping sweep', F: 'Metrics on load' };
+  let passed = h3('Passed');
+  const passLines = ['A', 'B', 'C', 'D', 'E', 'F'].map(g => {
+    const ps = checks.filter(c => c.status === 'passed' && c.group === g);
+    if (!ps.length) return '';
+    const names = ps.map(c => (String(c.title).indexOf(' — ') >= 0 ? String(c.title).split(' — ').slice(1).join(' — ') : String(c.title)));
+    const dashed = ps.every(c => String(c.title).indexOf(' — ') >= 0);
+    const tail = names.length === 1 && names[0] === groupName[g] ? '' : ': ' + names.join(dashed ? ', ' : '; ');
+    return `<li>${esc(g + ' · ' + groupName[g] + tail)}</li>`;
+  }).filter(Boolean);
+  passed += passLines.length ? `<ul>${passLines.join('')}</ul>` : none('No check passed.');
+
+  // ── Needs PGM: checks left in progress, then the analysis's questions and comment checks.
+  let pgm = h3('Needs PGM');
+  const inProg = checks.filter(c => c.status === 'in-progress');
+  let pgmItems = inProg.map(c => `<li>${esc(c.id)}: ${esc(qpScrubUrls(c.note))}</li>`).join('');
+  if (ex) {
+    pgmItems += (ex.pgmQuestions || []).map(q => `<li>${esc(q.question)} <span class="rpt-muted">(${cite(q.checkIds, q.commentIds, null)})</span></li>`).join('');
+    pgmItems += (ex.commentChecks || []).map(cc => `<li>comment ${esc(cc.commentId)}: reproduced `
+      + `${esc(cc.reproduced === 'not-checked' ? 'not checked' : cc.reproduced)} — ${esc(cc.summary)}</li>`).join('');
+  }
+  pgm += pgmItems ? `<ul>${pgmItems}</ul>` : none('Nothing is waiting on the PGM.');
+  if (d.explain && d.explain.ok === false) pgm += none('Analysis unavailable: ' + (d.explain.error || 'it failed'));
+
+  // ── Not tested: not-tested and blocked checks, then what this version never tests.
+  let nt = h3('Not tested');
+  const ntChecks = checks.filter(c => c.status === 'not-tested' || c.status === 'blocked');
+  const ntItems = ntChecks.map(c => {
+    const note = qpScrubUrls(c.note || '');
+    const why = c.status === 'blocked' && c.blockedBy === 'bot'
+      ? 'bot check (never attempted)' + (note ? ' — ' + note : '')
+      : (c.status === 'blocked' ? 'blocked by ' + c.blockedBy + ': ' : '') + note;
+    return `<li>${esc(c.id)} — ${esc(c.title)}: ${esc(why)}</li>`;
+  }).join('') + notTested.map(n => `<li>${esc(n.what)}: ${esc(n.reason)}</li>`).join('');
+  nt += ntItems ? `<ul>${ntItems}</ul>` : none('Everything this version checks was tested.');
+
+  // ── Sheet changes: the proposal, never applied from the report.
+  let sheetHtml = h3('Sheet changes');
+  const sh = d.sheet;
+  if (sh && sh.connected && sh.proposal) {
+    const p = sh.proposal.counts || {};
+    sheetHtml += `<p>Proposed ${esc(p.statusWrites || 0)} status change(s) and ${esc(p.noteWrites || 0)} note(s) to "${esc(sh.tabTitle)}"`
+      + `${sh.statusCol ? `, column ${esc(sh.statusCol.letter)} "${esc(sh.statusCol.header)}"` : ''}`
+      + ` — not applied when this report was built; apply from the QA Pass panel.</p>`
+      + qpProposalHtml(sh, { editable: false }).replace(/<table class="qp-(proposal|paste)">/g, '<table class="rpt-table qp-$1">');
+  } else {
+    const reasons = {
+      'no-test-plan-link': 'The ticket has no QA test plan link.',
+      'not-a-google-sheet-link': 'The QA test plan link is not a Google Sheet.',
+      'no-client-id': 'No Google OAuth client ID is set, so the test plan was not read.',
+      'not-connected': 'Google is not connected, so the test plan was not read.',
+      'no-tab-picked': 'No test-plan tab was picked, so the test plan was not read.',
+    };
+    const why = sh && sh.error ? 'The test plan could not be read: ' + sh.error
+      : (sh && reasons[sh.reason]) || 'The test plan was not read.';
+    sheetHtml += `<p>${esc(why)} Paste-ready rows:</p>`
+      + qpPasteHtml((sh && sh.paste) || qpPasteRows(checks, new Date(d.ts || Date.now()))).replace(/<table class="qp-(proposal|paste)">/g, '<table class="rpt-table qp-$1">');
+  }
+
+  // ── Where it ran, and the pages it loaded (by where they ended up, no query).
+  const pageBits = (d.links || []).filter(l => l && l.finalUrl).map(l => `${esc(l.label)} ${esc(qpPathOnly(l.finalUrl))}`);
+  const prodPath = d.controlVsProd && d.controlVsProd.prodFinalUrl ? qpPathOnly(d.controlVsProd.prodFinalUrl) : '';
+  if (prodPath) pageBits.push(`PROD ${esc(prodPath)}`);
+  const widths = (d.settings && d.settings.widths && d.settings.widths.length ? d.settings.widths : QP_WIDTHS).join(', ');
+  // D8 (#5): how many loads were new visitors to the live page, and how PROD was swept (qa-pass.js).
+  const freshLine = (d.loads || []).length ? `<p class="rpt-muted">${esc(qpFreshVisitorsText(qpFreshVisitors(d)))}</p>` : '';
+  const foot = (pageBits.length ? `<p class="rpt-muted">Pages loaded: ${pageBits.join(' · ')}</p>` : '')
+    + freshLine
+    + `<p class="rpt-muted">Local Chrome, emulated viewport widths ${esc(widths)}. iPhone and Android rows are user-agent and touch emulation in desktop Chrome, not real devices.</p>`;
+
+  return rptSection(entry.name, rptBadge(badge.kind, badge.label), summary, bugs + passed + pgm + nt + sheetHtml + foot);
+}
+
 // ── Report assembly (pure body builder) + open in a bundled tab ─────────────
 // Formats data already produced by each mode's own run — no DOM reads.
 // Everything that degraded this run, in one place, at the end of the report.
@@ -8210,6 +8903,7 @@ function buildReportBody(sections) {
     2: rptAbSection,
     4: rptWcagSection, 5: rptCvaSection, 6: rptPerfSection,
     funnel: rptFunnelSection, queue: rptQueueSection,
+    qapass: rptQaPassSection,
   };
   let diagnosticsHtml = '';
   try { diagnosticsHtml = rptDiagnosticsSection(vdCollectProblems(sections)); } catch (_) {}
@@ -8453,7 +9147,7 @@ function vdCollectProblems(sections) {
         `Did not complete — ${entry.reason || 'no reason recorded'}. Nothing from it is in the report.`);
     }
     if (entry.error) add('error', entry.name || `mode ${entry.mode}`, entry.error);
-    if (entry.data && (entry.mode === 4 || entry.mode === 5 || entry.mode === 6)) taModeProblems(entry, add);
+    if (entry.data && (entry.mode === 4 || entry.mode === 5 || entry.mode === 6 || entry.mode === 'qapass')) taModeProblems(entry, add);
     if (entry.mode !== 2 || !entry.data) continue;
 
     // Geometry mismatch invalidates the whole comparison, so it is checked
@@ -9025,6 +9719,71 @@ function taModeProblems(entry, add) {
       if (agenticFailed(p.agenticNote)) add('warn', where, p.agenticNote);
     }
   }
+
+  // QA Pass: what degraded the run, so a clean-looking check list is read for what it is worth.
+  if (entry.mode === 'qapass') {
+    if (d.version == null) {
+      add('error', 'qa-pass', 'This record came from an older service worker: reload Selenite in chrome://extensions and run again.');
+    }
+    // Error text can hold the page's own URL (Chrome words some errors around it): the worker scrubs it where it stores it,
+    // and it is scrubbed again here for a record an older worker stored.
+    if (d.error) add('error', 'qa-pass', qpScrubUrls(d.error));
+    if (d.stopped) add('info', 'qa-pass', 'Stopped by the tester: every check that had not run is Not tested.');
+    for (const l of d.links || []) {
+      if (l.loadError) add('warn', `qa-pass/${l.label}`, `Failed to load (${qpScrubUrls(l.loadError)}), so its checks did not run.`);
+    }
+    for (const ld of d.loads || []) {
+      if (ld.blocked) {
+        add('warn', `qa-pass/${ld.label}`, `A bot check stopped ${ld.path || 'a page'} (${ld.blocked.signal || ld.blocked.reason}); it was never attempted.`);
+      }
+    }
+    if (d.platform === 'optimizely' && !d.catalog) {
+      add('warn', 'qa-pass', 'The Optimizely catalog could not be read, so C and D did not run.');
+    }
+    const swRows = (d.sweep && d.sweep.rows) || [];
+    const swErr = swRows.filter(r => r && r.loadError);
+    if (swErr.length) {
+      add('warn', 'qa-pass/sweep', `${swErr.length} sweep load(s) failed (${qpScrubUrls(swErr[0].loadError)}), so those widths were not measured.`);
+    }
+    const swCut = swRows.filter(r => r && r.scan && r.scan.truncated);
+    if (swCut.length) {
+      add('info', 'qa-pass/sweep', `${swCut.length} clipping scan(s) stopped at the text-node cap, so the rest of those pages was not scanned.`);
+    }
+    const swResize = [];
+    // PROD is never in this line (its reason is not a preview link's exposure): it has its own, below (D8, #5).
+    for (const r of swRows) if (r && r.mode === 'resize' && r.role !== 'prod' && swResize.indexOf(r.target) === -1) swResize.push(r.target);
+    if (swResize.length) {
+      add('info', 'qa-pass/sweep', `${swResize.map(x => `"${x}"`).join(', ')} ${swResize.length === 1 ? 'was' : 'were'} swept by resizing one load per device, because `
+        + (d.settings && d.settings.quickSweep
+          ? 'Quick sweep was on.'
+          : 'their preview link registers an exposure on every load and the no-tracking link did not serve the variation.'));
+    }
+    // D8 (#5): PROD swept by resizing says why, with the run's fresh-visitor count (the report foot prints the same line).
+    const fresh = qpFreshVisitors(d);
+    if (fresh.prodMode === 'resize') add('info', 'qa-pass/sweep', qpFreshVisitorsText(fresh));
+    // The same test the Control-vs-PROD check applies: PROD put this visitor in a variation that is not Control.
+    const pp = d.controlVsProd && d.controlVsProd.prodProbe;
+    if (pp && pp.servedVariationId) {
+      const ctl = (d.links || []).find(l => l && l.isControl);
+      const ctlIds = ((ctl && ctl.forcedIds) || []).map(String);
+      const elsewhere = ctlIds.length ? ctlIds.indexOf(String(pp.servedVariationId)) === -1
+        : !/\b(control|original|baseline|v0)\b/i.test(String(pp.servedVariationName || ''));
+      if (elsewhere) {
+        add('warn', 'qa-pass/PROD', `PROD was bucketed into "${pp.servedVariationName || pp.servedVariationId}" (${pp.servedVariationId}), not Control, `
+          + 'so Control was not compared with it.');
+      }
+    }
+    if (d.explain && d.explain.ok === false) add('warn', 'qa-pass/analysis', `Analysis (Opus) failed: ${d.explain.error || 'no reason given'}`);
+    if (d.sheet && d.sheet.error) add('warn', 'qa-pass/sheet', `Test plan not read: ${d.sheet.error}`);
+    if (d.sheet && d.sheet.applied && !d.sheet.applied.ok) {
+      add('warn', 'qa-pass/sheet', `Writing to the test plan failed: ${d.sheet.applied.error || 'no reason given'}`);
+    }
+    const trOff = (d.links || []).find(l => l && l.track && l.track.disabled);
+    if (trOff) add('warn', 'qa-pass/metrics', trOff.track.disabled);
+    for (const l of d.links || []) {
+      if (l && l.probeNote) add('warn', `qa-pass/${l.label}`, qpScrubUrls(l.probeNote));
+    }
+  }
 }
 
 // The debug-log section for a WCAG (4), A/B accessibility (5) or Performance (6)
@@ -9096,6 +9855,8 @@ function taDebugSection(entry) {
         agenticNote: p.agenticNote || null,
       })),
     });
+  } else if (entry.mode === 'qapass') {
+    Object.assign(out, qpDebugProjection(d));
   }
   return out;
 }
@@ -9181,7 +9942,7 @@ function buildDebugLog(sections) {
       + '`captures`, `visualDiff` and `run.settings` are A/B-only; a Test Agent run of WCAG or Performance has '
       + 'its own section (`wcag`, `performance`), null when that mode was not in the run. `crossVariant` is the '
       + 'A/B run\'s accessibility audit, one audit per capture diffed against Control, null when the run had '
-      + 'its Accessibility audit option off.',
+      + 'its Accessibility audit option off. The qaPass section is the Test Agent\'s QA Pass record (checks, loads, sweep rows, sheet proposal), null when that mode was not in the run.',
     generatedAt: new Date(sections.ts).toISOString(),
     extensionVersion: chrome.runtime.getManifest().version,
     userAgent: navigator.userAgent,
@@ -9373,6 +10134,7 @@ function buildDebugLog(sections) {
     wcag: taDebugSection(modeEntry(4)),
     crossVariant: taDebugSection(modeEntry(5)),
     performance: taDebugSection(modeEntry(6)),
+    qaPass: taDebugSection(modeEntry('qapass')),
     // The Function Queue's Test Agent run. Steps are already stored compact and
     // without anything a tester typed (fnQueueSegmentExport), so they pass through
     // as recorded. null (not omitted) when no such run was in the report.
@@ -9898,6 +10660,7 @@ function extractTestContext(issue, origin, ticketKeyFromPage, links) {
     ticketKey, ticketUrl, summary, platform: null, experimentId,
     variants, previewLinks: [], itwLink: null, goals: [], qaTestPlanUrl,
     softcodedTests, concurrentTests,
+    comments: jiraContextComments(f.comment),
     figmaUrl, figmaNodeId,
     // Set by fetchCompAttachment() after this returns — it needs the Jira tab
     // and an await, and this function is deliberately synchronous.
@@ -9921,6 +10684,18 @@ function adfText(node) {
   if (node.type === 'hardBreak') return '\n';
   if (node.type === 'inlineCard' || node.type === 'blockCard' || node.type === 'embedCard') return node.attrs?.url || '';
   return adfText(node.content || []);
+}
+
+// Jira comments kept on the Test Context for QA Pass's analysis to cite:
+// {id, created, text} only — no author, no mentions (a mention node has no
+// text content, so adfText drops it). Newest 50, oldest first, each capped.
+function jiraContextComments(commentField) {
+  const list = (commentField && Array.isArray(commentField.comments)) ? commentField.comments : [];
+  return list
+    .map(c => ({ id: String(c && c.id || ''), created: (c && c.created) || null,
+                 text: adfText(c && c.body).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 2000) }))
+    .filter(c => c.id && c.text)
+    .slice(-50);
 }
 
 // Section locator (shared by all three sections): find the heading whose text

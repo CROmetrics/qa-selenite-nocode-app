@@ -14,12 +14,13 @@ A Chrome extension for building and running QA test scripts directly in your bro
 - Tab targeting: run on the **active tab** or open a **new tab**
 - Console tab — a live step-execution log with INFO / WARN / ERR filtering, plus a live mirror of the captured tab's browser console (or, on a BrowserStack Live tab, the device's) with a CRO (`[PJS]`/`[cro]`) filter, a JavaScript command input, and **Quick Commands**: one-click buttons for the Optimizely, Convert, AB Tasty and other platform debugging commands QA runs all day
 - Visual Regression — full-page screenshot baselines per URL with pixel diffing, ignore regions, and a mismatch threshold (Functional Testing tab)
-- **Test Agent** tab — run WCAG, Performance, or Funnel Crawl one at a time, batch the first two together via **Also Run**, and get a single combined report with an optional AI-written summary
+- **Test Agent** tab — run WCAG, Performance, Funnel Crawl, or QA Pass one at a time, batch WCAG and Performance together via **Also Run**, and get a single combined report with an optional AI-written summary
 - **A/B** tab — load each experiment variant once and diff page state, metric fires, and tagged console output against control, with an optional per-variant interaction heatmap, an AI-powered full-page visual diff, and a WCAG audit of every variant diffed against control (introduced / resolved / pre-existing)
 - **BrowserStack Live** (A/B tab and Functional Testing's Target) — open any variant, or a queue's start URL, on a real iPhone, iPad or Android device, or in Safari, Edge or Firefox, in your own BrowserStack Live session, optionally through BrowserStack Local so the device can reach staging pages, and Selenite tells you what Live actually did with the launch
 - WCAG / Accessibility mode — full WCAG 2.2 audit (heuristics + axe-core) with region scoping, check presets, click-to-highlight findings, JSON export, and per-URL run history
 - Performance/Load mode — median page-load metrics (TTFB, FCP, LCP, CLS, long tasks, resources) over N runs, checked against Core Web Vitals budgets, with per-URL history
 - Funnel Crawl — an AI agent clicks through Start → Middle waypoint(s) → End to verify a funnel actually connects
+- QA Pass (Test Agent) — checks the active ticket's preview links in this Chrome: which variation each link serves, Control vs PROD, the snippet's goals, softcoded and concurrent tests, audience exclusions on the ITW link, a clipping sweep over 18 widths (desktop, emulated iPhone and Android), and metrics firing on load; explains results with Opus and, after you click Apply, writes statuses and notes to the QA test plan in Google Sheets
 - **Test Agent engine** for the Function Queue — each step still runs from its saved selector first; when a selector no longer finds anything, an AI agent does that one step by looking at the page, and the run opens a report that lists every heal as a finding. Two steps are the agent itself: **Navigate to (Test Agent)** (the funnel crawl as one step) and **Prompt Function** (type an instruction; the agent carries it out)
 - Agentic Testing (Sonnet) and Agentic Analysis (Opus) — optional AI-powered vision judgment and result summaries via Anthropic's API
 - Stop execution at any time
@@ -27,6 +28,13 @@ A Chrome extension for building and running QA test scripts directly in your bro
 ## Version History
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
+
+### 0.7.22 — 2026-10-22
+
+**Test Agent**
+- **QA Pass**, a new mode. It checks the active ticket's preview links in this Chrome: which variation each link serves, Control against PROD, the snippet's goals, softcoded and concurrent tests, audience exclusions on the ITW link, a clipping sweep over 18 widths, and metrics that fire on load. Deterministic code decides every status; Opus only groups bugs, asks PGM questions and maps test-plan rows. After a run you review a proposal, and only **Apply** writes statuses and notes to the QA test plan in Google Sheets. Setup, the exposure rule and the fresh-visitor rule are under [QA Pass](#qa-pass).
+- Clicking the Test Agent tab while it is already showing, or a Funnel Discover Path crawl that finishes after you switch modes, no longer wipes the shown mode's settings.
+- Needs an extension reload: the new `identity` permission and the worker code load only then.
 
 ### 0.7.21 — 2026-10-16
 
@@ -318,7 +326,7 @@ Screenshots are captured over CDP (`Page.captureScreenshot` with `captureBeyondV
 
 ### Test Agent
 
-The **Test Agent** tab runs one testing mode at a time: pick it from the **Test Mode** dropdown, configure its settings, and click **Execute Test**. Every automated mode (everything except Funnel Crawl) can also be batched together via **Also Run** — check any additional modes and they run in sequence after the primary one, each skipped automatically if it isn't configured. Once at least one mode has run, Selenite compiles a single report (opened in a new tab) covering every mode that ran, optionally with an AI-written plain-English summary.
+The **Test Agent** tab runs one testing mode at a time: pick it from the **Test Mode** dropdown, configure its settings, and click **Execute Test**. Every automated mode except Funnel Crawl and QA Pass (those two run alone) can also be batched together via **Also Run** — check any additional modes and they run in sequence after the primary one, each skipped automatically if it isn't configured. Once at least one mode has run, Selenite compiles a single report (opened in a new tab) covering every mode that ran, optionally with an AI-written plain-English summary.
 
 A/B Variant Comparison is not a Test Agent mode. It is configured, run and reported entirely from its own **A/B** tab, and appears neither in the **Test Mode** dropdown nor in the **Also Run** list. The same goes for auditing an experiment's variants for accessibility: that is the A/B tab's **Accessibility audit** option. The WCAG mode here audits one page.
 
@@ -356,6 +364,43 @@ An AI agent (Sonnet) clicks through the live page to verify a funnel actually co
 2. Optionally add **Supplemental Instructions** — free-text notes for the agent (test credentials, paths to avoid, form field mappings, etc.).
 3. Click **Execute Test**. Agentic Testing and Analysis are forced on for this mode and require an Anthropic API key.
 4. Results show each segment (Start→Middle, Middle→Middle, Middle→End) as reached or not, with step counts and any error. Funnel Crawl always runs alone — it isn't batchable via Also Run.
+
+#### QA Pass
+
+Checks the active ticket's preview links in this Chrome: platform, targeting, layout and metrics on load. It needs a reviewed Test Context (Initialize tab) with at least one preview link, and it runs alone, like Funnel Crawl. It complements the **A/B** tab and does not repeat it: copy, markup, visual and accessibility differences between variants are the A/B tab's job, QA Pass never captures variants for a diff, and its report cites the last A/B report for the ticket when there is one.
+
+Each check can be turned off:
+
+- **A · Link map** — loads each preview link and the ITW link once, reads the platform snippet, and says which variation each link served, against the variation the link forces and the experiment on the ticket. Activation that waits for a trigger is left *In Progress* for the PGM.
+- **B · Control matches PROD** — the Control link against the plain production page: title, canonical, chat/banner/modal widgets, text length, page height. A PROD load that was bucketed into a variation is reported, not compared.
+- **C · Snippet vs ticket** — the ticket's goals against the snippet's events, softcoded tests against the experiment names in the snippet, and live tests on the ITW page that the ticket does not list (tried in pairs with the test's variations, on links that carry no tracking flag).
+- **D · Audience targeting** — the experiment's audience conditions that can be set from the URL (query parameters, desktop vs iPhone), tried on the ITW link: an exclusion must switch the experiment off, a companion value must leave it on. Each audience load is a new visitor, so when the snippet shows traffic under 100 % (a campaign holdback, or variation weights that end below 100 %), a test that expected the experiment to activate and it did not is *In Progress*, not *Failed*, with the allocation named as read from the snippet.
+- **E · Breakpoint and clipping sweep** — every variant and PROD at 18 widths from 300 to 2080 px (desktop; an emulated iPhone below 768 px; PROD also as an emulated Android). Text that sticks out of the viewport or out of an overflow-hidden box is a bug with a severity (360–430 px high, 320 px and below low), a note on whether PROD has the same problem, and, for the worst few, a screenshot with PROD above the variant at the same width.
+- **F · Metrics on load** — a listener registered before the page loads records which analytics events fire on load. A click metric firing on load, or a goal firing twice, is a bug; a goal firing once is left for the PGM ("is load its trigger?").
+
+What it never does: it never adds `optimizely_force_tracking` or `_conv_eforce` to a URL it builds (a preview link is loaded as the ticket gives it, once, in phase A); it never attempts a CAPTCHA (a bot-check page marks that link *Blocked* and is not loaded again); and it never tests what only the platform's UI shows (metric order, traffic allocation, integrations, results), click-through, time-based content or the BrowserStack device matrix. Those are listed under *Not tested*.
+
+How statuses are decided: deterministic code decides every status (*Passed*, *Failed*, *In Progress*, *Blocked*, *Not tested*). With **Agentic Analysis (Opus)** on, Opus only groups the failed checks into bugs, asks the PGM questions, flags possible environment noise, cites the ticket's Jira comments (kept on the context as id, date and text, with no author) and connects test-plan rows to checks. It cannot change a status.
+
+Exposure rule: a preview link with `optimizely_force_tracking` or `_conv_eforce` registers a real exposure on every load. QA Pass loads it once as given, then tries its no-tracking form once; if that serves the variation, the sweep uses it (no more exposures). Otherwise the sweep loads the link once per device profile and resizes the viewport between widths (at most two extra exposures per variant). **Quick sweep** resizes for everything.
+
+Fresh visitors: every PROD, ITW and audience-test load is a new visitor to the live site (the Optimizely cookies are cleared first, and the visitor cookie is never kept). When the plain PROD load shows a live experiment, or **B** is off so PROD was never probed, PROD is swept by resizing one tab per device instead of reloading once per width. The report's foot gives the run's fresh-visitor count and how PROD was swept, and the settings card says so before a run.
+
+State hygiene: before each load QA Pass deletes the site's Optimizely and Convert cookies (`optimizely…`, `_conv_…`) and `optimizely…` storage keys, not your login. **Clear all site data between loads** clears everything for the site and signs you out of it.
+
+Sheet and Apply: with Google connected and the ticket's QA test plan link pointing at a Google Sheet, QA Pass reads the tab you pick and proposes cell changes after the run; nothing is written until you click **Apply**. The proposal lists each row, the checks it maps to, the old and new cell, and an include box; you can change a row's mapping or untick it. Statuses go to one column only, a desktop Chrome column you choose (never an Android, Safari, Firefox or Edge column), and notes are appended to the Notes column as `Auto QA (M/D): …`, never replacing what is there. Apply re-reads the sheet first and leaves alone any row whose cells changed since the read, writes the rest as plain values (RAW), then re-reads to verify and reports anything that did not match. Without Google, or when a write fails, the report carries a paste-ready table instead.
+
+##### Google Sheets setup (one time)
+
+1. Reload Selenite in `chrome://extensions` (the service worker only picks up the new code and the `identity` permission on reload). Open Settings (the gear): the **Google Sheets (QA Pass)** card shows `Redirect URL for this install: https://<extension-id>.chromiumapp.org/`. Copy it. Every install has its own extension ID, so each teammate adds their own URL in step 5.
+2. Go to https://console.cloud.google.com and select or create a project (for example "Selenite QA").
+3. APIs & Services → Library → **Google Sheets API** → Enable.
+4. Google Auth Platform (OAuth consent screen) → Get started: app name "Selenite", a support email, **Audience: Internal** (crometrics.com Workspace; no verification needed. If Internal is not offered, choose External, keep it in Testing and add each teammate as a test user). Data access → add the scope `https://www.googleapis.com/auth/spreadsheets`.
+5. Clients → Create client → Application type **Web application**, name "Selenite (extension)". Authorized JavaScript origins: none. **Authorized redirect URIs**: paste the URL from step 1. Create, then copy the **Client ID** (`…apps.googleusercontent.com`). No client secret is used.
+6. In Selenite Settings, paste it into **OAuth client ID** and Save.
+7. Test Agent → Test Mode **QA Pass** → **Connect Google** → pick your account → Allow. The panel says "Google connected" and lists the test plan's tabs in the **Tab** picker (the QA Test Plan link on the active ticket must be a Google Sheet).
+
+The access token lives in this browser session only and lasts an hour; it is renewed silently, or the panel asks you to click **Connect Google** again.
 
 ### A/B Variant Comparison
 
@@ -418,6 +463,7 @@ extension/
 ├── popup.html          # Popup UI (same layout as the side panel)
 ├── popup.js            # Queue builder, Metrics section, UI logic (shared by both UIs)
 ├── browserstack.js     # BrowserStack Live links, device presets, the Local check and what Live did with a launch (A/B tab's Devices section)
+├── qa-pass.js          # QA Pass (Test Agent): checks, sweep, Sheets helpers, shared by the worker and the panel
 ├── background.js       # Service worker (queue execution, console capture, metrics)
 ├── picker.js           # In-page element picker (injected on demand)
 ├── selector.js         # Shared CSS-selector builder (used by picker.js and recorder.js)

@@ -1075,6 +1075,7 @@
         <option value="4">WCAG / Accessibility</option>
         <option value="6">Performance / Load</option>
         <option value="funnel">Funnel Crawl</option>
+        <option value="qapass">QA Pass (platform + layout)</option>
       </select>
     </div>
 
@@ -1201,6 +1202,46 @@
         </div>
       </div>
       </div>
+    <div class="card" id="qp-body">
+      <div class="card-title" style="margin-bottom:1px">QA Pass</div>
+      <div style="font-size:10px;color:var(--fg3);margin-bottom:8px">Platform, targeting, layout and metrics-on-load checks on the active ticket's preview links, in this Chrome. Copy, markup, visual and accessibility differences between variants are the A/B tab's job.</div>
+      <div id="qp-ctx" style="font-size:11px;color:var(--fg2);margin-bottom:8px">No active ticket context — use the Initialize tab</div>
+      <label class="cap">Checks</label>
+      <div style="display:flex;flex-direction:column;gap:1px;margin-bottom:8px">
+        <label class="suite-check"><input type="checkbox" class="qp-check" value="A" checked>A · Link map (variation each preview link serves, ITW)</label>
+        <label class="suite-check"><input type="checkbox" class="qp-check" value="B" checked>B · Control matches PROD</label>
+        <label class="suite-check"><input type="checkbox" class="qp-check" value="C" checked>C · Snippet vs spec (goals, softcoded and concurrent tests)</label>
+        <label class="suite-check"><input type="checkbox" class="qp-check" value="D" checked>D · Audience exclusions on the ITW link</label>
+        <label class="suite-check"><input type="checkbox" class="qp-check" value="E" checked>E · Breakpoint and clipping sweep</label>
+        <label class="suite-check"><input type="checkbox" class="qp-check" value="F" checked>F · Metrics on load</label>
+      </div>
+      <label class="cap">Sweep widths (px)</label>
+      <input type="text" id="qp-widths" value="300,320,340,360,375,390,402,412,430,480,600,768,820,1024,1280,1440,1920,2080" style="width:100%;margin-bottom:6px">
+      <div style="display:flex;flex-direction:column;gap:1px;margin-bottom:8px">
+        <label class="suite-check"><input type="checkbox" id="qp-quick-sweep">Quick sweep (one load per device, resize between widths)</label>
+        <label class="suite-check"><input type="checkbox" id="qp-prod-mobile" checked>Sweep PROD as iPhone and Android too</label>
+        <label class="suite-check"><input type="checkbox" id="qp-combos" checked>Concurrency combinations (links without tracking only)</label>
+        <label class="suite-check"><input type="checkbox" id="qp-clear-all">Clear all site data between loads (signs you out of the site)</label>
+      </div>
+      <div id="qp-visitor-note" style="font-size:10px;color:var(--warn);margin-bottom:8px">Every PROD, ITW and audience-test load is a new visitor to the live site. When the plain PROD page shows a live experiment, or check B is off, PROD is swept by resizing one tab per device instead of reloading once per width.</div>
+      <label class="cap">Workarounds and notes for the analysis (optional)</label>
+      <textarea id="qp-workarounds" placeholder="Known workarounds, environment notes, anything the analysis should know" style="width:100%;height:50px;font-size:11px;margin-bottom:8px"></textarea>
+      <label class="cap">QA test plan (Google Sheet)</label>
+      <div id="qp-sheet-status" style="font-size:10px;color:var(--fg3);margin-bottom:6px"></div>
+      <div class="row" style="gap:6px;margin-bottom:6px">
+        <button class="btn sm" id="btn-qp-google-connect" type="button">Connect Google</button>
+        <button class="btn ghost sm" id="btn-qp-google-disconnect" type="button" style="display:none">Disconnect</button>
+      </div>
+      <div class="arg-row" style="margin-bottom:4px"><span class="arg-lbl">Tab</span><select id="qp-sheet-tab" disabled><option value="">—</option></select></div>
+      <div class="arg-row" style="margin-bottom:4px"><span class="arg-lbl">Status column</span><select id="qp-sheet-col" disabled><option value="">—</option></select></div>
+      <div style="display:flex;flex-direction:column;gap:1px;margin-bottom:8px">
+        <label class="suite-check"><input type="checkbox" id="qp-write-notes" checked>Append notes (Auto QA)</label>
+        <label class="suite-check"><input type="checkbox" id="qp-retest-inprogress">Re-test In Progress cells</label>
+      </div>
+      <div style="font-size:10px;color:var(--fg3);margin-bottom:6px">Nothing is written to the sheet until you review the proposed changes after a run and click Apply.</div>
+      <div id="qp-progress" style="font-size:10px;color:var(--fg3)"></div>
+      <div id="qp-results" style="margin-top:8px"></div>
+    </div>
     </div>
 
     <div class="card" id="ta-multi-card" style="display:none">
@@ -1446,6 +1487,18 @@
       <div style="font-size:10px;color:var(--fg3)">Powers the AI summary of Test Agent results, Initialize's field extraction, and Visual Diff's report. Calls go directly from this extension to api.anthropic.com.</div>
     </div>
 
+    <div class="card" id="set-google">
+      <div class="card-title">Google Sheets (QA Pass)</div>
+      <div class="arg-row" style="margin-bottom:6px">
+        <span class="arg-lbl">OAuth client ID</span>
+        <input type="text" id="set-google-client" placeholder="….apps.googleusercontent.com">
+        <button class="btn sm" id="btn-set-google-save">Save</button>
+      </div>
+      <div id="set-google-status" style="font-size:10px;color:var(--fg3);margin-bottom:4px;min-height:12px"></div>
+      <div style="font-size:10px;color:var(--fg3);margin-bottom:4px">Redirect URL for this install (add it to the OAuth client's Authorized redirect URIs): <code id="set-google-redirect">—</code> <button class="btn ghost sm" id="btn-set-google-copy" type="button">Copy</button></div>
+      <div style="font-size:10px;color:var(--fg3)">Lets QA Pass read the ticket's QA test plan and, only when you click Apply, write statuses and notes to the one tab you pick. The access token lives in this browser session only. One-time Google Cloud setup: see the README (QA Pass → Google Sheets setup).</div>
+    </div>
+
     <div class="card" id="set-figma">
       <div class="card-title">Figma Token</div>
       <div class="arg-row" style="margin-bottom:6px">
@@ -1464,6 +1517,7 @@
 <script src="vd-diff.js"></script>
 <script src="figma.js"></script>
 <script src="browserstack.js"></script>
+<script src="qa-pass.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>

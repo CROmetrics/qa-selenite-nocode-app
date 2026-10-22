@@ -140,6 +140,63 @@ eq('...and stops at the next heading', descVariants[1].texts.join(' ').indexOf('
 ok('a missing heading is distinguishable from an empty one',
   adfSectionNodes(DESC, 'Nonexistent') === null);
 
+// ── Jira comments kept on the context ──────────────────────────────────────
+section('Jira comments for the QA Pass analysis');
+
+// A comment as Jira returns it: an author object, an ADF body, a mention node
+// (which carries its text in attrs, not in content).
+var REAL_COMMENTS = {
+  comments: [{
+    id: '10001',
+    author: { displayName: 'Jane Doe', emailAddress: 'j@x' },
+    created: '2026-10-14T10:00:00.000-0400',
+    body: { type: 'doc', content: [
+      para('Timer set to 10/09 on purpose'),
+      { type: 'paragraph', content: [{ type: 'mention', attrs: { id: 'abc', text: '@Jane Doe' } }, { type: 'text', text: ' please check' }] },
+    ] },
+  }],
+  total: 1,
+};
+var cm = jiraContextComments(REAL_COMMENTS);
+eq('one comment comes out', cm.length, 1);
+eq('its id is kept, as a string', cm[0].id, '10001');
+eq('its created timestamp is kept', cm[0].created, '2026-10-14T10:00:00.000-0400');
+ok('its text carries the first paragraph', cm[0].text.indexOf('Timer set to 10/09 on purpose') !== -1, cm[0].text);
+ok('and the text after the mention', cm[0].text.indexOf('please check') !== -1, cm[0].text);
+var cmJson = JSON.stringify(cm);
+ok('the author\'s name is nowhere in the result', cmJson.indexOf('Jane') === -1, cmJson);
+ok('there is no author key', cmJson.indexOf('author') === -1);
+ok('the mention\'s @ is dropped with it', cmJson.indexOf('@') === -1);
+ok('the email address is not kept', cmJson.indexOf('j@x') === -1);
+eq('only id, created and text are kept', Object.keys(cm[0]).join(','), 'id,created,text');
+eq('a numeric id becomes a string', jiraContextComments({ comments: [{ id: 7, created: 'c', body: doc([para('x')]) }] })[0].id, '7');
+
+eq('null is no comments', jiraContextComments(null).length, 0);
+eq('undefined is no comments', jiraContextComments(undefined).length, 0);
+eq('an empty field is no comments', jiraContextComments({}).length, 0);
+eq('a comments value that is not a list is no comments', jiraContextComments({ comments: 'x' }).length, 0);
+eq('a comment with no id is dropped', jiraContextComments({ comments: [{ body: doc([para('x')]) }] }).length, 0);
+eq('a comment with no text is dropped', jiraContextComments({ comments: [{ id: '1', body: doc([]) }, { id: '2' }] }).length, 0);
+eq('a comment that is only a mention is dropped', jiraContextComments({ comments: [{ id: '3', body: doc([{ type: 'paragraph', content: [{ type: 'mention', attrs: { text: '@A' } }] }]) }] }).length, 0);
+eq('a null entry in the list does not throw', jiraContextComments({ comments: [null, { id: '4', body: doc([para('kept')]) }] }).length, 1);
+eq('a missing created becomes null', jiraContextComments({ comments: [{ id: '5', body: doc([para('x')]) }] })[0].created, null);
+
+var many = [];
+for (var i = 1; i <= 60; i++) many.push({ id: String(10000 + i), created: 'c' + i, body: doc([para('comment ' + i)]) });
+var capped = jiraContextComments({ comments: many });
+eq('sixty comments are cut to fifty', capped.length, 50);
+eq('the newest is kept', capped[capped.length - 1].id, '10060');
+eq('the oldest ten are the ones dropped', capped[0].id, '10011');
+eq('the order stays oldest first', capped[1].id, '10012');
+eq('a 5000-character body is cut to 2000', jiraContextComments({ comments: [{ id: '6', body: doc([para(new Array(5001).join('a'))]) }] })[0].text.length, 2000);
+eq('trailing spaces before a line break are removed and blank runs collapse',
+   jiraContextComments({ comments: [{ id: '8', body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a  ' }, { type: 'hardBreak' }, { type: 'hardBreak' }, { type: 'hardBreak' }, { type: 'hardBreak' }, { type: 'text', text: 'b' }] }] } }] })[0].text,
+   'a\n\nb');
+ok('extractTestContext puts them on the draft', /comments: jiraContextComments\(f\.comment\),/.test(_pu));
+ok('and jiraContextComments is defined between adfText and the section locator',
+   _pu.indexOf('function adfText(node)') < _pu.indexOf('function jiraContextComments(commentField)') &&
+   _pu.indexOf('function jiraContextComments(commentField)') < _pu.indexOf('// Section locator (shared by all three sections)'));
+
 // ── report ─────────────────────────────────────────────────────────────────
 print('');
 if (failures.length) {

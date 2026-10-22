@@ -18,7 +18,7 @@
 // captureFullPageAndViewport/vdShowCandidateOverlay below (a separate
 // executeScript call, not this importScripts) — see domCandidateWalkFn's
 // own header comment for why.
-importScripts('metric-match.js', 'pixelmatch.js', 'vd-config.js', 'vd-diff.js', 'figma.js', 'browserstack.js');
+importScripts('metric-match.js', 'pixelmatch.js', 'vd-config.js', 'vd-diff.js', 'figma.js', 'browserstack.js', 'qa-pass.js');
 
 // ── Toolbar icon: the side panel, or the floating window when unpinned ────
 // Pinned, the default, Selenite docks in Chrome's side panel: with
@@ -7044,7 +7044,7 @@ function buildTestAgentSummaryPrompt(modeResults, ticketContext) {
     if (entry.status !== 'ran') {
       return `${entry.name}: skipped (${entry.reason || 'not configured'})`;
     }
-    const json = JSON.stringify(entry.data ?? null);
+    const json = JSON.stringify(entry.mode === 'qapass' && typeof qpSummaryProjection === 'function' ? qpSummaryProjection(entry.data) : (entry.data ?? null));
     const trimmed = json.length > 4000 ? json.slice(0, 4000) + '…' : json;
     return `${entry.name}: ran\n${trimmed}`;
   });
@@ -7863,6 +7863,752 @@ async function runFunnelCrawl({ waypoints = [], supplementalPrompt = '' }) {
   return { segments, reachedEnd };
 }
 
+// ── QA Pass (Test Agent mode 'qapass') ─────────────────────────────────────
+// Platform, targeting, layout and metrics-on-load checks on a ticket's preview
+// links, in ONE tab under ONE debugger session. The shared logic (URLs, checks,
+// sweep evaluation, Sheets helpers) is qa-pass.js, loaded by importScripts above;
+// everything below is qpw*, the worker's own side. Rules this section keeps:
+//   - no top-level reference to a qp*/QP_* global (other suites slice this file
+//     without loading qa-pass.js): they are used inside functions only;
+//   - every URL it builds goes through qpBuildUrl/qpComboUrl/qpNoTrackUrl, which
+//     never carry optimizely_force_tracking or _conv_eforce;
+//   - an injected page function that throws resolves {result:null} in Chrome, so
+//     every caller below treats null and {error} as "no data".
+let _qpStopRequested = false;
+function qpwStopError() { const e = new Error('Stopped'); e.qpStop = true; return e; }
+function qpwIsStop(e) { return !!(e && e.qpStop); }
+function qpwIsFatal(e) { return !!(e && e.qpFatal); }
+function qpwSleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// A page read made outside qpwLoad. chrome.scripting.executeScript can REJECT as well as resolve null (an error page, a
+// frame removed by a redirect after the load event, a tab that went away). That costs the one read, never the run: it
+// comes back as `err`, and the caller records it on the link, load or row it belongs to. Stop and a lost debugger
+// (qpFatal) still end the run.
+async function qpwRead(work) {
+  try { return { v: await work(), err: null }; }
+  catch (e) {
+    if (qpwIsStop(e) || qpwIsFatal(e)) throw e;
+    return { v: null, err: qpScrubUrls(String((e && e.message) || e)) };
+  }
+}
+// Error text that a record keeps goes through qpScrubUrls first (qa-pass.js): Chrome words some errors around the page's own
+// URL (`Cannot access contents of url "<URL>"`), and a preview link's query holds optimizely_force_tracking, optimizely_x,
+// _conv_eforce or a token. Cut to origin + path, the record itself is clean for every consumer (report, debug log, prompts).
+function qpwReadNote(what, err) { return qpScrubUrls('The ' + what + ' could not be read after the page loaded (' + err + ').'); }
+// A link, combination or audience test keeps its read failures in probeNote, joined.
+function qpwAddNote(o, note) { if (note) o.probeNote = qpScrubUrls(o.probeNote ? o.probeNote + ' ' + note : note); }
+
+async function qpwCdp(S, method, params) {
+  try { return await chrome.debugger.sendCommand(S.target, method, params || {}); }
+  catch (e) {
+    const m = String(e && e.message || e);
+    if (/not attached|Detached while|No tab with id|Cannot access a closed/i.test(m)) {
+      const f = new Error('The debugger was detached from the QA Pass tab (the tab was closed, DevTools opened on it, or the "started debugging this browser" bar was cancelled).');
+      f.qpFatal = true; throw f;
+    }
+    throw e;
+  }
+}
+
+// Navigate the run tab and resolve on Page.loadEventFired (or reject: timeout,
+// a refused navigation). Every exit removes the listener and the timer.
+function qpwNavigate(S, url) {
+  return new Promise((resolve, reject) => {
+    const tabId = S.target.tabId;
+    let done = false, timer = null;
+    const onEvent = (source, method) => {
+      if (source && source.tabId === tabId && method === 'Page.loadEventFired') finish(null);
+    };
+    function finish(err) {
+      if (done) return;
+      done = true;
+      try { chrome.debugger.onEvent.removeListener(onEvent); } catch (_) {}
+      if (timer) clearTimeout(timer);
+      if (err) reject(err); else resolve();
+    }
+    chrome.debugger.onEvent.addListener(onEvent);
+    timer = setTimeout(() => finish(new Error('Page load timed out after ' + Math.round(QP_LOAD_TIMEOUT_MS / 1000) + 's')), QP_LOAD_TIMEOUT_MS);
+    qpwCdp(S, 'Page.navigate', { url: normalizeUrl(url) }).then(
+      (r) => { if (r && r.errorText) finish(new Error(qpScrubUrls(r.errorText))); },
+      (e) => finish(e),
+    );
+  });
+}
+
+// The device profile (user agent + touch) is set only when it changes; the
+// viewport is set for every load and every resize step.
+async function qpwApplyProfile(S, key, width) {
+  const p = QP_PROFILES[key] || QP_PROFILES.desktop;
+  if (S.uaKey !== key) {
+    await qpwCdp(S, 'Emulation.setUserAgentOverride', p.userAgent ? { userAgent: p.userAgent, platform: p.platform } : { userAgent: '' });
+    await qpwCdp(S, 'Emulation.setTouchEmulationEnabled', p.touch ? { enabled: true, maxTouchPoints: 5 } : { enabled: false });
+    S.uaKey = key;
+  }
+  const h = qpHeightFor(width);
+  await qpwCdp(S, 'Emulation.setDeviceMetricsOverride', { width, height: h, deviceScaleFactor: 1, mobile: p.mobile, screenWidth: width, screenHeight: h });
+}
+
+// State hygiene without signing the user out: delete only Optimizely/Convert
+// cookies over CDP (QP_HYGIENE_SHIM expires the readable ones in the page too).
+// Returns the number deleted, or null when the CDP calls failed or the URL has no origin.
+async function qpwClearState(S, url) {
+  const full = normalizeUrl(url);
+  const origin = originOf(full);
+  if (!origin) return null;
+  try {
+    if (S.settings && S.settings.clearAllSiteData) {
+      await qpwCdp(S, 'Storage.clearDataForOrigin', { origin, storageTypes: 'all' });
+      return 0;
+    }
+    const r = await qpwCdp(S, 'Network.getCookies', { urls: [qpPathOnly(full) || full] });
+    let n = 0;
+    for (const c of ((r && r.cookies) || [])) {
+      if (!/^(optimizely|_conv_)/i.test(String(c && c.name || ''))) continue;
+      await qpwCdp(S, 'Network.deleteCookies', { name: c.name, domain: c.domain, path: c.path });
+      n++;
+    }
+    return n;
+  } catch (e) {
+    if (qpwIsFatal(e)) throw e;
+    return null;
+  }
+}
+
+// PROD is the ITW page without any Optimizely/Convert/QA parameter, else the control link's.
+function qpwProdUrl(S) {
+  const ctx = S.ctx;
+  if (ctx.itwLink) return qpProdUrl(ctx.itwLink);
+  const cl = qpControlLink(ctx);
+  return cl ? qpProdUrl(cl.url) : null;
+}
+
+// One load: clear state, apply the device profile, navigate, settle, read the bot-check
+// facts. Returns the load record (also kept in rec.loads, capped).
+async function qpwLoad(S, o) {
+  if (_qpStopRequested) throw qpwStopError();
+  const rec = S.rec, tabId = S.target.tabId, t0 = Date.now();
+  const L = { id: 'L' + (++S.loadN), role: o.role, label: o.label, path: qpPathOnly(o.url), profile: o.profile, width: o.width,
+    ok: false, loadError: null, blocked: null, finalUrl: null, ms: 0, settle: null, cleared: null };
+  if (rec.loads.length < QP_MAX_LOADS_KEPT) rec.loads.push(L);
+  try { await setTmProgress('qpProgress', { running: true, phase: o.role, label: o.label, profile: o.profile, width: o.width, loads: S.loadN }); } catch (_) {}
+  try {
+    L.cleared = await qpwClearState(S, o.url);
+    await qpwApplyProfile(S, o.profile, o.width);
+    await qpwNavigate(S, o.url);
+    const st = await exec(tabId, qpSettleFn, [{ firstWaitMs: QP_SETTLE.firstWaitMs, pollMs: QP_SETTLE.pollMs, maxPolls: QP_SETTLE.maxPolls }]);
+    L.settle = (st && !st.error) ? { stable: !!st.stable, polls: st.polls } : null;
+    const facts0 = await exec(tabId, qpPageFactsFn, []);
+    if (facts0 && facts0.bot && facts0.bot.challenge) L.blocked = { reason: 'bot-check', signal: facts0.bot.signal };
+    else L.ok = true;
+    const tab = await chrome.tabs.get(tabId);
+    L.finalUrl = (tab && tab.url) || null;
+  } catch (e) {
+    if (qpwIsStop(e) || qpwIsFatal(e)) throw e;
+    L.loadError = qpScrubUrls(String((e && e.message) || e));
+  } finally {
+    L.ms = Date.now() - t0;
+  }
+  return L;
+}
+
+async function qpwInstallTrackShim(S) {
+  if (S.trackShim || S.trackShimOff) return;
+  const r = await qpwCdp(S, 'Page.addScriptToEvaluateOnNewDocument', { source: QP_TRACK_SHIM });
+  if (r && r.identifier != null) { S.trackShimId = r.identifier; S.scripts.push(r.identifier); }
+  S.trackShim = true;
+}
+
+// What a loaded page says, before anything scrolls: the metrics buffer (when the
+// listener is installed) and which variation the snippet served.
+async function qpwReadLink(S, forcedIds) {
+  const tabId = S.target.tabId, out = {};
+  let track = null;
+  if (S.trackShim) {
+    const t = await qpwRead(() => execMain(tabId, qpReadTrackFn, []));
+    if (t.err) qpwAddNote(out, qpwReadNote('metrics buffer', t.err)); else if (t.v != null) track = t.v;
+  }
+  const p = await qpwRead(() => execMain(tabId, expProbeFn, []));
+  if (p.err) qpwAddNote(out, qpwReadNote('snippet probe', p.err));
+  const raw = p.v;
+  const probe = (raw && !raw.error) ? qpProbeSummary(raw, S.ctx.experimentId, forcedIds) : null;
+  return { track, probe, note: out.probeNote || null };
+}
+
+// The catalog is read once, from the first page that shows an Optimizely snippet.
+// Returns the note for a read that was rejected, else null.
+async function qpwReadCatalog(S, label, probe) {
+  const rec = S.rec;
+  if (rec.catalog || !probe || probe.platform !== 'optimizely') return null;
+  const r = await qpwRead(() => execMain(S.target.tabId, qpSnippetProbeFn, [{}]));
+  if (r.err) return qpwReadNote('snippet catalog', r.err);
+  const cat = r.v;
+  if (cat && !cat.error && cat.platform === 'optimizely') { rec.catalog = cat; rec.catalogFrom = label; }
+  return null;
+}
+
+// { facts, err }: err is the message of a rejected read (facts null then), null otherwise.
+async function qpwSettleFacts(S) {
+  const tabId = S.target.tabId;
+  const a = await qpwRead(() => exec(tabId, qpSettleFn, [{ scroll: true }]));
+  if (a.err) return { facts: null, err: a.err };
+  const b = await qpwRead(() => exec(tabId, qpPageFactsFn, []));
+  if (b.err) return { facts: null, err: b.err };
+  const f = b.v;
+  return { facts: (f && !f.error) ? f : null, err: null };
+}
+
+// Phase A: every preview link, then the ITW link, once each at 1440 px.
+async function qpwPhaseLinks(S) {
+  const rec = S.rec, ctx = S.ctx, tabId = S.target.tabId;
+  const hs = await qpwCdp(S, 'Page.addScriptToEvaluateOnNewDocument', { source: QP_HYGIENE_SHIM });
+  if (hs && hs.identifier != null) S.scripts.push(hs.identifier);
+  if (/optimizely/i.test(ctx.platform || '')) await qpwInstallTrackShim(S);
+  const cl = qpControlLink(ctx);
+  const targets = (ctx.previewLinks || []).filter((l) => l && l.url).map((l) => ({ label: l.id, role: 'preview', url: l.url }));
+  if (ctx.itwLink) targets.push({ label: 'ITW', role: 'itw', url: ctx.itwLink });
+  for (const t of targets) {
+    const flags = qpTrackingFlags(t.url);
+    const forcedIds = t.role === 'preview' ? qpForcedIds(t.url) : [];
+    const spec = { role: t.role, label: t.label, url: t.url, profile: 'desktop', width: QP_PHASE_WIDTH };
+    let L = await qpwLoad(S, spec);
+    const entry = { label: t.label, role: t.role, isControl: t.role === 'preview' && !!cl && cl.id === t.label, forcedIds, trackingFlags: flags,
+      loadId: L.id, finalUrl: L.finalUrl, loadError: L.loadError, blocked: L.blocked, probe: null, probeNote: null, track: null, facts: null, noTrackServes: null };
+    if (L.blocked) S.blocked.add(t.label);
+    const adopt = (L2) => { L = L2; entry.loadId = L2.id; entry.finalUrl = L2.finalUrl; entry.loadError = L2.loadError; entry.blocked = L2.blocked; if (L2.blocked) S.blocked.add(t.label); };
+    let unread = false;   // the link was deliberately not re-read (its reload would register another exposure)
+    if (L.ok) {
+      let rd = await qpwReadLink(S, forcedIds);
+      entry.probe = rd.probe; entry.track = rd.track; entry.probeNote = rd.note;
+      if (rec.platform == null && rd.probe && rd.probe.platform) rec.platform = rd.probe.platform;
+      const optimizelyExpected = rec.platform === 'optimizely' || /optimizely/i.test(ctx.platform || '');
+      if (S.trackShim && !S.trackShimOff && rd.probe && rd.probe.platform === null && optimizelyExpected) {
+        // The listener stopped the snippet from loading on this site: take it out for the rest of the
+        // run, so A can never report a false "no snippet".
+        try { await qpwCdp(S, 'Page.removeScriptToEvaluateOnNewDocument', { identifier: S.trackShimId }); } catch (e) { if (qpwIsFatal(e)) throw e; }
+        S.scripts = S.scripts.filter((id) => id !== S.trackShimId);
+        S.trackShim = false;
+        S.trackShimOff = 'The metrics listener stopped the Optimizely snippet from loading on ' + qpPathOnly(t.url) + ', so it was removed for the rest of the run';
+        if (!flags.length) {
+          adopt(await qpwLoad(S, spec));
+          if (L.ok) {
+            rd = await qpwReadLink(S, forcedIds);
+            entry.probe = rd.probe; entry.probeNote = rd.note;
+            if (rec.platform == null && rd.probe && rd.probe.platform) rec.platform = rd.probe.platform;
+            qpwAddNote(entry, await qpwReadCatalog(S, t.label, rd.probe));
+          }
+        } else {
+          // Reloading would register one more exposure: leave the link unread.
+          entry.probe = null;
+          unread = true;
+          entry.probeNote = 'The snippet did not load while the metrics listener was installed, and this link was not reloaded because it registers an exposure on every load';
+        }
+        entry.track = { disabled: S.trackShimOff };
+      } else {
+        qpwAddNote(entry, await qpwReadCatalog(S, t.label, rd.probe));
+        if (!S.trackShim && !S.trackShimOff && rd.probe && rd.probe.platform === 'optimizely') {
+          // An Optimizely page the ticket did not announce: install the listener for every later load,
+          // and re-read this link only when a reload is free (no tracking flag).
+          await qpwInstallTrackShim(S);
+          if (!flags.length) {
+            const keep = { loadId: entry.loadId, finalUrl: entry.finalUrl, loadError: entry.loadError, blocked: entry.blocked };
+            const L2 = await qpwLoad(S, spec);
+            if (L2.ok) {
+              adopt(L2);
+              const tr = await qpwRead(() => execMain(tabId, qpReadTrackFn, []));
+              entry.track = tr.v == null ? null : tr.v;
+              if (tr.err) qpwAddNote(entry, qpwReadNote('metrics buffer', tr.err));
+            } else {
+              if (L2.blocked) S.blocked.add(t.label);
+              Object.assign(entry, keep);   // the first load's reads stand; the metrics stay unread
+            }
+          }
+        }
+      }
+    }
+    if (S.trackShimOff) entry.track = { disabled: S.trackShimOff };
+    if (L.ok && !unread) {
+      const sf = await qpwSettleFacts(S);
+      entry.facts = sf.facts;
+      if (sf.err) qpwAddNote(entry, qpwReadNote('page facts', sf.err));
+    }
+    // A preview link that registers an exposure on every load: does its no-tracking form still serve the variation?
+    if (t.role === 'preview' && flags.length && S.on.E && L.ok) {
+      const NL = await qpwLoad(S, { role: 'notrack', label: t.label, url: qpNoTrackUrl(t.url), profile: 'desktop', width: QP_PHASE_WIDTH });
+      let serves = false;
+      if (NL.ok) {
+        const r = await qpwRead(() => execMain(tabId, expProbeFn, []));
+        if (r.err) qpwAddNote(entry, qpwReadNote('no-tracking form', r.err));
+        const raw = r.v;
+        serves = !!(raw && !raw.error) && qpProbeSummary(raw, ctx.experimentId, forcedIds).servedForced === true;
+      }
+      entry.noTrackServes = serves;
+    }
+    rec.links.push(entry);
+  }
+}
+
+// Phase B: Control against PROD.
+async function qpwPhaseProd(S) {
+  const rec = S.rec, ctx = S.ctx, tabId = S.target.tabId;
+  const control = rec.links.filter((l) => l.role === 'preview' && l.isControl)[0] || null;
+  const prodUrl = qpwProdUrl(S);
+  if (!prodUrl) { rec.controlVsProd = { skipped: 'no control link' }; return; }
+  S.prodUrl = prodUrl;
+  const cvp = { controlLabel: control ? control.label : null, prodPath: qpPathOnly(prodUrl), prodFinalUrl: null,
+    control: (control && control.facts) || null, prod: null, prodProbe: null, compare: null, skipped: null };
+  const L = await qpwLoad(S, { role: 'prod', label: 'PROD', url: prodUrl, profile: 'desktop', width: QP_PHASE_WIDTH });
+  cvp.prodFinalUrl = L.finalUrl;
+  if (L.blocked) S.blocked.add('PROD');
+  if (L.ok) {
+    const r = await qpwRead(() => execMain(tabId, expProbeFn, []));
+    if (r.err) cvp.probeNote = qpwReadNote('PROD snippet probe', r.err);
+    const raw = r.v;
+    cvp.prodProbe = (raw && !raw.error) ? qpProbeSummary(raw, ctx.experimentId, []) : null;
+    const sf = await qpwSettleFacts(S);
+    cvp.prod = sf.facts;
+    if (sf.err) cvp.skipped = qpwReadNote('PROD page', sf.err);
+    if (cvp.control && cvp.prod) cvp.compare = qpCompareFacts(cvp.control, cvp.prod);
+  }
+  rec.controlVsProd = cvp;
+}
+
+// Phase C extra: a live test on the page that the ticket does not list, forced on together with
+// the variation under test. Only links without a tracking flag (a combination adds no exposure then).
+async function qpwPhaseCombos(S) {
+  const rec = S.rec, ctx = S.ctx, tabId = S.target.tabId;
+  const itw = rec.links.filter((l) => l.role === 'itw')[0] || null;
+  if (!itw || !itw.loadId || itw.blocked || itw.loadError || !itw.probe || !rec.catalog) return;
+  const unlisted = qpUnlistedActive(itw.probe.activeIds || [], rec.catalog, ctx).slice(0, 2);
+  for (const u of unlisted) {
+    const exp = qpExperimentById(rec.catalog, u.id);
+    const vars = ((exp && exp.variations) || []).slice(0, 2);
+    for (const v of vars) {
+      for (const link of rec.links) {
+        if (link.role !== 'preview' || link.loadError || link.blocked || !link.probe || (link.trackingFlags || []).length) continue;
+        if (rec.combos.length >= QP_MAX_COMBOS) return;
+        const src = (ctx.previewLinks || []).filter((p) => p.id === link.label)[0];
+        const url = src ? qpComboUrl(src.url, v.id) : null;
+        if (!url) continue;
+        const L = await qpwLoad(S, { role: 'combo', label: link.label, url, profile: 'desktop', width: QP_PHASE_WIDTH });
+        const c = { link: link.label, experimentId: String(u.id), variationId: String(v.id), url, loadId: L.id,
+          underTestActive: null, otherActive: null, textHash: null, aloneTextHash: (link.facts && link.facts.textHash) || null, changed: false };
+        if (L.ok) {
+          const r = await qpwRead(() => execMain(tabId, expProbeFn, []));
+          if (r.err) qpwAddNote(c, qpwReadNote('snippet probe', r.err));
+          const raw = r.v;
+          if (raw && !raw.error) {
+            c.underTestActive = qpProbeSummary(raw, ctx.experimentId, link.forcedIds || []).active === true;
+            c.otherActive = qpProbeSummary(raw, String(u.id), [String(v.id)]).active === true;
+          }
+          const sf = await qpwSettleFacts(S);
+          if (sf.err) qpwAddNote(c, qpwReadNote('page facts', sf.err));
+          const f = sf.facts;
+          c.textHash = f ? f.textHash : null;
+          c.changed = !!(f && link.facts) && f.textHash !== link.facts.textHash;
+        }
+        rec.combos.push(c);
+      }
+    }
+  }
+}
+
+// Phase D: audience conditions that can be set from the URL, exercised on the ITW link.
+async function qpwPhaseAudiences(S) {
+  const rec = S.rec, ctx = S.ctx, tabId = S.target.tabId;
+  const au = { experimentId: ctx.experimentId || null, baselineActive: null, skipped: null, tests: [], notExercised: [] };
+  rec.audiences = au;
+  const itw = rec.links.filter((l) => l.role === 'itw')[0] || null;
+  if (!ctx.itwLink) { au.skipped = 'no ITW link'; return; }
+  if (!itw) { au.skipped = 'The ITW page was not loaded'; return; }
+  if (itw.blocked) { au.skipped = 'The ITW page was stopped by a bot check (' + ((itw.blocked && itw.blocked.signal) || 'challenge') + ')'; return; }
+  if (itw.loadError) { au.skipped = qpScrubUrls('The ITW page did not load: ' + itw.loadError); return; }
+  if (!rec.catalog) { au.skipped = 'no catalog'; return; }
+  const exp = ctx.experimentId ? qpExperimentById(rec.catalog, ctx.experimentId) : null;
+  if (!exp) { au.skipped = 'experiment ' + (ctx.experimentId || '(none)') + ' not in the snippet'; return; }
+  const plan = qpAudienceTests(exp, rec.catalog.audiences);
+  au.notExercised = plan.notExercised;
+  au.baselineActive = itw.probe ? itw.probe.active : null;
+  au.tests = plan.tests.map((t) => Object.assign({}, t, { got: null, ok: null, loadId: null }));
+  for (const test of au.tests) {
+    // Without an active baseline the result cannot be told apart from it: no load is spent.
+    if ((test.role === 'exclusion' || test.role === 'companion' || test.kind === 'device') && au.baselineActive !== true) continue;
+    const url = test.kind === 'device' ? qpBuildUrl(ctx.itwLink, []) : qpBuildUrl(ctx.itwLink, [[test.param, test.value]]);
+    const L = await qpwLoad(S, { role: 'audience', label: 'ITW', url, profile: test.profile, width: test.profile === 'iphone' ? 390 : QP_PHASE_WIDTH });
+    test.loadId = L.id;
+    if (!L.ok) continue;
+    const r = await qpwRead(() => execMain(tabId, expProbeFn, []));
+    if (r.err) qpwAddNote(test, qpwReadNote('snippet probe', r.err));
+    const raw = r.v;
+    if (!raw || raw.error) continue;
+    const p = qpProbeSummary(raw, exp.id, []);
+    if (p.platform === null) continue;   // no snippet on this load: no answer, not "did not activate"
+    test.got = p.active === true;
+    test.ok = test.expect === 'active' ? test.got : !test.got;
+  }
+}
+
+// A screenshot of the clipped text, with the text outlined, kept as a JPEG data URL.
+async function qpwCaptureTile(S, row, off) {
+  try {
+    const tabId = S.target.tabId;
+    await exec(tabId, qpTileMarkFn, [off ? off.text : '', off && off.rect ? off.rect.y : 0]);
+    await qpwSleep(150);
+    const shot = await qpwCdp(S, 'Page.captureScreenshot', { format: 'jpeg', quality: 60 });
+    if (!shot || !shot.data) return;
+    const sc = row.scan || {};
+    const gap = off && typeof off.gapPx === 'number' ? off.gapPx : (row.role === 'prod' ? (sc.worstGapPx || 0) : -(sc.pageOverflowPx || 0));
+    S.rec.sweep.tiles.push({ target: row.target, profile: row.profile, width: row.width, gapPx: gap, text: off ? off.text : '', img: 'data:image/jpeg;base64,' + shot.data });
+    row.tile = S.rec.sweep.tiles.length - 1;
+  } catch (e) {
+    if (qpwIsFatal(e)) throw e;
+  }
+}
+
+// Which rows get a tile: the first QP_MAX_TILES variant rows with something clipped, and for each
+// the PROD row at the same device kind and width (PROD is swept after the variants).
+async function qpwSweepTile(S, row) {
+  const sc = row.scan;
+  if (!sc || sc.error) return;
+  const tiles = S.rec.sweep.tiles;
+  const kind = row.width <= QP_MOBILE_MAX ? 'iphone' : 'desktop';
+  if (row.role === 'variant') {
+    if (!(sc.offenderCount > 0 || sc.pageOverflowPx >= QP_CLIP_MIN_PX)) return;
+    if (tiles.filter((t) => t.target !== 'PROD').length >= QP_MAX_TILES) return;
+    if (tiles.some((t) => t.target === row.target && t.profile === row.profile && t.width === row.width)) return;
+    const off = (sc.offenders && sc.offenders[0]) || null;
+    await qpwCaptureTile(S, row, off);
+    if (row.tile != null) {
+      S.tileWanted.add(kind + ':' + row.width);
+      S.tileSrc.set(kind + ':' + row.width, { text: off ? off.text : '', y: off && off.rect ? off.rect.y : 0 });
+    }
+  } else if (row.role === 'prod') {
+    const key = row.profile + ':' + row.width;
+    if (!S.tileWanted.has(key)) return;
+    if (tiles.some((t) => t.target === 'PROD' && t.profile === row.profile && t.width === row.width)) return;
+    const src = S.tileSrc.get(key) || { text: '', y: 0 };
+    await qpwCaptureTile(S, row, { text: src.text, rect: { y: src.y } });
+  }
+}
+
+async function qpwScan(S) {
+  const r = await qpwRead(() => exec(S.target.tabId, qpClipScanFn, [{}]));
+  if (r.err) return { error: qpScrubUrls('The clipping scan could not run after the page loaded (' + r.err + ')') };
+  return r.v == null ? { error: 'The clipping scan returned no data' } : r.v;
+}
+
+// Settle the page for the scan, then scan it: a rejection of either is the row's scan.error (no data for
+// that width), and the sweep goes on with the next one.
+async function qpwSettleAndScan(S, opts) {
+  const st = await qpwRead(() => exec(S.target.tabId, qpSettleFn, [opts]));
+  if (st.err) return { error: qpScrubUrls('The page could not be settled for the clipping scan (' + st.err + ')') };
+  return qpwScan(S);
+}
+
+// Phase E: the breakpoint and clipping sweep. 'reload' mode loads once per width; 'resize' mode loads
+// once per device profile and steps the viewport (a link that registers an exposure per load, and PROD
+// when qpProdLive says its plain load showed a live experiment or was never probed: D8, #5).
+async function qpwPhaseSweep(S) {
+  const rec = S.rec, ctx = S.ctx, settings = S.settings;
+  const links = (ctx.previewLinks || []).filter((l) => l && l.url).map((l) => ({ label: l.id, role: 'preview', url: l.url }));
+  const noTrack = {};
+  rec.links.filter((e) => e.role === 'preview').forEach((e) => { noTrack[e.label] = e.noTrackServes === true; });
+  const plan = qpSweepPlan(settings, links, S.prodUrl || null, noTrack, qpProdLive(rec).live);
+  const seen = {}, targets = [], profiles = [];
+  plan.forEach((g) => {
+    if (!seen[g.target]) { seen[g.target] = true; targets.push({ label: g.target, role: g.role, mode: g.mode, url: qpPathOnly(g.url) }); }
+    if (profiles.indexOf(g.profile) < 0) profiles.push(g.profile);
+  });
+  rec.sweep.plan = { targets, profiles, widths: qpWidthOrder(settings.widths && settings.widths.length ? settings.widths : QP_WIDTHS) };
+  for (const g of plan) {
+    const mk = (width, extra) => Object.assign({ target: g.target, role: g.role, profile: g.profile, width, mode: g.mode,
+      loadId: null, ok: false, loadError: null, blocked: null, scan: null, tile: null }, extra || {});
+    const blockFrom = (i) => { for (; i < g.widths.length; i++) rec.sweep.rows.push(mk(g.widths[i], { blocked: { reason: 'bot-check' } })); };
+    if (S.blocked.has(g.target)) { blockFrom(0); continue; }   // a bot-checked page is never loaded again
+    if (g.mode === 'reload') {
+      for (let i = 0; i < g.widths.length; i++) {
+        const w = g.widths[i];
+        const L = await qpwLoad(S, { role: 'sweep', label: g.target, url: g.url, profile: g.profile, width: w });
+        const row = mk(w, { loadId: L.id, ok: L.ok, loadError: L.loadError, blocked: L.blocked });
+        if (L.ok) row.scan = await qpwSettleAndScan(S, { scroll: true, freeze: true });
+        rec.sweep.rows.push(row);
+        if (L.ok) await qpwSweepTile(S, row);
+        if (L.blocked) { S.blocked.add(g.target); blockFrom(i + 1); break; }
+      }
+    } else {
+      const L = await qpwLoad(S, { role: 'sweep', label: g.target, url: g.url, profile: g.profile, width: g.widths[0] });
+      if (!L.ok) {
+        g.widths.forEach((w) => rec.sweep.rows.push(mk(w, { loadId: L.id, loadError: L.loadError, blocked: L.blocked })));
+        if (L.blocked) S.blocked.add(g.target);
+        continue;
+      }
+      for (const w of g.widths) {
+        if (_qpStopRequested) throw qpwStopError();
+        await qpwApplyProfile(S, g.profile, w);
+        await qpwSleep(QP_SETTLE.resizeWaitMs);
+        const row = mk(w, { loadId: L.id, ok: true });
+        row.scan = await qpwSettleAndScan(S, { firstWaitMs: 0, pollMs: 250, maxPolls: 8, scroll: true, freeze: true });
+        rec.sweep.rows.push(row);
+        await qpwSweepTile(S, row);
+      }
+    }
+  }
+}
+
+async function runQaPass(payload) {
+  const ctx = (payload && payload.ctx) || {}, settings = (payload && payload.settings) || {};
+  _qpStopRequested = false;
+  const rec = qpNewRecord(ctx, settings, Date.now());
+  const S = { rec, ctx, settings: rec.settings, on: rec.settings.checks, target: null, scripts: [], uaKey: null, trackShim: false, trackShimId: null, trackShimOff: null,
+    tileWanted: new Set(), tileSrc: new Map(), blocked: new Set(), prodUrl: null, loadN: 0 };
+  let tabId = null, attached = false;
+  const heartbeat = setInterval(() => { try { chrome.runtime.getPlatformInfo(() => {}); } catch (_) {} }, 20000);
+  try {
+    const tab = await chrome.tabs.create({ url: 'about:blank', active: true, ...runTabWindow() });
+    tabId = tab.id; S.target = { tabId };
+    await chrome.debugger.attach(S.target, CDP_VERSION); attached = true;
+    await qpwCdp(S, 'Page.enable');
+    await qpwPhaseLinks(S);                       // always: platform, catalog, control facts, noTrack
+    if (S.on.B) await qpwPhaseProd(S);
+    else if (S.on.E) S.prodUrl = qpwProdUrl(S);
+    if (S.on.C && S.settings.combos) await qpwPhaseCombos(S);
+    if (S.on.D) await qpwPhaseAudiences(S);
+    if (S.on.E) await qpwPhaseSweep(S);
+  } catch (e) {
+    if (!qpwIsStop(e)) rec.error = qpScrubUrls(String((e && e.message) || e));
+  } finally {
+    clearInterval(heartbeat);
+    if (attached) {
+      for (const [m, p] of [['Emulation.clearDeviceMetricsOverride', {}], ['Emulation.setUserAgentOverride', { userAgent: '' }], ['Emulation.setTouchEmulationEnabled', { enabled: false }]]) {
+        try { await chrome.debugger.sendCommand(S.target, m, p); } catch (_) {}
+      }
+      for (const id of S.scripts) { try { await chrome.debugger.sendCommand(S.target, 'Page.removeScriptToEvaluateOnNewDocument', { identifier: id }); } catch (_) {} }
+      try { await chrome.debugger.detach(S.target); } catch (_) {}
+    }
+    if (tabId != null) { try { await chrome.tabs.remove(tabId); } catch (_) {} }
+    try { await setTmProgress('qpProgress', { running: false }); } catch (_) {}
+    rec.stopped = !!_qpStopRequested;
+    rec.finishedAt = Date.now();
+    try { rec.checks = qpDeriveChecks(rec, ctx); } catch (e) { rec.error = rec.error || qpScrubUrls('Deriving checks failed: ' + e.message); }
+  }
+  return rec;
+}
+
+// ── QA Pass: Google sign-in, Sheets, Opus explain and row mapping ──────────
+// Only the extension's own pages may ask for Google or the sheet (qpwFromExtensionPage);
+// the access token lives in chrome.storage.session and never leaves this file. Nothing here
+// writes to a sheet unless qpSheetApply is called, which the panel does only after the
+// user's click on Apply.
+function qpwFromExtensionPage(sender) {
+  return typeof (sender && sender.url) === 'string' && sender.url.startsWith(chrome.runtime.getURL(''));
+}
+
+// Run `work` for a request from an extension page, answering through sendResponse.
+function qpwRespond(sendResponse, sender, work) {
+  (async () => {
+    try {
+      if (!qpwFromExtensionPage(sender)) { sendResponse({ ok: false, error: 'Not allowed from a web page.' }); return; }
+      sendResponse(await work());
+    } catch (e) {
+      sendResponse({ ok: false, error: (e && e.message) || String(e) });
+    }
+  })();
+}
+
+async function qpwGoogleClientId() {
+  const r = await chrome.storage.sync.get('googleOAuthClientId');
+  return String((r && r.googleOAuthClientId) || '').trim();
+}
+
+// The stored access token, while it has more than a minute left.
+async function qpwStoredToken() {
+  const r = await chrome.storage.session.get('qpGoogleToken');
+  const t = r && r.qpGoogleToken;
+  return (t && t.accessToken && t.expiresAt - Date.now() > 60000) ? t : null;
+}
+
+// a=1&b=2 (a fragment or a query) into an object, by hand.
+function qpwParseParams(s) {
+  const o = {};
+  String(s || '').split('&').forEach((p) => {
+    if (!p) return;
+    const i = p.indexOf('=');
+    try { o[decodeURIComponent(i < 0 ? p : p.slice(0, i))] = i < 0 ? '' : decodeURIComponent(p.slice(i + 1).replace(/\+/g, ' ')); } catch (_) {}
+  });
+  return o;
+}
+
+// OAuth implicit flow in a Web application client: a silent attempt (prompt=none) or the
+// account chooser. Success stores {accessToken, expiresAt}; nothing else is kept.
+async function qpwGoogleAuthorize(interactive) {
+  const clientId = await qpwGoogleClientId();
+  if (!clientId) return { ok: false, error: 'No Google OAuth client ID — add one in Settings.' };
+  if (!chrome.identity || !chrome.identity.launchWebAuthFlow) return { ok: false, error: 'The identity permission is missing — reload the extension.' };
+  const redirect = chrome.identity.getRedirectURL();
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  let state = '';
+  for (let i = 0; i < bytes.length; i++) state += (bytes[i] < 16 ? '0' : '') + bytes[i].toString(16);
+  const enc = encodeURIComponent;
+  const url = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=' + enc(clientId) + '&redirect_uri=' + enc(redirect)
+    + '&response_type=token&scope=' + enc(QP_SHEETS_SCOPE) + '&include_granted_scopes=true&state=' + enc(state)
+    + '&prompt=' + (interactive ? 'select_account' : 'none');
+  const heartbeat = setInterval(() => { try { chrome.runtime.getPlatformInfo(() => {}); } catch (_) {} }, 20000);
+  let responseUrl;
+  try {
+    responseUrl = await chrome.identity.launchWebAuthFlow({ url, interactive: !!interactive });
+  } catch (e) {
+    return { ok: false, error: ((e && e.message) || String(e)) + ' If Google showed "redirect_uri_mismatch", add ' + redirect + " to the OAuth client's Authorized redirect URIs." };
+  } finally {
+    clearInterval(heartbeat);
+  }
+  const text = String(responseUrl || '');
+  const hash = text.indexOf('#');
+  const q = text.indexOf('?');
+  const p = qpwParseParams(hash >= 0 ? text.slice(hash + 1) : (q >= 0 ? text.slice(q + 1) : ''));
+  if (p.state !== state) return { ok: false, error: 'Google sign-in returned an unexpected state; nothing was saved.' };
+  if (p.error === 'access_denied') return { ok: false, error: 'Google sign-in was cancelled or denied.' };
+  if (/^(interaction_required|login_required|consent_required)$/.test(p.error || '')) return { ok: false, needsConnect: true, error: 'Connect Google again.' };
+  if (p.error) return { ok: false, error: 'Google sign-in failed: ' + p.error + (p.error_description ? ' (' + p.error_description + ')' : '') };
+  if (!p.access_token) return { ok: false, error: 'Google sign-in returned no access token; nothing was saved.' };
+  const expiresIn = parseInt(p.expires_in, 10);
+  await chrome.storage.session.set({ qpGoogleToken: { accessToken: p.access_token, expiresAt: Date.now() + (expiresIn > 0 ? expiresIn : 3600) * 1000 } });
+  return { ok: true };
+}
+
+// A usable token: the stored one, else a silent renewal, else (only when asked) the chooser.
+async function qpwGoogleToken(o) {
+  const stored = await qpwStoredToken();
+  if (stored) return { ok: true, token: stored.accessToken };
+  let r = await qpwGoogleAuthorize(false);
+  if (!r.ok && o && o.interactive) r = await qpwGoogleAuthorize(true);
+  if (!r.ok) return { ok: false, needsConnect: !/client ID|identity permission/i.test(r.error || ''), error: r.error };
+  const t = await qpwStoredToken();
+  return t ? { ok: true, token: t.accessToken } : { ok: false, needsConnect: true, error: 'Connect Google again.' };
+}
+
+// One Sheets API call. A 401 drops the token and retries once with a silent one; a 429 or 5xx
+// waits a second and retries once.
+async function qpwGoogleFetch(path, init, retried) {
+  const tk = await qpwGoogleToken({ interactive: false });
+  if (!tk.ok) return { ok: false, needsConnect: true, error: tk.error || 'Connect Google again.' };
+  let res;
+  try {
+    res = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + path,
+      Object.assign({}, init || {}, { headers: { Authorization: 'Bearer ' + tk.token, 'Content-Type': 'application/json' } }));
+  } catch (e) {
+    return { ok: false, error: 'The Sheets request failed: ' + ((e && e.message) || String(e)) };
+  }
+  if (res.status === 401 && !retried) {
+    await chrome.storage.session.remove('qpGoogleToken');
+    return qpwGoogleFetch(path, init, true);
+  }
+  if ((res.status === 429 || res.status >= 500) && !retried) {
+    await qpwSleep(1000);
+    return qpwGoogleFetch(path, init, true);
+  }
+  let body = null;
+  try { body = await res.json(); } catch (_) {}
+  if (!res.ok) return { ok: false, status: res.status, error: (body && body.error && body.error.message) || res.statusText || ('HTTP ' + res.status) };
+  return { ok: true, data: body };
+}
+
+function qpwSheetIdOk(id) { return typeof id === 'string' && /^[A-Za-z0-9_-]{20,}$/.test(id); }
+
+async function qpwSheetMeta(p) {
+  const id = p && p.spreadsheetId;
+  if (!qpwSheetIdOk(id)) return { ok: false, error: 'That is not a Google spreadsheet id.' };
+  const r = await qpwGoogleFetch(id + '?fields=properties.title,sheets.properties(sheetId,title,index,hidden)');
+  if (!r.ok) return r;
+  const tabs = ((r.data && r.data.sheets) || []).map((s) => {
+    const x = (s && s.properties) || {};
+    return { sheetId: x.sheetId, title: x.title, index: x.index, hidden: !!x.hidden };
+  });
+  return { ok: true, title: (r.data && r.data.properties && r.data.properties.title) || '', tabs };
+}
+
+// The tab's formatted values, and the Values tab's when the sheet has one. Read only.
+async function qpwSheetRead(p) {
+  const id = p && p.spreadsheetId, tabTitle = p && p.tabTitle;
+  const meta = await qpwSheetMeta({ spreadsheetId: id });
+  if (!meta.ok) return meta;
+  if (!meta.tabs.some((t) => t.title === tabTitle)) return { ok: false, error: 'The sheet has no tab titled "' + tabTitle + '".' };
+  const vt = meta.tabs.filter((t) => /^values$/i.test(String(t.title)) && t.title !== tabTitle)[0] || null;
+  let path = id + '/values:batchGet?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&ranges=' + encodeURIComponent(qpQuoteTab(tabTitle));
+  if (vt) path += '&ranges=' + encodeURIComponent(qpQuoteTab(vt.title));
+  const r = await qpwGoogleFetch(path);
+  if (!r.ok) return r;
+  const vr = (r.data && r.data.valueRanges) || [];
+  return { ok: true, values: (vr[0] && vr[0].values) || [], valuesTab: vt ? ((vr[1] && vr[1].values) || []) : null, readAt: Date.now(), tabs: meta.tabs };
+}
+
+async function qpwSheetGrid(id, tabTitle, rect, minRow) {
+  const r = await qpwGoogleFetch(id + '/values:batchGet?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&ranges=' + encodeURIComponent(qpRange(tabTitle, rect)));
+  if (!r.ok) return r;
+  const vr = (r.data && r.data.valueRanges && r.data.valueRanges[0]) || {};
+  return { ok: true, grid: qpGridFromValues(vr.values || [], minRow, 0) };
+}
+
+// The one place that writes. Re-read the rectangle the writes sit in, drop every row that changed
+// since the proposal, write the rest as RAW values to the tab that was read, re-read and verify.
+// `allowedCols` is the panel's own statement of which columns it may write (the one status column the
+// tester picked and the Notes column, as letters): a write anywhere else refuses the whole apply before any
+// request, so a bug in building the proposal can never reach another device's column or a test-plan row's text.
+async function qpwSheetApply(p) {
+  const id = p && p.spreadsheetId, tabTitle = p && p.tabTitle;
+  const writes = Array.isArray(p && p.writes) ? p.writes : [];
+  const textCols = Array.isArray(p && p.textCols) ? p.textCols : [];
+  if (!writes.length) return { ok: true, written: 0 };
+  if (!qpwSheetIdOk(id) || !tabTitle) return { ok: false, error: 'Nothing was written: the spreadsheet or tab is missing.', written: 0 };
+  const allowed = (Array.isArray(p && p.allowedCols) ? p.allowedCols : []).map((c) => String(c).toUpperCase()).filter((c) => /^[A-Z]{1,3}$/.test(c));
+  if (!allowed.length) return { ok: false, error: 'Nothing was written: the panel did not say which columns may be written.', written: 0 };
+  let minRow = Infinity, maxRow = 0, maxCol = 0;
+  for (const w of writes) {
+    const m = /^([A-Z]{1,3})([1-9]\d*)$/.exec(String(w && w.a1));
+    if (!m) return { ok: false, error: 'Nothing was written: "' + String(w && w.a1) + '" is not a cell reference.', written: 0 };
+    if (allowed.indexOf(m[1]) < 0) {
+      return { ok: false, error: 'Nothing was written: ' + m[1] + m[2] + ' is not in the status column or the Notes column (' + allowed.join(', ') + ') of this test plan.', written: 0 };
+    }
+    minRow = Math.min(minRow, +m[2]); maxRow = Math.max(maxRow, +m[2]); maxCol = Math.max(maxCol, qpColIndex(m[1]));
+  }
+  textCols.forEach((c) => { if (c > maxCol) maxCol = c; });
+  const rect = 'A' + minRow + ':' + qpColLetter(maxCol) + maxRow;
+  const b = await qpwSheetGrid(id, tabTitle, rect, minRow);
+  if (!b.ok) return { ok: false, error: 'Nothing was written: the tab could not be re-read first (' + b.error + ').', written: 0, needsConnect: b.needsConnect };
+  const { send, dropped } = qpApplyPlan(writes, b.grid, textCols);
+  if (!send.length) return { ok: true, written: 0, dropped };
+  const body = { valueInputOption: 'RAW', data: send.map((w) => ({ range: qpRange(tabTitle, w.a1), values: [[w.next]] })) };
+  try { qpAssertBodyInTab(body, tabTitle); } catch (e) { return { ok: false, error: e.message, written: 0, dropped }; }
+  const up = await qpwGoogleFetch(id + '/values:batchUpdate', { method: 'POST', body: JSON.stringify(body) });
+  if (!up.ok) return { ok: false, error: up.error, written: 0, dropped, needsConnect: up.needsConnect };
+  const a = await qpwSheetGrid(id, tabTitle, rect, minRow);
+  const updatedCells = up.data && up.data.totalUpdatedCells;
+  if (!a.ok) return { ok: true, written: send.length, updatedCells, verified: null, dropped, mismatches: [], foreign: [], verifyError: a.error, verifiedAt: null };
+  const v = qpVerifyApply(send, b.grid, a.grid);
+  return { ok: true, written: send.length, updatedCells, verified: send.length - v.mismatches.length, dropped, mismatches: v.mismatches, foreign: v.foreign, verifiedAt: Date.now() };
+}
+
+// One structured Opus call: analysis only (the model never sets a status).
+async function qpwOpusJson(system, user, schema, maxTokens) {
+  const k = await chrome.storage.sync.get('anthropicApiKey');
+  const apiKey = k && k.anthropicApiKey;
+  if (!apiKey) return { ok: false, error: 'No API key configured' };
+  const heartbeat = setInterval(() => { try { chrome.runtime.getPlatformInfo(() => {}); } catch (_) {} }, 20000);
+  try {
+    const r = await anthropicFetch({
+      model: 'claude-opus-5', max_tokens: maxTokens, system,
+      output_config: { format: { type: 'json_schema', schema } },
+      messages: [{ role: 'user', content: user }],
+    }, { apiKey });
+    if (!r.ok) return { ok: false, error: r.error };
+    const data = r.data || {};
+    if (data.stop_reason === 'refusal') return { ok: false, error: 'The model declined to answer.' };
+    const text = ((data.content || []).find((b) => b.type === 'text') || {}).text || '';
+    try { return { ok: true, parsed: JSON.parse(text) }; }
+    catch (_) { return { ok: false, error: 'The model returned invalid JSON (stop_reason: ' + (data.stop_reason || 'unknown') + ').' }; }
+  } finally {
+    clearInterval(heartbeat);
+  }
+}
+
 // ── Message listener ───────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'run') {
@@ -7882,6 +8628,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     _abStopRequested = true;   // shared stop: also halts a variant comparison run
     _tmStopRequested = true;   // …and any visual/performance run
     _funnelStopRequested = true;   // …and any funnel crawl
+    _qpStopRequested = true;       // …and any QA Pass run
     _visionAbortController?.abort();   // …and any in-flight Agentic Testing / funnel vision call
     sendResponse({ ok: true });
 
@@ -8680,6 +9427,86 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         await endTmRun();
       }
     })();
+    return true;
+
+  } else if (msg.action === 'runQaPass') {
+    (async () => {
+      await beginTmRun(msg.payload);
+      try {
+        const record = await runQaPass(msg.payload || {});
+        sendResponse({ ok: true, record });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      } finally {
+        await endTmRun();
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'qpExplain') {
+    (async () => {
+      try {
+        const r = await qpwOpusJson(qpExplainSystem(), qpExplainUser(msg.payload), QP_EXPLAIN_SCHEMA, 4096);
+        if (!r.ok) { sendResponse({ ok: false, error: r.error }); return; }
+        const v = qpValidateExplain(r.parsed, msg.payload);
+        sendResponse(v.ok ? { ok: true, explain: v } : { ok: false, error: v.error });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'qpMapRows') {
+    (async () => {
+      try {
+        const r = await qpwOpusJson(qpMapSystem(), qpMapUser(msg.payload), QP_MAP_SCHEMA, 4096);
+        if (!r.ok) { sendResponse({ ok: false, error: r.error }); return; }
+        sendResponse({ ok: true, mappings: qpValidateMapping(r.parsed, msg.payload) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'qpGoogleStatus') {
+    qpwRespond(sendResponse, sender, async () => ({
+      ok: true,
+      clientIdSet: !!(await qpwGoogleClientId()),
+      connected: !!(await qpwStoredToken()),
+      redirectUrl: (chrome.identity && chrome.identity.getRedirectURL && chrome.identity.getRedirectURL()) || null,
+    }));
+    return true;
+
+  } else if (msg.action === 'qpGoogleConnect') {
+    qpwRespond(sendResponse, sender, async () => {
+      const r = await qpwGoogleToken({ interactive: true });
+      return r.ok ? { ok: true } : { ok: false, needsConnect: r.needsConnect === true, error: r.error };
+    });
+    return true;
+
+  } else if (msg.action === 'qpGoogleDisconnect') {
+    qpwRespond(sendResponse, sender, async () => {
+      const t = await qpwStoredToken();
+      await chrome.storage.session.remove('qpGoogleToken');
+      if (t) {
+        try {
+          await fetch('https://oauth2.googleapis.com/revoke', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'token=' + encodeURIComponent(t.accessToken) });
+        } catch (_) { /* best effort: the token is already forgotten here */ }
+      }
+      return { ok: true };
+    });
+    return true;
+
+  } else if (msg.action === 'qpSheetMeta') {
+    qpwRespond(sendResponse, sender, () => qpwSheetMeta(msg.payload || {}));
+    return true;
+
+  } else if (msg.action === 'qpSheetRead') {
+    qpwRespond(sendResponse, sender, () => qpwSheetRead(msg.payload || {}));
+    return true;
+
+  } else if (msg.action === 'qpSheetApply') {
+    qpwRespond(sendResponse, sender, () => qpwSheetApply(msg.payload || {}));
     return true;
 
   } else if (msg.action === 'summarizeTestAgentResults') {

@@ -18,7 +18,7 @@
 // captureFullPageAndViewport/vdShowCandidateOverlay below (a separate
 // executeScript call, not this importScripts) — see domCandidateWalkFn's
 // own header comment for why.
-importScripts('metric-match.js', 'pixelmatch.js', 'vd-config.js', 'vd-diff.js', 'figma.js', 'browserstack.js', 'qa-pass.js');
+importScripts('metric-match.js', 'pixelmatch.js', 'vd-config.js', 'vd-diff.js', 'figma.js', 'browserstack.js', 'qa-pass.js', 'email-check.js');
 
 // ── Toolbar icon: the side panel, or the floating window when unpinned ────
 // Pinned, the default, Selenite docks in Chrome's side panel: with
@@ -7044,7 +7044,9 @@ function buildTestAgentSummaryPrompt(modeResults, ticketContext) {
     if (entry.status !== 'ran') {
       return `${entry.name}: skipped (${entry.reason || 'not configured'})`;
     }
-    const json = JSON.stringify(entry.mode === 'qapass' && typeof qpSummaryProjection === 'function' ? qpSummaryProjection(entry.data) : (entry.data ?? null));
+    const json = JSON.stringify(entry.mode === 'qapass' && typeof qpSummaryProjection === 'function' ? qpSummaryProjection(entry.data)
+      : entry.mode === 'emailcheck' && typeof ecSummaryProjection === 'function' ? ecSummaryProjection(entry.data)
+      : (entry.data ?? null));
     const trimmed = json.length > 4000 ? json.slice(0, 4000) + '…' : json;
     return `${entry.name}: ran\n${trimmed}`;
   });
@@ -8414,6 +8416,10 @@ function qpwRespond(sendResponse, sender, work) {
   })();
 }
 
+// The scopes the one Google sign-in asks for: the Sheets scope (QA Pass, Email Check's sheet) and Docs read-only (Email Check's
+// copy doc). Both modes share the token, so a person connects once.
+function qpwGoogleScopes() { return QP_SHEETS_SCOPE + ' ' + EC_DOCS_SCOPE; }
+
 async function qpwGoogleClientId() {
   const r = await chrome.storage.sync.get('googleOAuthClientId');
   return String((r && r.googleOAuthClientId) || '').trim();
@@ -8438,7 +8444,8 @@ function qpwParseParams(s) {
 }
 
 // OAuth implicit flow in a Web application client: a silent attempt (prompt=none) or the
-// account chooser. Success stores {accessToken, expiresAt}; nothing else is kept.
+// account chooser. Success stores {accessToken, expiresAt, scope}; nothing else is kept. `scope` is what Google says was
+// granted (space separated): Email Check reads it to tell a token that predates the Docs permission (qpGoogleStatus.docsGranted).
 async function qpwGoogleAuthorize(interactive) {
   const clientId = await qpwGoogleClientId();
   if (!clientId) return { ok: false, error: 'No Google OAuth client ID — add one in Settings.' };
@@ -8449,7 +8456,7 @@ async function qpwGoogleAuthorize(interactive) {
   for (let i = 0; i < bytes.length; i++) state += (bytes[i] < 16 ? '0' : '') + bytes[i].toString(16);
   const enc = encodeURIComponent;
   const url = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=' + enc(clientId) + '&redirect_uri=' + enc(redirect)
-    + '&response_type=token&scope=' + enc(QP_SHEETS_SCOPE) + '&include_granted_scopes=true&state=' + enc(state)
+    + '&response_type=token&scope=' + enc(qpwGoogleScopes()) + '&include_granted_scopes=true&state=' + enc(state)
     + '&prompt=' + (interactive ? 'select_account' : 'none');
   const heartbeat = setInterval(() => { try { chrome.runtime.getPlatformInfo(() => {}); } catch (_) {} }, 20000);
   let responseUrl;
@@ -8470,7 +8477,7 @@ async function qpwGoogleAuthorize(interactive) {
   if (p.error) return { ok: false, error: 'Google sign-in failed: ' + p.error + (p.error_description ? ' (' + p.error_description + ')' : '') };
   if (!p.access_token) return { ok: false, error: 'Google sign-in returned no access token; nothing was saved.' };
   const expiresIn = parseInt(p.expires_in, 10);
-  await chrome.storage.session.set({ qpGoogleToken: { accessToken: p.access_token, expiresAt: Date.now() + (expiresIn > 0 ? expiresIn : 3600) * 1000 } });
+  await chrome.storage.session.set({ qpGoogleToken: { accessToken: p.access_token, expiresAt: Date.now() + (expiresIn > 0 ? expiresIn : 3600) * 1000, scope: p.scope || '' } });
   return { ok: true };
 }
 
@@ -8531,7 +8538,10 @@ async function qpwSheetRead(p) {
   const meta = await qpwSheetMeta({ spreadsheetId: id });
   if (!meta.ok) return meta;
   if (!meta.tabs.some((t) => t.title === tabTitle)) return { ok: false, error: 'The sheet has no tab titled "' + tabTitle + '".' };
-  const vt = meta.tabs.filter((t) => /^values$/i.test(String(t.title)) && t.title !== tabTitle)[0] || null;
+  // The vocabulary tab: one titled exactly `Values` first (QA Pass plans), else one with the word in its title (an EMAIL Test
+  // Plan's `Legend/Values [DO NOT REMOVE]`), else none.
+  const vt = meta.tabs.filter((t) => /^values$/i.test(String(t.title)) && t.title !== tabTitle)[0]
+    || meta.tabs.filter((t) => /\bvalues\b/i.test(String(t.title)) && t.title !== tabTitle)[0] || null;
   let path = id + '/values:batchGet?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&ranges=' + encodeURIComponent(qpQuoteTab(tabTitle));
   if (vt) path += '&ranges=' + encodeURIComponent(qpQuoteTab(vt.title));
   const r = await qpwGoogleFetch(path);
@@ -8609,6 +8619,690 @@ async function qpwOpusJson(system, user, schema, maxTokens) {
   }
 }
 
+// ── Email Check (Test Agent mode 'emailcheck') ─────────────────────────────
+// Mailtrap proofs against the copy doc and the EMAIL Test Plan. The shared logic (parsers, record, checks, sheet model, the
+// self-contained page functions) is email-check.js, loaded by importScripts above; everything below is ecw*, the worker's side.
+// Rules this section keeps:
+//   - no top-level ec*/EC_ definition here (email-check.js owns those names), and no top-level reference to an ec*/EC_/qp*
+//     global: they are used inside functions only (other suites slice this file without loading email-check.js);
+//   - EVERY network call goes through ecwFetch and EVERY tab through ecwOpenTab: that is where the gate override and the
+//     never-open list live. Nothing here calls fetch or chrome.tabs.create directly except those two;
+//   - an injected page function that throws resolves {result:null} in Chrome: ecwExec turns null into {ok:false, ...}, and every
+//     caller reads {ok:false} as "no data", never as a crash;
+//   - a link guarded in ANY proof is never opened, whichever proof it comes up in; each tracked linkId is fetched at most once
+//     per run; the caps are 20 distinct linkIds per proof and 80 tracked-link GETs per run;
+//   - nothing identifying survives into the record: tracked hrefs live only in S.plans (memory) and are dropped when the run
+//     ends; every error text a record keeps goes through ecScrubText;
+//   - Email Check never signs in, never clicks a challenge, never writes to Jira, and writes the sheet only through ecwSheetApply
+//     (the panel's Apply, after a shown diff). The model is never given a say in a status.
+let _ecStopRequested = false;
+let _ecTabIds = [];     // tabs this run opened: ecwOpenTab adds, ecwCloseTab removes, runEmailCheck's `finally` closes what is left
+
+function ecwStopError() { const e = new Error('Stopped'); e.ecStop = true; return e; }
+function ecwIsStop(e) { return !!(e && e.ecStop); }
+function ecwCheckStop() { if (_ecStopRequested) throw ecwStopError(); }
+// The text of an error, scrubbed (no tracked path, inbox address, message-part path or forcing query survives into a record).
+function ecwErr(e) { return ecScrubText(String((e && e.message) || e)); }
+async function ecwProgress(S, phase, label, done, total) {
+  const p = { running: true, phase, label: label || '', proofs: S.rec.proofs.length };
+  if (Number.isFinite(done) && Number.isFinite(total)) { p.done = done; p.total = total; }   // the panel's tick prints "(done/total)" when both are numbers
+  try { await setTmProgress('ecProgress', p); } catch (_) {}
+}
+
+// ── The gate override ──────────────────────────────────────────────────
+// The real-Chrome gate (extension/tests/emailcheck-gate) maps this worker's origins to a fake server by setting the global
+// __ecGateOrigins over CDP. Nothing in extension/*.js assigns it (a test pins that), and no message, storage key or URL can,
+// so in production it does not exist. ecwGateOrigins() is the only reader. undefined or null gives null. Anything else turns
+// the gate on, and keeps only the entries whose key is an https origin and whose value is exactly http://127.0.0.1:<port>.
+// Any other value is dropped, never honoured, so a bad gate script fails closed: ecwMapUrl then refuses every unmapped origin.
+function ecwGateOrigins() {
+  const raw = globalThis.__ecGateOrigins;
+  if (raw === undefined || raw === null) return null;
+  const out = {};
+  if (Object.prototype.toString.call(raw) !== '[object Object]') return out;
+  for (const k of Object.keys(raw)) {
+    const v = raw[k];
+    if (/^https:\/\/[a-z0-9.-]+(?::\d{2,5})?$/.test(k) && typeof v === 'string' && /^http:\/\/127\.0\.0\.1:\d{2,5}$/.test(v)) out[k] = v;
+  }
+  return out;
+}
+
+// The address a request really goes to. In production, `url` itself, refused when it is not http(s), carries credentials, or
+// points at this machine or a private network (localhost, 127/8, 10/8, 172.16/12, 192.168/16, 169.254/16, 0/8, [IPv6]). With
+// the gate on: the mapped 127.0.0.1 address for a mapped origin, `url` unchanged for exactly http://127.0.0.1:<port>, else null.
+function ecwMapUrl(url) {
+  const s = typeof url === 'string' ? url.trim() : '';
+  const m = /^(https?:\/\/[^\/?#\\]*)([\s\S]*)$/i.exec(s);
+  if (!m || m[1].indexOf('@') >= 0) return null;
+  const gate = ecwGateOrigins();
+  if (!gate) {
+    // Production: nothing of ours has any business on the tester's own machine or network (an email's link or a tracked link's redirect is untrusted).
+    const host = m[1].replace(/^https?:\/\//i, '').replace(/:\d*$/, '').toLowerCase();
+    if (host === 'localhost' || /\.localhost$/.test(host) || host.charAt(0) === '[' || /^(?:0|10|127)\.\d+\.\d+\.\d+$/.test(host) || /^192\.168\.\d+\.\d+$/.test(host)
+      || /^172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(host) || /^169\.254\.\d+\.\d+$/.test(host)) return null;
+    return s;
+  }
+  const origin = m[1].toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(gate, origin)) return gate[origin] + m[2];
+  if (/^http:\/\/127\.0\.0\.1:\d{2,5}$/.test(m[1])) return s;
+  return null;
+}
+
+// The origin of a URL as text for an error message ('' when it has none): messages name origins, never paths or queries.
+function ecwOriginOf(url) {
+  const m = /^(https?:\/\/[^\/?#\\]*)/i.exec(String(url == null ? '' : url).trim());
+  return m && m[1].indexOf('@') < 0 ? m[1] : 'that address';
+}
+
+// The never-open list at the network layer, behind the link guard: a URL whose PATH is a webmail, unsubscribe, email-preference
+// or opt-out path is requested by no ecw* function, whatever called it. Returns 'path' or null. The query is ignored, and a
+// trailing '/' is appended, so `/unsubscribe` at the end of a path counts too.
+function ecwNeverFetch(url) {
+  const path = String(url == null ? '' : url).split(/[?#]/)[0];
+  return /\/(webmail|unsubscribe\w*|emailPreference\w*|optout|preference\w*)\//i.test(path + '/') ? 'path' : null;
+}
+
+// A tab URL: {ok:true, url} (mapped like ecwMapUrl) or {ok:false, refused:true, error}; the never-open list applies to tabs too.
+function ecwTabUrl(url) {
+  const t = ecwMapUrl(url);
+  if (t === null) return { ok: false, refused: true, error: 'Refused: ' + ecwOriginOf(url) + ' is not an allowed address for Email Check.' };
+  if (ecwNeverFetch(url)) return { ok: false, refused: true, error: 'Refused: not opened (an unsubscribe, preferences or view-in-browser path).' };
+  return { ok: true, url: t };
+}
+
+// The one network call of Email Check. init is fetch's init plus timeoutMs and `as` ('none', 'text', 'json' or 'bytes'). Never
+// throws. Returns {ok:true, status, url, text|json|bytes} (url is the final URL on the origin the caller asked for, even when
+// mapped), or {ok:false, refused:true, error} when the gate or the never-open list refused it before any request, or
+// {ok:false, refused:true, redirected:true, error} when a followed redirect ended on the never-open list (the answer is dropped
+// unread), or {ok:false, error}. A caller that wants no cookies sets credentials:'omit' itself.
+async function ecwFetch(url, init) {
+  const o = Object.assign({}, init || {});
+  const ms = o.timeoutMs > 0 ? o.timeoutMs : EC_FETCH_TIMEOUT_MS;
+  const as = o.as || 'none';
+  delete o.timeoutMs; delete o.as;
+  const asked = typeof url === 'string' ? url.trim() : '';
+  const target = ecwMapUrl(asked);
+  if (target === null) return { ok: false, refused: true, error: 'Refused: ' + ecwOriginOf(url) + ' is not an allowed address for Email Check.' };
+  if (ecwNeverFetch(asked)) return { ok: false, refused: true, error: 'Refused: not opened (an unsubscribe, preferences or view-in-browser path).' };
+  const ctl = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; try { ctl.abort(); } catch (_) {} }, ms);
+  try {
+    const res = await fetch(target, Object.assign(o, { signal: ctl.signal }));
+    const out = { ok: true, status: res.status, url: res.url ? String(res.url) : target };
+    if (target !== asked) {   // the gate mapped the origin: report the final URL on the origin that was asked for
+      const a = /^(https?:\/\/[^\/?#]*)/i.exec(asked), t = /^(https?:\/\/[^\/?#]*)/i.exec(target), f = /^(https?:\/\/[^\/?#]*)([\s\S]*)$/i.exec(out.url);
+      if (a && t && f && t[1].toLowerCase() === f[1].toLowerCase()) out.url = a[1] + f[2];
+    }
+    // A redirect was followed (redirect:'follow' is the only way to learn where a tracked link goes; 'manual' answers an opaque response with no address). The hops cannot be refused
+    // BEFORE they are made, but where the chain ENDED can be: the never-open list applies to the final address too. Nothing of such an answer is read or kept, and the caller gets a refusal
+    // that says so ("recorded", never silently used as a destination).
+    if (out.url !== asked && ecwNeverFetch(out.url)) {
+      try { ctl.abort(); } catch (_) {}
+      return { ok: false, refused: true, redirected: true, error: 'Refused: the address redirected to an unsubscribe, preferences or view-in-browser path (not read).' };
+    }
+    if (as === 'text') out.text = await res.text();
+    else if (as === 'json') out.json = await res.json();
+    else if (as === 'bytes') out.bytes = new Uint8Array(await res.arrayBuffer());
+    return out;
+  } catch (e) {
+    return { ok: false, error: timedOut ? 'Timed out after ' + Math.round(ms / 1000) + ' s.' : ecwErr(e) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Runs an injected ec*Fn in a tab and returns its object. executeScript resolves [{result: null}] when the function throws
+// (Chrome 154, measured), and it can reject: both become {ok:false, state:'error', error}. Never throws.
+async function ecwExec(tabId, func, args) {
+  try {
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func, args: args || [] });
+    const r = results && results[0] ? results[0].result : null;
+    if (r === null || r === undefined || typeof r !== 'object') return { ok: false, state: 'error', error: 'no result (the page script failed)' };
+    return r;
+  } catch (e) {
+    return { ok: false, state: 'error', error: ecwErr(e) };
+  }
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────
+// Opens ONE tab for a page and polls until it completes, up to EC_TAB_TIMEOUT_MS. The tab is active, because background tabs
+// are throttled and skip paint. A timeout leaves it open and registered, so the run closes it. Returns {ok:true, tabId, url,
+// title} or {ok:false, error}; a refused URL never opens a tab.
+async function ecwOpenTab(url) {
+  try {
+    const g = ecwTabUrl(url);
+    if (!g.ok) return { ok: false, error: g.error };
+    const made = await chrome.tabs.create(Object.assign({ url: g.url, active: true }, runTabWindow()));
+    const id = made && made.id;
+    if (id == null) return { ok: false, error: 'The browser did not open the page' };
+    _ecTabIds.push(id);
+    let waited = 0;
+    for (;;) {
+      ecwCheckStop();
+      let cur = null;
+      try { cur = await chrome.tabs.get(id); } catch (e) {
+        _ecTabIds = _ecTabIds.filter((x) => x !== id);
+        return { ok: false, error: 'The page tab went away before it loaded' };
+      }
+      if (cur && cur.status === 'complete') return { ok: true, tabId: id, url: String(cur.url || g.url), title: String(cur.title || '') };
+      if (waited >= EC_TAB_TIMEOUT_MS) return { ok: false, error: 'The page did not finish loading in ' + Math.round(EC_TAB_TIMEOUT_MS / 1000) + ' s' };
+      await qpwSleep(250);
+      waited += 250;
+    }
+  } catch (e) {
+    if (ecwIsStop(e)) throw e;
+    return { ok: false, error: ecwErr(e) };
+  }
+}
+
+// Close a tab this run opened and forget it. Never throws.
+async function ecwCloseTab(id) {
+  _ecTabIds = _ecTabIds.filter((x) => x !== id);
+  try { await chrome.tabs.remove(id); } catch (_) {}
+}
+
+// The link plan of one proof, with its tracked hrefs, in MEMORY only (FACTS keep no href). Built from the html the facts were
+// read from: quoted-printable decoded when the part says so and the text shows =3D or a soft break.
+function ecwLinkPlanOf(parts, profile) {
+  let html = String((parts && parts.html) || '');
+  const enc = ecPartEncodings(String((parts && parts.raw) || '')).html;
+  if (/quoted-printable/i.test(String(enc || '')) && (/=3D/.test(html) || /=\r?\n/.test(html))) html = ecDecodeQP(html);
+  return ecLinkPlan(ecVisibleText(html).anchors, profile);
+}
+
+// Reads each proof's message through the tester's own Mailtrap session, in one tab, and sets the source and proof states:
+// signed-out (the tab landed on sign-in), challenge (a browser check that did not clear: waited out, never clicked),
+// no-account, or per-proof not-found and error. One failing proof never stops the loop. A Stop sets the source to 'stopped'
+// and rethrows; proofs not yet read stay 'not-read'.
+async function ecwReadMailtrap(S) {
+  try {
+    const mt = S.rec.sources.mailtrap;
+    const proofs = Array.isArray(S.ctx.proofs) ? S.ctx.proofs : [];
+    const fail = (state, error) => {
+      mt.state = state;
+      mt.error = ecMailtrapMessage(state, { sb: proofs[0] ? proofs[0].sandboxId : '', error: ecScrubText(String(error || 'no detail')) });
+    };
+    if (!proofs.length) { fail('error', 'the context lists no proofs'); return; }
+    let tabId = null;
+    try {
+      await ecwProgress(S, 'mailtrap', 'Mailtrap');
+      const t = await ecwOpenTab(proofs[0].webUrl);
+      if (!t.ok) { fail('error', t.error); return; }
+      tabId = t.tabId;
+      // signed out: the tab landed on the sign-in page (the path only, the query is dropped)
+      const pm = /^https?:\/\/[^\/?#]*([^?#]*)/i.exec(String(t.url || ''));
+      if (pm && /^\/(signin|users\/sign_in)/.test(pm[1])) { fail('signed-out', ''); return; }
+      // a browser check: waited out, never clicked
+      const CH = /just a moment|attention required|verify you are human/i;
+      let title = String(t.title || ''), waited = 0;
+      while (CH.test(title) && waited < EC_CHALLENGE_WAIT_MS) {
+        await qpwSleep(1000);
+        waited += 1000;
+        ecwCheckStop();
+        const cur = await chrome.tabs.get(tabId);
+        title = String((cur && cur.title) || '');
+      }
+      if (CH.test(title)) { fail('challenge', ''); return; }
+      // the account that owns each sandbox: one probe per distinct sandbox, in proof order
+      const sbs = [];
+      proofs.forEach((p) => { if (sbs.indexOf(p.sandboxId) < 0) sbs.push(p.sandboxId); });
+      const acct = {};
+      for (let k = 0; k < sbs.length; k++) {
+        ecwCheckStop();
+        const pr = await ecwExec(tabId, ecMailtrapProbeFn, [sbs[k]]);
+        if (!pr.ok || !pr.acct) {
+          fail(['signed-out', 'no-account', 'error'].indexOf(pr.state) >= 0 ? pr.state : 'error', pr.error || 'the probe gave no account');
+          return;
+        }
+        acct[sbs[k]] = String(pr.acct);
+      }
+      // one read per proof, in context order
+      for (let i = 0; i < proofs.length; i++) {
+        const cp = proofs[i];
+        ecwCheckStop();
+        const rp = S.rec.proofs.filter((p) => p.id === cp.id)[0];
+        if (!rp) continue;
+        await ecwProgress(S, 'mailtrap', cp.id, i + 1, proofs.length);
+        const rd = await ecwExec(tabId, ecMailtrapReadFn, [acct[cp.sandboxId], cp.sandboxId, cp.messageId, EC_MAX_BODY_BYTES]);
+        if (rd.ok && rd.state === 'ok') {
+          try {
+            // ecMailtrapReadFn returns the message parts at the top level of its answer (one shape: the fake of the suite returns it too)
+            const parts = { msg: rd.msg, html: rd.html, txt: rd.txt, raw: rd.raw, headers: rd.headers, spam: rd.spam, truncated: !!rd.truncated };
+            if (typeof parts.html !== 'string') throw new Error('the message has no HTML part');
+            const facts = ecParseProof(parts, cp, S.profile);
+            const plan = ecwLinkPlanOf(parts, S.profile);
+            rp.facts = facts; S.plans[rp.id] = plan; rp.state = 'ok'; rp.error = null;
+          } catch (e) { rp.state = 'error'; rp.facts = null; rp.error = ecwErr(e); }
+        } else if (rd.state === 'not-found') {
+          rp.state = 'not-found'; rp.facts = null;
+          rp.error = 'Proof not found in sandbox ' + cp.sandboxId + ' (message ' + cp.messageId + ')';
+        } else {
+          rp.state = 'error'; rp.facts = null;
+          rp.error = ecScrubText(rd.error || ('the message could not be read' + (rd.state ? ' (' + rd.state + ')' : '')));
+        }
+      }
+      mt.state = 'ok'; mt.error = null;
+    } catch (e) {
+      if (ecwIsStop(e)) mt.state = 'stopped';
+      throw e;
+    } finally {
+      if (tabId !== null) await ecwCloseTab(tabId);
+    }
+  } catch (e) {
+    if (ecwIsStop(e)) throw e;
+    S.rec.sources.mailtrap.state = 'error';
+    S.rec.sources.mailtrap.error = ecwErr(e);
+  }
+}
+
+// ── Links ───────────────────────────────────────────────────────────────
+// One GET of a tracked link (no cookies, no referrer, redirects followed), after ecwResolveLinks has checked the link. A
+// redirect off the tracking hosts is the destination; otherwise an interstitial page names it (ecParseInterstitial). The page
+// text, the recipient's address and the tracked href are never returned.
+async function ecwPardotGet(S, href) {
+  try {
+    const g = await ecwFetch(href, { credentials: 'omit', redirect: 'follow', cache: 'no-store', referrerPolicy: 'no-referrer', timeoutMs: EC_FETCH_TIMEOUT_MS, as: 'text' });
+    if (!g.ok) return { ok: false, status: null, method: null, url: null, error: ecScrubText(g.error || 'not resolved') };
+    const status = typeof g.status === 'number' ? g.status : null;
+    const hosts = ((S.profile && S.profile.pardotHosts) || []).map((h) => String(h).toLowerCase());
+    const hm = /^https?:\/\/([^\/?#]+)/i.exec(String(g.url || ''));
+    const finalHost = hm ? hm[1].toLowerCase() : '';
+    // (a) the final address is off the tracking hosts: the tracked link redirected straight to its destination
+    if (finalHost && hosts.indexOf(finalHost) < 0) return { ok: true, status: status, method: 'redirect', url: String(g.url), error: null };
+    // (b) still on the tracking host: an interstitial page that names the destination
+    const hit = ecParseInterstitial(String(g.text || ''), S.profile && S.profile.pardotHosts);
+    if (hit) return { ok: true, status: status, method: hit.method, url: hit.url, error: null };
+    // (c) nothing to follow
+    return { ok: true, status: status, method: null, url: null, error: null };
+  } catch (e) {
+    if (ecwIsStop(e)) throw e;
+    return { ok: false, status: null, method: null, url: null, error: ecwErr(e) };
+  }
+}
+
+// One GET of a destination WITHOUT its query (a query can carry a tracking parameter), no cookies. Returns its HTTP status and
+// the first <title>, at most 200 characters. Classifying the status is ecDeriveChecks' job, not this function's.
+async function ecwDestGet(S, dest) {
+  try {
+    const g = await ecwFetch(dest.origin + dest.path, { credentials: 'omit', redirect: 'follow', cache: 'no-store', as: 'text' });
+    if (!g.ok) return { status: null, title: null, error: ecScrubText(g.error || 'not checked') };
+    const head = String(g.text || '').slice(0, 65536);
+    const tm = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(head);
+    const title = tm ? ecScrubText(ecDecodeEntities(tm[1]).replace(/\s+/g, ' ').trim()).slice(0, 200) : '';
+    return { status: typeof g.status === 'number' ? g.status : null, title: title, error: null };
+  } catch (e) {
+    if (ecwIsStop(e)) throw e;
+    return { status: null, title: null, error: ecwErr(e) };
+  }
+}
+
+// One destination GET per distinct origin and path per run. Cached on S.destCache; Stop is checked before each GET.
+async function ecwDestFor(S, dest) {
+  const key = dest.origin + dest.path;
+  if (!Object.prototype.hasOwnProperty.call(S.destCache, key)) {
+    ecwCheckStop();
+    if (S.destGets >= EC_MAX_RESOLVES) {
+      S.destCache[key] = { status: null, title: null, error: 'not checked: cap' };
+    } else {
+      S.destGets++;
+      S.destCache[key] = await ecwDestGet(S, dest);
+    }
+  }
+  return S.destCache[key];
+}
+
+// Resolves the links of every read proof, in proof order, and writes rec.links (one entry per proof and plan entry). All of
+// these are enforced here, before any fetch: a link guarded in any proof of the run is listed and never opened; only an href
+// that ecPardotParse accepts is fetched as a tracked link, and a tracked-looking address on a host outside pardotHosts is
+// refused ('not resolved: tracked link of an unknown host'); one tracked GET per linkId per run, reused by every proof; caps of
+// 20 linkIds per proof and 80 GETs per run ('not resolved: cap'); Stop is checked before every entry and GET.
+async function ecwResolveLinks(S) {
+  const rec = S.rec, profile = S.profile;
+  S.destCache = {}; S.destGets = 0; S.pardotGets = 0;
+  const readProofs = rec.proofs.filter((p) => S.plans && S.plans[p.id]);
+  const guardedBy = {};
+  readProofs.forEach((p) => S.plans[p.id].forEach((l) => { if (l.linkId && l.guard && !guardedBy[l.linkId]) guardedBy[l.linkId] = l.guard; }));
+  const byId = {};
+  try {
+    for (const p of readProofs) {
+      let distinct = 0;
+      await ecwProgress(S, 'links', p.id, readProofs.indexOf(p) + 1, readProofs.length);
+      for (const l of S.plans[p.id]) {
+        ecwCheckStop();
+        const link = { proofId: p.id, linkId: l.linkId || null, slug: l.slug || null, labels: l.labels || [], role: l.role, kind: l.kind, guard: l.guard || null,
+          method: null, pardotStatus: null, dest: null, destStatus: null, destTitle: null, error: null };
+        rec.links.push(link);
+        if (!link.guard && link.linkId && guardedBy[link.linkId]) link.guard = guardedBy[link.linkId];
+        if (link.guard) continue;
+        let res;
+        if (l.kind === 'pardot') {
+          if (!l.linkId || !ecPardotParse(l.href, profile)) { link.error = 'not resolved: not a tracked link of this organisation'; continue; }
+          distinct++;
+          if (distinct > EC_MAX_RESOLVES_PER_PROOF) { link.error = 'not resolved: cap'; continue; }
+          res = byId[l.linkId];
+          if (!res) {
+            if (S.pardotGets >= EC_MAX_RESOLVES) { link.error = 'not resolved: cap'; continue; }
+            S.pardotGets++;
+            ecwCheckStop();
+            const g = await ecwPardotGet(S, l.href);
+            res = { method: g && g.method || null, pardotStatus: g && typeof g.status === 'number' ? g.status : null, dest: null, destStatus: null, destTitle: null, error: null };
+            if (!g || !g.ok) res.error = ecScrubText((g && g.error) || 'not resolved');
+            else if (!g.url) res.error = 'not resolved: the tracked link gave no destination';
+            else {
+              res.dest = ecDestination(g.url);
+              if (!res.dest) res.error = 'not resolved: the destination is not an http(s) address';
+            }
+            if (res.dest) { const d = await ecwDestFor(S, res.dest); res.destStatus = d.status; res.destTitle = d.title; if (d.error) res.error = ecScrubText(d.error); }
+            byId[l.linkId] = res;
+          }
+        } else if (typeof l.href === 'string' && /^https?:\/\/[^\/?#]+\/e\/\d+\/[^\/?#]+\/[A-Za-z0-9]+\/\d+\/h\/[A-Za-z0-9]+(?:[?#]|$)/i.test(l.href)) {
+          // A tracked-link PATH on a host that is not one of the profile's pardotHosts (a profile with none, or a host the client added): ecPardotParse did not take it, so it is a 'direct'
+          // link, and fetching it as a "destination" would be a click on the test prospect (each GET is one) with no once-per-linkId and no per-proof cap. Never fetched, never stored
+          // (its own path carries the prospect id and hash): listed with the reason, so the links row is In Progress.
+          link.error = 'not resolved: tracked link of an unknown host';
+          continue;
+        } else {
+          const dest = typeof l.href === 'string' ? ecDestination(l.href) : null;
+          res = { method: 'direct', pardotStatus: null, dest, destStatus: null, destTitle: null, error: dest ? null : 'not resolved: not an http(s) address' };
+          if (dest) { const d = await ecwDestFor(S, dest); res.destStatus = d.status; res.destTitle = d.title; if (d.error) res.error = ecScrubText(d.error); }
+        }
+        link.method = res.method; link.pardotStatus = res.pardotStatus; link.dest = res.dest; link.destStatus = res.destStatus; link.destTitle = res.destTitle; link.error = res.error;
+      }
+    }
+  } catch (e) {
+    if (ecwIsStop(e)) throw e;
+    rec.error = ecScrubText((rec.error ? rec.error + ' ' : '') + 'Resolving links failed: ' + ecwErr(e));
+  }
+}
+
+// ── Email on Acid ───────────────────────────────────────────────────────
+// Reads each Email on Acid list page: the inventory (subject and clients; the page text is not kept), then, when renders are
+// on, one image per client from a tab on the page, kept up to the per-variation and total byte caps. A failed inventory sets
+// the message on the source and on renders; a failed render never changes the inventory or ends the run. A Stop sets this
+// entry to 'stopped' and rethrows.
+async function ecwReadEoa(S) {
+  try {
+    const rows = S.rec.sources.eoa || [];
+    const entries = Array.isArray(S.ctx.eoa) ? S.ctx.eoa : [];
+    const imagesTab = ecwTabUrl('https://images.emailonacid.com/');
+    // a failed inventory: the message goes on the source (the report reads `error`) and on renders.
+    const eoaFail = (row, msg) => { row.state = 'error'; row.renders.state = 'none'; row.error = ecScrubText(msg); row.renders.error = row.error; };
+    let bytes = 0;       // the base64 total of the renders of ALL variations (EC_RENDER_BYTES_CAP)
+    let capped = false;  // the cap was reached: this variation and every later one is 'capped'
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i], entry = entries[i] || {};
+      ecwCheckStop();
+      try {
+        // 1. the inventory (the page text is parsed here and not kept)
+        const inv = await ecwFetch(entry.url, { credentials: 'omit', as: 'text' });
+        if (!inv.ok) { eoaFail(row, inv.error || 'The list page could not be read'); continue; }
+        if (inv.status !== 200) { eoaFail(row, 'Email on Acid answered ' + inv.status); continue; }
+        const page = ecParseEoaPage(String(inv.text || ''));
+        if (!page || page.error) { eoaFail(row, (page && page.error) || 'The list page could not be read'); continue; }
+        row.state = 'ok'; row.subject = page.subject; row.clients = page.clients;
+        // 2. the renders: off by the setting, capped by the byte total, else a tab on the list page
+        if (S.settings.eoaRenders === false) { row.renders.state = 'off'; continue; }
+        if (capped) { row.renders.state = 'capped'; row.renders.count = 0; continue; }
+        if (!imagesTab.ok) { row.renders.state = 'error'; row.renders.error = ecScrubText(imagesTab.error); continue; }
+        const imagesOrigin = imagesTab.url.replace(/\/$/, '');
+        const t = await ecwOpenTab(entry.url);
+        if (!t.ok) { row.renders.state = 'error'; row.renders.error = ecScrubText(t.error); continue; }
+        try {
+          // the images: kick (eager loading, scroll) on the first call; stop when every image is loaded and the count held for 3 polls, or after EC_EOA_WAIT_MS
+          let kick = true, waited = 0, prev = -1, same = 0, list = [], failure = null;
+          for (;;) {
+            ecwCheckStop();
+            const p = await ecwExec(t.tabId, ecEoaImagesFn, [imagesOrigin, kick]);
+            kick = false;
+            if (!p.ok) { failure = p.error || 'the images could not be read'; break; }
+            list = Array.isArray(p.images) ? p.images : [];
+            const loaded = list.every((x) => x && x.w > 0);
+            same = loaded && list.length === prev ? same + 1 : 0;
+            prev = list.length;
+            if ((loaded && same >= 2) || waited >= EC_EOA_WAIT_MS) break;
+            await qpwSleep(1000);
+            waited += 1000;
+          }
+          if (failure !== null) { row.renders.state = 'error'; row.renders.error = ecScrubText(failure); continue; }
+          const kept = list.slice(0, EC_RENDER_MAX_PER_VARIATION);
+          if (!kept.length) { row.renders.state = 'none'; continue; }
+          let fails = null, hitCap = false, n = 0;
+          for (let k = 0; k < kept.length; k++) {
+            ecwCheckStop();
+            const r = await ecwRender(kept[k].src);
+            if (!r.ok) { if (fails === null) fails = r.error; continue; }
+            if (bytes + r.bytes > EC_RENDER_BYTES_CAP) { hitCap = true; capped = true; break; }
+            bytes += r.bytes;
+            // the client whose image_folder code is the longest one found in the image address (name and dark come from it; null when none is found)
+            let best = null;
+            (Array.isArray(row.clients) ? row.clients : []).forEach((c) => {
+              if (c && c.code && String(kept[k].src).indexOf(String(c.code)) >= 0 && (best === null || String(c.code).length > String(best.code).length)) best = c;
+            });
+            S.rec.renders.push({ variation: row.variation, code: best ? best.code : null, name: best ? best.name : null, dark: best ? best.dark : null, img: r.img });
+            n++;
+          }
+          row.renders.count = n;
+          row.renders.error = fails === null ? null : ecScrubText(fails);
+          row.renders.state = fails !== null ? 'error' : hitCap ? 'capped' : n > 0 ? 'ok' : 'none';
+        } finally {
+          await ecwCloseTab(t.tabId);
+        }
+      } catch (e) {
+        if (ecwIsStop(e)) { row.state = 'stopped'; throw e; }
+        // a failure in the renders never changes the inventory's state and never ends the run (ecNewRecord's shell says 'stopped' = not reached yet, so "read" means 'ok')
+        if (row.state !== 'ok') eoaFail(row, ecwErr(e));
+        else { row.renders.state = 'error'; row.renders.error = ecwErr(e); }
+      }
+    }
+  } catch (e) {
+    if (ecwIsStop(e)) throw e;
+    (S.rec.sources.eoa || []).forEach((x) => { if (!x.state || x.state === 'stopped') { x.state = 'error'; x.renders.state = 'none'; x.error = ecwErr(e); x.renders.error = x.error; } });
+  }
+}
+
+// One EoA image as a 340 px JPEG data URL (height scaled, capped at 3000 px and cut, not squeezed). A 401 or 403 is retried
+// once with credentials. Returns {ok:true, img, bytes} or {ok:false, error}. Never throws.
+async function ecwRender(src) {
+  try {
+    let r = await ecwFetch(src, { credentials: 'omit', as: 'bytes' });
+    if (r.ok && (r.status === 401 || r.status === 403)) r = await ecwFetch(src, { credentials: 'include', as: 'bytes' });
+    if (!r.ok) return { ok: false, error: ecScrubText(r.error || 'The image could not be read') };
+    if (r.status !== 200) return { ok: false, error: 'The image could not be read (HTTP ' + r.status + ')' };
+    const bitmap = await createImageBitmap(new Blob([r.bytes]));
+    try {
+      const scale = EC_RENDER_W / bitmap.width;
+      const h = Math.max(1, Math.min(EC_RENDER_MAX_H, Math.round(bitmap.height * scale)));
+      const canvas = new OffscreenCanvas(EC_RENDER_W, h);
+      const cx = canvas.getContext('2d');
+      cx.fillStyle = '#ffffff';
+      cx.fillRect(0, 0, EC_RENDER_W, h);
+      cx.drawImage(bitmap, 0, 0, EC_RENDER_W, bitmap.height * scale);
+      const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.6 });
+      const b64 = ecBase64(new Uint8Array(await blob.arrayBuffer()));
+      return { ok: true, img: 'data:image/jpeg;base64,' + b64, bytes: b64.length };
+    } finally {
+      try { bitmap.close(); } catch (_) {}
+    }
+  } catch (e) {
+    return { ok: false, error: ecwErr(e) };
+  }
+}
+
+// ── The copy doc ────────────────────────────────────────────────────────
+// Reads the copy doc through the Google Docs API with the stored token. Without the Docs permission in the token's scope it
+// returns needs-connect with no request. A 401 drops the token and retries once; 429 and 5xx wait 1 s and retry once. A 403
+// says to enable the Docs API when Google reports it disabled, and to connect again when the scope is the problem. The token
+// never leaves this function. Comments are not read.
+async function ecwDocReadGoogle(docId) {
+  try {
+    const tk = await qpwGoogleToken({ interactive: false });
+    if (!tk.ok) return { ok: false, state: tk.needsConnect ? 'needs-connect' : 'error', error: ecScrubText(tk.error || 'Connect Google again.') };
+    // the stored token must carry the Docs permission: a token from before it was added gets no request at all
+    const stored = await chrome.storage.session.get('qpGoogleToken');
+    const scope = String((stored && stored.qpGoogleToken && stored.qpGoogleToken.scope) || '');
+    if (!/documents\.readonly/.test(scope)) return { ok: false, state: 'needs-connect', error: 'Connect Google again: the Docs permission was added after you connected.' };
+    const url = 'https://docs.googleapis.com/v1/documents/' + docId;
+    const get = (token) => ecwFetch(url, { credentials: 'omit', headers: { Authorization: 'Bearer ' + token }, as: 'text' });
+    let r = await get(tk.token);
+    if (r.ok && r.status === 401) {
+      await chrome.storage.session.remove('qpGoogleToken');
+      const tk2 = await qpwGoogleToken({ interactive: false });
+      if (!tk2.ok) return { ok: false, state: tk2.needsConnect ? 'needs-connect' : 'error', error: ecScrubText(tk2.error || 'Connect Google again.') };
+      r = await get(tk2.token);
+    } else if (r.ok && (r.status === 429 || r.status >= 500)) {
+      await qpwSleep(1000);
+      r = await get(tk.token);
+    }
+    if (!r.ok) return { ok: false, state: 'error', error: ecScrubText(r.error || 'The copy doc could not be read.') };
+    const body = String(r.text || '');
+    if (r.status === 200) {
+      try { return { ok: true, doc: JSON.parse(body) }; }
+      catch (e) { return { ok: false, state: 'error', error: 'The copy doc could not be read: the answer is not JSON.' }; }
+    }
+    if (r.status === 403) {
+      // Google says WHY in its error: the message, and the reason of each error / detail ('accessNotConfigured', 'SERVICE_DISABLED').
+      let gm = '', why = '';
+      try {
+        const ge = JSON.parse(body).error || {};
+        gm = String(ge.message || '');
+        why = [ge.status].concat((ge.errors || []).map((x) => x && x.reason), (ge.details || []).map((x) => x && x.reason)).filter(Boolean).join(' ');
+      } catch (_) {}
+      // The Docs API is not enabled in the Cloud project (the first thing a run can hit after connecting Google): the doc is shared fine, so say what to do, without Google's text (it names the project).
+      if (/has not been used in project|is disabled|SERVICE_DISABLED|accessNotConfigured/i.test(gm + ' ' + why)) return { ok: false, state: 'error', error: 'Enable the Google Docs API in the Cloud project, then run again.' };
+      if (/insufficient|scope/i.test(gm)) return { ok: false, state: 'needs-connect', error: 'Connect Google again.' };
+      return { ok: false, state: 'error', error: 'The copy doc is not shared with this Google account.' };
+    }
+    if (r.status === 404) return { ok: false, state: 'error', error: 'The copy doc was not found.' };
+    return { ok: false, state: 'error', error: 'The copy doc could not be read (HTTP ' + r.status + ').' };
+  } catch (e) {
+    return { ok: false, state: 'error', error: ecwErr(e) };
+  }
+}
+
+// Reads the copy doc's JSON. The id is shape-checked here. In the gate the mapped Docs URL is fetched without a token and
+// without touching Google sign-in; otherwise ecwDocReadGoogle. Never throws.
+async function ecwDocRead(docId) {
+  try {
+    if (typeof docId !== 'string' || !/^[A-Za-z0-9_-]{20,}$/.test(docId)) return { ok: false, state: 'not-a-doc-link', error: 'That is not a Google Docs id.' };
+    if (ecwGateOrigins()) {
+      const r = await ecwFetch('https://docs.googleapis.com/v1/documents/' + docId, { credentials: 'omit', as: 'json' });
+      if (!r.ok) return { ok: false, state: 'error', error: r.error };
+      if (r.status !== 200) return { ok: false, state: 'error', error: 'The copy doc could not be read (HTTP ' + r.status + ').' };
+      return { ok: true, doc: r.json };
+    }
+    return await ecwDocReadGoogle(docId);
+  } catch (e) {
+    return { ok: false, state: 'error', error: ecwErr(e) };
+  }
+}
+
+// Step 1 of a run: the copy doc into rec.sources.doc and rec.doc. States: 'no-link', 'not-a-doc-link', 'needs-connect', 'error'
+// (also a document ecParseDoc cannot read), 'ok', and 'stopped' (set by runEmailCheck). Never throws except the Stop error.
+async function ecwReadDoc(S) {
+  const rec = S.rec, src = rec.sources.doc;
+  if (!S.ctx.copyFileUrl) { src.state = 'no-link'; return; }
+  const id = ecDocRef(S.ctx.copyFileUrl);
+  if (!id) { src.state = 'not-a-doc-link'; return; }
+  ecwCheckStop();
+  await ecwProgress(S, 'doc', 'Copy doc');
+  const r = await ecwDocRead(id);
+  ecwCheckStop();
+  if (!r.ok) { src.state = r.state === 'needs-connect' ? 'needs-connect' : 'error'; src.error = ecScrubText(r.error || 'The copy doc could not be read.'); return; }
+  try {
+    const n = Number.isInteger(S.settings.docEmail) && S.settings.docEmail > 0 ? S.settings.docEmail : null;
+    const doc = ecParseDoc(r.doc, { emailNumber: n, summary: S.ctx.summary || '' });
+    rec.doc = doc;
+    src.state = 'ok'; src.title = doc.title; src.emails = doc.emails; src.chosen = doc.chosen; src.error = null;
+  } catch (e) {
+    src.state = 'error'; src.error = 'The copy doc could not be read: ' + ecwErr(e);
+  }
+}
+
+// Sources a Stop reached before their step began end as 'stopped' (a step that was running sets its own state before it rethrows).
+function ecwMarkStopped(S) {
+  // ecNewRecord's shell already starts every source as 'stopped' (= not reached yet); this fills a source whose state was left unset
+  const src = S.rec.sources;
+  if (src.doc && !src.doc.state) src.doc.state = 'stopped';
+  if (src.mailtrap && !src.mailtrap.state) src.mailtrap.state = 'stopped';
+  (src.eoa || []).forEach((x) => { if (!x.state) x.state = 'stopped'; });
+}
+
+// One Email Check run: payload = {ctx, settings, winId}. Steps run in order (doc, Mailtrap, links, Email on Acid); a step's
+// failure is recorded on its source and the run goes on; Stop ends it with rec.stopped. In `finally` the heartbeat stops (a
+// pending fetch alone does not keep an MV3 worker alive), this run's tabs close, and the checks are derived from the record
+// by ecDeriveChecks. Statuses come from nowhere else.
+async function runEmailCheck(payload) {
+  const ctx = (payload && payload.ctx) || {}, settings = (payload && payload.settings) || {};
+  _ecStopRequested = false;
+  _ecTabIds = [];
+  const rec = ecNewRecord(ctx, settings, Date.now());
+  const S = { rec, ctx, settings: rec.settings, profile: ecProfileFor(rec.ticketKey || ctx.ticketKey, rec.profileId || settings.profileId), plans: {}, destCache: {}, destGets: 0, pardotGets: 0 };
+  const heartbeat = setInterval(() => { try { chrome.runtime.getPlatformInfo(() => {}); } catch (_) {} }, 20000);
+  try {
+    for (const [name, step] of [['copy doc', ecwReadDoc], ['Mailtrap', ecwReadMailtrap], ['links', ecwResolveLinks], ['Email on Acid', ecwReadEoa]]) {
+      ecwCheckStop();
+      try { await step(S); }
+      catch (e) {
+        if (ecwIsStop(e)) throw e;
+        rec.error = ecScrubText((rec.error ? rec.error + ' ' : '') + 'The ' + name + ' step failed: ' + ecwErr(e));
+      }
+    }
+  } catch (e) {
+    if (!ecwIsStop(e)) rec.error = ecwErr(e);
+  } finally {
+    clearInterval(heartbeat);
+    for (const id of _ecTabIds.slice()) await ecwCloseTab(id);
+    try { await setTmProgress('ecProgress', { running: false }); } catch (_) {}
+    S.plans = {};
+    rec.stopped = !!_ecStopRequested;
+    if (rec.stopped) ecwMarkStopped(S);
+    rec.finishedAt = Date.now();
+    try { rec.checks = ecDeriveChecks(rec); rec.notTested = ecFixedNotTested(rec); }
+    catch (e) { rec.error = rec.error || ecScrubText('Deriving checks failed: ' + ((e && e.message) || e)); }
+  }
+  return rec;
+}
+
+// ── Apply (F/G refusal) ──────────────────────────────────────────────────
+// The sheet write of Email Check: QA Pass's qpwSheetApply plus one more rule. Payload: {spreadsheetId, tabTitle, textCols,
+// descCol, eCol, notesCol, fgCols, writes}. eCol, notesCol and fgCols are column letters; descCol is the Description column's
+// index, and textCols must contain it so qpwSheetApply re-reads it too. The panel may write only [eCol, notesCol, ...fgCols].
+// THE RULE: an F or G write is allowed only on a visual or dark-mode row, checked twice before any write: the write's own
+// rowText, and the Description cell read again from the sheet. Any violation refuses the whole apply (written: 0); a write on
+// row 1 is refused outright; if ecIsVisualRowText is not a function, every F or G write is refused (fail closed).
+async function ecwSheetApply(p) {
+  const letters = (a) => (Array.isArray(a) ? a : []).map((c) => String(c == null ? '' : c).toUpperCase()).filter((c) => /^[A-Z]{1,3}$/.test(c));
+  const writes = Array.isArray(p && p.writes) ? p.writes : [];
+  if (!writes.length) return { ok: true, written: 0 };
+  const eCol = letters([p.eCol])[0] || null, notesCol = letters([p.notesCol])[0] || null;
+  const fgCols = letters(p.fgCols).filter((c) => c !== eCol && c !== notesCol);
+  const allowedCols = [eCol, notesCol].filter(Boolean).concat(fgCols);
+  const cells = writes.map((w) => /^([A-Z]{1,3})([1-9]\d*)$/.exec(String(w && w.a1)));
+  const refuse = (why) => ({ ok: false, error: 'Nothing was written: ' + why, written: 0 });
+  for (let i = 0; i < writes.length; i++) {
+    if (!cells[i]) return refuse('"' + String(writes[i] && writes[i].a1) + '" is not a cell reference.');
+    if (cells[i][2] === '1') return refuse(cells[i][0] + ' is on the first row of the test plan, which holds the ticket link and estimates.');
+  }
+  const fg = writes.filter((w, i) => fgCols.indexOf(cells[i][1]) >= 0);
+  if (fg.length) {
+    const isVisual = (t) => typeof ecIsVisualRowText === 'function' && ecIsVisualRowText(String(t == null ? '' : t)) === true;
+    const descCol = Number.isInteger(p.descCol) && p.descCol >= 0 ? p.descCol : -1;
+    const bad = fg.filter((w) => !isVisual(w.rowText))[0];
+    if (bad) return refuse(bad.a1 + ' is not on an overall visuals, alignment or dark mode row: only those rows take F and G.');
+    if (descCol < 0 || !Array.isArray(p.textCols) || p.textCols.indexOf(descCol) < 0) return refuse('the Description column of the test plan is unknown, so F and G cannot be checked.');
+    if (!qpwSheetIdOk(p.spreadsheetId) || !p.tabTitle) return refuse('the spreadsheet or tab is missing.');
+    const rowOf = (w) => +/^[A-Z]{1,3}([1-9]\d*)$/.exec(w.a1)[1];
+    const rows = fg.map(rowOf);
+    const minRow = Math.min.apply(null, rows), maxRow = Math.max.apply(null, rows);
+    const g = await qpwSheetGrid(p.spreadsheetId, p.tabTitle, 'A' + minRow + ':' + qpColLetter(descCol) + maxRow, minRow);
+    if (!g.ok) return Object.assign(refuse('the test rows could not be re-read first (' + g.error + ').'), { needsConnect: g.needsConnect });
+    const stale = fg.filter((w) => !isVisual(g.grid[qpColLetter(descCol) + rowOf(w)])).map((w) => w.a1)[0];
+    if (stale) return refuse(stale + ' is not on an overall visuals, alignment or dark mode row in the sheet as it is now: only those rows take F and G.');
+  }
+  return qpwSheetApply(Object.assign({}, p, { allowedCols }));
+}
+
 // ── Message listener ───────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'run') {
@@ -8629,6 +9323,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     _tmStopRequested = true;   // …and any visual/performance run
     _funnelStopRequested = true;   // …and any funnel crawl
     _qpStopRequested = true;       // …and any QA Pass run
+    _ecStopRequested = true;       // …and any Email Check run
     _visionAbortController?.abort();   // …and any in-flight Agentic Testing / funnel vision call
     sendResponse({ ok: true });
 
@@ -9469,12 +10164,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
 
   } else if (msg.action === 'qpGoogleStatus') {
-    qpwRespond(sendResponse, sender, async () => ({
-      ok: true,
-      clientIdSet: !!(await qpwGoogleClientId()),
-      connected: !!(await qpwStoredToken()),
-      redirectUrl: (chrome.identity && chrome.identity.getRedirectURL && chrome.identity.getRedirectURL()) || null,
-    }));
+    qpwRespond(sendResponse, sender, async () => {
+      const stored = await qpwStoredToken();
+      return {
+        ok: true,
+        clientIdSet: !!(await qpwGoogleClientId()),
+        connected: !!stored,
+        // false for a token Google issued before the Docs permission was added: Email Check then asks to connect once more.
+        docsGranted: /documents\.readonly/.test((stored && stored.scope) || ''),
+        redirectUrl: (chrome.identity && chrome.identity.getRedirectURL && chrome.identity.getRedirectURL()) || null,
+      };
+    });
     return true;
 
   } else if (msg.action === 'qpGoogleConnect') {
@@ -9507,6 +10207,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   } else if (msg.action === 'qpSheetApply') {
     qpwRespond(sendResponse, sender, () => qpwSheetApply(msg.payload || {}));
+    return true;
+
+  } else if (msg.action === 'runEmailCheck') {
+    (async () => {
+      await beginTmRun(msg.payload);
+      try {
+        const record = await runEmailCheck(msg.payload || {});
+        sendResponse({ ok: true, record });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      } finally {
+        await endTmRun();
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'ecExplain') {
+    (async () => {
+      try {
+        const r = await qpwOpusJson(ecExplainSystem(), ecExplainUser(msg.payload), EC_EXPLAIN_SCHEMA, 4096);
+        if (!r.ok) { sendResponse({ ok: false, error: r.error }); return; }
+        const v = ecValidateExplain(r.parsed, msg.payload);
+        sendResponse(v.ok ? { ok: true, explain: v } : { ok: false, error: v.error });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+
+  } else if (msg.action === 'ecSheetApply') {
+    qpwRespond(sendResponse, sender, () => ecwSheetApply(msg.payload || {}));
     return true;
 
   } else if (msg.action === 'summarizeTestAgentResults') {

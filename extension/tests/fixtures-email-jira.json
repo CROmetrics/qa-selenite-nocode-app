@@ -1,0 +1,732 @@
+{
+ "EX-1": {
+  "names": {
+   "summary": "Summary",
+   "customfield_90591": "Copy File",
+   "issuetype": "Issue Type",
+   "description": "Description",
+   "comment": "Comment",
+   "customfield_10686": "QA Test Plan"
+  },
+  "fields": {
+   "summary": "Cold Route - Message 1",
+   "customfield_90591": "https://docs.google.com/document/d/EXDOC_EX1_COPY_DOC_000000000001/edit?usp=sharing",
+   "issuetype": {
+    "self": "https://jira.example.org/rest/api/3/issuetype/10001",
+    "id": "10001",
+    "description": "For email campaigns",
+    "iconUrl": "https://jira.example.org/rest/api/2/universal_avatar/view/type/issuetype/avatar/10501?size=medium",
+    "name": "Message",
+    "subtask": false,
+    "avatarId": 10501,
+    "hierarchyLevel": 0
+   },
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "QA Links"
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Mailtrap"
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Regular Donors"
+       },
+       {
+        "type": "hardBreak"
+       },
+       {
+        "type": "text",
+        "text": "v0: "
+       },
+       {
+        "type": "inlineCard",
+        "attrs": {
+         "url": "https://mailtrap.io/sandboxes/7000001/messages/7100000001"
+        }
+       },
+       {
+        "type": "text",
+        "text": " "
+       },
+       {
+        "type": "hardBreak"
+       },
+       {
+        "type": "text",
+        "text": "v1: "
+       },
+       {
+        "type": "inlineCard",
+        "attrs": {
+         "url": "https://mailtrap.io/sandboxes/7000001/messages/7100000002"
+        }
+       },
+       {
+        "type": "text",
+        "text": " "
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Major Donors"
+       },
+       {
+        "type": "hardBreak"
+       },
+       {
+        "type": "text",
+        "text": "v0: "
+       },
+       {
+        "type": "inlineCard",
+        "attrs": {
+         "url": "https://mailtrap.io/sandboxes/7000001/messages/7100000003"
+        }
+       },
+       {
+        "type": "text",
+        "text": " "
+       },
+       {
+        "type": "hardBreak"
+       },
+       {
+        "type": "text",
+        "text": "v1: "
+       },
+       {
+        "type": "inlineCard",
+        "attrs": {
+         "url": "https://mailtrap.io/sandboxes/7000001/messages/7100000004"
+        }
+       },
+       {
+        "type": "text",
+        "text": " "
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Email on Acid"
+       },
+       {
+        "type": "hardBreak"
+       },
+       {
+        "type": "text",
+        "text": "v0: "
+       },
+       {
+        "type": "text",
+        "text": "https://app.emailonacid.com/app/acidtest/EXEOA1V00000000000000000000000000000000000000/list",
+        "marks": [
+         {
+          "type": "link",
+          "attrs": {
+           "href": "https://app.emailonacid.com/app/acidtest/EXEOA1V00000000000000000000000000000000000000/list"
+          }
+         }
+        ]
+       },
+       {
+        "type": "hardBreak"
+       },
+       {
+        "type": "text",
+        "text": "v1: "
+       },
+       {
+        "type": "text",
+        "text": "https://app.emailonacid.com/app/acidtest/EXEOA1V10000000000000000000000000000000000000/list",
+        "marks": [
+         {
+          "type": "link",
+          "attrs": {
+           "href": "https://app.emailonacid.com/app/acidtest/EXEOA1V10000000000000000000000000000000000000/list"
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": [
+     {
+      "self": "https://jira.example.org/rest/api/3/issue/100001/comment/410001",
+      "id": "410001",
+      "body": {
+       "type": "doc",
+       "version": 1,
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "mention",
+           "attrs": {
+            "id": "",
+            "text": "",
+            "accessLevel": ""
+           }
+          },
+          {
+           "type": "text",
+           "text": " This one is yours for QA. Copy and art are both locked."
+          }
+         ]
+        },
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Two things worth a close look: the credit line under the van photo and the numbers in the stat image."
+          }
+         ]
+        },
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Reminder: the UTMs stay identical on both versions."
+          }
+         ]
+        }
+       ]
+      },
+      "created": "2027-01-08T12:00:00.000-0400",
+      "updated": "2027-01-08T12:00:00.000-0400"
+     },
+     {
+      "self": "https://jira.example.org/rest/api/3/issue/100001/comment/410002",
+      "id": "410002",
+      "body": {
+       "type": "doc",
+       "version": 1,
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "mention",
+           "attrs": {
+            "id": "",
+            "text": "",
+            "accessLevel": ""
+           }
+          },
+          {
+           "type": "text",
+           "text": " Scope question: should I open the unsubscribe link, or only check that it is there?"
+          }
+         ]
+        }
+       ]
+      },
+      "created": "2027-01-08T13:30:00.000-0400",
+      "updated": "2027-01-08T13:30:00.000-0400"
+     },
+     {
+      "self": "https://jira.example.org/rest/api/3/issue/100001/comment/410003",
+      "id": "410003",
+      "body": {
+       "type": "doc",
+       "version": 1,
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "mention",
+           "attrs": {
+            "id": "",
+            "text": "",
+            "accessLevel": ""
+           }
+          },
+          {
+           "type": "text",
+           "text": " Only check that it is there. Opening it would unsubscribe the test address."
+          }
+         ]
+        }
+       ]
+      },
+      "created": "2027-01-08T15:00:00.000-0400",
+      "updated": "2027-01-08T15:00:00.000-0400"
+     },
+     {
+      "self": "https://jira.example.org/rest/api/3/issue/100001/comment/410004",
+      "id": "410004",
+      "body": {
+       "type": "doc",
+       "version": 1,
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "mention",
+           "attrs": {
+            "id": "",
+            "text": "",
+            "accessLevel": ""
+           }
+          },
+          {
+           "type": "text",
+           "text": " The credit line and the stat image both match the copy doc. Still working through the other proofs."
+          }
+         ]
+        }
+       ]
+      },
+      "created": "2027-01-11T09:00:00.000-0400",
+      "updated": "2027-01-11T09:00:00.000-0400"
+     },
+     {
+      "self": "https://jira.example.org/rest/api/3/issue/100001/comment/410005",
+      "id": "410005",
+      "body": {
+       "type": "doc",
+       "version": 1,
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "mention",
+           "attrs": {
+            "id": "",
+            "text": "",
+            "accessLevel": ""
+           }
+          },
+          {
+           "type": "text",
+           "text": " Good to hear. The send stays on the 15th, so there is no rush on my side."
+          }
+         ]
+        }
+       ]
+      },
+      "created": "2027-01-11T11:30:00.000-0400",
+      "updated": "2027-01-11T11:30:00.000-0400"
+     }
+    ],
+    "self": "https://jira.example.org/rest/api/3/issue/100001/comment",
+    "maxResults": 1048576,
+    "total": 5,
+    "startAt": 0
+   },
+   "customfield_10686": "https://docs.google.com/spreadsheets/d/EXPLAN_EX1_TEST_PLAN_00000000001/edit?gid=100#gid=100"
+  }
+ },
+ "EX-2": {
+  "names": {
+   "summary": "Summary",
+   "issuetype": "Issue Type",
+   "description": "Description",
+   "comment": "Comment",
+   "customfield_10686": "QA Test Plan"
+  },
+  "fields": {
+   "summary": "Spring Seed Kits: Last Call",
+   "issuetype": {
+    "self": "https://jira.example.org/rest/api/3/issuetype/10002",
+    "id": "10002",
+    "description": "For email campaigns",
+    "iconUrl": "https://jira.example.org/rest/api/2/universal_avatar/view/type/issuetype/avatar/10502?size=medium",
+    "name": "Email Message",
+    "subtask": false,
+    "avatarId": 10502,
+    "hierarchyLevel": 0
+   },
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "QA Links",
+        "marks": [
+         {
+          "type": "strong"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Mailtrap",
+        "marks": [
+         {
+          "type": "strong"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Regular Donors",
+        "marks": [
+         {
+          "type": "em"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "v0: "
+       },
+       {
+        "type": "text",
+        "text": "https://mailtrap.io/sandboxes/7000001/messages/7100000005",
+        "marks": [
+         {
+          "type": "link",
+          "attrs": {
+           "href": "https://mailtrap.io/sandboxes/7000001/messages/7100000005"
+          }
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "v1: "
+       },
+       {
+        "type": "text",
+        "text": "https://mailtrap.io/sandboxes/7000001/messages/7100000006",
+        "marks": [
+         {
+          "type": "link",
+          "attrs": {
+           "href": "https://mailtrap.io/sandboxes/7000001/messages/7100000006"
+          }
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Major Donors",
+        "marks": [
+         {
+          "type": "em"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "v0: "
+       },
+       {
+        "type": "text",
+        "text": "https://mailtrap.io/sandboxes/7000001/messages/7100000007",
+        "marks": [
+         {
+          "type": "link",
+          "attrs": {
+           "href": "https://mailtrap.io/sandboxes/7000001/messages/7100000007"
+          }
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "v1: "
+       },
+       {
+        "type": "text",
+        "text": "https://mailtrap.io/sandboxes/7000001/messages/7100000008",
+        "marks": [
+         {
+          "type": "link",
+          "attrs": {
+           "href": "https://mailtrap.io/sandboxes/7000001/messages/7100000008"
+          }
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Email on Acid",
+        "marks": [
+         {
+          "type": "strong"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "v0: "
+       },
+       {
+        "type": "text",
+        "text": "https://app.emailonacid.com/app/acidtest/EXEOA2V00000000000000000000000000000000000000/list",
+        "marks": [
+         {
+          "type": "link",
+          "attrs": {
+           "href": "https://app.emailonacid.com/app/acidtest/EXEOA2V00000000000000000000000000000000000000/list"
+          }
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "v1: "
+       },
+       {
+        "type": "text",
+        "text": "https://app.emailonacid.com/app/acidtest/EXEOA2V10000000000000000000000000000000000000/list",
+        "marks": [
+         {
+          "type": "link",
+          "attrs": {
+           "href": "https://app.emailonacid.com/app/acidtest/EXEOA2V10000000000000000000000000000000000000/list"
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": [
+     {
+      "self": "https://jira.example.org/rest/api/3/issue/100002/comment/420001",
+      "id": "420001",
+      "body": {
+       "type": "doc",
+       "version": 1,
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "mention",
+           "attrs": {
+            "id": "",
+            "text": "",
+            "accessLevel": ""
+           }
+          },
+          {
+           "type": "text",
+           "text": " Here is the seed kit appeal, with two versions to review."
+          }
+         ]
+        },
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "The utm_content value ends in -v0 for V0 and -v1 for V1."
+          }
+         ]
+        },
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Only in V0: 'DONATE NOW'. Only in V1: 'HELP NOW'. Each label appears twice, once under the closing heading and once in the org row."
+          }
+         ]
+        },
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Donate destinations: regular donors to give-regular and major donors to give-major."
+          }
+         ]
+        }
+       ]
+      },
+      "created": "2027-01-29T13:00:00.000-0400",
+      "updated": "2027-01-29T13:00:00.000-0400"
+     },
+     {
+      "self": "https://jira.example.org/rest/api/3/issue/100002/comment/420002",
+      "id": "420002",
+      "body": {
+       "type": "doc",
+       "version": 1,
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "mention",
+           "attrs": {
+            "id": "",
+            "text": "",
+            "accessLevel": ""
+           }
+          },
+          {
+           "type": "text",
+           "text": " Thanks. The Regular Donors proofs come first."
+          }
+         ]
+        }
+       ]
+      },
+      "created": "2027-01-29T14:30:00.000-0400",
+      "updated": "2027-01-29T14:30:00.000-0400"
+     },
+     {
+      "self": "https://jira.example.org/rest/api/3/issue/100002/comment/420003",
+      "id": "420003",
+      "body": {
+       "type": "doc",
+       "version": 1,
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Change of plan for the donate buttons: both groups now land on the seed kit pages."
+          }
+         ]
+        },
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Regular donors to seed-kits and major donors to seed-kits-major."
+          }
+         ]
+        }
+       ]
+      },
+      "created": "2027-02-01T09:00:00.000-0400",
+      "updated": "2027-02-01T09:00:00.000-0400"
+     },
+     {
+      "self": "https://jira.example.org/rest/api/3/issue/100002/comment/420004",
+      "id": "420004",
+      "body": {
+       "type": "doc",
+       "version": 1,
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "mention",
+           "attrs": {
+            "id": "",
+            "text": "",
+            "accessLevel": ""
+           }
+          },
+          {
+           "type": "text",
+           "text": " Seen. I am checking the buttons against the new pages."
+          }
+         ]
+        }
+       ]
+      },
+      "created": "2027-02-01T10:30:00.000-0400",
+      "updated": "2027-02-01T10:30:00.000-0400"
+     }
+    ],
+    "self": "https://jira.example.org/rest/api/3/issue/100002/comment",
+    "maxResults": 1048576,
+    "total": 4,
+    "startAt": 0
+   },
+   "customfield_10686": "https://docs.google.com/spreadsheets/d/EXPLAN_EX2_TEST_PLAN_00000000002/edit?gid=100#gid=100"
+  }
+ }
+}

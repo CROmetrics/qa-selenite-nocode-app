@@ -29,6 +29,14 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.23 — 2026-10-26
+
+**Test Agent**
+- **Email Check**, a new mode. For a ticket's email proofs it checks the subject, preview text, sender, From and Reply-To, personalisation tokens, conditional content, body copy and alt text against the copy doc, resolves each Pardot tracked link once to check its destination and UTMs, reads the DKIM and spam results, and shows the Email on Acid renders. Mailtrap is read through your own signed-in session; Selenite never signs in, and never opens unsubscribe or view-in-browser links. Deterministic code decides every status; Opus only writes the analysis. After a run you review a proposal, and only **Apply** writes statuses and notes to the EMAIL test plan. Setup and limits are under [Email Check](#email-check).
+- Google sign-in now also asks for read-only Google Docs access, for the copy doc. Enable the Google Docs API in your Cloud project and click **Connect Google** once more; QA Pass keeps working with the old token until then.
+- QA Pass finds a test plan's vocabulary tab by the exact name `Values` first, then by a tab whose name contains "Values".
+- Needs an extension reload: the worker code loads only then.
+
 ### 0.7.22 — 2026-10-22
 
 **Test Agent**
@@ -394,13 +402,37 @@ Sheet and Apply: with Google connected and the ticket's QA test plan link pointi
 
 1. Reload Selenite in `chrome://extensions` (the service worker only picks up the new code and the `identity` permission on reload). Open Settings (the gear): the **Google Sheets (QA Pass)** card shows `Redirect URL for this install: https://<extension-id>.chromiumapp.org/`. Copy it. Every install has its own extension ID, so each teammate adds their own URL in step 5.
 2. Go to https://console.cloud.google.com and select or create a project (for example "Selenite QA").
-3. APIs & Services → Library → **Google Sheets API** → Enable.
-4. Google Auth Platform (OAuth consent screen) → Get started: app name "Selenite", a support email, **Audience: Internal** (crometrics.com Workspace; no verification needed. If Internal is not offered, choose External, keep it in Testing and add each teammate as a test user). Data access → add the scope `https://www.googleapis.com/auth/spreadsheets`.
+3. APIs & Services → Library → **Google Sheets API** → Enable, and **Google Docs API** → Enable (Email Check reads the copy doc).
+4. Google Auth Platform (OAuth consent screen) → Get started: app name "Selenite", a support email, **Audience: Internal** (crometrics.com Workspace; no verification needed. If Internal is not offered, choose External, keep it in Testing and add each teammate as a test user). Data access → add the scopes `https://www.googleapis.com/auth/spreadsheets` and `https://www.googleapis.com/auth/documents.readonly`.
 5. Clients → Create client → Application type **Web application**, name "Selenite (extension)". Authorized JavaScript origins: none. **Authorized redirect URIs**: paste the URL from step 1. Create, then copy the **Client ID** (`…apps.googleusercontent.com`). No client secret is used.
 6. In Selenite Settings, paste it into **OAuth client ID** and Save.
 7. Test Agent → Test Mode **QA Pass** → **Connect Google** → pick your account → Allow. The panel says "Google connected" and lists the test plan's tabs in the **Tab** picker (the QA Test Plan link on the active ticket must be a Google Sheet).
 
 The access token lives in this browser session only and lasts an hour; it is renewed silently, or the panel asks you to click **Connect Google** again.
+
+#### Email Check
+
+Checks an email proof for the active ticket against its copy doc, reads its Email on Acid renders, and proposes changes to the EMAIL test plan: the plan is written to, never checked against. It is a Test Agent mode that runs alone, like QA Pass. It needs a reviewed Test Context (Initialize tab) that holds the ticket's Mailtrap proof links; a context saved before this mode has none, so run Initialize on the ticket again.
+
+**Mailtrap.** Email Check reads each proof from your own Mailtrap session in this Chrome, so it needs no API token. A run opens one Mailtrap tab of its own, reads the proofs there and closes it. It never signs in and never clicks a browser check. When Mailtrap cannot be read, the proof checks are Blocked with one of these messages; the copy doc and the Email on Acid list still read:
+
+- Signed out: "Mailtrap: this Chrome is signed out. Sign in to the shared Mailtrap account in this Chrome, then run again."
+- A personal account: "Mailtrap: the signed-in account does not own sandbox <id> (a personal account?). Sign out of Mailtrap, sign in to the shared account, then run again." (<id> is the ticket's sandbox number.)
+- A browser check: "Mailtrap shows a browser check. Open mailtrap.io in this Chrome, let it finish, then run again."
+
+**Links.** Each Pardot tracked link is followed once per run to read where it goes. That counts as a click on the test prospect. The destination's status and title are checked, with the query string left off the request. Unsubscribe, view-in-browser, preference and webmail links are never opened; they are listed as "not opened: check by hand". A link or destination that cannot be read is In Progress, not Failed. Only a link on one of the organisation profile's Pardot hosts is followed as a tracked link: a link shaped like one on any other host (a profile with no Pardot hosts, a host the client added) is listed as not resolved and never requested, because each request would be a click. A redirect is followed by Chrome hop by hop, so a hop cannot be refused before it is made; when the chain ends on an unsubscribe, preferences or view-in-browser path the answer is dropped unread and the link is marked not resolved.
+
+**Copy doc and renders.** The copy doc is read through the Google Docs API, which needs one more read-only Google permission: click **Connect Google** once after this update. If Google answers that the Docs API has not been used in the project or is disabled, the doc source says "Enable the Google Docs API in the Cloud project, then run again."; any other 403 means the doc is not shared with the connected account. Comments in the doc are not read. With **Email on Acid renders** on (the default), each variation's Email on Acid list is opened, its images are loaded, and up to 16 per variation go into the report. With it off, the client list still reads.
+
+**Rules.** Each ticket has three rules: how the UTMs differ between versions (none, identical, or a suffix per version), the destination path each segment's donate links reach, and which email to check when the copy doc holds several. Email Check suggests the first two from the ticket's comments and names the comment it used. Confirm or change them before the run. The rule used and its source (you, or a ticket comment) are named in the check notes and kept in the debug log, and the rules are kept per ticket in this browser.
+
+**What it decides.** Email Check decides the subject and preview (text and spelling), the sender, From address and Reply-To, personalisation tokens, conditional content, the body and image alt text against the copy doc, the UTMs, the links, the signature, and the DKIM and spam results. It never decides the visual, alignment and dark-mode rows or the text inside the graphics. Those stay In Progress with the renders and facts for a person to check, or are Blocked when the ticket has no Email on Acid link for that variation. Statuses come only from code, and a check that compares versions (the UTMs, the conditional content) is never Passed while the other version of the segment was not read: it is In Progress and says so. The conditional content of a proof with no segment, on a ticket with one version, has nothing to compare and is In Progress too, and so is a token row with nothing to scan (a proof with no subject, a message with no preview text). With **Agentic Analysis (Opus)** on, Opus writes the analysis and advisory copy notes and cannot change a status. What no proof can show (unsubscribe links, the phone and tablet views, the doc's comments) is listed under *Not tested*.
+
+**Test plan.** Apply writes only after you click it, and only to the Desktop, Mobile, Web-Based and Notes columns (E to H on the EMAIL test plan). Mobile and Web-Based are written only on the four visual and dark-mode rows. Rows are matched by their text and group label, not by position. Apply re-reads the sheet, leaves alone any row that changed since the read, and appends notes without replacing what is there. Nothing is written to Jira: post the findings there yourself.
+
+**Stored.** The settings and ticket rules stay in this browser (`chrome.storage.local`), and the last run stays in the browser session. Not kept or shown: the HTML and text bodies, raw headers, recipient addresses (only the tag is kept), the client IP, Pardot prospect ids and tracked-link hashes, and Mailtrap account ids. The report, debug log and AI summary are built from the same reduced record.
+
+**Tests.** The committed fixtures are synthetic: an organisation called "Example Relief", with the tickets EX-1 and EX-2. The tests that check real proofs run only in a local suite outside the repository.
 
 ### A/B Variant Comparison
 

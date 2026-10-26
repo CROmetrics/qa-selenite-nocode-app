@@ -1,0 +1,529 @@
+{
+ "documentId": "EXDOC_EX2_COPY_DOC_000000000002",
+ "title": "Spring Seed Kits: Last Call (synthetic copy doc)",
+ "synthetic": true,
+ "body": {
+  "content": [
+   {
+    "table": {
+     "rows": 1,
+     "columns": 2,
+     "tableRows": [
+      {
+       "tableCells": [
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Sender\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Example Relief\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Subject Line: ",
+        "textStyle": {
+         "bold": true
+        }
+       }
+      },
+      {
+       "textRun": {
+        "content": "no more than 9 words and 60 characters\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Last call: seed kits ship Monday\n",
+        "textStyle": {
+         "bold": true
+        }
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     },
+     "bullet": {
+      "listId": "l1",
+      "nestingLevel": 0
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "A garden bed full by June, from one box\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     },
+     "bullet": {
+      "listId": "l1",
+      "nestingLevel": 0
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Preview Text: ",
+        "textStyle": {
+         "bold": true
+        }
+       }
+      },
+      {
+       "textRun": {
+        "content": "50 characters or fewer to stay visible in the inbox\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Kits ordered by Friday noon go out Monday.\n",
+        "textStyle": {
+         "bold": true
+        }
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     },
+     "bullet": {
+      "listId": "l1",
+      "nestingLevel": 0
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Landing Pages: ",
+        "textStyle": {
+         "bold": true
+        }
+       }
+      },
+      {
+       "textRun": {
+        "content": "https://www.example.org/give/seed-kits/\n",
+        "textStyle": {
+         "link": {
+          "url": "https://www.example.org/give/seed-kits/"
+         }
+        }
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "horizontalRule": {}
+      },
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "{{Recipient.FirstName}},\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "A kit planted in May becomes a full garden bed by June.\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Packing closes on Friday at noon. Every kit ordered before then leaves the warehouse on Monday \u2014 early enough to beat the first rains.\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Each kit holds six varieties, two hand tools and a planting calendar printed in two languages. Growers who start in the first week of May can usually count on a first harvest by July.\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Kits are packed in the order they arrive.\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "[V0] DONATE NOW [LINK]\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "[V1] HELP NOW [LINK]\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "horizontalRule": {}
+      },
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   }
+  ]
+ }
+}

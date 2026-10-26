@@ -258,6 +258,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('Selenite: QA Pass failed to initialize —', e);
   }
 
+  // Email Check (Test Agent mode). Same isolation as QA Pass above: a fault here must not take the Settings and Test Agent bindings below with it.
+  try {
+    await initEmailCheck();
+  } catch (e) {
+    console.error('Selenite: Email Check failed to initialize —', e);
+  }
+
   // ── Settings overlay ─────────────────────────────────────────────────────
   // Credentials are not a workflow step, so they are not a tab — a tab would
   // give them the same visual rank as the modes and bury them behind whichever
@@ -545,8 +552,18 @@ const TA_MODES = {
     getData: () => _qpLastRun,
     onShow: () => { qpUiRenderCtx().catch(() => {}); qpUiRefreshSheet().catch(() => {}); },
   },
+  // Email Check: Mailtrap proofs against the copy doc and the EMAIL Test Plan (email-check.js + runEmailCheck in background.js).
+  // Standalone like QA Pass: it reads the live inboxes and opens tabs of its own, so it never batches with another mode.
+  'emailcheck': {
+    label: 'Email Check (Mailtrap + copy doc)', bodyId: 'ec-body', homeParentId: 'ta-mode-homes',
+    standalone: true,
+    run: () => runEmailCheckMode(),
+    isConfigured: () => true,   // context is async; run() returns {ok:false,error} when it is missing or lists no proofs
+    getData: () => _ecLastRun,
+    onShow: () => { ecUiOnShow().catch(() => {}); },
+  },
 };
-let _taActiveBody = null;        // '4' | '6' | 'funnel' | null — which mode currently owns #ta-settings-slot
+let _taActiveBody = null;       // '4' | '6' | 'funnel' | null — which mode currently owns #ta-settings-slot
 const taQueuedExtra = new Set(); // mode ids checked in the "Also Run" list, not persisted across popup reopen
 let _taStopRequested = false;
 
@@ -844,6 +861,606 @@ async function runFunnelCrawl() {
     ? { ts: Date.now(), segments: res.segments || [], reachedEnd: !!res.reachedEnd, error: res.error || null }
     : { ts: Date.now(), segments: [], reachedEnd: false, error: res?.error || 'Funnel crawl failed' };
   if (resultsEl) renderFunnelResults(resultsEl, _funnelLastRun);
+}
+
+// ── Email Check (Test Agent mode 'emailcheck') — panel side ────────────────
+// The shared logic is email-check.js (loaded before this file); the Mailtrap, Pardot, Email on Acid and copy-doc reads are the worker's
+// (runEmailCheck, ecExplain and ecSheetApply in background.js); the test-plan reads are QA Pass's qp* actions. Names here are ecUi*, plus
+// runEmailCheckMode, initEmailCheck and _ecLastRun. The worker's run record is the mode's getData(); nothing is written to the test plan until
+// the tester clicks Apply, and nothing is ever written to Jira.
+// Stored (chrome.storage.local): ecSettings {profileChoice, eoaRenders, writeNotes, retestInProgress}; ecTicketRules[ticketKey]
+// {utmRule, segmentPaths, docEmail}; ecSheetPrefs[spreadsheetId] {tabTitle}; ecSheetWriteLog (last 20). Session (sessionNS): ecLastRun
+// (ecSlim: no render images) and ecProgress {running, phase, label, done, total} (written by the worker, read by the progress tick).
+// DOM contract: the ids of #ec-body in popup.html / sidepanel.html (identical in both). A rule control carries its provenance in
+// data-source ('tester' | 'suggested') and data-comment (the Jira comment id a suggestion came from); the segment-path inputs are
+// `#ec-seg-paths input[data-ec-seg]` (data-ec-seg = the segment name).
+let _ecLastRun = null;
+
+function ecUiEl(id) { return document.getElementById(id); }
+
+// The profile select's options come from EC_PROFILES (email-check.js), not from the markup: the HTML files name no client. One static option ("Auto (from ticket)",
+// value '') stays first; every profile that is not `hidden` follows as <option value=id>label</option> (hidden ones, the synthetic test organisation, are never
+// offered). Called once by initEmailCheck BEFORE the stored choice is applied, so that choice finds its option. A stored choice that is still offered is kept.
+function ecUiFillProfiles() {
+  const sel = ecUiEl('ec-profile');
+  if (!sel) return;
+  const keep = sel.value;
+  const offered = Object.keys(EC_PROFILES).map(k => EC_PROFILES[k]).filter(p => !p.hidden);
+  sel.innerHTML = '<option value="">Auto (from ticket)</option>' + offered.map(p => '<option value="' + qpEsc(p.id) + '">' + qpEsc(p.label) + '</option>').join('');
+  sel.value = keep && offered.some(p => p.id === keep) ? keep : '';
+}
+
+// The run's settings, as the record carries them: profileId, docEmail, eoaRenders and the UTM, segment and only-in rules.
+// A rule is { value, source, commentId }: 'suggested' (with its comment id) when the control was filled from a comment,
+// 'tester' for any other value, 'none' when empty. onlyIn is a read-only hint from ecSuggestRules. Synchronous.
+function ecUiReadSettings(ctx) {
+  // A rule control's provenance: a value with dataset.source 'suggested' keeps its comment; any other value is the tester's; no value is 'none'.
+  const rule = (value, ds) => {
+    if (!value) return { value: '', source: 'none', commentId: null };
+    const suggested = !!ds && ds.source === 'suggested';
+    return { value, source: suggested ? 'suggested' : 'tester', commentId: suggested ? (ds.comment || null) : null };
+  };
+  const utmEl = ecUiEl('ec-utm-rule');
+  const utmRaw = utmEl ? String(utmEl.value || '') : '';
+  const utmRule = rule(utmRaw === 'identical' || utmRaw === 'suffix' ? utmRaw : '', utmEl ? utmEl.dataset : null);
+  const segmentPaths = {};
+  Array.prototype.slice.call(document.querySelectorAll('#ec-seg-paths input[data-ec-seg]') || []).forEach((i) => {
+    const value = String(i.value == null ? '' : i.value).trim();
+    if (!value) return;
+    segmentPaths[i.dataset.ecSeg] = rule(value, i.dataset);
+  });
+  const profEl = ecUiEl('ec-profile');
+  const profileId = profEl ? String(profEl.value == null ? '' : profEl.value) : '';
+  const docEl = ecUiEl('ec-doc-email');
+  const docText = docEl && docEl.value != null ? String(docEl.value).trim() : '';
+  const docEmail = /^\d+$/.test(docText) && parseInt(docText, 10) > 0 ? parseInt(docText, 10) : null;
+  const eoa = ecUiEl('ec-eoa-renders');
+  const eoaRenders = eoa ? !!eoa.checked : true;
+  let onlyIn = null;
+  if (ctx) {
+    const segs = [];
+    (Array.isArray(ctx.emailProofs) ? ctx.emailProofs : []).forEach((p) => {
+      const s = p && p.segment ? String(p.segment).trim() : '';
+      if (s && segs.indexOf(s) < 0) segs.push(s);
+    });
+    onlyIn = ecSuggestRules(ctx.comments || [], segs, ecProfileFor(ctx.ticketKey, profileId)).onlyIn || null;
+  }
+  return { profileId, docEmail, eoaRenders, utmRule, segmentPaths, onlyIn };
+}
+
+// Restores the stored settings into the controls. A missing element or a value of the wrong type is skipped, and it never
+// throws. Mirrors qpUiApplySettings.
+function ecUiApplyPrefs(prefs) {
+  if (!prefs || typeof prefs !== 'object') return;
+  try {
+    const profile = prefs.profileChoice;
+    const offered = profile === '' || (typeof profile === 'string' && Object.prototype.hasOwnProperty.call(EC_PROFILES, profile) && !EC_PROFILES[profile].hidden);
+    const sel = ecUiEl('ec-profile');
+    if (sel && offered) sel.value = profile;
+    const setC = (id, v) => { const e = ecUiEl(id); if (e && typeof v === 'boolean') e.checked = v; };
+    setC('ec-eoa-renders', prefs.eoaRenders);
+    setC('ec-write-notes', prefs.writeNotes);
+    setC('ec-retest-inprogress', prefs.retestInProgress);
+  } catch (_) {}
+}
+
+// Stores the profile and the three checkboxes, and, when the QA Test Plan is a Google Sheet and a tab is picked, that tab
+// for the spreadsheet. Other tickets' and spreadsheets' entries are kept. Never rejects. Mirrors qpUiSavePrefs.
+async function ecUiSavePrefs() {
+  const cb = (id) => { const e = ecUiEl(id); return !!(e && e.checked); };
+  const profEl = ecUiEl('ec-profile');
+  try {
+    await chrome.storage.local.set({ ecSettings: { profileChoice: profEl ? String(profEl.value || '') : '', eoaRenders: cb('ec-eoa-renders'),
+      writeNotes: cb('ec-write-notes'), retestInProgress: cb('ec-retest-inprogress') } });
+  } catch (_) {}
+  try {
+    const ctx = await getActiveContext().catch(() => null);
+    const ref = ctx && ctx.qaTestPlanUrl ? qpSpreadsheetRef(ctx.qaTestPlanUrl) : null;
+    const tabSel = ecUiEl('ec-sheet-tab');
+    if (!ref || !tabSel || !tabSel.value) return;
+    const { ecSheetPrefs = {} } = await chrome.storage.local.get('ecSheetPrefs');
+    ecSheetPrefs[ref.spreadsheetId] = { tabTitle: tabSel.value };
+    await chrome.storage.local.set({ ecSheetPrefs });
+  } catch (_) {}
+}
+
+// Fills #ec-ctx with a one-line summary of the active context (proofs, EoA links, copy doc, test plan, profile, comments),
+// or the validation error. Returns the ctx, or null. Without the #ec-ctx element it still returns the ctx.
+async function ecUiRenderCtx() {
+  const ctx = await getActiveContext().catch(() => null);
+  const el = ecUiEl('ec-ctx');
+  const v = ecValidateContext(ctx);
+  if (el) {
+    if (!v.ok) {
+      el.textContent = v.error;
+    } else {
+      const profEl = ecUiEl('ec-profile');
+      const proofs = (ctx.emailProofs || []).filter((p) => p && ecMailtrapRef(p.url)).length;
+      const eoa = (ctx.emailEoa || []).filter((e) => e && ecEoaRef(e.url)).length;
+      const doc = ctx.copyFileUrl ? (ecDocRef(ctx.copyFileUrl) ? 'yes' : 'not a Google Doc link') : 'no';
+      const plan = ctx.qaTestPlanUrl ? (qpSpreadsheetRef(ctx.qaTestPlanUrl) ? 'Google Sheet' : 'other link') : 'none';
+      const label = ecProfileFor(ctx.ticketKey, profEl ? profEl.value : '').label;
+      el.textContent = ctx.ticketKey + ' · ' + proofs + ' Mailtrap proof(s) · ' + eoa + ' Email on Acid link(s) · copy doc: ' + doc
+        + ' · test plan: ' + plan + ' · profile: ' + label + ' · ' + (ctx.comments || []).length + ' comment(s)';
+    }
+  }
+  return ctx;
+}
+
+// Fills the UTM, segment-path and only-in controls and their hints from the stored rules and the ticket's comments. A
+// suggestion is labelled with the comment it came from; a null or invalid context clears the controls.
+async function ecUiRenderRules(ctx) {
+  const segEl = ecUiEl('ec-seg-paths'), utmSel = ecUiEl('ec-utm-rule'), utmHint = ecUiEl('ec-utm-hint'), ruleHint = ecUiEl('ec-rule-hint'), docEl = ecUiEl('ec-doc-email');
+  const v = ecValidateContext(ctx);
+  if (!ctx || !v.ok) {
+    if (segEl) segEl.innerHTML = '';
+    if (utmHint) utmHint.textContent = '';
+    if (ruleHint) ruleHint.innerHTML = '';
+    if (utmSel) { utmSel.value = ''; utmSel.dataset.source = ''; utmSel.dataset.comment = ''; }
+    if (docEl) docEl.value = '';
+    return;
+  }
+  const profEl = ecUiEl('ec-profile');
+  const profile = ecProfileFor(ctx.ticketKey, profEl ? profEl.value : '');
+  const segs = [];
+  (ctx.emailProofs || []).forEach((p) => {
+    const s = p && p.segment ? String(p.segment).trim() : '';
+    if (s && segs.indexOf(s) < 0) segs.push(s);
+  });
+  const sug = ecSuggestRules(ctx.comments || [], segs, profile);
+  // A stored rule always beats a suggestion. A storage fault leaves the suggestions in place.
+  let stored = null;
+  try {
+    const got = await chrome.storage.local.get('ecTicketRules');
+    stored = (got && got.ecTicketRules && got.ecTicketRules[ctx.ticketKey]) || null;
+  } catch (_) { stored = null; }
+  // UTMs: a stored string (even '' = not stated) is the tester's choice; else the suggestion; else nothing.
+  let utmValue = '', utmSource = '', utmComment = '', utmText = 'no UTM rule found in the ticket comments';
+  if (stored && typeof stored.utmRule === 'string') {
+    utmValue = stored.utmRule;
+    utmSource = utmValue ? 'tester' : '';
+    utmText = 'set by you';
+  } else if (sug.utmRule) {
+    utmValue = sug.utmRule.value;
+    utmSource = 'suggested';
+    utmComment = sug.utmRule.commentId;
+    utmText = 'suggested from comment ' + sug.utmRule.commentId;
+  }
+  if (utmSel) { utmSel.value = utmValue; utmSel.dataset.source = utmSource; utmSel.dataset.comment = utmComment; }
+  if (utmHint) utmHint.textContent = utmText;
+  // Segment paths: the same rule per segment.
+  const parts = [];
+  const rows = segs.map((seg) => {
+    let value = '', source = '', commentId = '', text = 'no path found in the ticket comments';
+    const sp = sug.segmentPaths && sug.segmentPaths[seg];
+    if (stored && stored.segmentPaths && typeof stored.segmentPaths[seg] === 'string') {
+      value = stored.segmentPaths[seg];
+      source = value ? 'tester' : '';
+      text = 'set by you';
+    } else if (sp) {
+      value = sp.value;
+      source = 'suggested';
+      commentId = sp.commentId;
+      text = 'suggested from comment ' + sp.commentId;
+    }
+    parts.push(seg + ': ' + text);
+    return '<div class="arg-row"><span class="arg-lbl">' + qpEsc(seg) + ' DONATE</span><input type="text" data-ec-seg="' + qpEsc(seg) + '" value="' + qpEsc(value)
+      + '" data-source="' + source + '" data-comment="' + qpEsc(commentId || '') + '" placeholder="path or last segment"></div>';
+  });
+  if (segEl) segEl.innerHTML = rows.join('');
+  if (docEl) docEl.value = stored && Number.isInteger(stored.docEmail) && stored.docEmail > 0 ? String(stored.docEmail) : '';
+  if (segs.length || sug.onlyIn) {
+    if (sug.onlyIn) {
+      const expect = sug.onlyIn.expect || {};
+      const only = Object.keys(expect).map((k, i) => (i === 0 ? 'Only' : 'only') + ' in ' + k.toUpperCase() + ': ' + expect[k].join(', '));
+      parts.push(only.join('; ') + ' (comment ' + sug.onlyIn.commentId + ')');
+    } else {
+      parts.push('No "only in" rule found in the comments.');
+    }
+  }
+  if (ruleHint) ruleHint.innerHTML = parts.map((t) => qpEsc(t)).join('<br>');
+}
+
+// Stores the active ticket's UTM rule, segment paths (empty ones included) and doc email. Other tickets are kept. With no
+// context that has a ticket key, nothing is written.
+async function ecUiSaveRules() {
+  try {
+    const ctx = await getActiveContext().catch(() => null);
+    if (!ctx || !ctx.ticketKey) return;
+    const utmEl = ecUiEl('ec-utm-rule');
+    const segmentPaths = {};
+    Array.prototype.slice.call(document.querySelectorAll('#ec-seg-paths input[data-ec-seg]') || []).forEach((i) => {
+      segmentPaths[i.dataset.ecSeg] = String(i.value == null ? '' : i.value).trim();
+    });
+    const docEl = ecUiEl('ec-doc-email');
+    const docText = docEl && docEl.value != null ? String(docEl.value).trim() : '';
+    const docEmail = /^\d+$/.test(docText) && parseInt(docText, 10) > 0 ? parseInt(docText, 10) : null;
+    const got = await chrome.storage.local.get('ecTicketRules');
+    const all = (got && got.ecTicketRules) || {};
+    all[ctx.ticketKey] = { utmRule: utmEl ? String(utmEl.value == null ? '' : utmEl.value) : '', segmentPaths, docEmail };
+    await chrome.storage.local.set({ ecTicketRules: all });
+  } catch (_) {}
+}
+
+// The Email Check run of the Test Agent panel (TA_MODES.emailcheck.run; mirrors runQaPassMode). Validates the context, runs
+// the worker, then the explain step (when the analysis checkbox is on) and the sheet preparation. Only ecCtxForWorker's
+// fields and `settings` go to the worker. Returns { ok:true } or { ok:false, error }.
+async function runEmailCheckMode() {
+  const resultsEl = ecUiEl('ec-results');
+  const ctx = await getActiveContext().catch(() => null);
+  const v = ecValidateContext(ctx);
+  if (!v.ok) {
+    if (resultsEl) resultsEl.innerHTML = '<div style="color:var(--err);font-size:11px">' + esc(v.error) + '</div>';
+    return { ok: false, error: v.error };
+  }
+  const settings = ecUiReadSettings(ctx);
+  const progressEl = ecUiEl('ec-progress'), statusEl = ecUiEl('ta-status');
+  const tick = async () => {
+    try {
+      const { ecProgress } = await sessionNS.get('ecProgress');
+      if (!ecProgress || !ecProgress.running) return;
+      let line = ['Email Check —', ecProgress.phase || '', ecProgress.label || ''].filter(Boolean).join(' ');
+      if (typeof ecProgress.done === 'number' && typeof ecProgress.total === 'number') line += ' (' + ecProgress.done + '/' + ecProgress.total + ')';
+      if (progressEl) progressEl.textContent = line;
+      if (statusEl) statusEl.textContent = line;
+    } catch (_) {}
+  };
+  const timer = setInterval(tick, 800);
+  // Two causes, two sentences: a record of another version came from an older worker; a rejected message was never answered.
+  const STALE_WORKER = 'The service worker is older than this panel — reload Selenite in chrome://extensions and run again.';
+  const NO_ANSWER = 'The service worker did not answer the run: it is older than this panel, or Chrome stopped it mid-run. Reload Selenite in chrome://extensions and run again.';
+  try {
+    let res;
+    try {
+      res = await chrome.runtime.sendMessage({ action: 'runEmailCheck', payload: { ctx: ecCtxForWorker(ctx), settings, winId: WIN_ID } });
+    } catch (e) {
+      const m = String((e && e.message) || e);
+      return { ok: false, error: /message port closed|Could not establish connection|Receiving end does not exist/i.test(m) ? NO_ANSWER : m };
+    }
+    if (!res || !res.ok || !res.record) return { ok: false, error: (res && res.error) || 'Email Check failed' };
+    const record = res.record;
+    if (record.version !== EC_RECORD_VERSION) return { ok: false, error: STALE_WORKER };
+    if (record.error && !(record.checks || []).length) return { ok: false, error: ecScrubText(record.error) };
+    const analysisOn = !!(ecUiEl('ta-agentic-analysis') || {}).checked;
+    if (analysisOn && !record.stopped && !_taStopRequested) {
+      const r = await chrome.runtime.sendMessage({ action: 'ecExplain', payload: ecExplainInput(record, ctx) }).catch((e) => ({ ok: false, error: e.message }));
+      record.explain = r && r.ok ? r.explain : { ok: false, error: (r && r.error) || 'failed' };
+    } else {
+      record.explain = null;
+    }
+    record.sheet = await ecUiPrepareSheet(record, ctx);
+    record.ts = Date.now();
+    _ecLastRun = record;
+    try { await sessionNS.set({ ecLastRun: ecSlim(record) }); } catch (_) {}
+    ecUiRenderResults(record);
+    return { ok: true };
+  } finally {
+    clearInterval(timer);
+    if (progressEl) progressEl.textContent = '';
+  }
+}
+
+// The test-plan sheet for a run: reads the QA Test Plan through QA Pass's qp* actions, maps its groups to the proofs and
+// builds the proposal. Never rejects: every way the plan can be unavailable is a `reason` or an `error`, and every return
+// carries `paste`. A failed title read is not an error.
+async function ecUiPrepareSheet(record, ctx) {
+  const rec = record || {};
+  const proofs = (rec.proofs || []).map((p) => ({ id: p.id, segment: p.segment, variation: p.variation }));
+  const sheet = { connected: false, reason: null, error: null, spreadsheetId: null, gid: null, tabTitle: null, title: null, readAt: null, model: null,
+    vocab: null, mapping: [], unmappedGroups: [], notesOn: false, retestInProgress: false, proposal: null, paste: [], applied: null };
+  try {
+    sheet.paste = ecPasteRows(rec.checks || [], rec.proofs || []);
+    if (!ctx || !ctx.qaTestPlanUrl) { sheet.reason = 'no-test-plan-link'; return sheet; }
+    const ref = qpSpreadsheetRef(ctx.qaTestPlanUrl);
+    if (!ref) { sheet.reason = 'not-a-google-sheet-link'; return sheet; }
+    sheet.spreadsheetId = ref.spreadsheetId;
+    sheet.gid = ref.gid;
+    const st = await chrome.runtime.sendMessage({ action: 'qpGoogleStatus' });
+    if (!st || !st.clientIdSet) { sheet.reason = 'no-client-id'; return sheet; }
+    if (!st.connected) { sheet.reason = 'not-connected'; return sheet; }
+    const tabSel = ecUiEl('ec-sheet-tab');
+    const tabTitle = tabSel ? tabSel.value : '';
+    if (!tabTitle) { sheet.reason = 'no-tab-picked'; return sheet; }
+    sheet.tabTitle = tabTitle;
+    // The title is informative only: a failed meta read is not an error.
+    const meta = await chrome.runtime.sendMessage({ action: 'qpSheetMeta', payload: { spreadsheetId: ref.spreadsheetId } }).catch(() => null);
+    if (meta && meta.ok) sheet.title = meta.title;
+    const rd = await chrome.runtime.sendMessage({ action: 'qpSheetRead', payload: { spreadsheetId: ref.spreadsheetId, tabTitle } });
+    if (!rd || !rd.ok) { sheet.error = (rd && rd.error) || 'The test plan could not be read.'; return sheet; }
+    sheet.readAt = rd.readAt;
+    const model = ecSheetModel(rd.values);
+    if (model.error) { sheet.error = model.error; return sheet; }
+    sheet.connected = true;
+    sheet.model = model;
+    sheet.vocab = qpSheetVocab(rd.valuesTab, null);
+    sheet.notesOn = !!(ecUiEl('ec-write-notes') || {}).checked;
+    sheet.retestInProgress = !!(ecUiEl('ec-retest-inprogress') || {}).checked;
+    const rm = ecRowMap(model, proofs, ecProfileFor(rec.ticketKey, rec.profileId));
+    sheet.mapping = rm.mapping;
+    sheet.unmappedGroups = rm.unmappedGroups;
+    sheet.proposal = ecBuildProposal({ model, mapping: sheet.mapping, unmappedGroups: sheet.unmappedGroups, proofs, checks: rec.checks || [],
+      vocab: sheet.vocab, notesOn: sheet.notesOn, retestInProgress: sheet.retestInProgress, ticketKey: rec.ticketKey, title: sheet.title });
+    return sheet;
+  } catch (e) {
+    sheet.error = String((e && e.message) || e);
+    return sheet;
+  }
+}
+
+// Sets proposal.counts from the included entries: their writable status cells and their notes. Mirrors qpUiRecount.
+function ecUiRecount(proposal) {
+  if (!proposal) return;
+  let s = 0, n = 0;
+  (proposal.entries || []).forEach((e) => {
+    if (!e || !e.include) return;
+    (e.cells || []).forEach((c) => { if (c && c.writable) s++; });
+    if (e.note) n++;
+  });
+  proposal.counts = { statusWrites: s, noteWrites: n };
+}
+
+// Renders the run into #ec-results: a style block, the badge and counts, the run error, the sources the tester must act on
+// (Mailtrap sign-in or reads, the Docs permission), the failed checks, and the sheet's proposal with its Apply button or the
+// reason it has none, then the paste-ready table. Mirrors qpUiRenderResults. Every value is scrubbed and escaped; no href,
+// URL or address is printed.
+function ecUiRenderResults(record) {
+  const el = ecUiEl('ec-results');
+  if (!el || !record) return;
+  const checks = record.checks || [];
+  const c = qpCounts(checks), badge = qpBadge(checks, record.stopped);
+  const color = badge.kind === 'fail' ? 'var(--err)' : badge.kind === 'pass' ? 'var(--ok)' : 'var(--warn)';
+  let h = '<style>#ec-results table{width:100%;border-collapse:collapse;font-size:10px}#ec-results td,#ec-results th{border-bottom:1px solid var(--border,#333);padding:2px 3px;text-align:left;vertical-align:top;word-break:break-word}'
+    + '#ec-results .ec-sub{font-weight:700;font-size:10px;margin:6px 0 2px}#ec-results .ec-list{margin:0 0 4px 14px;padding:0;font-size:10px}'
+    + '#ec-results .ec-empty{font-size:10px;color:var(--fg3)}#ec-results .ec-warn{font-size:10px;color:var(--warn);margin-bottom:2px}</style>'
+    + '<div style="font-size:11px;font-weight:700;color:' + color + ';margin-bottom:2px">' + qpEsc(badge.label) + '</div>'
+    + '<div style="font-size:11px;color:var(--fg2);margin-bottom:6px">' + c.failed + ' failed · ' + c.passed + ' passed · ' + c['in-progress'] + ' in progress · '
+    + c.blocked + ' blocked · ' + c['not-tested'] + ' not tested' + (record.stopped ? ' · stopped' : '') + '</div>';
+  // Every error a stored record can hold is scrubbed again here, and then escaped.
+  if (record.error) h += '<div style="font-size:11px;color:var(--err);margin-bottom:4px">' + qpEsc(ecScrubText(record.error)) + '</div>';
+  // The sources the tester must act on (Mailtrap sign-in and reads, the Docs permission).
+  const msgs = [];
+  const mt = record.sources && record.sources.mailtrap;
+  if (mt && EC_MAILTRAP_MSG[mt.state]) {
+    const sb = ((record.proofs || [])[0] || {}).sandboxId || '';
+    msgs.push(EC_MAILTRAP_MSG[mt.state].replace('{sb}', () => sb).replace('{error}', () => mt.error || ''));
+  }
+  const doc = record.sources && record.sources.doc;
+  if (doc && doc.state === 'needs-connect') msgs.push('Connect Google again: the Docs permission was added after you connected.');
+  msgs.forEach((m) => { h += '<div style="font-size:11px;color:var(--err);margin-bottom:4px">' + qpEsc(ecScrubText(m)) + '</div>'; });
+  const failed = checks.filter((x) => x.status === 'failed');
+  if (failed.length) {
+    h += '<div style="font-size:11px;margin-bottom:6px">' + failed.map((f) => '<div style="margin-bottom:2px"><b>' + qpEsc(ecScrubText(f.id)) + '</b> — '
+      + qpEsc(ecScrubText(f.note)) + '</div>').join('') + '</div>';
+  }
+  const sh = record.sheet;
+  const locked = !!(sh && sh.applied && sh.applied.ok);
+  if (sh && sh.connected && sh.proposal) {
+    h += '<div style="font-size:11px;font-weight:700;margin:6px 0 2px">Test plan changes (not written yet)</div>';
+    h += ecProposalHtml(sh, { editable: !locked });
+    if (!locked) {
+      const n = ecWritesFromProposal(sh).length;
+      h += '<button class="btn primary sm" id="btn-ec-apply" type="button" style="margin-top:6px;' + (n ? '' : 'display:none') + '">Apply ' + n
+        + ' change(s) to "' + qpEsc(sh.tabTitle) + '"</button>';
+    }
+    h += '<div id="ec-apply-status" style="font-size:10px;margin-top:4px"></div>';
+  } else if (sh) {
+    const why = { 'no-test-plan-link': 'The active ticket has no QA test plan link.', 'not-a-google-sheet-link': 'The QA test plan link is not a Google Sheet.',
+      'no-client-id': 'Add a Google OAuth client ID in Settings to read and write the test plan.', 'not-connected': 'Google is not connected: use Connect Google above.',
+      'no-tab-picked': 'Pick the test plan tab above to get a proposal.' };
+    const text = sh.error ? 'The test plan could not be read: ' + sh.error : (why[sh.reason] || 'The test plan was not read.');
+    h += '<div style="font-size:11px;font-weight:700;margin:6px 0 2px">Test plan</div>';
+    h += '<div style="font-size:10px;color:' + (sh.error ? 'var(--err)' : 'var(--fg3)') + ';margin-bottom:4px">' + qpEsc(ecScrubText(text)) + ' Paste-ready results:</div>';
+    h += ecPasteHtml(sh.paste || []);
+  }
+  el.innerHTML = h;
+  if (sh && sh.applied) ecUiShowApplied(sh.applied);
+}
+
+// Writes the outcome of an Apply into #ec-apply-status, in the text and colours of qpUiShowApplied. No-op without the element.
+function ecUiShowApplied(a) {
+  const st = ecUiEl('ec-apply-status');
+  if (!st) return;
+  if (!a.ok) {
+    st.style.color = 'var(--err)';
+    st.textContent = 'Not written: ' + (a.error || 'unknown error') + (a.needsConnect ? ' (use Connect Google, then Apply again)' : '');
+    return;
+  }
+  const left = (a.dropped || []).map((d) => d.a1);
+  let t = 'Wrote ' + (a.written || 0) + ' cell(s)' + (a.verified != null ? ', verified ' + a.verified : ', not re-read (' + (a.verifyError || 'unknown') + ')') + '.';
+  if (left.length) t += ' Left alone, changed since read: ' + left.join(', ') + '.';
+  if ((a.mismatches || []).length) t += ' Mismatches: ' + a.mismatches.map((m) => m.a1 + ' holds "' + m.found + '"').join('; ') + '.';
+  if ((a.foreign || []).length) t += ' Also changed by someone else meanwhile: ' + a.foreign.map((f) => f.a1).join(', ') + '.';
+  st.style.color = ((a.mismatches || []).length || a.verified == null) ? 'var(--err)' : 'var(--ok)';
+  st.textContent = t;
+}
+
+// Saves the last run to the session store (ecSlim: no render images). The rejection is swallowed. Mirrors qpUiPersistLast.
+function ecUiPersistLast() {
+  if (!_ecLastRun) return;
+  try { Promise.resolve(sessionNS.set({ ecLastRun: ecSlim(_ecLastRun) })).catch(() => {}); } catch (_) {}
+}
+
+// An include checkbox in the proposal changes its entry, recounts and re-renders. A locked sheet (already applied) and any
+// other target change nothing.
+function ecUiOnResultsChange(e) {
+  const rec = _ecLastRun, sh = rec && rec.sheet;
+  if (!sh || !sh.proposal || (sh.applied && sh.applied.ok)) return;
+  const t = e && e.target;
+  if (!t || !t.matches || !t.matches('input[data-ec-include]')) return;
+  const row = parseInt(t.getAttribute('data-ec-include'), 10);
+  const ent = sh.proposal.entries.filter((x) => x.row === row)[0];
+  if (!ent) return;
+  ent.include = !!t.checked;
+  ecUiRecount(sh.proposal);
+  ecUiRenderResults(rec);
+  ecUiPersistLast();
+}
+
+// The Apply button in the results calls ecUiApply (not awaited).
+function ecUiOnResultsClick(e) {
+  const t = e && e.target && e.target.closest ? e.target.closest('#btn-ec-apply') : null;
+  if (t) ecUiApply();
+}
+
+// Writes the included proposal cells to the test plan after a confirm. Only cells that still hold what Selenite read are
+// written, and the worker re-reads the sheet and writes F and G only on visual/dark rows. Mirrors qpUiApply. Each attempt
+// is recorded in the write log (last 20).
+async function ecUiApply() {
+  const rec = _ecLastRun, sh = rec && rec.sheet;
+  const say = (msg, err) => { const st = ecUiEl('ec-apply-status'); if (st) { st.textContent = msg; st.style.color = err ? 'var(--err)' : 'var(--fg2)'; } };
+  if (!sh || !sh.connected || !sh.proposal || (sh.applied && sh.applied.ok)) return;
+  const writes = ecWritesFromProposal(sh);
+  if (!writes.length) { say('Nothing selected to write.'); return; }
+  if (!confirm('Write ' + writes.length + ' cell(s) to the tab "' + sh.tabTitle + '" of the EMAIL Test Plan?\n\nOnly cells that still hold what Selenite read are written; anything changed since is left alone.')) return;
+  const btn = ecUiEl('btn-ec-apply');
+  if (btn) btn.disabled = true;
+  say('Writing…');
+  // eCol, notesCol and fgCols are letters; descCol is the Description column's index like textCols (ecwSheetApply takes the letter of it itself); a column the plan lacks is left out.
+  const col = (k) => (sh.model && sh.model.cols && sh.model.cols[k] != null ? qpColLetter(sh.model.cols[k]) : null);
+  const payload = { spreadsheetId: sh.spreadsheetId, tabTitle: sh.tabTitle, textCols: sh.model.textCols, descCol: sh.model.cols && sh.model.cols.description != null ? sh.model.cols.description : null, eCol: col('desktop'),
+    notesCol: col('notes'), fgCols: [col('mobile'), col('webBased')].filter(Boolean), writes };
+  let res;
+  try {
+    res = await chrome.runtime.sendMessage({ action: 'ecSheetApply', payload });
+  } catch (e) {
+    res = { ok: false, error: (e && e.message) || String(e) };
+  }
+  res = res || { ok: false, error: 'No answer from the service worker.' };
+  sh.applied = Object.assign({ at: Date.now() }, res);
+  try {
+    const got = await chrome.storage.local.get('ecSheetWriteLog');
+    const log = (got && got.ecSheetWriteLog) || [];
+    log.push({ at: sh.applied.at, spreadsheetId: sh.spreadsheetId, tabTitle: sh.tabTitle, written: res.written || 0, verified: res.verified == null ? null : res.verified,
+      dropped: res.dropped || [], mismatches: res.mismatches || [], error: res.ok ? null : (res.error || 'failed') });
+    await chrome.storage.local.set({ ecSheetWriteLog: log.slice(-20) });
+  } catch (_) {}
+  ecUiPersistLast();
+  ecUiRenderResults(rec);
+}
+
+// Refreshes the Google connection, the test-plan status and the tab list. Preselects the stored pick, else the tab the link
+// names, else the first QA tab that is not the Values tab. The notes and retest checkboxes are per settings, not per sheet,
+// so this leaves them alone. Mirrors qpUiRefreshSheet, without the status-column picker.
+async function ecUiRefreshSheet(extraMsg) {
+  const statusEl = ecUiEl('ec-sheet-status');
+  if (!statusEl) return;
+  const conn = ecUiEl('btn-ec-google-connect'), disc = ecUiEl('btn-ec-google-disconnect'), tabSel = ecUiEl('ec-sheet-tab');
+  const show = (el, on) => { if (el) el.style.display = on ? '' : 'none'; };
+  const resetTabs = () => { if (tabSel) { tabSel.innerHTML = '<option value="">—</option>'; tabSel.disabled = true; } };
+  const st = await chrome.runtime.sendMessage({ action: 'qpGoogleStatus' }).catch(() => null);
+  const tail = extraMsg ? ' ' + extraMsg : '';
+  if (!st || !st.ok) {
+    statusEl.textContent = 'Google status unavailable: ' + ((st && st.error) || 'no answer from the service worker.') + tail;
+    show(conn, false); show(disc, false); resetTabs();
+    return;
+  }
+  if (!st.clientIdSet) {
+    statusEl.textContent = 'Add a Google OAuth client ID in Settings (gear) to read and write the test plan. Without it Email Check gives a paste-ready table.' + tail;
+    show(conn, false); show(disc, false); resetTabs();
+    return;
+  }
+  if (!st.connected) {
+    statusEl.textContent = 'Google is not connected.' + tail;
+    show(conn, true); show(disc, false); resetTabs();
+    return;
+  }
+  // Connected. A worker that reports docsGranted === false (the Docs permission came after this connection) keeps Connect visible.
+  const docs = st.docsGranted === false ? ' Connect Google again: the Docs permission was added after you connected.' : '';
+  show(disc, true);
+  show(conn, docs !== '');
+  const ctx = await getActiveContext().catch(() => null);
+  const ref = ctx && ctx.qaTestPlanUrl ? qpSpreadsheetRef(ctx.qaTestPlanUrl) : null;
+  if (!ref) {
+    statusEl.textContent = 'Google connected. The active ticket\'s QA test plan link is ' + (ctx && ctx.qaTestPlanUrl ? 'not a Google Sheet' : 'missing')
+      + ', so Email Check gives a paste-ready table.' + docs + tail;
+    resetTabs();
+    return;
+  }
+  const meta = await chrome.runtime.sendMessage({ action: 'qpSheetMeta', payload: { spreadsheetId: ref.spreadsheetId } }).catch((e) => ({ ok: false, error: e.message }));
+  if (!meta || !meta.ok) {
+    statusEl.textContent = 'Google connected, but the test plan tabs could not be listed: ' + ((meta && meta.error) || 'unknown error')
+      + (meta && meta.needsConnect ? ' Use Connect Google.' : '') + docs + tail;
+    show(conn, !!(meta && meta.needsConnect) || docs !== '');
+    resetTabs();
+    return;
+  }
+  statusEl.textContent = 'Google connected. Test plan: "' + meta.title + '".' + docs + tail;
+  const visible = (meta.tabs || []).filter((t) => !t.hidden);
+  const got = await chrome.storage.local.get('ecSheetPrefs');
+  const pref = ((got && got.ecSheetPrefs) || {})[ref.spreadsheetId] || {};
+  // The tab to preselect: the stored pick, then the tab the link names (gid), then the first QA tab that is not the Values tab.
+  const pick = visible.filter((t) => t.title === pref.tabTitle)[0]
+    || (ref.gid != null ? visible.filter((t) => String(t.sheetId) === String(ref.gid))[0] : null)
+    || visible.filter((t) => /qa/i.test(t.title) && !/\bvalues\b/i.test(t.title))[0] || null;
+  if (tabSel) {
+    tabSel.innerHTML = '<option value="">— pick a tab —</option>' + visible.map((t) => '<option value="' + qpEsc(t.title) + '">' + qpEsc(t.title) + '</option>').join('');
+    tabSel.value = pick ? pick.title : '';
+    tabSel.disabled = false;
+  }
+}
+
+// Starts Google sign-in (qpGoogleConnect) and refreshes the status. Mirrors qpUiConnectGoogle.
+async function ecUiConnectGoogle() {
+  const statusEl = ecUiEl('ec-sheet-status');
+  if (statusEl) statusEl.textContent = 'Opening Google sign-in…';
+  const r = await chrome.runtime.sendMessage({ action: 'qpGoogleConnect' }).catch((e) => ({ ok: false, error: e.message }));
+  await ecUiRefreshSheet(r && r.ok ? '' : 'Sign-in: ' + ((r && r.error) || 'failed.'));
+}
+
+// Disconnects Google and refreshes the status. Mirrors qpUiDisconnectGoogle.
+async function ecUiDisconnectGoogle() {
+  await chrome.runtime.sendMessage({ action: 'qpGoogleDisconnect' }).catch(() => null);
+  await ecUiRefreshSheet();
+}
+
+// Called by TA_MODES.emailcheck.onShow: the context, then the rules, then the sheet status, each in its own try.
+async function ecUiOnShow() {
+  // Each step has its own try: one failing never skips the next.
+  let ctx = null;
+  try { ctx = await ecUiRenderCtx(); } catch (_) {}
+  try { await ecUiRenderRules(ctx); } catch (_) {}
+  try { await ecUiRefreshSheet(); } catch (_) {}
+}
+
+// Binds the Email Check panel once, from the DOMContentLoaded chain (which wraps it in its own try/catch), and restores the
+// stored settings and the last run. A missing #ec-body leaves it unbound. It does not touch the Google client settings,
+// which initQaPass owns. Every listener is attached to a possibly missing element with optional chaining.
+async function initEmailCheck() {
+  if (!ecUiEl('ec-body')) return;
+  ecUiFillProfiles();
+  const got = await chrome.storage.local.get('ecSettings');
+  ecUiApplyPrefs(got && got.ecSettings);
+  const body = ecUiEl('ec-body');
+  // One handler for both events. The results box and the tab select have their own handlers; a rule control the tester touched becomes
+  // the tester's (its comment is dropped) and the rules are saved; any other control saves the prefs.
+  const onBody = (e) => {
+    const t = e && e.target;
+    if (!t) return;
+    if (t.closest && (t.closest('#ec-results') || t.closest('#ec-sheet-tab'))) return;
+    const isRule = !!(t.matches && (t.matches('#ec-utm-rule') || t.matches('#ec-doc-email') || t.matches('[data-ec-seg]')));
+    if (isRule) {
+      if (t.dataset) { t.dataset.source = 'tester'; t.dataset.comment = ''; }
+      ecUiSaveRules();
+    } else {
+      ecUiSavePrefs();
+    }
+  };
+  body.addEventListener('change', onBody);
+  body.addEventListener('input', onBody);
+  ecUiEl('btn-ec-google-connect')?.addEventListener('click', () => { ecUiConnectGoogle(); });
+  ecUiEl('btn-ec-google-disconnect')?.addEventListener('click', () => { ecUiDisconnectGoogle(); });
+  ecUiEl('ec-sheet-tab')?.addEventListener('change', () => { ecUiSavePrefs(); });
+  const results = ecUiEl('ec-results');
+  if (results) {
+    results.addEventListener('change', (e) => { ecUiOnResultsChange(e); });
+    results.addEventListener('click', (e) => { ecUiOnResultsClick(e); });
+  }
+  // The last run survives a panel reopen when its record version is the current one (the session copy has no images).
+  const saved = (await sessionNS.get('ecLastRun')) || {};
+  if (saved.ecLastRun && saved.ecLastRun.version === EC_RECORD_VERSION) {
+    _ecLastRun = saved.ecLastRun;
+    ecUiRenderResults(_ecLastRun);
+  }
 }
 
 // ── QA Pass (Test Agent mode 'qapass') — panel side ────────────────────────
@@ -8718,6 +9335,259 @@ function rptFunnelSection(entry) {
   return rptSection(entry.name, badge, summary, body);
 }
 
+// ── Email Check (Test Agent mode 'emailcheck'): the report section ───────────
+// Every status here was decided by ecDeriveChecks (email-check.js). The Opus analysis only groups, annotates and asks: it
+// never adds, removes or changes a status. The eleven sub-headings are printed here, in order; each rptEmailCheck* helper
+// returns only the body under its heading, as HTML, from the record `d`. Every dynamic value goes through esc(), and every
+// note, title, error or label through ecScrubText first (an older worker's record can hold more). No href, address, prospect
+// id or hash is printed. A helper that throws is replaced by one line naming the error.
+function rptEmailCheckSection(entry) {
+  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
+  const d = entry.data || {};
+  const checks = d.checks || [];
+  const notTested = d.notTested || [];
+  const counts = qpCounts(checks);
+  const badge = qpBadge(checks, d.stopped);
+  const summary = `${counts.failed} failed · ${counts.passed} passed · ${counts['in-progress']} need a person · `
+    + `${counts.blocked} blocked · ${counts['not-tested'] + notTested.length} not tested`
+    + (d.stopped ? ' · stopped by the tester' : '');
+  const part = (title, build) => {
+    let html;
+    try { html = build(d); } catch (e) { html = `<p class="rpt-muted">This part of the report could not be built: ${esc(String((e && e.message) || e))}</p>`; }
+    return `<h3 style="margin:14px 0 6px;font-size:14px">${esc(title)}</h3>` + html;
+  };
+  const body = part('Failed', rptEmailCheckFailed)
+    + part('Needs a person', rptEmailCheckNeedsPerson)
+    + part('Blocked', rptEmailCheckBlocked)
+    + part('Passed', rptEmailCheckPassed)
+    + part('Proofs', rptEmailCheckProofs)
+    + part('Links and UTMs', rptEmailCheckLinks)
+    + part('Copy differences', rptEmailCheckCopy)
+    + part('Email on Acid', rptEmailCheckEoa)
+    + part('Analysis (Opus)', rptEmailCheckAnalysis)
+    + part('Not tested', rptEmailCheckNotTested)
+    + part('Sheet changes', rptEmailCheckSheet);
+  return rptSection(entry.name, rptBadge(badge.kind, badge.label), summary, body);
+}
+
+// The failed checks as a table (title, id, proof, scrubbed note), or 'No check failed.'
+function rptEmailCheckFailed(d) {
+  const failed = ((d && d.checks) || []).filter((c) => c && c.status === 'failed');
+  if (!failed.length) return '<p class="rpt-muted">No check failed.</p>';
+  return '<table class="rpt-table"><thead><tr><th>Check</th><th>Proof</th><th>What</th></tr></thead><tbody>'
+    + failed.map((c) => '<tr><td>' + esc(c.title) + '<br><span class="rpt-muted">' + esc(c.id) + '</span></td><td>' + esc(c.proofId) + '</td><td>'
+      + esc(ecScrubText(c.note)) + '</td></tr>').join('')
+    + '</tbody></table>';
+}
+
+// The in-progress checks as a list of id and note, or 'Nothing is waiting on a person.'
+function rptEmailCheckNeedsPerson(d) {
+  const rows = ((d && d.checks) || []).filter((c) => c && c.status === 'in-progress');
+  if (!rows.length) return '<p class="rpt-muted">Nothing is waiting on a person.</p>';
+  return '<ul>' + rows.map((c) => '<li>' + esc(c.id) + ': ' + esc(ecScrubText(c.note)) + '</li>').join('') + '</ul>';
+}
+
+// The blocked checks, each with what blocks it (blockedBy, or 'unknown'), or 'Nothing is blocked.'
+function rptEmailCheckBlocked(d) {
+  const rows = ((d && d.checks) || []).filter((c) => c && c.status === 'blocked');
+  if (!rows.length) return '<p class="rpt-muted">Nothing is blocked.</p>';
+  return '<ul>' + rows.map((c) => '<li>' + esc(c.id) + ' — ' + esc(c.title) + ': blocked by ' + esc(c.blockedBy || 'unknown') + ': '
+    + esc(ecScrubText(c.note)) + '</li>').join('') + '</ul>';
+}
+
+// One line per check key that passed, naming the proofs it passed on, in EC_ROWS order.
+function rptEmailCheckPassed(d) {
+  const passed = ((d && d.checks) || []).filter((c) => c && c.status === 'passed');
+  if (!passed.length) return '<p class="rpt-muted">No check passed.</p>';
+  // One line per key, in the order of EC_ROWS (email-check.js), then any key the rows do not name, in record order.
+  const keys = [];
+  EC_ROWS.forEach((r) => { if (passed.some((c) => c.key === r.key) && keys.indexOf(r.key) < 0) keys.push(r.key); });
+  passed.forEach((c) => { if (keys.indexOf(c.key) < 0) keys.push(c.key); });
+  return '<ul>' + keys.map((k) => '<li>' + esc(k) + ': ' + esc(passed.filter((c) => c.key === k).map((c) => c.proofId).join(', ')) + '</li>').join('') + '</ul>';
+}
+
+// One row per proof: its subject (with the copy-doc option it matches), From, Reply-To, preheader, DKIM, spam score,
+// links resolved and the Email on Acid summary. A proof that was not read gives one line with its state and error.
+function rptEmailCheckProofs(d) {
+  const proofs = (d && d.proofs) || [];
+  if (!proofs.length) return '<p class="rpt-muted">No proof was read.</p>';
+  const options = d.doc && d.doc.subject && Array.isArray(d.doc.subject.options) ? d.doc.subject.options : null;
+  const links = d.links || [];
+  const eoa = (d.sources && d.sources.eoa) || [];
+  const rows = proofs.map((p) => {
+    const head = '<tr><td>' + esc(p.id) + '</td>';
+    if (p.state !== 'ok' || !p.facts) {
+      return head + '<td colspan="8">' + esc(p.state) + (p.error ? ': ' + esc(ecScrubText(p.error)) : '') + '</td></tr>';
+    }
+    const f = p.facts;
+    const built = f.subject && f.subject.built != null ? String(f.subject.built) : '';
+    let subject = esc(built);
+    if (options) {
+      const m = ecMatchOption(built, options);
+      if (m.kind !== 'none') subject += '<br><span class="rpt-muted">copy doc option ' + (m.index + 1) + ', ' + (m.kind === 'best' ? 'closest' : m.kind) + '</span>';
+    }
+    const from = f.from ? [f.from.name, f.from.email].filter(Boolean).map((s) => esc(s)).join(' ') : '';
+    const pre = f.preheader && f.preheader.html ? esc(f.preheader.html) : '—';
+    const dkim = f.dkim && f.dkim.length ? esc(f.dkim.join(', ')) : 'none';
+    const spam = f.spam ? 'score ' + esc(f.spam.score) + ' / ' + esc(f.spam.threshold) : '—';
+    const mine = links.filter((l) => l && l.proofId === p.id && l.kind === 'pardot' && !l.guard);
+    const resolved = mine.filter((l) => l.dest && !l.error).length;
+    const e = eoa.filter((x) => x && x.variation === p.variation)[0];
+    const eoaCell = e && e.clients ? e.clients.length + ' clients, ' + e.clients.filter((c) => c && c.completed).length + ' completed' : '—';
+    return head + '<td>' + subject + '</td><td>' + (from || '—') + '</td><td>' + (f.replyTo ? esc(f.replyTo) : 'none') + '</td><td>' + pre + '</td><td>'
+      + dkim + '</td><td>' + spam + '</td><td>' + resolved + '/' + mine.length + '</td><td>' + eoaCell + '</td></tr>';
+  });
+  return '<table class="rpt-table"><thead><tr><th>Proof</th><th>Subject</th><th>From</th><th>Reply-To</th><th>Preheader</th><th>DKIM</th><th>Spam</th>'
+    + '<th>Links resolved</th><th>Email on Acid</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>';
+}
+
+// Per proof, a table of its links: label, role, destination path, UTM values and HTTP statuses. A guarded link is listed,
+// never opened ('not opened: check by hand'), and no href is printed.
+function rptEmailCheckLinks(d) {
+  const links = (d && d.links) || [];
+  if (!links.length) return '<p class="rpt-muted">No link was listed.</p>';
+  // One block per proof that has links, in the order the links were recorded.
+  const proofIds = [];
+  links.forEach((l) => { if (l && proofIds.indexOf(l.proofId) < 0) proofIds.push(l.proofId); });
+  const cell = (l) => {
+    if (l.guard) return ['not opened: check by hand <span class="rpt-muted">' + esc(ecScrubText(l.guard)) + '</span>', '—', '—'];
+    const dest = l.dest
+      ? esc(l.dest.origin + l.dest.path) + (l.error ? ' <span class="rpt-muted">' + esc(ecScrubText(l.error)) + '</span>' : '')
+      : '—' + (l.error ? ' <span class="rpt-muted">' + esc(ecScrubText(l.error)) + '</span>' : '');
+    const utmKeys = l.dest && l.dest.utm ? Object.keys(l.dest.utm) : [];
+    const utm = utmKeys.length ? utmKeys.map((k) => esc(k) + '=' + esc(l.dest.utm[k])).join('<br>') : '—';
+    const parts = [];
+    if (l.pardotStatus != null) parts.push(esc(l.pardotStatus));
+    if (l.destStatus != null) parts.push(esc(l.destStatus));
+    let status = parts.length ? parts.join(' → ') : '—';
+    if (l.destTitle) status += ' <span class="rpt-muted">' + esc(ecScrubText(String(l.destTitle)).slice(0, 80)) + '</span>';
+    return [dest, utm, status];
+  };
+  return proofIds.map((pid) => {
+    const rows = links.filter((l) => l && l.proofId === pid).map((l) => {
+      const label = esc((l.labels || []).join(' / ') || l.slug || l.linkId || '');
+      const idLine = l.linkId ? '<br><span class="rpt-muted">' + esc(l.linkId) + '</span>' : '';
+      const c = cell(l);
+      return '<tr><td>' + label + idLine + '</td><td>' + esc(l.role) + '</td><td>' + c[0] + '</td><td>' + c[1] + '</td><td>' + c[2] + '</td></tr>';
+    }).join('');
+    return '<p><strong>' + esc(pid) + '</strong></p><table class="rpt-table"><thead><tr><th>Link</th><th>Role</th><th>Destination</th><th>UTM</th><th>Status</th>'
+      + '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }).join('');
+}
+
+// The checks with copy differences, each diff as a word diff (removals and additions marked), with the Opus copy note
+// marked advisory when there is one.
+function rptEmailCheckCopy(d) {
+  const withDiffs = ((d && d.checks) || []).filter((c) => c && c.evidence && Array.isArray(c.evidence.diffs) && c.evidence.diffs.length);
+  if (!withDiffs.length) return '<p class="rpt-muted">No copy differs from the copy doc.</p>';
+  const notes = d.explain && d.explain.ok && Array.isArray(d.explain.copyNotes) ? d.explain.copyNotes : [];
+  return withDiffs.map((c) => {
+    let h = '<p><strong>' + esc(c.id) + '</strong></p>';
+    c.evidence.diffs.forEach((df) => {
+      if (!df || typeof df.doc !== 'string' || typeof df.build !== 'string') return;
+      const ops = ecWordDiff(ecScrubText(df.doc), ecScrubText(df.build)).ops;
+      const toks = ops.map((o) => o.op === '-' ? '<del>' + esc(o.tok) + '</del>' : o.op === '+' ? '<ins>' + esc(o.tok) + '</ins>' : esc(o.tok));
+      h += '<p>' + toks.join(' ') + '</p>';
+    });
+    const note = notes.filter((n) => n && n.checkId === c.id)[0];
+    if (note) h += '<p class="rpt-muted">(Opus, advisory) ' + esc(ecScrubText(note.note)) + '</p>';
+    return h;
+  }).join('');
+}
+
+// The Email on Acid line per variation (subject, client counts, dark mode, state) and its renders. A render is printed as
+// an image only when it is a JPEG data URL; any other value leaves the caption alone.
+function rptEmailCheckEoa(d) {
+  const eoa = (d && d.sources && d.sources.eoa) || [];
+  if (!eoa.length) return '<p class="rpt-muted">No Email on Acid link was given.</p>';
+  const IMG_OK = /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/;
+  return eoa.map((e) => {
+    const clients = e.clients || [];
+    const completed = clients.filter((c) => c && c.completed).length;
+    const dark = clients.filter((c) => c && c.dark).length;
+    let h = '<p><strong>' + esc(e.variation) + '</strong> — ' + esc(e.subject || '') + ' · ' + esc(clients.length) + ' clients, ' + completed
+      + ' completed, ' + dark + ' dark mode' + (e.state !== 'ok' ? ' · ' + esc(e.state) + (e.error ? ': ' + esc(ecScrubText(e.error)) : '') : '') + '</p>';
+    const rs = e.renders || {};
+    if (rs.state === 'off') h += '<p class="rpt-muted">Renders were turned off.</p>';
+    else if (rs.state === 'none') h += '<p class="rpt-muted">No renders were captured.</p>';
+    else if (rs.state === 'capped') h += '<p class="rpt-muted">Renders were capped: some clients have no image.</p>';
+    else if (rs.state === 'error') h += '<p class="rpt-muted">Renders could not be captured: ' + esc(ecScrubText(rs.error)) + '</p>';
+    (d.renders || []).filter((r) => r && r.variation === e.variation).forEach((r) => {
+      // Only a JPEG data URL the regex accepts is printed as an image; any other value leaves the caption alone.
+      const img = typeof r.img === 'string' && IMG_OK.test(r.img)
+        ? '<img src="' + r.img + '" alt="' + esc(r.name) + '" style="max-width:340px;display:block;border:1px solid #888">' : '';
+      h += '<figure style="margin:8px 0">' + img + '<figcaption class="rpt-muted">' + esc(r.name) + ' (' + esc(r.code) + ')'
+        + (r.dark ? ' · dark mode' : '') + '</figcaption></figure>';
+    });
+    return h;
+  }).join('');
+}
+
+// The Opus analysis: bugs, PGM questions and ticket-comment checks, each cited by check id, comment id and severity. A
+// missing or failed analysis is said so. Model text goes through ecScrubText; the statuses above are never changed.
+function rptEmailCheckAnalysis(d) {
+  const ex = d && d.explain;
+  if (!ex) return '<p class="rpt-muted">The analysis did not run (Agentic Analysis was off or the run was stopped).</p>';
+  if (!ex.ok) return '<p class="rpt-muted">Analysis unavailable: ' + esc(ecScrubText(ex.error || 'it failed')) + '</p>';
+  // The citations: check ids, then the comments, then the severity; the model's text goes through ecScrubText.
+  const cite = (checkIds, commentIds, severity) => [].concat(checkIds || []).concat((commentIds || []).map((c) => 'comment ' + c))
+    .concat(severity ? [severity] : []).map((s) => esc(s)).join('; ');
+  const bugs = ex.bugs || [];
+  let h = '<p class="rpt-muted"><strong>Analysis (Opus): grouping only, statuses above are unchanged.</strong></p>';
+  h += bugs.length
+    ? '<ul>' + bugs.map((b) => '<li>' + esc(ecScrubText(b.summary)) + ' <span class="rpt-muted">(' + cite(b.checkIds, b.commentIds, b.severity) + ')</span></li>').join('') + '</ul>'
+    : '<p class="rpt-muted">The analysis grouped no failed check into a bug.</p>';
+  const qs = ex.pgmQuestions || [];
+  if (qs.length) {
+    h += '<p><strong>Questions for the PGM</strong></p><ul>' + qs.map((q) => '<li>' + esc(ecScrubText(q.question)) + ' <span class="rpt-muted">('
+      + cite(q.checkIds, q.commentIds, null) + ')</span></li>').join('') + '</ul>';
+  }
+  const cc = ex.commentChecks || [];
+  if (cc.length) {
+    h += '<p><strong>Ticket comments</strong></p><ul>' + cc.map((c) => '<li>comment ' + esc(c.commentId) + ': reproduced '
+      + esc(c.reproduced === 'not-checked' ? 'not checked' : c.reproduced) + ' — ' + esc(ecScrubText(c.summary)) + '</li>').join('') + '</ul>';
+  }
+  return h;
+}
+
+// The checks that were not tested, and the fixed not-tested lines (ecFixedNotTested), or 'Everything this version checks
+// was tested.'
+function rptEmailCheckNotTested(d) {
+  const items = ((d && d.checks) || []).filter((c) => c && c.status === 'not-tested')
+    .map((c) => '<li>' + esc(c.id) + ' — ' + esc(c.title) + ': ' + esc(ecScrubText(c.note)) + '</li>')
+    .concat(((d && d.notTested) || []).map((n) => '<li>' + esc(n.what) + ': ' + esc(ecScrubText(n.reason)) + '</li>'));
+  if (!items.length) return '<p class="rpt-muted">Everything this version checks was tested.</p>';
+  return '<ul>' + items.join('') + '</ul>';
+}
+
+// The sheet part of the report: the proposed changes (counts and the proposal table, read-only) when the plan was read,
+// else the reason and the paste-ready rows. Nothing is ever applied from the report.
+function rptEmailCheckSheet(d) {
+  const sh = (d && d.sheet) || null;
+  // Notes in the proposal and the paste rows are scrubbed again before printing: an older worker's record can hold more.
+  const clean = (v) => typeof v === 'string' ? ecScrubText(v)
+    : Array.isArray(v) ? v.map(clean)
+    : (v && typeof v === 'object' ? Object.keys(v).reduce((o, k) => { o[k] = clean(v[k]); return o; }, {}) : v);
+  if (sh && sh.connected && sh.proposal) {
+    const counts = sh.proposal.counts || {};
+    return '<p>Proposed ' + esc(counts.statusWrites || 0) + ' status change(s) and ' + esc(counts.noteWrites || 0) + ' note(s) to "' + esc(sh.tabTitle)
+      + '" — not applied when this report was built; apply from the Email Check panel.</p>'
+      + ecProposalHtml(Object.assign({}, sh, { proposal: clean(sh.proposal) }), { editable: false }).replace('<table class="ec-proposal">', '<table class="rpt-table ec-proposal">');
+  }
+  const why = sh && sh.error ? 'The test plan could not be read: ' + ecScrubText(sh.error)
+    : sh && sh.reason ? {
+      'no-test-plan-link': 'The ticket has no QA test plan link.',
+      'not-a-google-sheet-link': 'The QA test plan link is not a Google Sheet.',
+      'no-client-id': 'No Google OAuth client ID is set, so the test plan was not read.',
+      'not-connected': 'Google is not connected, so the test plan was not read.',
+      'no-tab-picked': 'No test-plan tab was picked, so the test plan was not read.',
+    }[sh.reason] || 'The test plan was not read.'
+    : 'The test plan was not read.';
+  const paste = sh && sh.paste ? sh.paste : ecPasteRows((d && d.checks) || [], (d && d.proofs) || []);
+  // Nothing is ever applied from the report: the paste table only.
+  return '<p>' + esc(why) + ' Paste-ready rows:</p>' + ecPasteHtml(clean(paste)).replace('<table class="ec-paste">', '<table class="rpt-table ec-paste">');
+}
+
 // ── QA Pass (Test Agent mode 'qapass'): the report section ───────────────────
 // Every status here was decided by qpDeriveChecks. The Opus analysis only groups,
 // annotates and asks; it never adds, removes or changes a status, so the Bugs
@@ -8904,6 +9774,7 @@ function buildReportBody(sections) {
     4: rptWcagSection, 5: rptCvaSection, 6: rptPerfSection,
     funnel: rptFunnelSection, queue: rptQueueSection,
     qapass: rptQaPassSection,
+    emailcheck: rptEmailCheckSection,
   };
   let diagnosticsHtml = '';
   try { diagnosticsHtml = rptDiagnosticsSection(vdCollectProblems(sections)); } catch (_) {}
@@ -9147,7 +10018,7 @@ function vdCollectProblems(sections) {
         `Did not complete — ${entry.reason || 'no reason recorded'}. Nothing from it is in the report.`);
     }
     if (entry.error) add('error', entry.name || `mode ${entry.mode}`, entry.error);
-    if (entry.data && (entry.mode === 4 || entry.mode === 5 || entry.mode === 6 || entry.mode === 'qapass')) taModeProblems(entry, add);
+    if (entry.data && (entry.mode === 4 || entry.mode === 5 || entry.mode === 6 || entry.mode === 'qapass' || entry.mode === 'emailcheck')) taModeProblems(entry, add);
     if (entry.mode !== 2 || !entry.data) continue;
 
     // Geometry mismatch invalidates the whole comparison, so it is checked
@@ -9784,6 +10655,49 @@ function taModeProblems(entry, add) {
       if (l && l.probeNote) add('warn', `qa-pass/${l.label}`, qpScrubUrls(l.probeNote));
     }
   }
+  // Email Check: what degraded the run, so a clean-looking check list is read for what it is worth. Severities: no version
+  // and a run error are errors, as is a Mailtrap source that could not be read; a copy doc, a proof, an Email on Acid page,
+  // unresolved links, the analysis or the test plan that failed are warnings; capped or failed renders and a stop are notes.
+  // Every recorded text goes through ecScrubText again (an older worker's record can hold more).
+  if (entry.mode === 'emailcheck') {
+    const src = d.sources || {};
+    if (d.version == null) {
+      add('error', 'email-check', 'This record came from an older service worker: reload Selenite in chrome://extensions and run again.');
+    }
+    if (d.error) add('error', 'email-check', ecScrubText(d.error));
+    if (d.stopped) add('info', 'email-check', 'Stopped by the tester: every check that had not run is Not tested.');
+    const mt = src.mailtrap;
+    if (mt && mt.state && mt.state !== 'ok' && mt.state !== 'stopped') {
+      const sb = ((d.proofs || [])[0] || {}).sandboxId || '';
+      const text = (EC_MAILTRAP_MSG[mt.state] || EC_MAILTRAP_MSG.error).replace('{sb}', sb).replace('{error}', mt.error || mt.state);
+      add('error', 'email-check/mailtrap', ecScrubText(text));
+    }
+    const doc = src.doc;
+    if (doc && doc.state === 'needs-connect') {
+      add('warn', 'email-check/doc', 'Connect Google again: the Docs permission was added after you connected. The copy doc was not read.');
+    } else if (doc && doc.state === 'error') {
+      add('warn', 'email-check/doc', `The copy doc could not be read: ${ecScrubText(doc.error || 'no reason given')}`);
+    }
+    for (const p of d.proofs || []) {
+      if (p.state === 'not-found') add('warn', `email-check/${p.id}`, `Proof not found in sandbox ${p.sandboxId} (message ${p.messageId}).`);
+      else if (p.state === 'error') add('warn', `email-check/${p.id}`, `The proof could not be read: ${ecScrubText(p.error || 'no reason given')}`);
+    }
+    for (const e of src.eoa || []) {
+      if (e.state === 'error') add('warn', `email-check/eoa ${e.variation}`, `The Email on Acid page could not be read: ${ecScrubText(e.error || 'no reason given')}`);
+      const rs = e.renders && e.renders.state;
+      if (rs === 'capped') add('info', `email-check/eoa ${e.variation}`, 'Renders were capped (count or size limit): some clients have no image.');
+      else if (rs === 'error') add('info', `email-check/eoa ${e.variation}`, `Renders could not be captured: ${ecScrubText((e.renders && e.renders.error) || 'no reason given')}`);
+    }
+    const unresolved = (d.links || []).filter(l => l && l.kind === 'pardot' && !l.guard && (l.error || !l.dest));
+    if (unresolved.length) {
+      add('warn', 'email-check/links', `${unresolved.length} link(s) could not be resolved (${ecScrubText(unresolved[0].error || 'no destination')}), so their destinations and UTMs were not checked.`);
+    }
+    if (d.explain && d.explain.ok === false) add('warn', 'email-check/analysis', `Analysis (Opus) failed: ${ecScrubText(d.explain.error || 'no reason given')}`);
+    if (d.sheet && d.sheet.error) add('warn', 'email-check/sheet', `Test plan not read: ${ecScrubText(d.sheet.error)}`);
+    if (d.sheet && d.sheet.applied && !d.sheet.applied.ok) {
+      add('warn', 'email-check/sheet', `Writing to the test plan failed: ${ecScrubText(d.sheet.applied.error || 'no reason given')}`);
+    }
+  }
 }
 
 // The debug-log section for a WCAG (4), A/B accessibility (5) or Performance (6)
@@ -9857,6 +10771,9 @@ function taDebugSection(entry) {
     });
   } else if (entry.mode === 'qapass') {
     Object.assign(out, qpDebugProjection(d));
+  } else if (entry.mode === 'emailcheck') {
+    // Renders become hasImage, paragraphs are cut, every string is scrubbed again, sheet rows become counts (ecDebugProjection).
+    Object.assign(out, ecDebugProjection(d));
   }
   return out;
 }
@@ -10135,6 +11052,7 @@ function buildDebugLog(sections) {
     crossVariant: taDebugSection(modeEntry(5)),
     performance: taDebugSection(modeEntry(6)),
     qaPass: taDebugSection(modeEntry('qapass')),
+    emailCheck: taDebugSection(modeEntry('emailcheck')),
     // The Function Queue's Test Agent run. Steps are already stored compact and
     // without anything a tester typed (fnQueueSegmentExport), so they pass through
     // as recorded. null (not omitted) when no such run was in the report.
@@ -10569,6 +11487,16 @@ function extractTestContext(issue, origin, ticketKeyFromPage, links) {
 
   const adf = (f.description && typeof f.description === 'object') ? f.description : null;
 
+  // Email Check: the copy doc and the Mailtrap / Email on Acid links. Deterministic, never AI, nothing fetched.
+  // ecParseEmailLinks reads the description as adfTextWithHrefs renders it (a link mark's href follows its text; every block
+  // ends a line). A ticket that is not an email ticket yields empty lists and no warning; a missing Copy File is worth a
+  // warning only when proofs were found.
+  const copyFileKey = resolveJiraFieldKey(names, 'Copy File');
+  const copyFileUrl = copyFileKey ? jiraFieldString(f[copyFileKey]) : null;
+  const emailLinks = ecParseEmailLinks(adfTextWithHrefs(f.description));
+  warnings.push(...emailLinks.warnings);
+  if (emailLinks.proofs.length && !copyFileUrl) warnings.push('No Copy File on this ticket: Email Check\'s copy rows will stay In Progress.');
+
   // Step 3 — variants from "Test Specifications".
   //
   // Two shapes, and the custom field wins because it is what real tickets
@@ -10660,6 +11588,9 @@ function extractTestContext(issue, origin, ticketKeyFromPage, links) {
     ticketKey, ticketUrl, summary, platform: null, experimentId,
     variants, previewLinks: [], itwLink: null, goals: [], qaTestPlanUrl,
     softcodedTests, concurrentTests,
+    copyFileUrl,
+    emailProofs: emailLinks.proofs.map(p => ({ segment: p.segment, variation: p.variation, url: p.url })),
+    emailEoa: emailLinks.eoa.map(e => ({ variation: e.variation, url: e.url })),
     comments: jiraContextComments(f.comment),
     figmaUrl, figmaNodeId,
     // Set by fetchCompAttachment() after this returns — it needs the Jira tab
@@ -10684,6 +11615,23 @@ function adfText(node) {
   if (node.type === 'hardBreak') return '\n';
   if (node.type === 'inlineCard' || node.type === 'blockCard' || node.type === 'embedCard') return node.attrs?.url || '';
   return adfText(node.content || []);
+}
+
+// adfText for Email Check's link parser (ecParseEmailLinks): every block node ends with a newline, so 'QA Links', 'Mailtrap' and a
+// segment line do not glue together; a text node with a link mark whose text is not itself a URL is followed by ' ' + its href;
+// cards give their URL; hardBreak is a newline. adfText is unchanged.
+function adfTextWithHrefs(node) {
+  if (!node) return '';
+  if (Array.isArray(node)) return node.map(adfTextWithHrefs).join('');
+  if (node.type === 'text') {
+    const t = node.text || '';
+    const link = (node.marks || []).filter(m => m && m.type === 'link' && m.attrs && m.attrs.href)[0];
+    return link && !/^\s*http/i.test(t) ? t + ' ' + link.attrs.href : t;
+  }
+  if (node.type === 'hardBreak') return '\n';
+  if (node.type === 'inlineCard' || node.type === 'blockCard' || node.type === 'embedCard') return node.attrs?.url || '';
+  const inner = adfTextWithHrefs(node.content || []);
+  return ['paragraph', 'heading', 'listItem', 'codeBlock', 'blockquote', 'tableRow', 'tableCell', 'rule'].indexOf(node.type) >= 0 ? inner + '\n' : inner;
 }
 
 // Jira comments kept on the Test Context for QA Pass's analysis to cite:
@@ -10876,6 +11824,43 @@ function adfDocToHeadedText(doc) {
   return lines.join('\n');
 }
 
+// The two editable lists of the Initialize review card: Email proofs (Mailtrap, one per segment and version) and Email on
+// Acid tests (one per version), each row with its inputs and a remove button, plus an add button. Built like relatedRows.
+// q is renderInitReview's attribute escaper.
+function initEmailListsHtml(d, q) {
+  const proofs = (d && d.emailProofs) || [];
+  const eoa = (d && d.emailEoa) || [];
+  const none = '<div style="font-size:11px;color:var(--fg3)">None found in ticket.</div>';
+  const proofRows = proofs.map((p, i) => {
+    const r = p || {};
+    return `
+    <div class="ab-sel-row" style="flex-wrap:wrap">
+      <input type="text" data-init="emailProofs.${i}.segment" value="${q(r.segment)}" placeholder="Segment" style="max-width:110px;flex:0 1 auto">
+      <input type="text" data-init="emailProofs.${i}.variation" value="${q(r.variation)}" placeholder="v0" style="max-width:50px;flex:0 1 auto">
+      <input type="text" data-init="emailProofs.${i}.url" value="${q(r.url)}" placeholder="https://mailtrap.io/…" style="flex:2 1 200px">
+      <button class="btn-icon" data-init-rm="emailProofs.${i}" title="Remove" style="color:var(--err)">✕</button>
+    </div>`;
+  }).join('');
+  const eoaRows = eoa.map((e, i) => {
+    const r = e || {};
+    return `
+    <div class="ab-sel-row" style="flex-wrap:wrap">
+      <input type="text" data-init="emailEoa.${i}.variation" value="${q(r.variation)}" placeholder="v0" style="max-width:50px;flex:0 1 auto">
+      <input type="text" data-init="emailEoa.${i}.url" value="${q(r.url)}" placeholder="https://app.emailonacid.com/…" style="flex:2 1 200px">
+      <button class="btn-icon" data-init-rm="emailEoa.${i}" title="Remove" style="color:var(--err)">✕</button>
+    </div>`;
+  }).join('');
+  const proofList = proofs.length ? '<div style="display:flex;flex-direction:column;gap:4px">' + proofRows + '</div>' : none;
+  const eoaList = eoa.length ? '<div style="display:flex;flex-direction:column;gap:4px">' + eoaRows + '</div>' : none;
+  return `
+    <label class="cap">Email proofs (Mailtrap) — one per segment and version; the version is the v0/v1 label next to the link on the ticket</label>
+    ${proofList}
+    <button class="btn sm" data-init-add="emailProofs" style="margin:5px 0 10px">+ Add Email Proof</button>
+    <label class="cap">Email on Acid — one test per version</label>
+    ${eoaList}
+    <button class="btn sm" data-init-add="emailEoa" style="margin:5px 0 10px">+ Add Email on Acid Test</button>`;
+}
+
 // ── Review / Commit UI ───────────────────────────────────────────────────────
 // Every extracted field renders editable — including unambiguous ones — so a
 // bad parse is caught here, before it can propagate anywhere.
@@ -10939,6 +11924,9 @@ function renderInitReview() {
     : '<div style="font-size:11px;color:var(--fg3)">None found in ticket.</div>';
   const softcodedRows  = relatedRows(d.softcodedTests, 'softcodedTests');
   const concurrentRows = relatedRows(d.concurrentTests, 'concurrentTests');
+  // Email Check's two lists. Guarded: a fault in the new markup must not take the whole review card (and with it the Initialize tab) down.
+  let emailListsHtml = '';
+  try { emailListsHtml = initEmailListsHtml(d, q); } catch (e) { emailListsHtml = `<div style="font-size:10px;color:var(--warn);margin-bottom:8px">Email proof links could not be shown: ${esc(String((e && e.message) || e))}</div>`; }
 
   host.innerHTML = `
   <div class="card">
@@ -10962,10 +11950,15 @@ function renderInitReview() {
       <span class="arg-lbl">Experiment ID</span>
       <input type="text" data-init="experimentId" value="${q(d.experimentId || '')}" placeholder="from Platform Experiment ID field">
     </div>
-    <div class="arg-row" style="margin-bottom:10px">
+    <div class="arg-row" style="margin-bottom:5px">
       <span class="arg-lbl">QA Test Plan</span>
       <input type="text" data-init="qaTestPlanUrl" value="${q(d.qaTestPlanUrl || '')}" placeholder="link only — not parsed">
       ${d.qaTestPlanUrl ? `<a href="${q(d.qaTestPlanUrl)}" target="_blank" style="font-size:11px;color:var(--info);flex-shrink:0">open ↗</a>` : ''}
+    </div>
+    <div class="arg-row" style="margin-bottom:10px">
+      <span class="arg-lbl">Copy File</span>
+      <input type="text" data-init="copyFileUrl" value="${q(d.copyFileUrl || '')}" placeholder="Google Doc link — Email Check's copy doc">
+      ${d.copyFileUrl ? `<a href="${q(d.copyFileUrl)}" target="_blank" style="font-size:11px;color:var(--info);flex-shrink:0">open ↗</a>` : ''}
     </div>
 
     <label class="cap">Variants (Test Specifications)</label>
@@ -10992,6 +11985,8 @@ function renderInitReview() {
     <label class="cap">Concurrent Tests — expected to be running alongside this one</label>
     <div style="display:flex;flex-direction:column;gap:4px">${concurrentRows}</div>
     <button class="btn sm" data-init-add="concurrentTests" style="margin:5px 0 10px">+ Add Concurrent Test</button>
+
+    ${emailListsHtml}
 
     <div class="arg-row" style="margin-top:8px">
       <span class="arg-lbl">Save as</span>
@@ -11050,6 +12045,8 @@ function onInitReviewClick(e) {
     if (list === 'goals')        _initDraft.goals.push({ text: '', isNew: false, convertMetricId: null, resolutionNeeded: false });
     if (list === 'softcodedTests')  _initDraft.softcodedTests.push({ ticketKey: '', label: '' });
     if (list === 'concurrentTests') _initDraft.concurrentTests.push({ ticketKey: '', label: '' });
+    if (list === 'emailProofs')  { _initDraft.emailProofs = _initDraft.emailProofs || []; _initDraft.emailProofs.push({ segment: '', variation: 'v0', url: '' }); }
+    if (list === 'emailEoa')     { _initDraft.emailEoa = _initDraft.emailEoa || []; _initDraft.emailEoa.push({ variation: 'v0', url: '' }); }
     renderInitReview();
   }
 }
@@ -11198,6 +12195,22 @@ async function deleteSelectedContext() {
   await refreshAllFillButtons();
 }
 
+// Email Check's three Initialize fields, normalised the way the worker context expects them: the Copy File link trimmed or
+// null; each proof {segment trimmed or null, variation lower-cased and trimmed, url trimmed}, each Email on Acid test
+// {variation, url} likewise; an entry with no url is dropped. Pure: commitInitContext merges the result into the draft.
+function normalizeInitEmail(d) {
+  const trim = s => (s == null ? '' : String(s)).trim();
+  return {
+    copyFileUrl: trim(d.copyFileUrl) || null,
+    emailProofs: (Array.isArray(d.emailProofs) ? d.emailProofs : [])
+      .map(p => ({ segment: trim(p && p.segment) || null, variation: trim(p && p.variation).toLowerCase(), url: trim(p && p.url) }))
+      .filter(p => p.url),
+    emailEoa: (Array.isArray(d.emailEoa) ? d.emailEoa : [])
+      .map(e => ({ variation: trim(e && e.variation).toLowerCase(), url: trim(e && e.url) }))
+      .filter(e => e.url),
+  };
+}
+
 // Save is the only path that writes into initContexts — and the only context
 // other modes will ever read is the active one, which always has reviewed:true.
 async function commitInitContext() {
@@ -11229,6 +12242,7 @@ async function commitInitContext() {
     .filter(r => r.ticketKey || r.label);
   d.softcodedTests  = normalizeRelated(d.softcodedTests);
   d.concurrentTests = normalizeRelated(d.concurrentTests);
+  Object.assign(d, normalizeInitEmail(d));
 
   const ctx = { ...d, summary: (d.summary || '').trim(), experimentId: (d.experimentId || '').trim() || null, qaTestPlanUrl: (d.qaTestPlanUrl || '').trim() || null, reviewed: true };
 

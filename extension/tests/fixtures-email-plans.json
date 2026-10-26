@@ -1,0 +1,2272 @@
+{
+ "template": {
+  "spreadsheetId": "EXPLAN_TEMPLATE_0000000000000001",
+  "title": "[TEST #] EMAIL Test Plan [0.88 hrs]",
+  "tabs": [
+   {
+    "title": "QA Round 1",
+    "sheetId": 100,
+    "index": 0,
+    "hidden": null
+   },
+   {
+    "title": "Legend/Values [DO NOT REMOVE]",
+    "sheetId": 101,
+    "index": 1,
+    "hidden": null
+   }
+  ],
+  "values": [
+   [
+    "[Insert Jira Ticket URL Here]",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "1st Pass Estimate"
+   ],
+   [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "0.82"
+   ],
+   [],
+   [],
+   [
+    "\u2757 If you find that important test cases are missing, add as necessary to this test plan with a time estimate. \u2757"
+   ],
+   [
+    "Test Group",
+    "",
+    "Description",
+    "",
+    "Preview Clients",
+    "",
+    "",
+    "Notes"
+   ],
+   [
+    "",
+    "",
+    "",
+    "Total Minutes\r",
+    "Desktop",
+    "Mobile",
+    "Web-Based"
+   ],
+   [
+    "Reqs\nv0",
+    "",
+    "Subject Line - "
+   ],
+   [
+    "",
+    "",
+    "Is the subject line rendering correctly with proper spelling, grammar, and emojis (if relevant)?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content rendering correctly within the subject line?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Name"
+   ],
+   [
+    "",
+    "",
+    "Does the sender name match the copy doc?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is the sender name spelled correctly?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Addresses"
+   ],
+   [
+    "",
+    "",
+    "Does the from address match the copy doc?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does the reply-to email address match the copy doc?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Preview Text - "
+   ],
+   [
+    "",
+    "",
+    "Does the preview text match the copy doc?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does all spelling, punctuation, and grammar look correct?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content populating correctly?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Body Copy Personalization"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content rendered correctly? (No |FIRSTNAME|'s anywhere)",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does conditional content within the email match the variation?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Grammar"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the email body?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the graphics?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Image Alt Tags"
+   ],
+   [
+    "",
+    "",
+    "Do all images have proper alt-tags that describe the image and match what is present in the copy doc?",
+    "3",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Links"
+   ],
+   [
+    "",
+    "",
+    "Are all links sourced properly and going to the correct place?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Remove if not appliclabe - Are all personalized UTM params matching the variation/treatment you're in?\nPGM will specify in the comments of that ticket if the UTMs differ between variations",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Visuals"
+   ],
+   [
+    "",
+    "",
+    "Verify the overall visuals of the email, anything standing out as \"off\"?",
+    "2",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Any allignment, spacing, overlapping issues?",
+    "",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Dark Mode"
+   ],
+   [
+    "",
+    "",
+    "Does the email hold up in dark mode?",
+    "2",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Are any areas of copy/visuals hard to read/view when looking at dark mode?",
+    "",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Signer"
+   ],
+   [
+    "",
+    "",
+    "Does the email signature at the bottom of the body match what is present in the copy doc?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Authentification"
+   ],
+   [
+    "",
+    "",
+    "Are all DKIM authentifications passing for this variation?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "Reqs\nv0\nPersonalization\nVariation\nRemove if not-applicable",
+    "Subject Line - "
+   ],
+   [
+    "",
+    "",
+    "Is the subject line rendering correctly with proper spelling, grammar, and emojis (if relevant)?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content rendering correctly within the subject line?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Name"
+   ],
+   [
+    "",
+    "",
+    "Does the sender name match the copy doc?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is the sender name spelled correctly?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Addresses"
+   ],
+   [
+    "",
+    "",
+    "Does the from address match the copy doc?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does the reply-to email address match the copy doc?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Preview Text - "
+   ],
+   [
+    "",
+    "",
+    "Does the preview text match the copy doc?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does all spelling, punctuation, and grammar look correct?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content populating correctly?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Body Copy Personalization"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content rendered correctly? (No |FIRSTNAME|'s anywhere)",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does conditional content within the email match the variation?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Grammar - Follow client-specific grammar guidelines wherever possible - EXAMPLE"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the email body?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the graphics?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Image Alt Tags"
+   ],
+   [
+    "",
+    "",
+    "Do all images have proper alt-tags that describe the image? \nThe descriptions are not in the copy doc, but it should be relevant to the image and without typos.",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Links"
+   ],
+   [
+    "",
+    "",
+    "Are all links sourced properly and going to the correct place?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Remove if not appliclabe - Are all personalized UTM params matching the variation/treatment you're in?\nPGM will specify in the comments of that ticket if the UTMs differ between variations",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Visuals"
+   ],
+   [
+    "",
+    "",
+    "Verify the overall visuals of the email, anything standing out as \"off\"?",
+    "",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Any allignment, spacing, overlapping issues?",
+    "",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Dark Mode"
+   ],
+   [
+    "",
+    "",
+    "Does the email hold up in dark mode?",
+    "",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Are any areas of copy/visuals hard to read/view when looking at dark mode?",
+    "",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Signer"
+   ],
+   [
+    "",
+    "",
+    "Does the email signature at the bottom of the body match what is present in the copy doc?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Authentification"
+   ],
+   [
+    "",
+    "",
+    "Are all DKIM authentifications passing for this variation?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "Reqs\nv1",
+    "",
+    "Subject Line - "
+   ],
+   [
+    "",
+    "",
+    "Is the subject line rendering correctly with proper spelling, grammar, and emojis (if relevant)?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content rendering correctly within the subject line?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Name"
+   ],
+   [
+    "",
+    "",
+    "Does the sender name match the copy doc?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is the sender name spelled correctly?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Addresses"
+   ],
+   [
+    "",
+    "",
+    "Does the from address match the copy doc?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does the reply-to email address match the copy doc?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Preview Text - "
+   ],
+   [
+    "",
+    "",
+    "Does the preview text match the copy doc?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does all spelling, punctuation, and grammar look correct?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content populating correctly?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Body Copy Personalization"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content renderd correctly? (No |FIRSTNAME|'s anywhere)",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does conditional content within the email match the variation?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Grammar"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the email body?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the graphics?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Image Alt Tags"
+   ],
+   [
+    "",
+    "",
+    "Do all images have proper alt-tags that describe the image and match what is present in the copy doc?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Links"
+   ],
+   [
+    "",
+    "",
+    "Are all links sourced properly and going to the correct place?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Remove if not appliclabe - Are all personalized UTM params matching the variation/treatment you're in?\nPGM will specify in the comments of that ticket if the UTMs differ between variations",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Visuals"
+   ],
+   [
+    "",
+    "",
+    "Verify the overall visuals of the email, anything standing out as \"off\"?",
+    "2",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Any allignment, spacing, overlapping issues?",
+    "",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Dark Mode"
+   ],
+   [
+    "",
+    "",
+    "Does the email hold up in dark mode?",
+    "2",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Are any areas of copy/visuals hard to read/view when looking at dark mode?",
+    "",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Signer"
+   ],
+   [
+    "",
+    "",
+    "Does the email signature at the bottom of the body match what is present in the copy doc?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Authentification"
+   ],
+   [
+    "",
+    "",
+    "Are all DKIM authentifications passing for this variation?",
+    "2",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "Reqs\nv1\nPersonalization\nVariation\nRemove if not-applicable",
+    "Subject Line - "
+   ],
+   [
+    "",
+    "",
+    "Is the subject line rendering correctly with proper spelling, grammar, and emojis (if relevant)?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content rendering correctly within the subject line?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Name"
+   ],
+   [
+    "",
+    "",
+    "Does the sender name match the copy doc?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is the sender name spelled correctly?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Addresses"
+   ],
+   [
+    "",
+    "",
+    "Does the from address match the copy doc?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does the reply-to email address match the copy doc?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Preview Text - \nNote that Litmus automation may pull the first few words of the email body into the end of the preview text.  This is fine as-is"
+   ],
+   [
+    "",
+    "",
+    "Does the preview text match the copy doc?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does all spelling, punctuation, and grammar look correct?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content populating correctly?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Body Copy Personalization"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content rendered correctly? (No |FIRSTNAME|'s anywhere)",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does conditional content within the email match the variation?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Grammar - Follow client-specific grammar guidelines wherever possible - EXAMPLE"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the email body?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the graphics?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Image Alt Tags"
+   ],
+   [
+    "",
+    "",
+    "Do all images have proper alt-tags that describe the image and match what is present in the copy doc?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Links"
+   ],
+   [
+    "",
+    "",
+    "Are all links sourced properly and going to the correct place?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Remove if not appliclabe - Are all personalized UTM params matching the variation/treatment you're in?\nPGM will specify in the comments of that ticket if the UTMs differ between variations",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Visuals"
+   ],
+   [
+    "",
+    "",
+    "Verify the overall visuals of the email, anything standing out as \"off\"?",
+    "",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Any allignment, spacing, overlapping issues?",
+    "",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Dark Mode"
+   ],
+   [
+    "",
+    "",
+    "Does the email hold up in dark mode?",
+    "",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Are any areas of copy/visuals hard to read/view when looking at dark mode?",
+    "",
+    "Backlog",
+    "Backlog",
+    "Backlog"
+   ],
+   [
+    "",
+    "",
+    "Signer"
+   ],
+   [
+    "",
+    "",
+    "Does the email signature at the bottom of the body match what is present in the copy doc?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Authentification"
+   ],
+   [
+    "",
+    "",
+    "Are all DKIM authentifications passing for this variation?",
+    "",
+    "Backlog",
+    "Excluded",
+    "Excluded"
+   ]
+  ],
+  "legend": [
+   [
+    "Statuses",
+    "Backlog",
+    "Needs to be tested",
+    "Backlog",
+    "Excluded"
+   ],
+   [
+    "",
+    "In Progress",
+    "Actively being tested"
+   ],
+   [
+    "",
+    "Failed",
+    "Failed QA pass"
+   ],
+   [
+    "",
+    "Passed",
+    "Passed QA pass"
+   ],
+   [
+    "",
+    "Excluded",
+    "Excluded from testing"
+   ],
+   [
+    "",
+    "Blocked",
+    "QA blocked from testing"
+   ]
+  ],
+  "capturedAt": "2027-01-01T00:00:00.000Z",
+  "source": "synthetic: generated by extension/tests/gen-email-fixtures.py"
+ },
+ "EX-1": {
+  "spreadsheetId": "EXPLAN_EX1_TEST_PLAN_00000000001",
+  "title": "[EX-1] EMAIL Test Plan [1.45 hrs]",
+  "tabs": [
+   {
+    "title": "QA Round 1",
+    "sheetId": 100,
+    "index": 0,
+    "hidden": null
+   },
+   {
+    "title": "Legend/Values [DO NOT REMOVE]",
+    "sheetId": 101,
+    "index": 1,
+    "hidden": null
+   }
+  ],
+  "values": [
+   [
+    "https://jira.example.org/browse/EX-1",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "1st Pass Estimate"
+   ],
+   [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "1:45"
+   ],
+   [],
+   [],
+   [
+    "\u2757 If you find that important test cases are missing, add as necessary to this test plan with a time estimate. \u2757"
+   ],
+   [
+    "Test Group",
+    "",
+    "Description",
+    "",
+    "Preview Clients",
+    "",
+    "",
+    "Notes"
+   ],
+   [
+    "",
+    "",
+    "",
+    "Total Minutes\r",
+    "Desktop",
+    "Mobile",
+    "Web-Based"
+   ],
+   [
+    "Reqs - Regular Donors\nv0",
+    "",
+    "Subject Line - "
+   ],
+   [
+    "",
+    "",
+    "Is the subject line rendering correctly with proper spelling, grammar, and emojis (if relevant)?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content rendering correctly within the subject line?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Name"
+   ],
+   [
+    "",
+    "",
+    "Does the sender name match the copy doc?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is the sender name spelled correctly?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Addresses"
+   ],
+   [
+    "",
+    "",
+    "Does the from address match the copy doc?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does the reply-to email address match the copy doc?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Preview Text - "
+   ],
+   [
+    "",
+    "",
+    "Does the preview text match the copy doc?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does all spelling, punctuation, and grammar look correct?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content populating correctly?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Body Copy Personalization"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content rendered correctly? (No |FIRSTNAME|'s anywhere)",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does conditional content within the email match the variation?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Grammar"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the email body?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the graphics?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Image Alt Tags"
+   ],
+   [
+    "",
+    "",
+    "Do all images have proper alt-tags that describe the image and match what is present in the copy doc?",
+    "3",
+    "In Progress",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Links"
+   ],
+   [
+    "",
+    "",
+    "Are all links sourced properly and going to the correct place?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded",
+    "V0 / Regular Donors | Desktop | Every link was opened in a fresh tab from the proof. None redirected more than once and none landed on an error page."
+   ],
+   [
+    "",
+    "",
+    "Remove if not appliclabe - Are all personalized UTM params matching the variation/treatment you're in?\nPGM will specify in the comments of that ticket if the UTMs differ between variations",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded",
+    "V0 / Regular Donors | Desktop | Put the campaign links of both versions side by side: the query strings are the same, character for character."
+   ],
+   [
+    "",
+    "",
+    "Visuals"
+   ],
+   [
+    "",
+    "",
+    "Verify the overall visuals of the email, anything standing out as \"off\"?",
+    "2",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Any allignment, spacing, overlapping issues?",
+    "",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Dark Mode"
+   ],
+   [
+    "",
+    "",
+    "Does the email hold up in dark mode?",
+    "2",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Are any areas of copy/visuals hard to read/view when looking at dark mode?",
+    "",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Signer"
+   ],
+   [
+    "",
+    "",
+    "Does the email signature at the bottom of the body match what is present in the copy doc?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Authentification"
+   ],
+   [
+    "",
+    "",
+    "Are all DKIM authentifications passing for this variation?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded",
+    "V0 / Regular Donors | Desktop | The authentication headers show a valid signature from the sender's own domain."
+   ],
+   [
+    "",
+    "Reqs - Major Donors\nv0",
+    "Subject Line - "
+   ],
+   [
+    "",
+    "",
+    "Is the subject line rendering correctly with proper spelling, grammar, and emojis (if relevant)?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content rendering correctly within the subject line?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Name"
+   ],
+   [
+    "",
+    "",
+    "Does the sender name match the copy doc?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is the sender name spelled correctly?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Addresses"
+   ],
+   [
+    "",
+    "",
+    "Does the from address match the copy doc?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does the reply-to email address match the copy doc?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Preview Text - "
+   ],
+   [
+    "",
+    "",
+    "Does the preview text match the copy doc?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does all spelling, punctuation, and grammar look correct?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content populating correctly?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Body Copy Personalization"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content rendered correctly? (No |FIRSTNAME|'s anywhere)",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does conditional content within the email match the variation?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Grammar - Follow client-specific grammar guidelines wherever possible - EXAMPLE"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the email body?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the graphics?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Image Alt Tags"
+   ],
+   [
+    "",
+    "",
+    "Do all images have proper alt-tags that describe the image? \nThe descriptions are not in the copy doc, but it should be relevant to the image and without typos.",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Links"
+   ],
+   [
+    "",
+    "",
+    "Are all links sourced properly and going to the correct place?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Remove if not appliclabe - Are all personalized UTM params matching the variation/treatment you're in?\nPGM will specify in the comments of that ticket if the UTMs differ between variations",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Visuals"
+   ],
+   [
+    "",
+    "",
+    "Verify the overall visuals of the email, anything standing out as \"off\"?",
+    "",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Any allignment, spacing, overlapping issues?",
+    "",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Dark Mode"
+   ],
+   [
+    "",
+    "",
+    "Does the email hold up in dark mode?",
+    "",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Are any areas of copy/visuals hard to read/view when looking at dark mode?",
+    "",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Signer"
+   ],
+   [
+    "",
+    "",
+    "Does the email signature at the bottom of the body match what is present in the copy doc?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Authentification"
+   ],
+   [
+    "",
+    "",
+    "Are all DKIM authentifications passing for this variation?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded",
+    "V0 / Major Donors | Desktop | Same signature result as the Regular Donors proof."
+   ],
+   [
+    "Reqs - Regular Donors\nv1",
+    "",
+    "Subject Line - "
+   ],
+   [
+    "",
+    "",
+    "Is the subject line rendering correctly with proper spelling, grammar, and emojis (if relevant)?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content rendering correctly within the subject line?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Name"
+   ],
+   [
+    "",
+    "",
+    "Does the sender name match the copy doc?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is the sender name spelled correctly?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Addresses"
+   ],
+   [
+    "",
+    "",
+    "Does the from address match the copy doc?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does the reply-to email address match the copy doc?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Preview Text - "
+   ],
+   [
+    "",
+    "",
+    "Does the preview text match the copy doc?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does all spelling, punctuation, and grammar look correct?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content populating correctly?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Body Copy Personalization"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content renderd correctly? (No |FIRSTNAME|'s anywhere)",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does conditional content within the email match the variation?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Grammar"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the email body?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the graphics?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Image Alt Tags"
+   ],
+   [
+    "",
+    "",
+    "Do all images have proper alt-tags that describe the image and match what is present in the copy doc?",
+    "2",
+    "Failed",
+    "Excluded",
+    "Excluded",
+    "V1 / Regular Donors | Desktop | Fails: the hero alt was copied from V0 and was not updated for this version."
+   ],
+   [
+    "",
+    "",
+    "Links"
+   ],
+   [
+    "",
+    "",
+    "Are all links sourced properly and going to the correct place?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Remove if not appliclabe - Are all personalized UTM params matching the variation/treatment you're in?\nPGM will specify in the comments of that ticket if the UTMs differ between variations",
+    "",
+    "Excluded",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Visuals"
+   ],
+   [
+    "",
+    "",
+    "Verify the overall visuals of the email, anything standing out as \"off\"?",
+    "2",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Any allignment, spacing, overlapping issues?",
+    "",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Dark Mode"
+   ],
+   [
+    "",
+    "",
+    "Does the email hold up in dark mode?",
+    "2",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Are any areas of copy/visuals hard to read/view when looking at dark mode?",
+    "",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Signer"
+   ],
+   [
+    "",
+    "",
+    "Does the email signature at the bottom of the body match what is present in the copy doc?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Authentification"
+   ],
+   [
+    "",
+    "",
+    "Are all DKIM authentifications passing for this variation?",
+    "2",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "Reqs - Major Donors\nv1",
+    "Subject Line - "
+   ],
+   [
+    "",
+    "",
+    "Is the subject line rendering correctly with proper spelling, grammar, and emojis (if relevant)?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content rendering correctly within the subject line?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Name"
+   ],
+   [
+    "",
+    "",
+    "Does the sender name match the copy doc?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is the sender name spelled correctly?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Sender Addresses"
+   ],
+   [
+    "",
+    "",
+    "Does the from address match the copy doc?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does the reply-to email address match the copy doc?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Preview Text - \nNote that Litmus automation may pull the first few words of the email body into the end of the preview text.  This is fine as-is"
+   ],
+   [
+    "",
+    "",
+    "Does the preview text match the copy doc?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does all spelling, punctuation, and grammar look correct?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content populating correctly?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Body Copy Personalization"
+   ],
+   [
+    "",
+    "",
+    "Is personalized content rendered correctly? (No |FIRSTNAME|'s anywhere)",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Does conditional content within the email match the variation?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Grammar - Follow client-specific grammar guidelines wherever possible - EXAMPLE"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the email body?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Are there grammatical, spelling, or punctuation errors throughout the graphics?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Image Alt Tags"
+   ],
+   [
+    "",
+    "",
+    "Do all images have proper alt-tags that describe the image and match what is present in the copy doc?",
+    "",
+    "Failed",
+    "Excluded",
+    "Excluded",
+    "V1 / Major Donors | Desktop | Fails: same as the Regular Donors proof, the hero alt was not updated."
+   ],
+   [
+    "",
+    "",
+    "Links"
+   ],
+   [
+    "",
+    "",
+    "Are all links sourced properly and going to the correct place?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Remove if not appliclabe - Are all personalized UTM params matching the variation/treatment you're in?\nPGM will specify in the comments of that ticket if the UTMs differ between variations",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Visuals"
+   ],
+   [
+    "",
+    "",
+    "Verify the overall visuals of the email, anything standing out as \"off\"?",
+    "",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Any allignment, spacing, overlapping issues?",
+    "",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Dark Mode"
+   ],
+   [
+    "",
+    "",
+    "Does the email hold up in dark mode?",
+    "",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Are any areas of copy/visuals hard to read/view when looking at dark mode?",
+    "",
+    "Passed",
+    "Passed",
+    "Passed"
+   ],
+   [
+    "",
+    "",
+    "Signer"
+   ],
+   [
+    "",
+    "",
+    "Does the email signature at the bottom of the body match what is present in the copy doc?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ],
+   [
+    "",
+    "",
+    "Authentification"
+   ],
+   [
+    "",
+    "",
+    "Are all DKIM authentifications passing for this variation?",
+    "",
+    "Passed",
+    "Excluded",
+    "Excluded"
+   ]
+  ],
+  "legend": [
+   [
+    "Statuses",
+    "Backlog",
+    "Needs to be tested",
+    "Backlog",
+    "Excluded"
+   ],
+   [
+    "",
+    "In Progress",
+    "Actively being tested"
+   ],
+   [
+    "",
+    "Failed",
+    "Failed QA pass"
+   ],
+   [
+    "",
+    "Passed",
+    "Passed QA pass"
+   ],
+   [
+    "",
+    "Excluded",
+    "Excluded from testing"
+   ],
+   [
+    "",
+    "Blocked",
+    "QA blocked from testing"
+   ]
+  ],
+  "capturedAt": "2027-01-01T00:00:00.000Z",
+  "source": "synthetic: generated by extension/tests/gen-email-fixtures.py"
+ }
+}

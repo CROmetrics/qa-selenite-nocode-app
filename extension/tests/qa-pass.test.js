@@ -2673,7 +2673,7 @@ ok('no request reached Google or the sheet from a refused call', skG.A.calls.len
 
 // ── sign-in ──
 var st0 = skCall(skG.w, { action: 'qpGoogleStatus' });
-jeq('status before connecting: the client id is set (trimmed), not connected, the redirect URL is shown', st0, { ok: true, clientIdSet: true, connected: false, redirectUrl: 'https://abc.chromiumapp.org/' });
+jeq('status before connecting: the client id is set (trimmed), not connected, the redirect URL is shown', st0, { ok: true, clientIdSet: true, connected: false, docsGranted: false, redirectUrl: 'https://abc.chromiumapp.org/' });
 skG.A.script = function (o, n) { return n === 1 ? skErr('interaction_required')(o) : skOk('tok1', 3599)(o); };
 var cn = skCall(skG.w, { action: 'qpGoogleConnect' });
 jeq('connect answers ok and nothing else (never the token)', cn, { ok: true });
@@ -2682,7 +2682,7 @@ ok('the silent attempt uses prompt=none', /[?&]prompt=none(&|$)/.test(skG.A.call
 ok('the chooser attempt uses prompt=select_account', /[?&]prompt=select_account(&|$)/.test(skG.A.calls[1].url));
 ok('the launch URL is Google\'s authorize endpoint', skG.A.calls[1].url.indexOf('https://accounts.google.com/o/oauth2/v2/auth?') === 0);
 ok('response_type=token (implicit flow)', /[?&]response_type=token(&|$)/.test(skG.A.calls[1].url));
-ok('the exact Sheets scope, encoded', skG.A.calls[1].url.indexOf('scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fspreadsheets&') > 0, skG.A.calls[1].url);
+ok('the exact two scopes (Sheets, then Docs read-only), encoded', skG.A.calls[1].url.indexOf('scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fspreadsheets%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdocuments.readonly&') > 0, skG.A.calls[1].url);
 ok('the redirect uri is the install\'s chromiumapp.org URL, encoded', skG.A.calls[1].url.indexOf('redirect_uri=https%3A%2F%2Fabc.chromiumapp.org%2F&') > 0);
 ok('the client id is trimmed and in the URL', skG.A.calls[1].url.indexOf('client_id=' + SK_CLIENT + '&') > 0);
 eq('state is 16 hex characters from crypto.getRandomValues', skStateOf(skG.A.calls[1].url), SK_STATE);
@@ -2741,6 +2741,42 @@ eq('reading a tab the sheet does not have is an error', skCall(skR.w, { action: 
 eq('a spreadsheet id that is not an id is refused before any request', (function () { var n = skR.S.reqs.length; var r = skCall(skR.w, { action: 'qpSheetMeta', payload: { spreadsheetId: '../../x' } }); return r.ok + '|' + (skR.S.reqs.length - n); })(), 'false|0');
 var skNoVals = skWorld(); skNoVals.S.tabs = skNoVals.S.tabs.filter(function (t) { return t.title !== 'Values'; });
 eq('a sheet with no Values tab answers valuesTab null', skCall(skNoVals.w, { action: 'qpSheetRead', payload: { spreadsheetId: SK_ID, tabTitle: 'QA Pass 1' } }).valuesTab, null);
+// The vocabulary tab. A tab titled exactly Values wins; an EMAIL Test Plan's `Legend/Values [DO NOT REMOVE]` is used when there is no exact one; a title that merely contains the letters is neither.
+var SK_LEGEND = 'Legend/Values [DO NOT REMOVE]';
+function skVocabTabs(titles) {
+  var x = skWorld();
+  x.S.tabs = [{ sheetId: 0, title: 'QA Pass 1', index: 0, hidden: false }].concat(titles.map(function (t, i) { return { sheetId: 10 + i, title: t, index: 1 + i, hidden: false }; }));
+  x.S.grids = { 'QA Pass 1': skCopy(VALUES) };
+  titles.forEach(function (t) { x.S.grids[t] = [['vocab of ' + t]]; });
+  return skCall(x.w, { action: 'qpSheetRead', payload: { spreadsheetId: SK_ID, tabTitle: 'QA Pass 1' } });
+}
+jeq('S11 values tab: an exact Values tab wins over a Legend/Values tab (either order)', [skVocabTabs([SK_LEGEND, 'Values']).valuesTab, skVocabTabs(['Values', SK_LEGEND]).valuesTab], [[['vocab of Values']], [['vocab of Values']]]);
+jeq('S11 values tab: with no exact one, Legend/Values [DO NOT REMOVE] is the vocabulary tab', skVocabTabs([SK_LEGEND]).valuesTab, [['vocab of ' + SK_LEGEND]]);
+eq('S11 values tab: the match is case-insensitive on the exact title (values)', JSON.stringify(skVocabTabs(['values', SK_LEGEND]).valuesTab), JSON.stringify([['vocab of values']]));
+eq('S11 values tab: a title that only contains the letters (Evaluations) is not one', skVocabTabs(['Evaluations', 'Valuesheet']).valuesTab, null);
+eq('S11 values tab: no such tab at all answers null', skVocabTabs(['Notes']).valuesTab, null);
+eq('S11 values tab: the tab being read is never its own vocabulary', skVocabTabs([]).valuesTab, null);
+
+// The stored token keeps the scope Google says was granted; qpGoogleStatus.docsGranted reads it.
+var SK_BOTH = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/documents.readonly';
+function skOkScope(token, scope) { return function (o) { return Promise.resolve('https://abc.chromiumapp.org/#access_token=' + token + '&token_type=Bearer&expires_in=3599&scope=' + encodeURIComponent(scope) + '&state=' + skStateOf(o.url)); }; }
+var skSc = skWorld({ token: false, script: skOkScope('tokD', SK_BOTH) });
+skCall(skSc.w, { action: 'qpGoogleConnect' });
+eq('S11 scope: the stored token carries the granted scopes, space separated', skSc.w.store.session.qpGoogleToken.scope, SK_BOTH);
+eq('S11 scope: and still only the token, its expiry and the scope', Object.keys(skSc.w.store.session.qpGoogleToken).sort().join(), 'accessToken,expiresAt,scope');
+jeq('S11 docsGranted: true when the stored scope has documents.readonly (key order of the status)', Object.keys(skCall(skSc.w, { action: 'qpGoogleStatus' })), ['ok', 'clientIdSet', 'connected', 'docsGranted', 'redirectUrl']);
+eq('S11 docsGranted: true for the two-scope token', skCall(skSc.w, { action: 'qpGoogleStatus' }).docsGranted, true);
+var skSc1 = skWorld({ token: false, script: skOkScope('tokS', 'https://www.googleapis.com/auth/spreadsheets') });
+skCall(skSc1.w, { action: 'qpGoogleConnect' });
+jeq('S11 docsGranted: false for a Sheets-only token, which is still connected', [skCall(skSc1.w, { action: 'qpGoogleStatus' }).connected, skCall(skSc1.w, { action: 'qpGoogleStatus' }).docsGranted], [true, false]);
+var skSc0 = skWorld();   // a token stored by a worker that predates the scope field
+jeq('S11 docsGranted: false for a token with no scope field', [skCall(skSc0.w, { action: 'qpGoogleStatus' }).connected, skCall(skSc0.w, { action: 'qpGoogleStatus' }).docsGranted], [true, false]);
+var skScN = skWorld({ token: false, script: skOk('tokX') });   // a redirect with no scope parameter at all stores ''
+skScN.A.script = function (o) { return Promise.resolve('https://abc.chromiumapp.org/#access_token=tokX&expires_in=3599&state=' + skStateOf(o.url)); };
+skCall(skScN.w, { action: 'qpGoogleConnect' });
+eq('S11 scope: a redirect without a scope parameter stores an empty scope', skScN.w.store.session.qpGoogleToken.scope, '');
+eq('S11 docsGranted: and reads false', skCall(skScN.w, { action: 'qpGoogleStatus' }).docsGranted, false);
+ok('S11 scopes: background.js imports email-check.js after qa-pass.js (the Docs scope constant lives there)', /importScripts\([^)]*'qa-pass\.js', 'email-check\.js'\)/.test(readFile('../background.js')));
 
 // ── token trouble ──
 var sk401 = skWorld({ token: 'stale', script: skOk('tok1') });

@@ -1,0 +1,1715 @@
+{
+ "documentId": "EXDOC_EX1_COPY_DOC_000000000001",
+ "title": "Cold Route - Message 1 (synthetic copy doc)",
+ "synthetic": true,
+ "body": {
+  "content": [
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "table": {
+     "rows": 1,
+     "columns": 3,
+     "tableRows": [
+      {
+       "tableCells": [
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "+\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "tableOfContents": {
+     "content": [
+      {
+       "paragraph": {
+        "elements": [
+         {
+          "textRun": {
+           "content": "Messages\n",
+           "textStyle": {
+            "link": {
+             "headingId": "h.exsynth000001"
+            }
+           }
+          }
+         }
+        ],
+        "paragraphStyle": {
+         "namedStyleType": "NORMAL_TEXT"
+        }
+       }
+      },
+      {
+       "paragraph": {
+        "elements": [
+         {
+          "textRun": {
+           "content": "Email 1 - ",
+           "textStyle": {
+            "link": {
+             "headingId": "h.exsynth000002"
+            }
+           }
+          }
+         },
+         {
+          "textRun": {
+           "content": "Odile\u2019s Route\n",
+           "textStyle": {
+            "link": {
+             "headingId": "h.exsynth000002"
+            }
+           }
+          }
+         }
+        ],
+        "paragraphStyle": {
+         "namedStyleType": "NORMAL_TEXT"
+        }
+       }
+      }
+     ]
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "horizontalRule": {}
+      },
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Messages\n",
+        "textStyle": {
+         "bold": true
+        }
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "HEADING_3",
+      "headingId": "h.exsynth000001"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Email 1 -",
+        "textStyle": {}
+       }
+      },
+      {
+       "textRun": {
+        "content": " Odile\u2019s Route\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "HEADING_4",
+      "headingId": "h.exsynth000002"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "table": {
+     "rows": 11,
+     "columns": 2,
+     "tableRows": [
+      {
+       "tableCells": [
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Send Date\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Jan 15, 2027\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "tableCells": [
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Send Time\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "10:00AM\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "tableCells": [
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Message Type\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Engagement\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "tableCells": [
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Sender\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Example Relief\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "tableCells": [
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Match\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "None\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "tableCells": [
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Goal\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "None\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "tableCells": [
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Segmentation\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Sample segment\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "tableCells": [
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "General Information\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Timeline: copy locked 8 Jan, art locked 11 Jan, proofs to QA 12 Jan.\n",
+               "textStyle": {
+                "bold": true
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Must not appear: product brand names, dosage figures, patient faces.\n",
+               "textStyle": {
+                "bold": true
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Mood board:\n",
+               "textStyle": {
+                "bold": true
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "https://assets.example.org/library/asset-1\n",
+               "textStyle": {
+                "link": {
+                 "url": "https://assets.example.org/library/asset-1"
+                }
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            },
+            "bullet": {
+             "listId": "l2",
+             "nestingLevel": 0
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "https://assets.example.org/library/asset-2\n",
+               "textStyle": {
+                "link": {
+                 "url": "https://assets.example.org/library/asset-2"
+                }
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            },
+            "bullet": {
+             "listId": "l2",
+             "nestingLevel": 0
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "https://assets.example.org/library/asset-3\n",
+               "textStyle": {
+                "link": {
+                 "url": "https://assets.example.org/library/asset-3"
+                }
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            },
+            "bullet": {
+             "listId": "l2",
+             "nestingLevel": 0
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "https://assets.example.org/library/asset-4\n",
+               "textStyle": {
+                "link": {
+                 "url": "https://assets.example.org/library/asset-4"
+                }
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            },
+            "bullet": {
+             "listId": "l2",
+             "nestingLevel": 0
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Sign-off: the comms lead approves the final proof before it is scheduled.\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Fallback: if the van photo is not cleared, use the depot exterior.\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Contact: the field team inbox, for quotes and consent forms.\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "tableCells": [
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Testing Strategy\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Test: 40/30/30\n",
+               "textStyle": {
+                "bold": true
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Primary Goal: Find out whether the button adds anything once the hero is linked.\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Theme: Button plus linked hero against linked hero alone.\n",
+               "textStyle": {
+                "bold": true
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Hypothesis: A linked hero image on its own brings in as many clicks as the hero and the button together.\n",
+               "textStyle": {
+                "bold": true
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "V0 (Control): Linked hero image, then a button after the story\n",
+               "textStyle": {
+                "bold": true
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "V1: Linked hero image only\n",
+               "textStyle": {
+                "bold": true
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          },
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Win Metric: Click-through rate\n",
+               "textStyle": {
+                "bold": true
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "tableCells": [
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Iris Link\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "EX-1: Cold Route - Message 1\n",
+               "textStyle": {
+                "link": {
+                 "url": "https://jira.example.org/browse/EX-1"
+                }
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "tableCells": [
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Figma Link\n",
+               "textStyle": {}
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "content": [
+          {
+           "paragraph": {
+            "elements": [
+             {
+              "textRun": {
+               "content": "Example Relief Master\n",
+               "textStyle": {
+                "link": {
+                 "url": "https://figma.example.org/design/EXFIGMA/Example-Master"
+                }
+               }
+              }
+             }
+            ],
+            "paragraphStyle": {
+             "namedStyleType": "NORMAL_TEXT"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Subject Line: ",
+        "textStyle": {
+         "bold": true
+        }
+       }
+      },
+      {
+       "textRun": {
+        "content": "no more than 9 words and 60 characters\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Route 9",
+        "textStyle": {
+         "bold": true
+        }
+       }
+      },
+      {
+       "textRun": {
+        "content": " leaves before ",
+        "textStyle": {
+         "bold": true
+        }
+       }
+      },
+      {
+       "textRun": {
+        "content": "sunrise\n",
+        "textStyle": {
+         "bold": true
+        }
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     },
+     "bullet": {
+      "listId": "l1",
+      "nestingLevel": 0
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Sixty-two stops and one cold van\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     },
+     "bullet": {
+      "listId": "l1",
+      "nestingLevel": 0
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "The boxes were delivered before the fog lifted\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     },
+     "bullet": {
+      "listId": "l1",
+      "nestingLevel": 0
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Preview Text: ",
+        "textStyle": {
+         "bold": true
+        }
+       }
+      },
+      {
+       "textRun": {
+        "content": "50 characters or fewer to stay visible in the inbox\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Sixty-two stops before breakfast.\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     },
+     "bullet": {
+      "listId": "l1",
+      "nestingLevel": 0
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Ride along before the fog lifts.\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     },
+     "bullet": {
+      "listId": "l1",
+      "nestingLevel": 0
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Ten hours of cold on one winding road.\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     },
+     "bullet": {
+      "listId": "l1",
+      "nestingLevel": 0
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Odile's van is already on the river road.\n",
+        "textStyle": {
+         "bold": true
+        }
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     },
+     "bullet": {
+      "listId": "l1",
+      "nestingLevel": 0
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Landing Pages: ",
+        "textStyle": {
+         "bold": true
+        }
+       }
+      },
+      {
+       "textRun": {
+        "content": "https://www.example.org/stories/route-nine/\n",
+        "textStyle": {
+         "link": {
+          "url": "https://www.example.org/stories/route-nine/"
+         }
+        }
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "horizontalRule": {}
+      },
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "[V1] See What\u2019s in the Van [LINK]\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "{{Recipient.FirstName}},\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "The van leaves the Pine Street depot at 5:40, before the fog has cleared the river road.\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Odile\u2019s eleventh winter on Route 9 has taught her which bridge floods, which gate sticks and which porch light means somebody is waiting up.\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "This season the back of the van carries insulated boxes that keep medicine cold for ten hours. \n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Since March, Odile\u2019s van has reached 62 clinics and pharmacies before nine in the morning.\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "Two more valleys are on the waiting list, and each one needs a van, a driver and a cold box.\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "[V0] See What\u2019s in the Van [LINK]\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "horizontalRule": {}
+      },
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   },
+   {
+    "paragraph": {
+     "elements": [
+      {
+       "textRun": {
+        "content": "\n",
+        "textStyle": {}
+       }
+      }
+     ],
+     "paragraphStyle": {
+      "namedStyleType": "NORMAL_TEXT"
+     }
+    }
+   }
+  ]
+ }
+}

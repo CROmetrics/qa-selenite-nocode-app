@@ -42,6 +42,8 @@
 load('../vd-config.js');
 load('../vd-diff.js');
 load('../qa-pass.js');
+// email-check.js: the Email Check panel and report sections below call its pure functions (loaded after qa-pass.js, as in both panels).
+load('../email-check.js');
 
 var _pu = readFile('../popup.js');
 function slicePopup(from, to) {
@@ -84,6 +86,8 @@ eval(slicePopup('function rptCvaSection(entry) {', '\nfunction rptPerfSection'))
 eval(slicePopup('function rptPerfSection(entry) {', '\nfunction rptFunnelSection'));
 // QA Pass's report section: buildReportBody names it, so it is defined for every block below.
 eval(slicePopup('function rptQaPassSection(entry) {', '\n// ── Report assembly'));
+// Email Check's report section and its eleven helpers (they sit just before QA Pass's section): buildReportBody names rptEmailCheckSection too.
+eval(slicePopup('function rptEmailCheckSection(entry) {', "\n// ── QA Pass (Test Agent mode 'qapass'): the report section"));
 
 // ── harness ────────────────────────────────────────────────────────────────
 var pass = 0, fail = 0, failures = [];
@@ -2978,7 +2982,7 @@ section('QA Pass: registration');
   ok('  its run and getData are functions', q && typeof q.run === 'function' && typeof q.getData === 'function');
   eq('funnel is standalone too', TA_MODES.funnel.standalone, true);
   ok('the numbered modes are not standalone', !TA_MODES['4'].standalone && !TA_MODES['6'].standalone);
-  eq('mode keys', Object.keys(TA_MODES).join(), '4,6,funnel,qapass');
+  eq('mode keys', Object.keys(TA_MODES).join(), '4,6,funnel,qapass,emailcheck');
 
   // "Also Run" is never offered for a standalone mode, and a standalone mode is never offered in it.
   var card = el('ta-multi-card'), list = el('ta-multi-list');
@@ -4204,6 +4208,1394 @@ section('QA Pass: a record from the gate');
   var full = buildReportBody({ ts: rec.ts, pageUrls: cover, modes: [entry], extraHtml: '' });
   ok('and the whole report builds around it', full.indexOf('<h2>QA Pass (platform + layout)</h2>') !== -1 && full.indexOf('optimizely_') === -1);
 })();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Email Check (Test Agent mode 'emailcheck'): the panel markup, the panel code and the report
+// ═══════════════════════════════════════════════════════════════════════════
+// SYNTHETIC DATA ONLY (the repository is public): tickets EX-1 and EX-2 of fixtures-email-*.json, org Example Relief, hosts under example.org.
+// Every section below runs inside TE(): a function that throws (a bug) is ONE failure and the next section still runs.
+function TE(title, fn) {
+  section(title);
+  var p0 = pass, f0 = fail;
+  try { fn(); } catch (e) { fail++; failures.push(title + '  THREW ' + String(e && e.message ? e.message : e).slice(0, 200)); }
+  print('  [' + (pass - p0) + ' passed, ' + (fail - f0) + ' failed]');
+}
+function jeqE(name, actual, expected) { var a = JSON.stringify(actual), e = JSON.stringify(expected); ok(name, a === e, { actual: a, expected: e }); }
+// Sets the stubs as globals for the duration of fn (a promise-returning step is settled with settleE inside fn) and always restores them.
+function withGlobals(stubs, fn) {
+  var saved = {}, had = {};
+  Object.keys(stubs).forEach(function (k) { had[k] = Object.prototype.hasOwnProperty.call(globalThis, k); saved[k] = globalThis[k]; globalThis[k] = stubs[k]; });
+  try { return fn(); } finally { Object.keys(stubs).forEach(function (k) { if (had[k]) globalThis[k] = saved[k]; else delete globalThis[k]; }); }
+}
+function settleE(p) {
+  var o = { done: false, v: undefined, err: undefined };
+  Promise.resolve(p).then(function (v) { o.done = true; o.v = v; }, function (e) { o.done = true; o.err = e; });
+  drainMicrotasks();
+  // An async step that rejects instead of throwing is named in the failure list.
+  if (o.err && /^stub DE-/.test(String(o.err && o.err.message))) { fail++; failures.push('an async step rejected: ' + o.err.message); }
+  return o;
+}
+var EC_SRC_PANEL_FROM = "// ── Email Check (Test Agent mode 'emailcheck') — panel side", EC_SRC_PANEL_TO = "// ── QA Pass (Test Agent mode 'qapass') — panel side";
+function ecPanelSrc() { return slicePopup(EC_SRC_PANEL_FROM, EC_SRC_PANEL_TO).replace(/^let _ecLastRun = null;/m, 'var _ecLastRun = null;'); }
+function ecItemSrc(from) { var a = _pu.indexOf(from), b = _pu.indexOf('\n}\n', a + 1); if (a === -1 || b === -1) throw new Error('slice marker missing: ' + from); return _pu.slice(a, b) + '\n}'; }   // one function: from its signature to its closing brace at column 0
+
+// adfText / adfTextWithHrefs as the Jira fixtures need them (the same slice email-check.test.js makes).
+eval(_pu.slice(_pu.indexOf('function adfText(node) {'), _pu.indexOf('\n// Jira comments kept on the Test Context')));
+function fxE(name) { return JSON.parse(readFile('fixtures-email-' + name + '.json')); }
+var EC_JIRA = fxE('jira'), EC_PLANS = fxE('plans'), EC_PROOFS = fxE('proofs').tickets, EC_INTER = fxE('interstitials'), EC_EOA = fxE('eoa');
+var EC_DOCS = { 'EX-1': fxE('doc-ex1'), 'EX-2': fxE('doc-ex2') };
+var EC_REC_LOADED = false;
+try { load('email-check-fixture-record.js'); EC_REC_LOADED = typeof ecTestRecord === 'function'; } catch (e) { EC_REC_LOADED = false; }
+function ecFx() { return { proofs: EC_PROOFS, interstitials: EC_INTER, eoa: EC_EOA, jira: EC_JIRA, docs: EC_DOCS }; }
+
+// A saved Test Context for a synthetic ticket, shaped as Initialize saves it (the Jira fixture parsed with the same functions extractTestContext uses).
+function exCtx(tk, over) {
+  var j = EC_JIRA[tk], jf = j.fields, links = ecParseEmailLinks(adfTextWithHrefs(jf.description));
+  var copyKey = Object.keys(j.names).filter(function (k) { return j.names[k] === 'Copy File'; })[0];
+  return Object.assign({
+    reviewed: true, ticketKey: tk, summary: jf.summary, copyFileUrl: copyKey ? jf[copyKey] : null,
+    emailProofs: links.proofs.map(function (p) { return { segment: p.segment, variation: p.variation, url: p.url }; }),
+    emailEoa: links.eoa.map(function (e) { return { variation: e.variation, url: e.url }; }),
+    comments: jf.comment.comments.map(function (c) { return { id: c.id, created: c.created, text: adfText(c.body) }; }),
+    qaTestPlanUrl: jf.customfield_10686,
+  }, over || {});
+}
+
+// The panel's world as plain objects: a DOM table, a scripted sendMessage, two storage maps, the session store.
+function ecEnv() {
+  var E = { els: {}, nodes: {}, all: {}, sent: [], replies: {}, store: { local: {}, sync: {} }, sessionSets: [], sessionGets: {}, confirms: [], confirmAnswer: true,
+    ctx: null, intervals: [], cleared: 0, storageFails: false, setFails: false };
+  function mkEl(id) {
+    var listeners = {};
+    return { id: id, textContent: '', innerHTML: '', value: '', checked: false, disabled: false, style: {}, dataset: {},
+      addEventListener: function (ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); }, listeners: listeners,
+      getAttribute: function (n) { return this.attrs ? this.attrs[n] : null; }, closest: function () { return null; }, matches: function () { return false; } };
+  }
+  E.mkEl = mkEl;
+  E.el = function (id) { return E.els[id] || (E.els[id] = mkEl(id)); };
+  function area(name) {
+    return {
+      get: function (keys) {
+        if (E.storageFails) return Promise.reject(new Error('storage fault'));
+        var o = {};
+        (typeof keys === 'string' ? [keys] : keys).forEach(function (k) { if (k in E.store[name]) o[k] = JSON.parse(JSON.stringify(E.store[name][k])); });
+        return Promise.resolve(o);
+      },
+      set: function (o) { if (E.setFails) return Promise.reject(new Error('quota')); Object.assign(E.store[name], JSON.parse(JSON.stringify(o))); return Promise.resolve(); },
+    };
+  }
+  E.globals = function (extra) {
+    return Object.assign({
+      document: { getElementById: function (id) { return E.nodes[id] === null ? null : E.el(id); }, querySelectorAll: function (sel) { return E.all[sel] || []; }, querySelector: function (sel) { return E.nodes[sel] || null; } },
+      chrome: { runtime: { sendMessage: function (msg) {
+          E.sent.push(msg);
+          var r = E.replies[msg.action];
+          try { return Promise.resolve(typeof r === 'function' ? r(msg) : r); } catch (e) { return Promise.reject(e); }
+        } },
+        storage: { local: area('local'), sync: area('sync') },
+        identity: { getRedirectURL: function () { return 'https://abc.chromiumapp.org/'; } } },
+      getActiveContext: function () { return Promise.resolve(E.ctx); },
+      sessionNS: { get: function (k) { var o = {}; if (k in E.sessionGets) o[k] = E.sessionGets[k]; return Promise.resolve(o); }, set: function (o) { E.sessionSets.push(o); return Promise.resolve(); } },
+      WIN_ID: 7, _taStopRequested: false,
+      setInterval: function (fn, ms) { E.intervals.push({ fn: fn, ms: ms }); return E.intervals.length; }, clearInterval: function () { E.cleared++; },
+      confirm: function (m) { E.confirms.push(m); return E.confirmAnswer; },
+    }, extra || {});
+  };
+  return E;
+}
+
+// ── Email Check: registration and panel ───────────────────────────────────
+section('Email Check: registration and panel');
+
+TE('Email Check panel: registration', function () {
+  // emailcheck is a Test Agent mode that runs alone, like QA Pass and the funnel crawl: registered in TA_MODES, its settings body parked in
+  // #ta-mode-homes, never offered in "Also Run", started by the init chain in its own try/catch.
+  var E = ecEnv();
+  withGlobals(E.globals({ rptAiSummarySection: function () { return ''; }, openReportTab: function (s) { E.opened = s; return Promise.resolve(); }, _taActiveBody: 'emailcheck', taQueuedExtra: new Set(), _ecLastRun: null }), function () {
+    eval(slicePopup('const TA_MODES = {', '\nlet _taActiveBody').replace(/^const TA_MODES/, 'var TA_MODES'));
+    eval(slicePopup('function taRenderMultiList() {', '\n// Sequential batch execution'));
+    eval(slicePopup('async function runTestAgent() {', '\nfunction stopTestAgent('));
+    var m = TA_MODES.emailcheck;
+    ok('emailcheck is registered in TA_MODES', !!m);
+    eq('  with its label', m && m.label, 'Email Check (Mailtrap + copy doc)');
+    eq('  parking its body #ec-body', m && m.bodyId, 'ec-body');
+    eq('  in #ta-mode-homes', m && m.homeParentId, 'ta-mode-homes');
+    eq('  as a standalone mode', m && m.standalone, true);
+    eq('  with an onShow', typeof (m && m.onShow), 'function');
+    eq('  always configured (the context is read when it runs)', m && m.isConfigured(), true);
+    ok('  its run and getData are functions', m && typeof m.run === 'function' && typeof m.getData === 'function');
+    eq('the mode keys end with emailcheck, after qapass', Object.keys(TA_MODES).join(), '4,6,funnel,qapass,emailcheck');
+    eq('  and its getData answers the last run (null before any)', m.getData(), null);
+    var card = E.el('ta-multi-card'), list = E.el('ta-multi-list');
+    globalThis._taActiveBody = 'emailcheck'; globalThis.taQueuedExtra.add('6');
+    taRenderMultiList();
+    eq('active emailcheck: the Also Run card is hidden', card.style.display, 'none');
+    eq('  and anything queued is forgotten', globalThis.taQueuedExtra.size, 0);
+    globalThis._taActiveBody = '4';
+    taRenderMultiList();
+    ok('active WCAG: Also Run offers Performance but not Email Check', list.innerHTML.indexOf('data-mode="6"') >= 0 && list.innerHTML.indexOf('emailcheck') < 0 && list.innerHTML.indexOf('Email Check') < 0, list.innerHTML);
+    // runTestAgent drives it like any mode: the key stays a string and the record decides ran / failed.
+    globalThis._taActiveBody = 'emailcheck'; globalThis.taQueuedExtra.clear();
+    var rec = null;
+    TA_MODES.emailcheck = { label: 'Email Check (Mailtrap + copy doc)', isConfigured: function () { return true; },
+      run: function () { rec = { ts: Date.now(), version: 1, checks: [] }; return Promise.resolve({ ok: true }); }, getData: function () { return rec; } };
+    var out = settleE(runTestAgent());
+    ok('an emailcheck run settles', out.done && !out.err, out.err && String(out.err));
+    eq('  its mode key is the string emailcheck', E.opened && E.opened.modes[0].mode, 'emailcheck');
+    eq('  recorded as ran', E.opened && E.opened.modes[0].status, 'ran');
+    rec = null; E.opened = null;
+    TA_MODES.emailcheck.run = function () { return Promise.resolve({ ok: false, error: 'No active ticket context — set one in the Initialize tab.' }); };
+    settleE(runTestAgent());
+    eq('a run that fails (no context) says so in the status line', E.el('ta-status').textContent, 'Email Check (Mailtrap + copy doc) failed: No active ticket context — set one in the Initialize tab.');
+    eq('  and no report is opened for it', E.opened, null);
+  });
+  var real = slicePopup('const TA_MODES = {', '\nlet _taActiveBody');
+  ok('the registration calls runEmailCheckMode, ecUiOnShow and _ecLastRun (the names the panel block defines)', /run: \(\) => runEmailCheckMode\(\)/.test(real) && /ecUiOnShow\(\)\.catch\(\(\) => \{\}\)/.test(real) && /getData: \(\) => _ecLastRun/.test(real));
+  // The init chain.
+  var handler = slicePopup("document.addEventListener('DOMContentLoaded', async () => {", "\n// ── Pin: dock in Chrome's side panel");
+  ok('the init chain starts Email Check in its own try/catch', /try \{\s*await initEmailCheck\(\);\s*\} catch \(e\) \{\s*console\.error\('Selenite: Email Check failed to initialize/.test(handler));
+  ok('  after QA Pass', handler.indexOf('await initEmailCheck()') > handler.indexOf('await initQaPass()'));
+  ok('  and before the Settings overlay is bound', handler.indexOf('await initEmailCheck()') < handler.indexOf("getElementById('settings-overlay')"));
+  ok('the only await initEmailCheck in the handler is the guarded one', handler.split('await initEmailCheck()').length === 2);
+  ok('initQaPass is still started once, guarded', handler.split('await initQaPass()').length === 2);
+  // Structure: where the block sits and what names it defines.
+  var all = _pu;
+  ok('the panel block starts with its heading and declares `let _ecLastRun = null;`', all.indexOf(EC_SRC_PANEL_FROM) >= 0 && all.indexOf('let _ecLastRun = null;') > all.indexOf(EC_SRC_PANEL_FROM) && all.indexOf('let _ecLastRun = null;') < all.indexOf(EC_SRC_PANEL_TO));
+  ok('  immediately before QA Pass\'s panel block (outside every existing slice)', all.indexOf(EC_SRC_PANEL_FROM) < all.indexOf(EC_SRC_PANEL_TO) && all.indexOf(EC_SRC_PANEL_FROM) > all.indexOf('async function runFunnelCrawl()'));
+  var names = ['ecUiEl', 'ecUiReadSettings', 'ecUiApplyPrefs', 'ecUiSavePrefs', 'ecUiRenderCtx', 'ecUiRenderRules', 'ecUiSaveRules', 'runEmailCheckMode', 'ecUiPrepareSheet', 'ecUiRecount',
+    'ecUiRenderResults', 'ecUiShowApplied', 'ecUiPersistLast', 'ecUiOnResultsChange', 'ecUiOnResultsClick', 'ecUiApply', 'ecUiRefreshSheet', 'ecUiConnectGoogle', 'ecUiDisconnectGoogle', 'ecUiOnShow', 'initEmailCheck'];
+  names.forEach(function (n) { ok('popup.js defines ' + n + ' exactly once', new RegExp('(^|\\n)(?:async )?function ' + n + '\\(').test(all) && all.split(new RegExp('(?:^|\\n)(?:async )?function ' + n + '\\(')).length === 2); });
+  ok('no top-level ec[A-Z] or EC_ definition other than ecUi* and the listed names', !/(^|\n)(?:async )?function ec(?!Ui)[A-Z]\w*\(/.test(all) && !/(^|\n)(?:const|let|var) (?:EC_|ec(?!Ui)[A-Z])/.test(all));
+  ok('the panel block names no model id and no Jira write route', !/claude-|\/rest\/api\/|transitionIssue|addComment/.test(ecPanelSrc()));
+});
+
+TE('Email Check panel: markup (both panels)', function () {
+  var files = { 'popup.html': readFile('../popup.html'), 'sidepanel.html': readFile('../sidepanel.html') };
+  var region = function (h) { var a = h.indexOf('id="ec-body"'), b = h.indexOf('id="ec-results"'); return a < 0 || b < 0 ? '' : h.slice(h.lastIndexOf('<div', a), h.indexOf('</div>', b) + 6); };
+  var A = region(files['popup.html']), B = region(files['sidepanel.html']);
+  ok('the #ec-body region is found in both panels and is byte-identical', A.length > 2000 && A === B, [A.length, B.length]);
+  Object.keys(files).forEach(function (f) {
+    var h = files[f];
+    eq(f + ': one email-check.js script tag', h.split('<script src="email-check.js"></script>').length - 1, 1);
+    ok(f + ': between qa-pass.js and popup.js', h.indexOf('<script src="qa-pass.js"></script>') < h.indexOf('<script src="email-check.js"></script>') && h.indexOf('<script src="email-check.js"></script>') < h.indexOf('<script src="popup.js"></script>'));
+    eq(f + ': one emailcheck option, right after qapass, with its label', h.split('<option value="emailcheck">Email Check (Mailtrap + copy doc)</option>').length - 1, 1);
+    ok('  ' + f + ': the option follows the qapass one', h.indexOf('<option value="qapass">') < h.indexOf('<option value="emailcheck">') && h.indexOf('<option value="emailcheck">') < h.indexOf('</select>', h.indexOf('<option value="emailcheck">')));
+    ok(f + ': #ec-body sits inside #ta-mode-homes, after #qp-body and before the Also Run card', h.indexOf('id="ta-mode-homes"') < h.indexOf('id="qp-body"') && h.indexOf('id="qp-results"') < h.indexOf('id="ec-body"') && h.indexOf('id="ec-results"') < h.indexOf('id="ta-multi-card"'));
+    ['ec-body', 'ec-ctx', 'ec-profile', 'ec-utm-rule', 'ec-utm-hint', 'ec-seg-paths', 'ec-rule-hint', 'ec-doc-email', 'ec-eoa-renders', 'ec-sheet-status', 'btn-ec-google-connect', 'btn-ec-google-disconnect', 'ec-sheet-tab', 'ec-write-notes', 'ec-retest-inprogress', 'ec-progress', 'ec-results'].forEach(function (id) {
+      eq(f + ': id ' + id + ' once', h.split('id="' + id + '"').length - 1, 1);
+    });
+    ok(f + ': the profile select holds only the automatic option (the others are filled from EC_PROFILES at runtime)', /<select id="ec-profile">\s*<option value="" selected>Auto \(from ticket\)<\/option>\s*<\/select>/.test(h));
+    Object.keys(EC_PROFILES).forEach(function (k) {
+      var pr = EC_PROFILES[k];
+      ok(f + ': the markup carries no label, name, domain or id of the "' + k + '" profile', [pr.label, pr.orgName, pr.orgDomain].filter(Boolean).every(function (s) { return h.indexOf(s) < 0; }) && A.indexOf('value="' + pr.id + '"') < 0, pr.label);
+    });
+    var names = [];
+    Object.keys(EC_PROFILES).forEach(function (k) { var pr = EC_PROFILES[k]; [pr.id, pr.label, pr.orgName, pr.orgDomain].concat((pr.segments || []).map(function (s) { return s.name; }), (pr.segments || []).map(function (s) { return s.greeting; }), pr.pardotHosts || []).forEach(function (s) { if (s && names.indexOf(s) < 0) names.push(s); }); });
+    ok(f + ': nothing a profile names (id, label, organisation, domain, segment, greeting, host) appears in the ec region', names.length > 6 && names.every(function (s) { return A.toLowerCase().indexOf(String(s).toLowerCase()) < 0; }), names.filter(function (s) { return A.toLowerCase().indexOf(String(s).toLowerCase()) >= 0; }));
+    ok(f + ': the UTM select has the three rules', /<select id="ec-utm-rule">\s*<option value="" selected>Not stated \(UTM row stays In Progress\)<\/option>\s*<option value="identical">Identical between versions<\/option>\s*<option value="suffix">utm_content ends -v0 \/ -v1 per version<\/option>\s*<\/select>/.test(h));
+    ok(f + ': the copy-doc email is a number input, min 1, placeholder auto', /<input type="number" id="ec-doc-email" min="1" placeholder="auto"/.test(h));
+    ok(f + ': EoA renders on by default, notes on, re-test off', /id="ec-eoa-renders" checked>Capture Email on Acid renders for the report \(opens each EoA page in a tab\)/.test(h) && /id="ec-write-notes" checked>Write notes \(V0 \/ Segment \| Device \| finding\)/.test(h) && /<input type="checkbox" id="ec-retest-inprogress">Re-test In Progress cells/.test(h));
+    ok(f + ': Disconnect starts hidden, the tab select starts disabled', /id="btn-ec-google-disconnect" type="button" style="display:none"/.test(h) && /<select id="ec-sheet-tab" disabled><option value="">—<\/option><\/select>/.test(h));
+    ok(f + ': the card says nothing is written until Apply and never to Jira', h.indexOf('Nothing is written to the sheet until you review the proposed changes after a run and click Apply. Selenite never writes to Jira.') > 0);
+    ok(f + ': the description states the never-open promise', h.indexOf("Uses this Chrome's own Mailtrap sign-in (never signs in for you), resolves each Pardot link once, never opens Unsubscribe or View-in-browser links.") > 0);
+    ok(f + ': #set-google is retitled and carries the Docs sentence once', h.indexOf('<div class="card-title">Google Sheets and Docs (QA Pass, Email Check)</div>') > 0 && h.split("Email Check also reads the ticket's copy doc (Google Docs, read-only); after this permission was added, connect once more.").length === 2 && h.indexOf('Google Sheets (QA Pass)') < 0);
+    ok(f + ': the QA Pass body is untouched (still one #qp-body, one #qp-results)', h.split('id="qp-body"').length === 2 && h.split('id="qp-results"').length === 2);
+  });
+  // popup.html and sidepanel.html differ only in the layout CSS and the markup the side panel adds; the DOM contract of the mode is the same.
+  ok('both panels hold the same number of ec- ids', (files['popup.html'].match(/id="(?:btn-)?ec-/g) || []).length === (files['sidepanel.html'].match(/id="(?:btn-)?ec-/g) || []).length);
+});
+
+TE('Email Check panel: the profile options come from EC_PROFILES', function () {
+  var E = ecEnv();
+  withGlobals(E.globals(), function () {
+    eval(ecPanelSrc());
+    // ecUiFillProfiles is the only source of the select's options.
+    var offered = Object.keys(EC_PROFILES).map(function (k) { return EC_PROFILES[k]; }).filter(function (p) { return !p.hidden; });
+    ok('EC_PROFILES has a hidden profile (the synthetic organisation) and at least two offered ones', offered.length >= 2 && offered.length < Object.keys(EC_PROFILES).length, offered.map(function (p) { return p.id; }));
+    E.el('ec-profile').value = '';
+    ecUiFillProfiles();
+    var want = '<option value="">Auto (from ticket)</option>' + offered.map(function (p) { return '<option value="' + qpEsc(p.id) + '">' + qpEsc(p.label) + '</option>'; }).join('');
+    eq('the options are the automatic one, then every profile that is not hidden, in EC_PROFILES order', E.el('ec-profile').innerHTML, want);
+    ok('  a hidden profile is never offered', Object.keys(EC_PROFILES).every(function (k) { return !EC_PROFILES[k].hidden || E.el('ec-profile').innerHTML.indexOf('value="' + EC_PROFILES[k].id + '"') < 0 && E.el('ec-profile').innerHTML.indexOf(EC_PROFILES[k].label) < 0; }));
+    ok('  the generic profile is offered by its label', E.el('ec-profile').innerHTML.indexOf('<option value="generic">' + EC_PROFILES.generic.label + '</option>') >= 0);
+    // a label is escaped
+    var saved = EC_PROFILES.generic.label; EC_PROFILES.generic.label = 'A <b>"x"</b> & y';
+    try { ecUiFillProfiles(); ok('  labels and ids are escaped', E.el('ec-profile').innerHTML.indexOf('<b>') < 0 && E.el('ec-profile').innerHTML.indexOf('A &lt;b&gt;&quot;x&quot;&lt;/b&gt; &amp; y') >= 0, E.el('ec-profile').innerHTML); }
+    finally { EC_PROFILES.generic.label = saved; }
+    // a chosen profile that is still offered is kept; one that is not is dropped
+    E.el('ec-profile').value = 'generic'; ecUiFillProfiles();
+    eq('a stored choice that is still offered is kept', E.el('ec-profile').value, 'generic');
+    E.el('ec-profile').value = 'example'; ecUiFillProfiles();
+    ok('the hidden profile can never be kept as a choice', E.el('ec-profile').value !== 'example', E.el('ec-profile').value);
+    E.nodes['ec-profile'] = null;
+    var threw = false; try { ecUiFillProfiles(); } catch (e) { threw = true; }
+    ok('a missing select is not an error', !threw);
+  });
+});
+
+TE('Email Check panel: settings', function () {
+  var E = ecEnv();
+  withGlobals(E.globals(), function () {
+    eval(ecPanelSrc());
+    var ctx = exCtx('EX-2');
+    function seg(name, value, source, comment) { var i = E.mkEl('seg-' + name); i.value = value; i.dataset = { ecSeg: name, source: source, comment: comment }; return i; }
+    // ecUiReadSettings: the record's settings, read from the DOM and the ticket comments
+    E.el('ec-profile').value = ''; E.el('ec-doc-email').value = ' 2 '; E.el('ec-eoa-renders').checked = true;
+    E.el('ec-utm-rule').value = 'suffix'; E.el('ec-utm-rule').dataset = { source: 'suggested', comment: '420001' };
+    E.all['#ec-seg-paths input[data-ec-seg]'] = [seg('Regular Donors', ' seed-kits ', 'suggested', '420003'), seg('Major Donors', '', 'suggested', '420003')];
+    var s = ecUiReadSettings(ctx);
+    jeqE('settings: exactly the six keys of the record settings', Object.keys(s).sort(), ['docEmail', 'eoaRenders', 'onlyIn', 'profileId', 'segmentPaths', 'utmRule']);
+    eq('settings: profileId is the select value (auto = empty)', s.profileId, '');
+    eq('settings: docEmail is a positive integer', s.docEmail, 2);
+    eq('settings: eoaRenders from the checkbox', s.eoaRenders, true);
+    jeqE('settings: a suggested UTM rule keeps its comment', s.utmRule, { value: 'suffix', source: 'suggested', commentId: '420001' });
+    jeqE('settings: segment paths: trimmed, empty ones left out, provenance kept', s.segmentPaths, { 'Regular Donors': { value: 'seed-kits', source: 'suggested', commentId: '420003' } });
+    jeqE('settings: onlyIn comes from the comments (read-only hint)', s.onlyIn, { expect: { v0: ['DONATE NOW'], v1: ['HELP NOW'] }, commentId: '420001' });
+    // a tester's edit, and the odd values
+    E.el('ec-utm-rule').value = 'identical'; E.el('ec-utm-rule').dataset = { source: 'tester', comment: '' };
+    E.all['#ec-seg-paths input[data-ec-seg]'] = [seg('Regular Donors', 'give-regular', 'tester', ''), seg('Major Donors', 'x', undefined, undefined)];
+    E.el('ec-profile').value = 'generic'; E.el('ec-doc-email').value = '1.5'; E.el('ec-eoa-renders').checked = false;
+    s = ecUiReadSettings(ctx);
+    jeqE('settings: a tester\'s UTM rule has no comment', s.utmRule, { value: 'identical', source: 'tester', commentId: null });
+    jeqE('settings: tester paths, and an input with no provenance counts as the tester\'s', s.segmentPaths, { 'Regular Donors': { value: 'give-regular', source: 'tester', commentId: null }, 'Major Donors': { value: 'x', source: 'tester', commentId: null } });
+    eq('settings: profile generic', s.profileId, 'generic');
+    eq('settings: a non-integer doc email is null', s.docEmail, null);
+    eq('settings: renders off', s.eoaRenders, false);
+    ['0', '-3', 'abc', ''].forEach(function (v) { E.el('ec-doc-email').value = v; eq('settings: doc email "' + v + '" is null', ecUiReadSettings(ctx).docEmail, null); });
+    E.el('ec-utm-rule').value = 'bogus'; E.el('ec-utm-rule').dataset = { source: 'tester' };
+    jeqE('settings: an unknown UTM value is "not stated"', ecUiReadSettings(ctx).utmRule, { value: '', source: 'none', commentId: null });
+    E.el('ec-utm-rule').value = ''; E.el('ec-utm-rule').dataset = { source: 'suggested', comment: '9' };
+    jeqE('settings: an empty UTM rule has source none whatever its provenance', ecUiReadSettings(ctx).utmRule, { value: '', source: 'none', commentId: null });
+    jeqE('settings: with no context onlyIn is null', ecUiReadSettings(null).onlyIn, null);
+    E.nodes['ec-profile'] = null; E.nodes['ec-eoa-renders'] = null; E.nodes['ec-doc-email'] = null; E.nodes['ec-utm-rule'] = null;
+    var bare = ecUiReadSettings(ctx);
+    ok('settings: with every control missing: auto profile, renders on, no doc email, no UTM rule', bare.profileId === '' && bare.eoaRenders === true && bare.docEmail === null && bare.utmRule.value === '', bare);
+    E.nodes = {};
+    // ecUiApplyPrefs
+    ecUiApplyPrefs({ profileChoice: 'generic', eoaRenders: false, writeNotes: false, retestInProgress: true });
+    ok('prefs: the select and the three boxes are applied', E.el('ec-profile').value === 'generic' && E.el('ec-eoa-renders').checked === false && E.el('ec-write-notes').checked === false && E.el('ec-retest-inprogress').checked === true);
+    E.el('ec-write-notes').checked = true; E.el('ec-profile').value = '';
+    ecUiApplyPrefs({ profileChoice: 7, eoaRenders: 'yes', writeNotes: null });
+    ok('prefs: wrong types are skipped', E.el('ec-profile').value === '' && E.el('ec-eoa-renders').checked === false && E.el('ec-write-notes').checked === true);
+    ecUiApplyPrefs(undefined); ecUiApplyPrefs(null); ecUiApplyPrefs('x');
+    ok('prefs: nothing stored is fine', true);
+    E.nodes['ec-write-notes'] = null;
+    var threw = false; try { ecUiApplyPrefs({ writeNotes: true, eoaRenders: true }); } catch (e) { threw = true; }
+    ok('prefs: a missing element never throws', !threw);
+    E.nodes = {};
+    // ecUiSavePrefs
+    E.ctx = exCtx('EX-1');
+    E.store.local.ecSheetPrefs = { OTHERSHEET0000000000000: { tabTitle: 'Keep me' } };
+    E.el('ec-profile').value = 'generic'; E.el('ec-eoa-renders').checked = true; E.el('ec-write-notes').checked = false; E.el('ec-retest-inprogress').checked = true; E.el('ec-sheet-tab').value = 'QA Round 1';
+    var p = settleE(ecUiSavePrefs());
+    ok('save prefs: resolves', p.done && !p.err, p.err && String(p.err));
+    jeqE('save prefs: ecSettings holds the four values', E.store.local.ecSettings, { profileChoice: 'generic', eoaRenders: true, writeNotes: false, retestInProgress: true });
+    var sid = 'EXPLAN_EX1_TEST_PLAN_00000000001';
+    jeqE('save prefs: the picked tab is remembered for this spreadsheet', E.store.local.ecSheetPrefs[sid], { tabTitle: 'QA Round 1' });
+    jeqE('save prefs: other spreadsheets are kept', E.store.local.ecSheetPrefs.OTHERSHEET0000000000000, { tabTitle: 'Keep me' });
+    E.el('ec-sheet-tab').value = '';
+    settleE(ecUiSavePrefs());
+    jeqE('save prefs: no tab picked keeps the previous entry', E.store.local.ecSheetPrefs[sid], { tabTitle: 'QA Round 1' });
+    E.ctx = null; E.store.local = {};
+    settleE(ecUiSavePrefs());
+    ok('save prefs: with no context only ecSettings is written', !!E.store.local.ecSettings && !E.store.local.ecSheetPrefs);
+    E.setFails = true;
+    var rj = settleE(ecUiSavePrefs());
+    ok('save prefs: a failing write never rejects', rj.done && !rj.err, rj.err && String(rj.err));
+    E.setFails = false;
+  });
+});
+
+TE('Email Check panel: context and rules', function () {
+  var E = ecEnv();
+  withGlobals(E.globals(), function () {
+    eval(ecPanelSrc());
+    // ecUiRenderCtx
+    E.ctx = exCtx('EX-1');
+    var r = settleE(ecUiRenderCtx());
+    eq('ctx line: EX-1 (4 proofs, 2 EoA, a copy doc, a sheet, 5 comments, the synthetic profile)', E.el('ec-ctx').textContent, 'EX-1 · 4 Mailtrap proof(s) · 2 Email on Acid link(s) · copy doc: yes · test plan: Google Sheet · profile: Example Relief (synthetic test data) · 5 comment(s)');
+    eq('  it returns the context', r.v && r.v.ticketKey, 'EX-1');
+    E.ctx = exCtx('EX-2');
+    settleE(ecUiRenderCtx());
+    eq('ctx line: EX-2 has no Copy File', E.el('ec-ctx').textContent, 'EX-2 · 4 Mailtrap proof(s) · 2 Email on Acid link(s) · copy doc: no · test plan: Google Sheet · profile: Example Relief (synthetic test data) · 4 comment(s)');
+    E.ctx = exCtx('EX-2', { copyFileUrl: 'https://www.example.org/not-a-doc', qaTestPlanUrl: 'https://www.example.org/plan', comments: undefined });
+    E.el('ec-profile').value = 'generic';
+    settleE(ecUiRenderCtx());
+    eq('ctx line: a non-doc link, a non-sheet link, no comments, the chosen profile', E.el('ec-ctx').textContent, 'EX-2 · 4 Mailtrap proof(s) · 2 Email on Acid link(s) · copy doc: not a Google Doc link · test plan: other link · profile: Generic email · 0 comment(s)');
+    E.ctx = exCtx('EX-2', { qaTestPlanUrl: null });
+    settleE(ecUiRenderCtx());
+    ok('ctx line: no test plan link says none', /test plan: none/.test(E.el('ec-ctx').textContent));
+    E.ctx = null;
+    r = settleE(ecUiRenderCtx());
+    eq('ctx line: no context', E.el('ec-ctx').textContent, 'No active ticket context — set one in the Initialize tab.');
+    eq('  and it returns null', r.v, null);
+    E.ctx = exCtx('EX-1'); delete E.ctx.emailProofs;
+    settleE(ecUiRenderCtx());
+    eq('ctx line: a context saved before Email Check', E.el('ec-ctx').textContent, 'Re-run Initialize on the ticket: this saved context has no Mailtrap proof links.');
+    E.ctx = exCtx('EX-1', { emailProofs: [] });
+    settleE(ecUiRenderCtx());
+    eq('ctx line: no proofs', E.el('ec-ctx').textContent, 'The active ticket context lists no Mailtrap proofs: add them in the Initialize tab.');
+    E.nodes['ec-ctx'] = null; E.ctx = exCtx('EX-1');
+    eq('ctx line: a missing element still returns the context', (settleE(ecUiRenderCtx()).v || {}).ticketKey, 'EX-1');
+    E.nodes = {}; E.els = {};
+
+    // ecUiRenderRules: suggestions from the comments (EX-2: the newer comment's paths, onlyIn from the first)
+    E.el('ec-profile').value = '';
+    var ex2 = exCtx('EX-2');
+    var rr = settleE(ecUiRenderRules(ex2));
+    ok('rules: resolves', rr.done && !rr.err, rr.err && String(rr.err));
+    eq('rules: the UTM select takes the suggested rule', E.el('ec-utm-rule').value, 'suffix');
+    jeqE('  with its comment as provenance', [E.el('ec-utm-rule').dataset.source, E.el('ec-utm-rule').dataset.comment], ['suggested', '420001']);
+    eq('  and says where it came from', E.el('ec-utm-hint').textContent, 'suggested from comment 420001');
+    var h = E.el('ec-seg-paths').innerHTML;
+    ok('rules: one row per segment, in the documented markup', h.indexOf('<div class="arg-row"><span class="arg-lbl">Regular Donors DONATE</span><input type="text" data-ec-seg="Regular Donors" value="seed-kits" data-source="suggested" data-comment="420003" placeholder="path or last segment"></div>') >= 0, h);
+    ok('  the second segment likewise, from the same (newer) comment', h.indexOf('data-ec-seg="Major Donors" value="seed-kits-major" data-source="suggested" data-comment="420003"') >= 0, h);
+    eq('  exactly two rows', h.split('<div class="arg-row">').length - 1, 2);
+    var hint = E.el('ec-rule-hint').innerHTML;
+    ok('rules: the hint names each segment\'s source', hint.indexOf('Regular Donors: suggested from comment 420003') >= 0 && hint.indexOf('Major Donors: suggested from comment 420003') >= 0, hint);
+    ok('  and the onlyIn rule with its comment', hint.indexOf('Only in V0: DONATE NOW; only in V1: HELP NOW (comment 420001)') >= 0, hint);
+    ok('  parts are joined by <br>', hint.split('<br>').length === 3, hint);
+    eq('rules: no stored doc email leaves the field empty', E.el('ec-doc-email').value, '');
+    // EX-1: identical, nothing else
+    settleE(ecUiRenderRules(exCtx('EX-1')));
+    eq('rules EX-1: identical', E.el('ec-utm-rule').value, 'identical');
+    eq('  suggested from its comment', E.el('ec-utm-hint').textContent, 'suggested from comment 410001');
+    hint = E.el('ec-rule-hint').innerHTML;
+    ok('  both segments say no path was found', hint.indexOf('Regular Donors: no path found in the ticket comments') >= 0 && hint.indexOf('Major Donors: no path found in the ticket comments') >= 0, hint);
+    ok('  and no onlyIn rule was found', hint.indexOf('No &quot;only in&quot; rule found in the comments.') >= 0, hint);
+    ok('  the rows are empty with no provenance', E.el('ec-seg-paths').innerHTML.indexOf('value="" data-source="" data-comment=""') >= 0);
+    // a stored rule beats a suggestion
+    E.store.local.ecTicketRules = { 'EX-2': { utmRule: 'identical', segmentPaths: { 'Regular Donors': 'give-regular', 'Major Donors': '' }, docEmail: 2 } };
+    settleE(ecUiRenderRules(ex2));
+    eq('stored: the UTM rule wins', E.el('ec-utm-rule').value, 'identical');
+    jeqE('  as the tester\'s', [E.el('ec-utm-rule').dataset.source, E.el('ec-utm-rule').dataset.comment], ['tester', '']);
+    eq('  hint', E.el('ec-utm-hint').textContent, 'set by you');
+    h = E.el('ec-seg-paths').innerHTML;
+    ok('stored: a stored path wins over the newer comment\'s suggestion', h.indexOf('data-ec-seg="Regular Donors" value="give-regular" data-source="tester"') >= 0, h);
+    ok('  and a stored empty path stays empty (a deliberate choice)', h.indexOf('data-ec-seg="Major Donors" value="" data-source=""') >= 0, h);
+    eq('stored: the doc email', E.el('ec-doc-email').value, '2');
+    E.store.local.ecTicketRules = { 'EX-2': { utmRule: '' } };
+    settleE(ecUiRenderRules(ex2));
+    jeqE('stored: an empty UTM rule is "not stated", not the suggestion', [E.el('ec-utm-rule').value, E.el('ec-utm-rule').dataset.source], ['', '']);
+    ok('  paths not stored fall back to the suggestions', E.el('ec-seg-paths').innerHTML.indexOf('value="seed-kits" data-source="suggested"') >= 0);
+    E.store.local.ecTicketRules = { 'EX-1': { utmRule: 'suffix' } };
+    settleE(ecUiRenderRules(ex2));
+    eq('stored: another ticket\'s rules are not used', E.el('ec-utm-rule').value, 'suffix');
+    // escaping: a segment name with markup
+    var evil = exCtx('EX-2'); evil.emailProofs = evil.emailProofs.map(function (p, i) { return { segment: i < 2 ? 'A"><img src=x>' : p.segment, variation: p.variation, url: p.url }; });
+    settleE(ecUiRenderRules(evil));
+    ok('rules: a segment name is escaped in the label and the attribute', E.el('ec-seg-paths').innerHTML.indexOf('<img') < 0 && E.el('ec-seg-paths').innerHTML.indexOf('A&quot;&gt;&lt;img src=x&gt;') >= 0, E.el('ec-seg-paths').innerHTML);
+    // a storage fault leaves the suggestions in place
+    E.store.local = {}; E.storageFails = true;
+    var sf = settleE(ecUiRenderRules(ex2));
+    ok('rules: a storage fault does not reject and the suggestions still show', sf.done && !sf.err && E.el('ec-utm-rule').value === 'suffix', sf.err && String(sf.err));
+    E.storageFails = false;
+    // no / invalid context clears everything
+    settleE(ecUiRenderRules(null));
+    ok('rules: no context clears the rows, hints, rule and doc email', E.el('ec-seg-paths').innerHTML === '' && E.el('ec-utm-hint').textContent === '' && E.el('ec-rule-hint').innerHTML === '' && E.el('ec-utm-rule').value === '' && E.el('ec-doc-email').value === '');
+    E.el('ec-seg-paths').innerHTML = 'x'; settleE(ecUiRenderRules(exCtx('EX-2', { emailProofs: [] })));
+    eq('rules: a context with no proofs clears too', E.el('ec-seg-paths').innerHTML, '');
+
+    // ecUiSaveRules
+    E.ctx = ex2; E.store.local = { ecTicketRules: { 'EX-9': { utmRule: 'identical' } } };
+    E.el('ec-utm-rule').value = 'suffix'; E.el('ec-doc-email').value = '3';
+    function seg(name, value) { var i = E.mkEl('s-' + name); i.value = value; i.dataset = { ecSeg: name }; return i; }
+    E.all['#ec-seg-paths input[data-ec-seg]'] = [seg('Regular Donors', ' seed-kits '), seg('Major Donors', '')];
+    settleE(ecUiSaveRules());
+    jeqE('save rules: the ticket\'s rules, empty paths included', E.store.local.ecTicketRules['EX-2'], { utmRule: 'suffix', segmentPaths: { 'Regular Donors': 'seed-kits', 'Major Donors': '' }, docEmail: 3 });
+    jeqE('save rules: other tickets are kept', E.store.local.ecTicketRules['EX-9'], { utmRule: 'identical' });
+    E.el('ec-doc-email').value = ''; settleE(ecUiSaveRules());
+    eq('save rules: no doc email is null', E.store.local.ecTicketRules['EX-2'].docEmail, null);
+    E.ctx = null; E.store.local = {};
+    var rs = settleE(ecUiSaveRules());
+    ok('save rules: with no context nothing is written and nothing rejects', rs.done && !rs.err && !E.store.local.ecTicketRules);
+  });
+});
+
+// A hand-built record (19 keys, version 1): two proofs of EX-2's first segment, four checks. Independent of the code that derives real ones.
+function ecCk(key, proofId, status, note, over) {
+  return Object.assign({ id: key + '@' + proofId, key: key, proofId: proofId, title: 'Title of ' + key, status: status, note: note || '', fyi: null, blockedBy: null, evidence: {} }, over || {});
+}
+function ecHandRecord(over) {
+  var rec = {
+    version: 1, ts: null, startedAt: 1800000000000, finishedAt: 1800000001000, stopped: false, error: null, ticketKey: 'EX-2', summary: 'Spring Seed Kits: Last Call', profileId: 'example',
+    settings: { profileId: '', docEmail: null, eoaRenders: true, utmRule: { value: 'suffix', source: 'suggested', commentId: '420001' }, segmentPaths: {}, onlyIn: null },
+    sources: { doc: { state: 'ok', title: 'Spring seed kits copy', emails: [], chosen: 1, error: null }, mailtrap: { state: 'ok', error: null },
+      eoa: [{ variation: 'v0', state: 'ok', subject: 'Last call: order a kit today', clients: [{ code: 'a', name: 'Client A', os: '', category: 'Webmail', dark: false, completed: true }, { code: 'b_dm', name: 'Client B', os: '', category: 'App', dark: true, completed: true }, { code: 'c', name: 'Client C', os: '', category: 'App', dark: false, completed: false }], renders: { state: 'ok', count: 2, error: null } }] },
+    doc: { subject: { options: [{ text: 'Last call: order a kit today', bold: true }] } },
+    proofs: [
+      { id: 'regular-donors-v0', segment: 'Regular Donors', variation: 'v0', sandboxId: '7000001', messageId: '7100000005', state: 'ok', error: null,
+        facts: { subject: { built: 'Last call: order a kit today', prefix: 'Proof - ', header: '' }, from: { name: 'Example Relief', email: 'info@example.org' }, headerFrom: { name: 'Example Relief', email: 'info@example.org' }, replyTo: null, senderHeader: false,
+          rcptTag: 'regular', dkim: ['example.org', 's1.mta.example.net'], encodings: { html: '8bit', text: '8bit' }, spam: { responseCode: 0, score: 0.6, threshold: 5, spam: false, rules: [] }, blacklist: null,
+          preheader: { html: 'Packing stops Friday noon.', txt: 'Packing stops Friday noon.' }, tokens: [], colorScheme: { meta: false, media: false }, images: [], anchors: [], paragraphs: ['Hello,'], txtLines: [], greeting: 'Hello,', signoff: null, sizes: { html: 1000, txt: 100 }, truncated: false } },
+      { id: 'regular-donors-v1', segment: 'Regular Donors', variation: 'v1', sandboxId: '7000001', messageId: '7100000006', state: 'not-found', error: null, facts: null },
+    ],
+    links: [
+      { proofId: 'regular-donors-v0', linkId: '8001', slug: 'v1-utm-term-701EX00000abcdeAAQ', labels: ['DONATE NOW'], role: 'donate', kind: 'pardot', guard: null, method: 'interstitial-a', pardotStatus: 200,
+        dest: { origin: 'https://www.example.org', path: '/give/seed-kits/', utm: { utm_source: 'pardot', utm_medium: 'email', utm_content: '02.01.27_EML_Seed_Kits_CRO-v0' }, otherKeys: ['sid'] }, destStatus: 200, destTitle: 'Example Relief | Give', error: null },
+      { proofId: 'regular-donors-v0', linkId: '8002', slug: 'unsub', labels: ['Unsubscribe'], role: 'guarded', kind: 'pardot', guard: 'unsubscribe link', method: null, pardotStatus: null, dest: null, destStatus: null, destTitle: null, error: null },
+      { proofId: 'regular-donors-v0', linkId: '8003', slug: 'story', labels: ['Read more'], role: 'cta', kind: 'pardot', guard: null, method: null, pardotStatus: null, dest: null, destStatus: null, destTitle: null, error: 'not resolved: cap' },
+    ],
+    renders: [{ variation: 'v0', code: 'a', name: 'Client A', dark: false, img: 'data:image/jpeg;base64,/9j/AAAA' }, { variation: 'v0', code: 'b_dm', name: 'Client B', dark: true, img: 'javascript:alert(1)' }],
+    checks: [
+      ecCk('subject', 'regular-donors-v0', 'passed', '', { fyi: 'matches option 1' }), ecCk('rawTokens', 'regular-donors-v0', 'passed', ''),
+      ecCk('altTags', 'regular-donors-v0', 'failed', 'V0 image hero.jpg has no alt (see /e/900001/slug/8001/2000000002/h/SynthHash0)'),
+      ecCk('preview', 'regular-donors-v0', 'in-progress', 'Preview text differs by one word', { evidence: { diffs: [{ doc: 'Please give today <b>', build: 'Please give tonight <b>' }] } }),
+      ecCk('dkim', 'regular-donors-v1', 'blocked', 'Proof not found in sandbox 7000001 (message 7100000006)', { blockedBy: 'proof' }),
+      ecCk('visuals', 'regular-donors-v0', 'not-tested', 'Stopped by the tester before this check ran'),
+    ],
+    notTested: [{ id: 'X.unsubscribe', what: 'Unsubscribe / View in browser', reason: 'never opened: check by hand' }],
+    explain: null, sheet: null,
+  };
+  return Object.assign(rec, over || {});
+}
+
+TE('Email Check panel: runEmailCheckMode', function () {
+  var E = ecEnv(), rendered = [], prepared = [], settingsRead = 0;
+  var STALE = 'The service worker is older than this panel — reload Selenite in chrome://extensions and run again.';
+  var NO_ANSWER = 'The service worker did not answer the run: it is older than this panel, or Chrome stopped it mid-run. Reload Selenite in chrome://extensions and run again.';
+  var runSrc = ecItemSrc('async function runEmailCheckMode() {');
+  var stubs = E.globals({
+    ecUiReadSettings: function (c) { settingsRead++; return { profileId: '', docEmail: null, eoaRenders: true, utmRule: { value: 'suffix', source: 'tester', commentId: null }, segmentPaths: {}, onlyIn: null }; },
+    ecUiRenderResults: function (r) { rendered.push(r); },
+    ecUiPrepareSheet: function (r, c) { prepared.push(c && c.ticketKey); return Promise.resolve({ connected: false, reason: 'no-test-plan-link', paste: [] }); },
+    ecUiEl: function (id) { return E.el(id); },
+    ecExplainInput: function (r, c) { return { ticketKey: c.ticketKey, checks: (r.checks || []).length }; },
+    ecSlim: function (r) { return JSON.parse(JSON.stringify(r)); },
+  });
+  withGlobals(stubs, function () {
+    eval(runSrc);
+    function reset() { E.sent.length = 0; E.replies = {}; E.store = { local: {}, sync: {} }; E.sessionSets.length = 0; E.sessionGets = {}; E.els = {}; E.intervals.length = 0; E.cleared = 0; rendered.length = 0; prepared.length = 0; settingsRead = 0; globalThis._taStopRequested = false; _ecLastRun = null; }
+    function runMode() { return settleE(runEmailCheckMode()); }
+    var first = function (a) { return E.sent.filter(function (m) { return m.action === a; })[0]; };
+
+    reset(); E.ctx = null;
+    var r = runMode();
+    jeqE('(a) no context: ok false with the Initialize wording', r.v, { ok: false, error: 'No active ticket context — set one in the Initialize tab.' });
+    eq('(a) no message was sent', E.sent.length, 0);
+    ok('(a) the error is shown in the results box', /No active ticket context/.test(E.el('ec-results').innerHTML) && /color:var\(--err\)/.test(E.el('ec-results').innerHTML), E.el('ec-results').innerHTML);
+    reset(); E.ctx = exCtx('EX-2', { emailProofs: [] });
+    eq('(a) a context with no proofs says so', runMode().v.error, 'The active ticket context lists no Mailtrap proofs: add them in the Initialize tab.');
+    reset(); E.ctx = exCtx('EX-2'); delete E.ctx.emailProofs;
+    eq('(a) a context saved before Email Check says to re-run Initialize', runMode().v.error, 'Re-run Initialize on the ticket: this saved context has no Mailtrap proof links.');
+    ok('(a) and sends nothing', E.sent.length === 0);
+
+    reset(); E.ctx = exCtx('EX-2'); E.replies.runEmailCheck = { ok: true, record: ecHandRecord({ version: undefined }) };
+    r = runMode();
+    eq('(b) a record without a version: the reload wording', r.v && r.v.error, STALE);
+    ok('(b) nothing was explained, prepared, rendered or stored', E.sent.length === 1 && prepared.length === 0 && rendered.length === 0 && E.sessionSets.length === 0 && _ecLastRun === null);
+    reset(); E.ctx = exCtx('EX-2'); E.replies.runEmailCheck = { ok: true, record: ecHandRecord({ version: 2 }) };
+    eq('(b) a record of another version is stale too', runMode().v.error, STALE);
+    reset(); E.ctx = exCtx('EX-2'); E.replies.runEmailCheck = { ok: false, error: 'Boom' };
+    eq('a worker error is passed through', runMode().v.error, 'Boom');
+    reset(); E.ctx = exCtx('EX-2'); E.replies.runEmailCheck = { ok: true };
+    eq('an answer with no record is a failure', runMode().v.error, 'Email Check failed');
+    reset(); E.ctx = exCtx('EX-2'); E.replies.runEmailCheck = undefined;
+    eq('no answer at all is a failure too', runMode().v.error, 'Email Check failed');
+    ['The message port closed before a response was received.', 'Could not establish connection. Receiving end does not exist.', 'receiving end does not exist', 'THE MESSAGE PORT CLOSED BEFORE A RESPONSE WAS RECEIVED.'].forEach(function (m) {
+      reset(); E.ctx = exCtx('EX-2'); E.replies.runEmailCheck = function () { return Promise.reject(new Error(m)); };
+      var rj = runMode();
+      jeqE('a rejected runEmailCheck (' + m.slice(0, 36) + '): the did-not-answer wording', rj.v, { ok: false, error: NO_ANSWER });
+      ok('  nothing was explained, prepared or stored, and the run did not throw', rj.err === undefined && E.sent.length === 1 && prepared.length === 0 && _ecLastRun === null);
+    });
+    reset(); E.ctx = exCtx('EX-2'); E.replies.runEmailCheck = function () { throw new Error('The message port closed before a response was received.'); };
+    jeqE('a synchronous throw of the same error gets the same wording', runMode().v, { ok: false, error: NO_ANSWER });
+    reset(); E.ctx = exCtx('EX-2'); E.replies.runEmailCheck = function () { return Promise.reject(new Error('Extension context invalidated.')); };
+    jeqE('any other rejection keeps its own message', runMode().v, { ok: false, error: 'Extension context invalidated.' });
+    reset(); E.ctx = exCtx('EX-2'); E.replies.runEmailCheck = function () { return Promise.reject('plain string'); };
+    jeqE('and a rejection that is not an Error is reported as text', runMode().v, { ok: false, error: 'plain string' });
+    ok('each sentence is written once in the function', runSrc.split(STALE).length - 1 === 1 && runSrc.split(NO_ANSWER).length - 1 === 1, [runSrc.split(STALE).length - 1, runSrc.split(NO_ANSWER).length - 1]);
+
+    reset(); E.ctx = exCtx('EX-2'); E.replies.runEmailCheck = { ok: true, record: ecHandRecord({ error: 'Boom at https://mailtrap.io/sandboxes/7000001/messages/7100000005?token=abc', checks: [] }) };
+    r = runMode();
+    ok('a record with an error and no checks is a failed run, its error scrubbed (no query)', r.v && r.v.ok === false && /Boom at https:\/\/mailtrap\.io\/sandboxes\/7000001\/messages\/7100000005/.test(r.v.error) && r.v.error.indexOf('token=') < 0, r.v);
+    reset(); E.ctx = exCtx('EX-2'); E.replies.runEmailCheck = { ok: true, record: ecHandRecord({ error: 'The doc failed' }) };
+    ok('a record with an error and some checks still produces results', runMode().v.ok === true && _ecLastRun && _ecLastRun.error === 'The doc failed');
+
+    // (c) a stopped run, Analysis on: no explain, the sheet step still ran
+    reset(); E.ctx = exCtx('EX-2'); E.el('ta-agentic-analysis').checked = true;
+    E.replies.runEmailCheck = { ok: true, record: ecHandRecord({ stopped: true }) };
+    var t0 = Date.now();
+    r = runMode();
+    eq('(c) a stopped run is ok', r.v && r.v.ok, true);
+    ok('(c) its record is stamped (ts >= the start)', _ecLastRun && _ecLastRun.ts >= t0, _ecLastRun && _ecLastRun.ts);
+    ok('(c) no ecExplain message with a stopped record, even with Analysis on', E.sent.every(function (m) { return m.action !== 'ecExplain'; }), E.sent.map(function (m) { return m.action; }));
+    eq('(c) explain is null', _ecLastRun.explain, null);
+    eq('(c) the sheet step still ran, for this ticket', prepared.join(), 'EX-2');
+    ok('(c) results were rendered once and the slim record stored in the session', rendered.length === 1 && E.sessionSets.some(function (o) { return o.ecLastRun && o.ecLastRun.version === 1; }));
+    eq('(c) the sheet is on the record', _ecLastRun.sheet.reason, 'no-test-plan-link');
+    // (d) Analysis off
+    reset(); E.ctx = exCtx('EX-2'); E.el('ta-agentic-analysis').checked = false; E.replies.runEmailCheck = { ok: true, record: ecHandRecord() };
+    runMode();
+    ok('(d) Analysis unchecked: no ecExplain message', E.sent.every(function (m) { return m.action !== 'ecExplain'; }));
+    eq('(d) explain is null', _ecLastRun.explain, null);
+    // Analysis on
+    reset(); E.ctx = exCtx('EX-2'); E.el('ta-agentic-analysis').checked = true;
+    E.replies.runEmailCheck = { ok: true, record: ecHandRecord() }; E.replies.ecExplain = { ok: true, explain: { ok: true, bugs: [], pgmQuestions: [], commentChecks: [], copyNotes: [], dropped: 0 } };
+    runMode();
+    var ex = first('ecExplain');
+    jeqE('Analysis on: the explain message carries ecExplainInput(record, ctx)', ex && ex.payload, { ticketKey: 'EX-2', checks: 6 });
+    eq('the explain result is kept on the record', _ecLastRun.explain.ok, true);
+    reset(); E.ctx = exCtx('EX-2'); E.el('ta-agentic-analysis').checked = true; E.replies.runEmailCheck = { ok: true, record: ecHandRecord() }; E.replies.ecExplain = { ok: false, error: 'No API key configured' };
+    runMode();
+    jeqE('a failed explain is recorded as {ok:false,error}', _ecLastRun.explain, { ok: false, error: 'No API key configured' });
+    reset(); E.ctx = exCtx('EX-2'); E.el('ta-agentic-analysis').checked = true; E.replies.runEmailCheck = { ok: true, record: ecHandRecord() }; E.replies.ecExplain = function () { return Promise.reject(new Error('port closed')); };
+    runMode();
+    jeqE('a rejected explain is recorded the same way', _ecLastRun.explain, { ok: false, error: 'port closed' });
+    reset(); E.ctx = exCtx('EX-2'); E.el('ta-agentic-analysis').checked = true; globalThis._taStopRequested = true; E.replies.runEmailCheck = { ok: true, record: ecHandRecord() };
+    runMode();
+    ok('the Test Agent Stop flag also skips the explain', E.sent.every(function (m) { return m.action !== 'ecExplain'; }));
+    reset(); E.ctx = exCtx('EX-2'); E.el('ta-agentic-analysis').checked = true; E.replies.runEmailCheck = { ok: true, record: ecHandRecord() }; E.replies.ecExplain = { ok: true, explain: { ok: true, bugs: [], pgmQuestions: [], commentChecks: [], copyNotes: [], dropped: 0 } };
+    runMode();
+    eq('a store fault is swallowed: the run still succeeds', (function () { E.setFails = false; return _ecLastRun.explain.ok; })(), true);
+
+    // (e) what rides in the message
+    reset(); E.ctx = exCtx('EX-2'); E.replies.runEmailCheck = { ok: true, record: ecHandRecord() };
+    runMode();
+    var msg = first('runEmailCheck');
+    jeqE('the payload has exactly ctx, settings and winId', Object.keys(msg.payload).sort(), ['ctx', 'settings', 'winId']);
+    jeqE('the worker context has exactly the five keys of ecCtxForWorker', Object.keys(msg.payload.ctx).sort(), ['copyFileUrl', 'eoa', 'proofs', 'summary', 'ticketKey']);
+    ok('no comments, no Jira text, no inbox address in the message', JSON.stringify(msg.payload).indexOf('420001') < 0 && JSON.stringify(msg.payload).indexOf('Ready for review') < 0 && JSON.stringify(msg.payload).indexOf('@') < 0, JSON.stringify(msg.payload).slice(0, 300));
+    eq('the window id rides along', msg.payload.winId, 7);
+    eq('the settings are what ecUiReadSettings returned (read once, with the context)', msg.payload.settings.utmRule.value + '|' + settingsRead, 'suffix|1');
+    eq('four proofs and two EoA tests for EX-2', msg.payload.ctx.proofs.length + '/' + msg.payload.ctx.eoa.length, '4/2');
+
+    // the progress tick
+    reset(); E.ctx = exCtx('EX-2'); E.replies.runEmailCheck = { ok: true, record: ecHandRecord() };
+    runMode();
+    ok('a progress tick every 800 ms, and it is cleared when the run ends', E.intervals.length === 1 && E.intervals[0].ms === 800 && E.cleared === 1, [E.intervals.length, E.intervals[0] && E.intervals[0].ms, E.cleared]);
+    eq('the progress line is emptied after the run', E.el('ec-progress').textContent, '');
+    var tick = E.intervals[0].fn;
+    E.sessionGets.ecProgress = { running: true, phase: 'links', label: 'regular-donors-v0', done: 3, total: 8 };
+    settleE(tick());
+    eq('the tick writes the phase, label and counts to the panel line', E.el('ec-progress').textContent, 'Email Check — links regular-donors-v0 (3/8)');
+    eq('  and to the Test Agent status line', E.el('ta-status').textContent, 'Email Check — links regular-donors-v0 (3/8)');
+    E.sessionGets.ecProgress = { running: true, phase: 'doc', label: '' };
+    settleE(tick());
+    eq('the tick without counts prints none', E.el('ec-progress').textContent.replace(/\s+$/, ''), 'Email Check — doc');
+    E.el('ec-progress').textContent = 'keep'; E.sessionGets.ecProgress = { running: false };
+    settleE(tick());
+    eq('a finished progress record prints nothing', E.el('ec-progress').textContent, 'keep');
+  });
+});
+
+TE('Email Check panel: the stored record has no images (needs B2: ecSlim)', function () {
+  var E = ecEnv();
+  var stubs = E.globals({ ecUiReadSettings: function () { return { profileId: '', docEmail: null, eoaRenders: true, utmRule: { value: '', source: 'none', commentId: null }, segmentPaths: {}, onlyIn: null }; },
+    ecUiRenderResults: function () {}, ecUiPrepareSheet: function () { return Promise.resolve({ connected: false, reason: 'no-test-plan-link', paste: [] }); }, ecUiEl: function (id) { return E.el(id); } });
+  withGlobals(stubs, function () {
+    eval(ecItemSrc('async function runEmailCheckMode() {'));
+    E.ctx = exCtx('EX-2'); E.replies.runEmailCheck = { ok: true, record: ecHandRecord() };
+    settleE(runEmailCheckMode());
+    var stored = E.sessionSets.filter(function (o) { return o.ecLastRun; })[0];
+    ok('the session copy exists and holds no data:image', !!stored && JSON.stringify(stored).indexOf('data:image') < 0, stored && JSON.stringify(stored).slice(0, 200));
+    ok('  while the in-memory record keeps the render images for the report', JSON.stringify(_ecLastRun).indexOf('data:image/jpeg') >= 0);
+    ok('  and the stored record keeps its checks and its version', stored && stored.ecLastRun.version === 1 && stored.ecLastRun.checks.length === 6);
+  });
+});
+
+TE('Email Check panel: prepare sheet', function () {
+  var E = ecEnv(), calls = {};
+  var src = ecItemSrc('async function ecUiPrepareSheet(record, ctx) {');
+  var stubs = E.globals({
+    ecUiEl: function (id) { return E.el(id); },
+    ecPasteRows: function (checks, proofs) { calls.paste = [checks.length, proofs.length]; return [{ row: 'paste' }]; },
+    ecSheetModel: function (values) { calls.model = values; return values === 'BAD' ? { error: 'No Desktop / Mobile / Web-Based header row in the first 15 rows: this does not look like an EMAIL Test Plan.' } : { headerRows: [6, 7], cols: { description: 2, desktop: 4, mobile: 5, webBased: 6, notes: 7 }, textCols: [2], groups: [] }; },
+    ecRowMap: function (model, proofs, profile) { calls.rowMap = { proofs: proofs, profile: profile && profile.id }; return { mapping: [{ row: 9, key: 'subject' }], unmappedGroups: [{ row: 42, label: 'x', reason: 'y' }] }; },
+    ecBuildProposal: function (o) { calls.build = o; return { entries: [{ row: 9, include: true, cells: [], note: null }], unmapped: [], warnings: [], counts: { statusWrites: 0, noteWrites: 0 } }; },
+  });
+  withGlobals(stubs, function () {
+    eval(src);
+    var rec = ecHandRecord();
+    function reset() { E.sent.length = 0; E.replies = {}; E.els = {}; calls = {}; E.ctx = null; }
+    function prep(ctx) { return settleE(ecUiPrepareSheet(rec, ctx)); }
+    function actions() { return E.sent.map(function (m) { return m.action; }).join(); }
+    var base = ['connected', 'reason', 'error', 'spreadsheetId', 'gid', 'tabTitle', 'title', 'readAt', 'model', 'vocab', 'mapping', 'unmappedGroups', 'notesOn', 'retestInProgress', 'proposal', 'paste', 'applied'];
+    reset();
+    var s = prep(exCtx('EX-2', { qaTestPlanUrl: null })).v;
+    jeqE('the sheet carries the 17 keys of plan 1.4', Object.keys(s).sort(), base.slice().sort());
+    ok('no test plan link: reason no-test-plan-link, not connected, and a paste table', s.connected === false && s.reason === 'no-test-plan-link' && s.paste.length === 1 && E.sent.length === 0);
+    eq('  the paste rows come from the record\'s checks and proofs', calls.paste.join(), '6,2');
+    s = prep(exCtx('EX-2', { qaTestPlanUrl: 'https://www.example.org/plan' })).v;
+    eq('a link that is not a Google Sheet', s.reason, 'not-a-google-sheet-link');
+    reset(); E.replies.qpGoogleStatus = { ok: true, clientIdSet: false, connected: false };
+    s = prep(exCtx('EX-2')).v;
+    jeqE('no OAuth client id', [s.reason, s.spreadsheetId, s.gid], ['no-client-id', 'EXPLAN_EX2_TEST_PLAN_00000000002', '100']);
+    reset(); E.replies.qpGoogleStatus = null;
+    eq('no answer from the worker counts as no client id', prep(exCtx('EX-2')).v.reason, 'no-client-id');
+    reset(); E.replies.qpGoogleStatus = { ok: true, clientIdSet: true, connected: false };
+    eq('not connected', prep(exCtx('EX-2')).v.reason, 'not-connected');
+    reset(); E.replies.qpGoogleStatus = { ok: true, clientIdSet: true, connected: true }; E.el('ec-sheet-tab').value = '';
+    s = prep(exCtx('EX-2')).v;
+    eq('no tab picked', s.reason, 'no-tab-picked');
+    eq('  and the plan was not read', actions(), 'qpGoogleStatus');
+    reset(); E.replies.qpGoogleStatus = { ok: true, clientIdSet: true, connected: true }; E.el('ec-sheet-tab').value = 'QA Round 1';
+    E.replies.qpSheetMeta = { ok: true, title: '[EX-2] EMAIL Test Plan', tabs: [] }; E.replies.qpSheetRead = { ok: false, error: 'HTTP 403' };
+    s = prep(exCtx('EX-2')).v;
+    ok('a failed read is an error with the paste table, not connected', s.connected === false && s.error === 'HTTP 403' && s.tabTitle === 'QA Round 1' && s.paste.length === 1, s);
+    E.replies.qpSheetRead = null;
+    eq('no answer to the read says the plan could not be read', prep(exCtx('EX-2')).v.error, 'The test plan could not be read.');
+    E.replies.qpSheetRead = { ok: true, values: 'BAD', valuesTab: [], readAt: 5 };
+    s = prep(exCtx('EX-2')).v;
+    ok('a sheet that is not an EMAIL Test Plan: the model\'s error, readAt kept, not connected', /does not look like an EMAIL Test Plan/.test(s.error) && s.readAt === 5 && s.connected === false, s);
+    // the connected path
+    reset(); E.replies.qpGoogleStatus = { ok: true, clientIdSet: true, connected: true }; E.el('ec-sheet-tab').value = 'QA Round 1'; E.el('ec-write-notes').checked = true; E.el('ec-retest-inprogress').checked = true;
+    E.replies.qpSheetMeta = { ok: true, title: '[EX-2] EMAIL Test Plan', tabs: [] };
+    E.replies.qpSheetRead = { ok: true, values: [['x']], valuesTab: [['Statuses', 'Passed', 'In Progress', 'Failed', 'Blocked', 'Backlog', 'Excluded']], readAt: 77 };
+    s = prep(exCtx('EX-2')).v;
+    eq('connected: the messages sent, in order', actions(), 'qpGoogleStatus,qpSheetMeta,qpSheetRead');
+    jeqE('  the meta and read payloads', [E.sent[1].payload, E.sent[2].payload], [{ spreadsheetId: 'EXPLAN_EX2_TEST_PLAN_00000000002' }, { spreadsheetId: 'EXPLAN_EX2_TEST_PLAN_00000000002', tabTitle: 'QA Round 1' }]);
+    ok('  connected, with the model, readAt, title, tab, the proposal and the paste table', s.connected === true && s.readAt === 77 && s.title === '[EX-2] EMAIL Test Plan' && s.tabTitle === 'QA Round 1' && !!s.model && !!s.proposal && s.paste.length === 1 && s.reason === null && s.error === null, s);
+    jeqE('  the vocabulary is the sheet\'s own words', s.vocab, { Passed: 'Passed', Failed: 'Failed', 'In Progress': 'In Progress', Blocked: 'Blocked', Backlog: 'Backlog', Excluded: 'Excluded' });
+    jeqE('  the row map and the unmapped groups are kept', [s.mapping, s.unmappedGroups], [[{ row: 9, key: 'subject' }], [{ row: 42, label: 'x', reason: 'y' }]]);
+    ok('  the boxes are read', s.notesOn === true && s.retestInProgress === true);
+    eq('  ecRowMap got the proofs as {id, segment, variation} and the ticket\'s profile', JSON.stringify(calls.rowMap), JSON.stringify({ proofs: [{ id: 'regular-donors-v0', segment: 'Regular Donors', variation: 'v0' }, { id: 'regular-donors-v1', segment: 'Regular Donors', variation: 'v1' }], profile: 'example' }));
+    var o = calls.build;
+    jeqE('  ecBuildProposal got the ten fields', Object.keys(o).sort(), ['checks', 'mapping', 'model', 'notesOn', 'proofs', 'retestInProgress', 'ticketKey', 'title', 'unmappedGroups', 'vocab']);
+    ok('  with the record\'s checks, the ticket key and the plan title', o.checks.length === 6 && o.ticketKey === 'EX-2' && o.title === '[EX-2] EMAIL Test Plan' && o.notesOn === true && o.retestInProgress === true);
+    E.el('ec-write-notes').checked = false; E.el('ec-retest-inprogress').checked = false;
+    s = prep(exCtx('EX-2')).v;
+    ok('  the boxes unchecked', s.notesOn === false && s.retestInProgress === false);
+    E.replies.qpSheetMeta = { ok: false, error: 'HTTP 500' };
+    s = prep(exCtx('EX-2')).v;
+    ok('a failing title read is not an error: connected, title null', s.connected === true && s.title === null && s.error === null, s);
+    // anything thrown is an error on the sheet
+    calls.model = null;
+    var broke = Object.assign({}, stubs.ecBuildProposal);
+    globalThis.ecBuildProposal = function () { throw new Error('proposal boom'); };
+    var sb = prep(exCtx('EX-2'));
+    ok('a throw inside is caught: the sheet carries the error, the promise does not reject', sb.done && !sb.err && /proposal boom/.test(sb.v.error) && sb.v.paste.length === 1, sb.err && String(sb.err));
+    globalThis.ecBuildProposal = stubs.ecBuildProposal;
+    reset(); E.replies.qpGoogleStatus = function () { throw new Error('status boom'); };
+    sb = prep(exCtx('EX-2'));
+    ok('a worker call that throws is caught the same way', sb.done && !sb.err && /status boom/.test(sb.v.error), sb.err && String(sb.err));
+  });
+});
+
+TE('Email Check panel: prepare sheet on the synthetic plan (needs B2: ecSheetModel, ecRowMap, ecBuildProposal, ecPasteRows)', function () {
+  ok('ecTestRecord is available (tests/email-check-fixture-record.js, B2)', EC_REC_LOADED);
+  var rec = ecTestRecord(ecFx(), 'EX-1');
+  var plan = EC_PLANS['EX-1'];
+  var E = ecEnv();
+  withGlobals(E.globals({ ecUiEl: function (id) { return E.el(id); } }), function () {
+    eval(ecItemSrc('async function ecUiPrepareSheet(record, ctx) {'));
+    E.replies.qpGoogleStatus = { ok: true, clientIdSet: true, connected: true }; E.el('ec-sheet-tab').value = 'QA Round 1'; E.el('ec-write-notes').checked = true;
+    E.replies.qpSheetMeta = { ok: true, title: plan.title, tabs: plan.tabs.map(function (t) { return { sheetId: t.sheetId, title: t.title, index: t.index, hidden: false }; }) };
+    E.replies.qpSheetRead = { ok: true, values: plan.values, valuesTab: plan.legend, readAt: 9 };
+    var s = settleE(ecUiPrepareSheet(rec, exCtx('EX-1'))).v;
+    ok('connected on the EX-1 plan', s && s.connected === true && !s.error, s && s.error);
+    ok('the four groups map to the four proofs, nothing unmapped', s.unmappedGroups.length === 0 && s.mapping.length > 0, s.unmappedGroups);
+    ok('the proposal has entries, and no F/G cell outside the four visual rows', s.proposal.entries.length > 0 && s.proposal.entries.every(function (e) { return e.cells.every(function (c) { return /^E/.test(c.a1) || ecIsVisualRowText(e.rowText); }); }));
+    ok('the paste table is carried too', s.paste.length > 0);
+  });
+});
+
+// A connected sheet with a proposal, in the shape ecBuildProposal returns; the writes helper below is the contract of ecWritesFromProposal.
+function ecSheetOK(over) {
+  var vocab = { Passed: 'Passed', Failed: 'Failed', 'In Progress': 'In Progress', Blocked: 'Blocked', Backlog: 'Backlog', Excluded: 'Excluded' };
+  return Object.assign({
+    connected: true, reason: null, error: null, spreadsheetId: 'EXPLAN_EX2_TEST_PLAN_00000000002', gid: '100', tabTitle: 'QA Round 1', title: '[EX-2] EMAIL Test Plan', readAt: 5,
+    model: { headerRows: [6, 7], cols: { testGroup: 0, description: 2, totalMinutes: 3, desktop: 4, mobile: 5, webBased: 6, notes: 7 }, a1: '', a1Placeholder: false, textCols: [2], groups: [], problems: [] },
+    vocab: vocab, mapping: [], unmappedGroups: [], notesOn: true, retestInProgress: false,
+    proposal: { entries: [
+      { row: 9, rowText: 'Is the subject line rendering correctly?', key: 'subject', proofId: 'regular-donors-v0', checkId: 'subject@regular-donors-v0', derived: 'passed', include: true,
+        cells: [{ col: 4, a1: 'E9', old: '', next: 'Passed', writable: true, reason: null }], note: { col: 7, a1: 'H9', old: '', next: 'V0 / Regular Donors | Desktop | matches option 1', line: 'V0 / Regular Donors | Desktop | matches option 1' } },
+      { row: 33, rowText: 'Verify the overall visuals of the email', key: 'visuals', proofId: 'regular-donors-v0', checkId: 'visuals@regular-donors-v0', derived: 'in-progress', include: true,
+        cells: [{ col: 4, a1: 'E33', old: '', next: 'In Progress', writable: true, reason: null }, { col: 5, a1: 'F33', old: '', next: 'In Progress', writable: true, reason: null }, { col: 6, a1: 'G33', old: '', next: 'In Progress', writable: true, reason: null }], note: null },
+      { row: 10, rowText: 'Is personalized content rendering correctly within the subject line?', key: 'subjectTokens', proofId: 'regular-donors-v0', checkId: 'subjectTokens@regular-donors-v0', derived: 'passed', include: false,
+        cells: [{ col: 4, a1: 'E10', old: 'Passed', next: 'Passed', writable: false, reason: 'already Passed' }], note: null },
+    ], unmapped: [], warnings: [], counts: { statusWrites: 4, noteWrites: 1 } },
+    paste: [{ checkId: 'subject@regular-donors-v0', group: 'Reqs - Regular Donors v0', row: 'Is the subject line rendering correctly?', status: 'Passed', note: '' }], applied: null,
+  }, over || {});
+}
+// ecWritesFromProposal's contract: for every entry with include === true, its writable cells in column order, then its note; the QA Pass write shape.
+function ecWritesStub(sheet) {
+  var out = [];
+  if (!sheet || !sheet.proposal) return out;
+  sheet.proposal.entries.forEach(function (e) {
+    if (e.include !== true) return;
+    e.cells.forEach(function (c) { if (c.writable) out.push({ row: e.row, col: c.col, a1: c.a1, old: c.old, next: c.next, rowText: e.rowText }); });
+    if (e.note) out.push({ row: e.row, col: e.note.col, a1: e.note.a1, old: e.note.old, next: e.note.next, rowText: e.rowText });
+  });
+  return out;
+}
+function ecHtmlStubs() {
+  return {
+    ecProposalHtml: function (sh, o) { return '<table class="ec-proposal" data-editable="' + !!(o && o.editable) + '"><tr><td>proposal</td></tr></table>'; },
+    ecPasteHtml: function (rows) { return '<table class="ec-paste" data-rows="' + (rows || []).length + '"><tr><td>paste</td></tr></table>'; },
+    ecWritesFromProposal: ecWritesStub,
+    ecSlim: function (r) { return JSON.parse(JSON.stringify(r)); },
+  };
+}
+
+TE('Email Check panel: results', function () {
+  var E = ecEnv();
+  withGlobals(E.globals(ecHtmlStubs()), function () {
+    eval(ecPanelSrc());
+    function render(rec) { E.els = {}; ecUiRenderResults(rec); return E.el('ec-results').innerHTML; }
+    // ecUiRecount
+    var prop = ecSheetOK().proposal; prop.counts = null;
+    ecUiRecount(prop);
+    jeqE('recount: the writable cells and the notes of the included entries', prop.counts, { statusWrites: 4, noteWrites: 1 });
+    prop.entries[0].include = false; ecUiRecount(prop);
+    jeqE('recount: an excluded entry counts nothing (its note neither)', prop.counts, { statusWrites: 3, noteWrites: 0 });
+    prop.entries[2].include = true; ecUiRecount(prop);
+    jeqE('recount: an included entry whose cells are not writable adds nothing', prop.counts, { statusWrites: 3, noteWrites: 0 });
+    ecUiRecount({ entries: [] });
+    ok('recount: no entries is fine', true);
+
+    // ecUiRenderResults
+    var rec = ecHandRecord({ sheet: ecSheetOK() });
+    var h = render(rec);
+    ok('results: a <style> for the results tables and the ec-* classes', /<style>/.test(h) && /#ec-results/.test(h) && /ec-sub/.test(h) && /ec-list/.test(h) && /ec-empty/.test(h) && /ec-warn/.test(h), h.slice(0, 200));
+    ok('results: the badge', h.indexOf('ISSUES FOUND') >= 0 && /color:var\(--err\)/.test(h));
+    ok('results: the counts line', h.indexOf('1 failed · 2 passed · 1 in progress · 1 blocked · 1 not tested') >= 0, h.slice(0, 600));
+    ok('results: the failed check with its id and note', h.indexOf('<b>altTags@regular-donors-v0</b>') >= 0 && h.indexOf('V0 image hero.jpg has no alt') >= 0);
+    ok('results: the note is scrubbed again (no prospect id, no hash)', h.indexOf('2000000002') < 0 && h.indexOf('SynthHash0') < 0 && h.indexOf('[prospect]') >= 0, h);
+    ok('results: no href and no url is printed', h.indexOf('href=') < 0 && h.indexOf('http') < 0);
+    ok('results: the sheet block says nothing is written yet and offers Apply with the count and the tab', h.indexOf('Test plan changes (not written yet)') >= 0 && h.indexOf('<table class="ec-proposal" data-editable="true">') >= 0 && h.indexOf('id="btn-ec-apply"') >= 0 && h.indexOf('Apply 5 change(s) to "QA Round 1"') >= 0 && h.indexOf('id="ec-apply-status"') >= 0, h);
+    ok('results: the Apply button is visible when there are writes', !/id="btn-ec-apply"[^>]*display:none/.test(h));
+    var rec2 = ecHandRecord({ stopped: true, checks: [ecCk('subject', 'regular-donors-v0', 'passed', ''), ecCk('dkim', 'regular-donors-v0', 'in-progress', 'x')], sheet: null });
+    h = render(rec2);
+    ok('results: a stopped record says so, and without a failure the badge is INCOMPLETE', h.indexOf('INCOMPLETE') >= 0 && h.indexOf(' · stopped') >= 0, h.slice(0, 500));
+    ok('results: no sheet at all prints no test-plan block', h.indexOf('Test plan') < 0 && h.indexOf('Paste-ready') < 0);
+    h = render(ecHandRecord({ checks: [ecCk('subject', 'regular-donors-v0', 'passed', '')], sheet: null }));
+    ok('results: all passed is PASS, in the ok colour', h.indexOf('>PASS<') >= 0 && /color:var\(--ok\)/.test(h));
+    h = render(ecHandRecord({ checks: [ecCk('subject', 'regular-donors-v0', 'in-progress', 'x')], sheet: null }));
+    ok('results: in progress is NEEDS REVIEW, in the warn colour', h.indexOf('NEEDS REVIEW') >= 0 && /color:var\(--warn\)/.test(h));
+    h = render(ecHandRecord({ error: 'Doc failed at https://docs.googleapis.com/v1/documents/abc?key=SECRET <b>', sheet: null }));
+    ok('results: the run error is scrubbed (no query) and escaped', h.indexOf('key=SECRET') < 0 && h.indexOf('&lt;b&gt;') >= 0 && h.indexOf('Doc failed at https://docs.googleapis.com/v1/documents/abc') >= 0, h);
+    // sources the tester must act on
+    var mt = function (state, error) { return render(ecHandRecord({ sources: Object.assign({}, ecHandRecord().sources, { mailtrap: { state: state, error: error || null } }), sheet: null })); };
+    ok('results: Mailtrap signed out', mt('signed-out').indexOf('Mailtrap: this Chrome is signed out. Sign in to the shared Mailtrap account in this Chrome, then run again.') >= 0);
+    ok('results: Mailtrap no-account names the sandbox of the first proof', mt('no-account').indexOf('the signed-in account does not own sandbox 7000001 (a personal account?)') >= 0);
+    ok('results: Mailtrap challenge', mt('challenge').indexOf('Mailtrap shows a browser check. Open mailtrap.io in this Chrome, let it finish, then run again.') >= 0);
+    ok('results: Mailtrap error carries its text, escaped', mt('error', 'boom <b>').indexOf('Mailtrap could not be read: boom &lt;b&gt;') >= 0);
+    ok('results: an ok Mailtrap source prints nothing', mt('ok').indexOf('Mailtrap') < 0);
+    h = render(ecHandRecord({ sources: Object.assign({}, ecHandRecord().sources, { doc: { state: 'needs-connect', title: null, emails: [], chosen: null, error: null } }), sheet: null }));
+    ok('results: the Docs permission sentence', h.indexOf('Connect Google again: the Docs permission was added after you connected.') >= 0);
+    // the sheet block in its other forms
+    var locked = ecSheetOK({ applied: { at: 1, ok: true, written: 5, verified: 5, dropped: [], mismatches: [], foreign: [] } });
+    h = render(ecHandRecord({ sheet: locked }));
+    ok('results: after a good Apply the proposal is not editable and there is no button', h.indexOf('data-editable="false"') >= 0 && h.indexOf('btn-ec-apply') < 0, h);
+    eq('  and the outcome is shown in the status line', E.el('ec-apply-status').textContent, 'Wrote 5 cell(s), verified 5.');
+    h = render(ecHandRecord({ sheet: ecSheetOK({ applied: { at: 1, ok: false, error: 'Nothing was written: boom', needsConnect: true } }) }));
+    ok('results: a failed Apply keeps the button and shows the error', h.indexOf('id="btn-ec-apply"') >= 0 && /Not written: Nothing was written: boom \(use Connect Google, then Apply again\)/.test(E.el('ec-apply-status').textContent), E.el('ec-apply-status').textContent);
+    var sh0 = ecSheetOK(); sh0.proposal.entries.forEach(function (e) { e.include = false; });
+    h = render(ecHandRecord({ sheet: sh0 }));
+    ok('results: with nothing selected the Apply button is hidden', /id="btn-ec-apply"[^>]*display:none/.test(h) && h.indexOf('Apply 0 change(s)') >= 0, h);
+    var reasons = { 'no-test-plan-link': 'The active ticket has no QA test plan link.', 'not-a-google-sheet-link': 'The QA test plan link is not a Google Sheet.', 'no-client-id': 'Add a Google OAuth client ID in Settings to read and write the test plan.',
+      'not-connected': 'Google is not connected: use Connect Google above.', 'no-tab-picked': 'Pick the test plan tab above to get a proposal.' };
+    Object.keys(reasons).forEach(function (k) {
+      h = render(ecHandRecord({ sheet: { connected: false, reason: k, error: null, paste: [{ a: 1 }] } }));
+      ok('results: reason ' + k, h.indexOf(reasons[k] + ' Paste-ready results:') >= 0 && h.indexOf('<table class="ec-paste" data-rows="1">') >= 0 && h.indexOf('>Test plan<') >= 0, h.slice(0, 300));
+    });
+    h = render(ecHandRecord({ sheet: { connected: false, reason: null, error: 'boom <b>', paste: [] } }));
+    ok('results: a read error is shown, escaped, with the paste table', h.indexOf('The test plan could not be read: boom &lt;b&gt;. Paste-ready results:') >= 0 || h.indexOf('The test plan could not be read: boom &lt;b&gt; Paste-ready results:') >= 0, h);
+    ok('results: markup in a note is escaped', render(ecHandRecord({ checks: [ecCk('subject', 'regular-donors-v0', 'failed', '<script>alert(1)</script>')], sheet: null })).indexOf('<script>alert') < 0);
+    h = render(ecHandRecord({ sheet: ecSheetOK({ tabTitle: 'Tab "x" <i>' }) }));
+    ok('results: the tab title in the Apply button is escaped', h.indexOf('Apply 5 change(s) to "Tab &quot;x&quot; &lt;i&gt;"') >= 0 && h.indexOf('<i>') < 0, h);
+    E.nodes['ec-results'] = null;
+    var threw = false; try { ecUiRenderResults(rec); } catch (e) { threw = true; }
+    ok('results: a missing #ec-results is a no-op', !threw);
+    E.nodes = {};
+    try { ecUiRenderResults(null); } catch (e) { threw = true; }
+    ok('results: a null record is a no-op', !threw);
+
+    // ecUiShowApplied
+    E.els = {};
+    ecUiShowApplied({ ok: false, error: 'boom' });
+    jeqE('applied: a failure', [E.el('ec-apply-status').textContent, E.el('ec-apply-status').style.color], ['Not written: boom', 'var(--err)']);
+    ecUiShowApplied({ ok: false, error: 'boom', needsConnect: true });
+    eq('applied: a failure that needs Google again', E.el('ec-apply-status').textContent, 'Not written: boom (use Connect Google, then Apply again)');
+    ecUiShowApplied({ ok: false });
+    eq('applied: a failure with no text', E.el('ec-apply-status').textContent, 'Not written: unknown error');
+    ecUiShowApplied({ ok: true, written: 3, verified: 3, dropped: [], mismatches: [], foreign: [] });
+    jeqE('applied: a clean write', [E.el('ec-apply-status').textContent, E.el('ec-apply-status').style.color], ['Wrote 3 cell(s), verified 3.', 'var(--ok)']);
+    ecUiShowApplied({ ok: true, written: 3, verified: 1, dropped: [{ a1: 'E9' }, { a1: 'H9' }], mismatches: [{ a1: 'F33', found: 'X' }], foreign: [{ a1: 'G33' }] });
+    jeqE('applied: dropped, mismatched and foreign cells are named', [E.el('ec-apply-status').textContent, E.el('ec-apply-status').style.color],
+      ['Wrote 3 cell(s), verified 1. Left alone, changed since read: E9, H9. Mismatches: F33 holds "X". Also changed by someone else meanwhile: G33.', 'var(--err)']);
+    ecUiShowApplied({ ok: true, written: 2, verified: null, verifyError: 'HTTP 500' });
+    jeqE('applied: not re-read', [E.el('ec-apply-status').textContent, E.el('ec-apply-status').style.color], ['Wrote 2 cell(s), not re-read (HTTP 500).', 'var(--err)']);
+    ecUiShowApplied({ ok: true });
+    eq('applied: nothing written', E.el('ec-apply-status').textContent, 'Wrote 0 cell(s), not re-read (unknown).');
+    E.nodes['ec-apply-status'] = null;
+    threw = false; try { ecUiShowApplied({ ok: true, written: 1, verified: 1 }); } catch (e) { threw = true; }
+    ok('applied: no element is a no-op', !threw);
+    E.nodes = {};
+
+    // ecUiPersistLast
+    _ecLastRun = null; ecUiPersistLast();
+    eq('persist: nothing to store', E.sessionSets.length, 0);
+    _ecLastRun = ecHandRecord({ ts: 5 }); ecUiPersistLast(); drainMicrotasks();
+    ok('persist: the slim record goes to the session store under ecLastRun', E.sessionSets.length === 1 && E.sessionSets[0].ecLastRun && E.sessionSets[0].ecLastRun.ts === 5);
+
+    // ecUiOnResultsChange: one include checkbox per proposal entry
+    var rendered = 0, persisted = 0;
+    ecUiRenderResults = function () { rendered++; }; ecUiPersistLast = function () { persisted++; };
+    function incEv(row, checked) { return { target: { checked: checked, matches: function (s) { return s === 'input[data-ec-include]'; }, getAttribute: function (n) { return n === 'data-ec-include' ? String(row) : null; } } }; }
+    _ecLastRun = ecHandRecord({ sheet: ecSheetOK() });
+    ecUiOnResultsChange(incEv(9, false));
+    var ent = _ecLastRun.sheet.proposal.entries;
+    ok('include: unticking row 9 excludes it', ent[0].include === false && ent[1].include === true);
+    jeqE('  the counts follow', _ecLastRun.sheet.proposal.counts, { statusWrites: 3, noteWrites: 0 });
+    ok('  the results are rendered again and the record persisted', rendered === 1 && persisted === 1);
+    ecUiOnResultsChange(incEv(9, true));
+    ok('include: ticking it again includes it', ent[0].include === true && _ecLastRun.sheet.proposal.counts.statusWrites === 4);
+    ecUiOnResultsChange(incEv(99, false));
+    ok('include: an unknown row changes nothing', ent.every(function (e) { return e.include === (e.row !== 10); }));
+    var r0 = rendered; ecUiOnResultsChange({ target: { matches: function () { return false; } } });
+    ok('include: another control changes nothing and renders nothing', rendered === r0);
+    _ecLastRun.sheet.applied = { ok: true }; ecUiOnResultsChange(incEv(9, false));
+    ok('include: a locked (applied) sheet changes nothing', ent[0].include === true);
+    _ecLastRun = ecHandRecord({ sheet: null }); ecUiOnResultsChange(incEv(9, false));
+    ok('include: no sheet is fine', true);
+    // ecUiOnResultsClick
+    var applyCalls = 0; ecUiApply = function () { applyCalls++; return Promise.resolve(); };
+    ecUiOnResultsClick({ target: { closest: function (s) { return s === '#btn-ec-apply' ? {} : null; } } });
+    eq('click: a click on Apply reaches ecUiApply', applyCalls, 1);
+    ecUiOnResultsClick({ target: { closest: function () { return null; } } });
+    eq('click: a click elsewhere does nothing', applyCalls, 1);
+    threw = false; try { ecUiOnResultsClick({ target: {} }); ecUiOnResultsClick({}); } catch (e) { threw = true; }
+    ok('click: a target with no closest is fine', !threw);
+  });
+});
+
+TE('Email Check panel: apply', function () {
+  var E = ecEnv();
+  withGlobals(E.globals(ecHtmlStubs()), function () {
+    eval(ecPanelSrc());
+    var renders = 0; ecUiRenderResults = function () { renders++; };
+    function reset(sheetOver) {
+      E.sent.length = 0; E.replies = {}; E.store.local = {}; E.sessionSets.length = 0; E.confirms.length = 0; E.confirmAnswer = true; E.els = {}; renders = 0;
+      _ecLastRun = ecHandRecord({ sheet: ecSheetOK(sheetOver) });
+    }
+    function apply() { return settleE(ecUiApply()); }
+    var CONFIRM = 'Write 5 cell(s) to the tab "QA Round 1" of the EMAIL Test Plan?\n\nOnly cells that still hold what Selenite read are written; anything changed since is left alone.';
+    reset(); E.replies.ecSheetApply = function (m) { E.btnWasDisabled = E.el('btn-ec-apply').disabled; return { ok: true, written: 5, verified: 5, dropped: [], mismatches: [], foreign: [] }; };
+    apply();
+    eq('apply: the confirm names the cell count and the tab, and the rule for changed cells', E.confirms[0], CONFIRM);
+    var m = E.sent[0];
+    eq('apply: one ecSheetApply message', E.sent.length + ':' + m.action, '1:ecSheetApply');
+    jeqE('apply: the payload has exactly the eight documented fields', Object.keys(m.payload).sort(), ['descCol', 'eCol', 'fgCols', 'notesCol', 'spreadsheetId', 'tabTitle', 'textCols', 'writes']);
+    jeqE('apply: sheet, tab and text columns (the description column as an index)', [m.payload.spreadsheetId, m.payload.tabTitle, m.payload.textCols], ['EXPLAN_EX2_TEST_PLAN_00000000002', 'QA Round 1', [2]]);
+    jeqE('apply: descCol is the Description column as an INDEX (the worker takes its letter itself); desktop E, notes H, mobile and web-based F and G are letters', [m.payload.descCol, m.payload.eCol, m.payload.notesCol, m.payload.fgCols], [2, 'E', 'H', ['F', 'G']]);
+    ok('apply: textCols contains descCol (ecwSheetApply refuses F/G writes otherwise: integration decision I-9)', m.payload.textCols.indexOf(m.payload.descCol) >= 0 && typeof m.payload.descCol === 'number');
+    eq('apply: exactly the proposed writes, in order', m.payload.writes.map(function (w) { return w.a1; }).join(), 'E9,H9,E33,F33,G33');
+    ok('apply: every write in F or G sits on a visual / dark-mode row', m.payload.writes.filter(function (w) { return /^[FG][0-9]/.test(w.a1); }).every(function (w) { return /overall visuals|al+ignment|spacing|overlap|dark mode/i.test(w.rowText); }));
+    ok('apply: the button was disabled while writing', E.btnWasDisabled === true);
+    ok('apply: the outcome is on the sheet (ok, with a timestamp)', _ecLastRun.sheet.applied.ok === true && typeof _ecLastRun.sheet.applied.at === 'number' && _ecLastRun.sheet.applied.written === 5);
+    var log = E.store.local.ecSheetWriteLog;
+    ok('apply: the write log gets the outcome', log && log.length === 1 && log[0].written === 5 && log[0].verified === 5 && log[0].tabTitle === 'QA Round 1' && log[0].spreadsheetId === 'EXPLAN_EX2_TEST_PLAN_00000000002' && log[0].error === null && Array.isArray(log[0].dropped) && Array.isArray(log[0].mismatches), log);
+    ok('apply: the record is persisted and the results rendered again', renders >= 1 && E.sessionSets.some(function (o) { return o.ecLastRun && o.ecLastRun.sheet && o.ecLastRun.sheet.applied; }));
+    E.sent.length = 0; E.confirms.length = 0; apply();
+    ok('apply: a second click after a good write sends nothing and asks nothing', E.sent.length === 0 && E.confirms.length === 0);
+    // declined
+    reset(); E.confirmAnswer = false; apply();
+    ok('apply: a declined confirm sends nothing and changes nothing', E.sent.length === 0 && !_ecLastRun.sheet.applied && E.confirms.length === 1);
+    // nothing selected
+    reset(); _ecLastRun.sheet.proposal.entries.forEach(function (e) { e.include = false; }); apply();
+    ok('apply: nothing selected: no confirm, no message, the status says so', E.sent.length === 0 && E.confirms.length === 0 && E.el('ec-apply-status').textContent === 'Nothing selected to write.', E.el('ec-apply-status').textContent);
+    // failures
+    reset(); E.replies.ecSheetApply = { ok: false, error: 'Nothing was written: boom', needsConnect: true };
+    apply();
+    ok('apply: a failed write is on the sheet, not ok, and can be retried', _ecLastRun.sheet.applied.ok === false && _ecLastRun.sheet.applied.error === 'Nothing was written: boom' && _ecLastRun.sheet.applied.needsConnect === true);
+    ok('  and logged with its error', E.store.local.ecSheetWriteLog[0].error === 'Nothing was written: boom' && E.store.local.ecSheetWriteLog[0].written === 0);
+    E.sent.length = 0; apply();
+    eq('  the retry sends again', E.sent.length, 1);
+    reset(); E.replies.ecSheetApply = function () { return Promise.reject(new Error('port closed')); };
+    apply();
+    eq('apply: a rejected message is the error', _ecLastRun.sheet.applied.error, 'port closed');
+    reset(); E.replies.ecSheetApply = undefined;
+    apply();
+    eq('apply: no answer at all', _ecLastRun.sheet.applied.error, 'No answer from the service worker.');
+    // columns the plan lacks
+    reset(); _ecLastRun.sheet.model.cols = { description: 2, desktop: 4, mobile: null, webBased: null, notes: null }; E.replies.ecSheetApply = { ok: true, written: 5, verified: 5 };
+    apply();
+    jeqE('apply: a plan with no Mobile, Web-Based or Notes column: no F/G letters and a null notes column', [E.sent[0].payload.fgCols, E.sent[0].payload.notesCol], [[], null]);
+    reset(); _ecLastRun.sheet.model.cols = { description: 2, desktop: 4, mobile: 5, webBased: null, notes: 7 }; E.replies.ecSheetApply = { ok: true, written: 5, verified: 5 };
+    apply();
+    jeqE('apply: only a Mobile column: fgCols is [F]', E.sent[0].payload.fgCols, ['F']);
+    // the log keeps the last 20
+    reset(); E.store.local.ecSheetWriteLog = []; for (var i = 0; i < 25; i++) E.store.local.ecSheetWriteLog.push({ at: i, written: i });
+    E.replies.ecSheetApply = { ok: true, written: 5, verified: 5 };
+    apply();
+    var l2 = E.store.local.ecSheetWriteLog;
+    ok('apply: the write log keeps the last 20, newest last', l2.length === 20 && l2[19].written === 5 && l2[0].at === 6, [l2.length, l2[0] && l2[0].at]);
+    // a storage fault on the log is swallowed
+    reset(); E.setFails = true; E.replies.ecSheetApply = { ok: true, written: 5, verified: 5 };
+    var sf = apply();
+    ok('apply: a failing log write does not reject and the outcome is kept', sf.done && !sf.err && _ecLastRun.sheet.applied.ok === true, sf.err && String(sf.err));
+    E.setFails = false;
+    // no run / no sheet / not connected
+    _ecLastRun = null; E.sent.length = 0; apply();
+    ok('apply: with no run there is nothing to apply', E.sent.length === 0);
+    reset({ connected: false }); apply();
+    ok('apply: an unconnected sheet is not applied', E.sent.length === 0);
+    reset({ proposal: null }); apply();
+    ok('apply: a sheet with no proposal is not applied', E.sent.length === 0);
+  });
+});
+
+TE('Email Check panel: Google', function () {
+  var E = ecEnv();
+  var PLAN = EC_PLANS['EX-2'] || EC_PLANS['EX-1'];
+  var tabs = [{ sheetId: 100, title: 'QA Round 1', index: 0, hidden: false }, { sheetId: 101, title: 'Legend/Values [DO NOT REMOVE]', index: 1, hidden: false }, { sheetId: 102, title: 'Old round', index: 2, hidden: true }];
+  withGlobals(E.globals(), function () {
+    eval(ecPanelSrc());
+    function reset() { E.sent.length = 0; E.replies = {}; E.store = { local: {}, sync: {} }; E.els = {}; E.ctx = exCtx('EX-2'); }
+    function refresh(msg) { return settleE(ecUiRefreshSheet(msg)); }
+    var st = function () { return E.el('ec-sheet-status').textContent; };
+    reset(); E.replies.qpGoogleStatus = null;
+    refresh();
+    eq('google: no answer from the worker', st(), 'Google status unavailable: no answer from the service worker.');
+    ok('  both buttons hidden, the tab list reset', E.el('btn-ec-google-connect').style.display === 'none' && E.el('btn-ec-google-disconnect').style.display === 'none' && E.el('ec-sheet-tab').disabled === true);
+    reset(); E.replies.qpGoogleStatus = { ok: false, error: 'boom' }; refresh('tail');
+    eq('google: a status error, with the caller\'s tail', st(), 'Google status unavailable: boom tail');
+    reset(); E.replies.qpGoogleStatus = { ok: true, clientIdSet: false, connected: false }; refresh();
+    eq('google: no OAuth client id', st(), 'Add a Google OAuth client ID in Settings (gear) to read and write the test plan. Without it Email Check gives a paste-ready table.');
+    ok('  no buttons', E.el('btn-ec-google-connect').style.display === 'none' && E.el('btn-ec-google-disconnect').style.display === 'none');
+    reset(); E.replies.qpGoogleStatus = { ok: true, clientIdSet: true, connected: false }; refresh();
+    eq('google: not connected', st(), 'Google is not connected.');
+    ok('  Connect shown, Disconnect hidden', E.el('btn-ec-google-connect').style.display === '' && E.el('btn-ec-google-disconnect').style.display === 'none');
+    reset(); E.ctx = exCtx('EX-2', { qaTestPlanUrl: null }); E.replies.qpGoogleStatus = { ok: true, clientIdSet: true, connected: true }; refresh();
+    eq('google: connected, no test plan link', st(), 'Google connected. The active ticket\'s QA test plan link is missing, so Email Check gives a paste-ready table.');
+    ok('  Connect hidden, Disconnect shown', E.el('btn-ec-google-connect').style.display === 'none' && E.el('btn-ec-google-disconnect').style.display === '');
+    reset(); E.ctx = exCtx('EX-2', { qaTestPlanUrl: 'https://www.example.org/plan' }); E.replies.qpGoogleStatus = { ok: true, clientIdSet: true, connected: true }; refresh();
+    eq('google: connected, the link is not a sheet', st(), 'Google connected. The active ticket\'s QA test plan link is not a Google Sheet, so Email Check gives a paste-ready table.');
+    reset(); E.replies.qpGoogleStatus = { ok: true, clientIdSet: true, connected: true }; E.replies.qpSheetMeta = { ok: false, error: 'HTTP 500' }; refresh();
+    eq('google: the tabs could not be listed', st(), 'Google connected, but the test plan tabs could not be listed: HTTP 500');
+    E.replies.qpSheetMeta = { ok: false, error: 'expired', needsConnect: true }; refresh();
+    eq('google: ... and the token needs a reconnect', st(), 'Google connected, but the test plan tabs could not be listed: expired Use Connect Google.');
+    ok('  so Connect is shown', E.el('btn-ec-google-connect').style.display === '');
+    reset(); E.replies.qpGoogleStatus = { ok: true, clientIdSet: true, connected: true }; E.replies.qpSheetMeta = { ok: true, title: '[EX-2] EMAIL Test Plan', tabs: tabs }; refresh();
+    eq('google: the plan is named', st(), 'Google connected. Test plan: "[EX-2] EMAIL Test Plan".');
+    ok('  the tab list holds the visible tabs only', /value="QA Round 1"/.test(E.el('ec-sheet-tab').innerHTML) && /value="Legend\/Values \[DO NOT REMOVE\]"/.test(E.el('ec-sheet-tab').innerHTML) && E.el('ec-sheet-tab').innerHTML.indexOf('Old round') < 0 && E.el('ec-sheet-tab').disabled === false);
+    eq('  the tab whose id is the link gid (100) is preselected', E.el('ec-sheet-tab').value, 'QA Round 1');
+    reset(); E.ctx = exCtx('EX-2', { qaTestPlanUrl: 'https://docs.google.com/spreadsheets/d/EXPLAN_EX2_TEST_PLAN_00000000002/edit' });
+    E.replies.qpGoogleStatus = { ok: true, clientIdSet: true, connected: true }; E.replies.qpSheetMeta = { ok: true, title: 'T', tabs: [tabs[1], tabs[0]] }; refresh();
+    eq('google: with no gid the first QA-looking tab that is not the Values tab', E.el('ec-sheet-tab').value, 'QA Round 1');
+    E.store.local.ecSheetPrefs = { EXPLAN_EX2_TEST_PLAN_00000000002: { tabTitle: 'Legend/Values [DO NOT REMOVE]' } }; refresh();
+    eq('google: a remembered tab beats the gid and the guess', E.el('ec-sheet-tab').value, 'Legend/Values [DO NOT REMOVE]');
+    E.store.local.ecSheetPrefs = {}; E.replies.qpSheetMeta = { ok: true, title: 'T', tabs: [tabs[1]] }; refresh();
+    eq('google: only a Values tab: nothing is preselected', E.el('ec-sheet-tab').value, '');
+    // the Docs permission
+    reset(); E.replies.qpGoogleStatus = { ok: true, clientIdSet: true, connected: true, docsGranted: false }; E.replies.qpSheetMeta = { ok: true, title: '[EX-2] EMAIL Test Plan', tabs: tabs }; refresh();
+    eq('google: connected without the Docs permission says to connect again', st(), 'Google connected. Test plan: "[EX-2] EMAIL Test Plan". Connect Google again: the Docs permission was added after you connected.');
+    ok('  and keeps Connect visible next to Disconnect', E.el('btn-ec-google-connect').style.display === '' && E.el('btn-ec-google-disconnect').style.display === '');
+    E.replies.qpGoogleStatus = { ok: true, clientIdSet: true, connected: true, docsGranted: true }; refresh();
+    ok('google: with the Docs permission nothing is added and Connect is hidden', st().indexOf('Docs permission') < 0 && E.el('btn-ec-google-connect').style.display === 'none');
+    E.replies.qpGoogleStatus = { ok: true, clientIdSet: true, connected: true }; refresh();
+    ok('google: a worker that does not report docsGranted adds nothing', st().indexOf('Docs permission') < 0);
+    ok('google: the write-notes and re-test boxes are not touched here (ecSettings holds them)', E.els['ec-write-notes'] === undefined && E.els['ec-retest-inprogress'] === undefined);
+    // connect / disconnect / onShow with the refresh stubbed
+    var calls = [];
+    ecUiRefreshSheet = function (m) { calls.push(m === undefined ? 'undef' : m); return Promise.resolve(); };
+    reset(); E.replies.qpGoogleConnect = { ok: true };
+    settleE(ecUiConnectGoogle());
+    jeqE('connect: asks the worker, then refreshes with no message', [E.sent.map(function (x) { return x.action; }), calls], [['qpGoogleConnect'], ['']]);
+    calls.length = 0; E.replies.qpGoogleConnect = { ok: false, error: 'popup closed' }; settleE(ecUiConnectGoogle());
+    jeqE('connect: a failure is the refresh message', calls, ['Sign-in: popup closed']);
+    calls.length = 0; E.replies.qpGoogleConnect = null; settleE(ecUiConnectGoogle());
+    jeqE('connect: no answer is "failed."', calls, ['Sign-in: failed.']);
+    calls.length = 0; E.replies.qpGoogleConnect = function () { return Promise.reject(new Error('port closed')); }; settleE(ecUiConnectGoogle());
+    jeqE('connect: a rejection is its message', calls, ['Sign-in: port closed']);
+    eq('connect: the status line announced the sign-in first', E.el('ec-sheet-status').textContent, 'Opening Google sign-in…');
+    calls.length = 0; E.sent.length = 0; E.replies.qpGoogleDisconnect = function () { return Promise.reject(new Error('x')); };
+    var dj = settleE(ecUiDisconnectGoogle());
+    jeqE('disconnect: asks the worker (a rejection is swallowed), then refreshes', [E.sent.map(function (x) { return x.action; }), calls, dj.err === undefined], [['qpGoogleDisconnect'], ['undef'], true]);
+    // onShow
+    var order = [], seenCtx = null;
+    ecUiRenderCtx = function () { order.push('ctx'); return Promise.resolve({ ticketKey: 'EX-2' }); };
+    ecUiRenderRules = function (c) { order.push('rules'); seenCtx = c; return Promise.resolve(); };
+    ecUiRefreshSheet = function () { order.push('sheet'); return Promise.resolve(); };
+    settleE(ecUiOnShow());
+    jeqE('onShow: context, then rules (given the context), then the sheet', [order, seenCtx && seenCtx.ticketKey], [['ctx', 'rules', 'sheet'], 'EX-2']);
+    order.length = 0; ecUiRenderCtx = function () { order.push('ctx'); return Promise.reject(new Error('a')); };
+    var o1 = settleE(ecUiOnShow());
+    jeqE('onShow: a failing context read does not skip the rules or the sheet, and does not reject', [order, o1.err === undefined], [['ctx', 'rules', 'sheet'], true]);
+    order.length = 0; ecUiRenderCtx = function () { order.push('ctx'); return Promise.resolve(null); }; ecUiRenderRules = function () { order.push('rules'); throw new Error('b'); };
+    var o2 = settleE(ecUiOnShow());
+    jeqE('onShow: a throwing rules step does not skip the sheet', [order, o2.err === undefined], [['ctx', 'rules', 'sheet'], true]);
+  });
+});
+
+TE('Email Check panel: initEmailCheck', function () {
+  var E = ecEnv(), ids = [];
+  var g = E.globals(ecHtmlStubs());
+  var inner = g.document.getElementById;
+  g.document.getElementById = function (id) { ids.push(id); return inner(id); };
+  withGlobals(g, function () {
+    eval(ecPanelSrc());
+    var order = [], saved = { rules: 0, prefs: 0 }, rendered = [];
+    ecUiFillProfiles = function () { order.push('fill'); };
+    ecUiApplyPrefs = function (p) { order.push('apply:' + JSON.stringify(p)); };
+    ecUiSaveRules = function () { saved.rules++; return Promise.resolve(); };
+    ecUiSavePrefs = function () { saved.prefs++; return Promise.resolve(); };
+    ecUiRenderResults = function (r) { rendered.push(r); };
+    var connected = 0, disconnected = 0, rc = [], rk = [];
+    ecUiConnectGoogle = function () { connected++; return Promise.resolve(); }; ecUiDisconnectGoogle = function () { disconnected++; return Promise.resolve(); };
+    ecUiOnResultsChange = function (e) { rc.push(e); }; ecUiOnResultsClick = function (e) { rk.push(e); };
+    function reset() { E.els = {}; E.nodes = {}; E.sent.length = 0; E.store = { local: {}, sync: {} }; E.sessionGets = {}; order.length = 0; saved.rules = 0; saved.prefs = 0; rendered.length = 0; ids.length = 0; _ecLastRun = null; }
+    // an event target as the DOM gives one: it knows its id, its dataset and what it matches
+    function target(id, ds, inside) {
+      var t = { id: id, dataset: ds || {}, checked: false };
+      t.matches = function (sel) { return (id && sel.indexOf('#' + id) >= 0) || (t.dataset.ecSeg !== undefined && /data-ec-seg/.test(sel)); };
+      t.closest = function (sel) { return t.matches(sel) || (inside && sel.indexOf(inside) >= 0) ? t : null; };
+      return t;
+    }
+    // no #ec-body: nothing is bound, nothing is read
+    reset(); E.nodes['ec-body'] = null;
+    var r = settleE(initEmailCheck());
+    ok('init: without #ec-body it returns quietly and reads nothing', r.done && !r.err && E.sent.length === 0 && order.length === 0 && Object.keys(E.els).length === 0, r.err && String(r.err));
+    // the normal start
+    reset(); E.store.local.ecSettings = { profileChoice: 'generic', eoaRenders: false }; E.sessionGets.ecLastRun = ecHandRecord({ ts: 5 });
+    r = settleE(initEmailCheck());
+    ok('init: resolves', r.done && !r.err, r.err && String(r.err));
+    eq('init: the profile options are filled BEFORE the stored choice is applied', order.join('|'), 'fill|apply:' + JSON.stringify({ profileChoice: 'generic', eoaRenders: false }));
+    var body = E.el('ec-body');
+    ok('init: #ec-body listens for change and input, once each', (body.listeners.change || []).length === 1 && (body.listeners.input || []).length === 1, Object.keys(body.listeners));
+    ok('init: Google connect, disconnect, the tab select and the results box are bound', (E.el('btn-ec-google-connect').listeners.click || []).length === 1 && (E.el('btn-ec-google-disconnect').listeners.click || []).length === 1 && (E.el('ec-sheet-tab').listeners.change || []).length >= 1 && (E.el('ec-results').listeners.change || []).length === 1 && (E.el('ec-results').listeners.click || []).length === 1);
+    ok('init: it never touches the Settings Google fields (initQaPass owns them)', ids.every(function (i) { return !/^set-google|^btn-set-google/.test(i); }), ids.filter(function (i) { return /set-google/.test(i); }));
+    eq('init: the last run is restored and rendered', rendered.length === 1 && rendered[0].ts === 5 && _ecLastRun && _ecLastRun.ts === 5, true);
+    // what a change does
+    var onChange = body.listeners.change[0], onInput = body.listeners.input[0];
+    var utm = target('ec-utm-rule', { source: 'suggested', comment: '420001' });
+    onChange({ target: utm });
+    ok('change on the UTM rule: it becomes the tester\'s, loses its comment, and the rules are saved', utm.dataset.source === 'tester' && utm.dataset.comment === '' && saved.rules === 1 && saved.prefs === 0, [utm.dataset, saved]);
+    var seg = target(null, { ecSeg: 'Regular Donors', source: 'suggested', comment: '420003' });
+    onInput({ target: seg });
+    ok('input on a segment path: the same', seg.dataset.source === 'tester' && seg.dataset.comment === '' && saved.rules === 2 && saved.prefs === 0, [seg.dataset, saved]);
+    var doc = target('ec-doc-email', {});
+    onInput({ target: doc });
+    ok('input on the doc email: it saves the rules too', saved.rules === 3 && saved.prefs === 0);
+    onChange({ target: target('ec-eoa-renders', {}) });
+    ok('change on any other control saves the prefs, not the rules', saved.prefs === 1 && saved.rules === 3);
+    onChange({ target: target('ec-profile', {}) });
+    ok('  the profile select too', saved.prefs === 2);
+    onChange({ target: target('ec-sheet-tab', {}, '#ec-sheet-tab') });
+    onChange({ target: target('x-inside-results', {}, '#ec-results') });
+    ok('a target inside the results box or the tab select is ignored by the body handler', saved.prefs === 2 && saved.rules === 3);
+    E.el('ec-sheet-tab').listeners.change[0]({ target: E.el('ec-sheet-tab') });
+    eq('the tab select has its own handler: it saves the prefs', saved.prefs, 3);
+    E.el('btn-ec-google-connect').listeners.click[0](); E.el('btn-ec-google-disconnect').listeners.click[0]();
+    eq('the buttons call connect and disconnect', connected + ':' + disconnected, '1:1');
+    E.el('ec-results').listeners.change[0]({ a: 1 }); E.el('ec-results').listeners.click[0]({ b: 2 });
+    jeqE('the results box delegates change and click to the two results handlers', [rc, rk], [[{ a: 1 }], [{ b: 2 }]]);
+    // a stored run of another version is not restored; a missing one neither
+    reset(); E.sessionGets.ecLastRun = ecHandRecord({ version: 99 });
+    settleE(initEmailCheck());
+    ok('init: a stored run of another record version is not restored', _ecLastRun === null && rendered.length === 0);
+    reset(); settleE(initEmailCheck());
+    ok('init: no stored run, no stored settings: still fine', _ecLastRun === null && order[0] === 'fill');
+    // optional elements may be missing
+    reset(); E.nodes['btn-ec-google-connect'] = null; E.nodes['btn-ec-google-disconnect'] = null; E.nodes['ec-sheet-tab'] = null; E.nodes['ec-results'] = null;
+    var rm = settleE(initEmailCheck());
+    ok('init: missing optional elements do not throw', rm.done && !rm.err, rm.err && String(rm.err));
+  });
+});
+
+// ── Email Check: report ───────────────────────────────────────────────────
+section('Email Check: report');
+
+var EC_NAME = 'Email Check (Mailtrap + copy doc)';
+// The two readers of a record's problems and debug section (QA Pass's report test slices the same two inside its own scope).
+eval(slicePopup('function taModeProblems(entry, add) {', '\n// The debug-log section for a WCAG'));
+eval(slicePopup('function taDebugSection(entry) {', '\n// ONE projection for a finding'));
+function ecEntry(rec, over) { return Object.assign({ mode: 'emailcheck', name: EC_NAME, status: 'ran', data: rec }, over || {}); }
+// What the report must never carry. '/h/' is checked only where no scrubbed Pardot path is meant to appear.
+var EC_FORBIDDEN = ['@inbox.mailtrap.io', '2000000002', 'SynthHash0', '0123456789abcdef0123456789abcdef', 'testing_message_parts', 'bounce-', 'List-Unsubscribe', 'Received'];
+function ecLeaks(text, extra) { return EC_FORBIDDEN.concat(extra || []).filter(function (s) { return String(text).indexOf(s) >= 0; }); }
+function ecH3s(html) { var out = [], re = /<h3[^>]*>([^<]*)<\/h3>/g, m; while ((m = re.exec(html))) out.push(m[1]); return out; }
+// The sub-section bodies, keyed by heading: the text between one <h3> and the next (the section ends at </section>).
+function ecParts(html) {
+  var out = {}, re = /<h3[^>]*>([^<]*)<\/h3>/g, m, last = null, lastIdx = 0;
+  while ((m = re.exec(html))) { if (last !== null) out[last] = html.slice(lastIdx, m.index); last = m[1]; lastIdx = m.index + m[0].length; }
+  if (last !== null) out[last] = html.slice(lastIdx, html.indexOf('</section>', lastIdx) < 0 ? html.length : html.indexOf('</section>', lastIdx));
+  return out;
+}
+var EC_HEADINGS = ['Failed', 'Needs a person', 'Blocked', 'Passed', 'Proofs', 'Links and UTMs', 'Copy differences', 'Email on Acid', 'Analysis (Opus)', 'Not tested', 'Sheet changes'];
+// A record that is complete and clean enough for the wiring tests: no failed check, nothing unresolved, every source ok.
+function ecCleanRecord(over) {
+  var r = ecHandRecord();
+  r.proofs = [r.proofs[0]]; r.links = r.links.slice(0, 2);
+  r.checks = [ecCk('subject', 'regular-donors-v0', 'passed', ''), ecCk('visuals', 'regular-donors-v0', 'in-progress', 'Look at each render')];
+  return Object.assign(r, over || {});
+}
+
+TE('Email Check report: the section, its badge and its eleven headings', function () {
+  var h = rptEmailCheckSection(ecEntry(ecHandRecord()));
+  jeqE('the eleven sub-headings, in order', ecH3s(h), EC_HEADINGS);
+  ok('wrapped by the shared section shell with the mode name', /^\s*<section class="rpt-section">/.test(h) && h.indexOf('<h2>' + EC_NAME + '</h2>') >= 0);
+  ok('badge: a failed check is ISSUES FOUND', h.indexOf('rpt-badge-fail') >= 0 && h.indexOf('ISSUES FOUND') >= 0);
+  ok('the summary counts failed, passed, need a person, blocked and not tested (checks + the fixed rows)', h.indexOf('1 failed · 2 passed · 1 need a person · 1 blocked · 2 not tested') >= 0, h.slice(0, 500));
+  var clean = rptEmailCheckSection(ecEntry(ecCleanRecord()));
+  ok('badge: nothing failed but something in progress is NEEDS REVIEW', clean.indexOf('NEEDS REVIEW') >= 0 && clean.indexOf('rpt-badge-issues') >= 0, clean.slice(0, 300));
+  ok('badge: every check passed is PASS', rptEmailCheckSection(ecEntry(ecCleanRecord({ checks: [ecCk('subject', 'regular-donors-v0', 'passed', '')] }))).indexOf('rpt-badge-pass') >= 0);
+  var st = rptEmailCheckSection(ecEntry(ecCleanRecord({ stopped: true })));
+  ok('badge: a stopped run with no failure is INCOMPLETE, and the summary says so', st.indexOf('INCOMPLETE') >= 0 && st.indexOf(' · stopped by the tester') >= 0);
+  ok('a skipped entry is a skipped section', rptEmailCheckSection({ mode: 'emailcheck', name: EC_NAME, status: 'skipped', reason: 'Not configured.' }).indexOf('SKIPPED') >= 0);
+  var bare = rptEmailCheckSection({ mode: 'emailcheck', name: EC_NAME, status: 'ran' });
+  ok('an entry with no data does not throw and still prints the eleven headings', typeof bare === 'string' && ecH3s(bare).length === 11, ecH3s(bare));
+  // (the sheet part's two table builders are stubbed here so that this check is about the helpers tolerating an empty record)
+  var bare2 = withGlobals({ ecPasteRows: function () { return []; }, ecPasteHtml: function () { return '<div class="ec-empty">Nothing to paste.</div>'; } }, function () { return rptEmailCheckSection(ecEntry({ version: 1 })); });
+  ok('a record with only a version too: eleven headings and no helper failed', ecH3s(bare2).length === 11 && bare2.indexOf('could not be built') < 0, bare2.indexOf('could not be built'));
+  // one bad part never costs the rest
+  withGlobals({ rptEmailCheckProofs: function () { throw new Error('boom <b>'); } }, function () {
+    var h2 = rptEmailCheckSection(ecEntry(ecHandRecord()));
+    ok('a helper that throws is replaced by one line naming the error (escaped)', h2.indexOf('This part of the report could not be built: boom &lt;b&gt;') >= 0 && h2.indexOf('<b>') < 0, h2.slice(0, 200));
+    jeqE('  and every heading is still there, in order', ecH3s(h2), EC_HEADINGS);
+  });
+  var src = slicePopup('function rptEmailCheckSection(entry) {', '\n// ── QA Pass (Test Agent mode \'qapass\'): the report section');
+  ok('the section function is defined before QA Pass\'s section and names no QA Pass function', _pu.indexOf('function rptEmailCheckSection(') < _pu.indexOf('function rptQaPassSection(') && !/\bqp(?:Scrub|PathOnly|Fresh)/.test(src));
+  ok('the report names no model id and no Jira write route', !/claude-|\/rest\/api\/|transitionIssue|addComment/.test(src));
+});
+
+TE('Email Check report: Failed, Needs a person, Blocked, Passed', function () {
+  var h = rptEmailCheckSection(ecEntry(ecHandRecord())), P = ecParts(h);
+  ok('Failed: a table row with the title, the id, the proof and the note', /<table class="rpt-table">/.test(P.Failed) && P.Failed.indexOf('Title of altTags') >= 0 && P.Failed.indexOf('altTags@regular-donors-v0') >= 0 && P.Failed.indexOf('<td>regular-donors-v0</td>') >= 0 && P.Failed.indexOf('V0 image hero.jpg has no alt') >= 0, P.Failed);
+  ok('Failed: the note is scrubbed again (a Pardot path loses its prospect id and hash)', P.Failed.indexOf('2000000002') < 0 && P.Failed.indexOf('SynthHash0') < 0 && P.Failed.indexOf('[prospect]') >= 0, P.Failed);
+  ok('Failed lists only the failed check', P.Failed.indexOf('subject@') < 0 && P.Failed.indexOf('preview@') < 0 && P.Failed.indexOf('dkim@') < 0);
+  eq('Needs a person: one item per in-progress check', (P['Needs a person'].match(/<li>/g) || []).length, 1);
+  ok('  with its id and note', P['Needs a person'].indexOf('<li>preview@regular-donors-v0: Preview text differs by one word</li>') >= 0, P['Needs a person']);
+  ok('Blocked: id, title, who blocked it and why', P.Blocked.indexOf('<li>dkim@regular-donors-v1 — Title of dkim: blocked by proof: Proof not found in sandbox 7000001 (message 7100000006)</li>') >= 0, P.Blocked);
+  ok('Passed: one line per key, the proofs that passed', P.Passed.indexOf('<li>subject: regular-donors-v0</li>') >= 0 && P.Passed.indexOf('<li>rawTokens: regular-donors-v0</li>') >= 0 && (P.Passed.match(/<li>/g) || []).length === 2, P.Passed);
+  ok('  in the order of the test plan rows (subject before rawTokens)', P.Passed.indexOf('subject:') < P.Passed.indexOf('rawTokens:'));
+  var two = ecHandRecord({ checks: [ecCk('rawTokens', 'regular-donors-v0', 'passed', ''), ecCk('rawTokens', 'regular-donors-v1', 'passed', ''), ecCk('subject', 'regular-donors-v1', 'passed', ''), ecCk('subject', 'regular-donors-v0', 'passed', ''), ecCk('dkim', 'regular-donors-v0', 'failed', 'x')] });
+  var P2 = ecParts(rptEmailCheckSection(ecEntry(two)));
+  ok('Passed: the proofs of a key are joined in record order; keys follow the plan\'s row order, not the record\'s', P2.Passed.indexOf('<li>subject: regular-donors-v1, regular-donors-v0</li>') >= 0 && P2.Passed.indexOf('subject:') < P2.Passed.indexOf('rawTokens:') && P2.Passed.indexOf('<li>rawTokens: regular-donors-v0, regular-donors-v1</li>') >= 0, P2.Passed);
+  // the empty forms, helper by helper
+  var none = { checks: [] };
+  ok('empty: Failed', rptEmailCheckFailed(none) === '<p class="rpt-muted">No check failed.</p>');
+  ok('empty: Needs a person', rptEmailCheckNeedsPerson(none) === '<p class="rpt-muted">Nothing is waiting on a person.</p>');
+  ok('empty: Blocked', rptEmailCheckBlocked(none) === '<p class="rpt-muted">Nothing is blocked.</p>');
+  ok('empty: Passed', rptEmailCheckPassed(none) === '<p class="rpt-muted">No check passed.</p>');
+  ok('empty: all four tolerate a record with no checks key', rptEmailCheckFailed({}) === rptEmailCheckFailed(none) && rptEmailCheckPassed({}) === rptEmailCheckPassed(none));
+  // markup in a note, a title and an id is escaped everywhere
+  var evil = ecHandRecord({ checks: [ecCk('subject', 'p"><i>', 'failed', '<script>x</script>', { title: 'T <img>' }), ecCk('rawTokens', 'p"><i>', 'in-progress', '<script>y</script>'), ecCk('dkim', 'p"><i>', 'blocked', '<script>z</script>', { blockedBy: '<b>' }), ecCk('preview', 'p"><i>', 'passed', '')] });
+  var he = rptEmailCheckFailed(evil) + rptEmailCheckNeedsPerson(evil) + rptEmailCheckBlocked(evil) + rptEmailCheckPassed(evil);
+  ok('Failed, Needs a person, Blocked and Passed escape what they print', he.indexOf('<script>') < 0 && he.indexOf('<i>') < 0 && he.indexOf('<img>') < 0 && he.indexOf('<b>') < 0 && he.indexOf('&lt;script&gt;x&lt;/script&gt;') >= 0, he);
+  ok('the statuses come from the checks alone: an analysis that claims a check passed changes nothing here', (function () {
+    var rec = ecHandRecord({ explain: { ok: true, bugs: [{ summary: 'all fine, altTags passed', status: 'passed', checkIds: ['altTags@regular-donors-v0'], commentIds: [], severity: 'low' }], pgmQuestions: [], commentChecks: [], copyNotes: [], dropped: 0 } });
+    var Pp = ecParts(rptEmailCheckSection(ecEntry(rec)));
+    return Pp.Failed.indexOf('altTags@regular-donors-v0') >= 0 && Pp.Passed.indexOf('altTags') < 0;
+  })());
+});
+
+TE('Email Check report: Proofs, Links and UTMs', function () {
+  var rec = ecHandRecord();
+  var P = ecParts(rptEmailCheckSection(ecEntry(rec)));
+  ok('Proofs: the table header names the nine columns', P.Proofs.indexOf('<th>Proof</th><th>Subject</th><th>From</th><th>Reply-To</th><th>Preheader</th><th>DKIM</th><th>Spam</th><th>Links resolved</th><th>Email on Acid</th>') >= 0, P.Proofs);
+  ok('Proofs: the subject and the copy doc option it matches', P.Proofs.indexOf('Last call: order a kit today') >= 0 && P.Proofs.indexOf('copy doc option 1, exact') >= 0, P.Proofs);
+  ok('Proofs: From, Reply-To, preheader, DKIM domains, spam score', P.Proofs.indexOf('Example Relief info@example.org') >= 0 && P.Proofs.indexOf('none') >= 0 && P.Proofs.indexOf('Packing stops Friday noon.') >= 0 && P.Proofs.indexOf('example.org, s1.mta.example.net') >= 0 && P.Proofs.indexOf('score 0.6 / 5') >= 0, P.Proofs);
+  ok('Proofs: links resolved is n/m over the unguarded Pardot links of the proof (one of two resolved)', P.Proofs.indexOf('1/2') >= 0, P.Proofs);
+  ok('Proofs: the EoA clients and how many completed', P.Proofs.indexOf('3 clients, 2 completed') >= 0, P.Proofs);
+  ok('Proofs: a proof that was not read shows its state across the row', /<td>regular-donors-v1<\/td><td colspan="8">not-found/.test(P.Proofs), P.Proofs);
+  var bad = ecHandRecord(); bad.proofs[1].state = 'error'; bad.proofs[1].error = 'HTTP 500 for tester+regular@inbox.mailtrap.io <b>';
+  var Pb = ecParts(rptEmailCheckSection(ecEntry(bad)));
+  ok('Proofs: an error is scrubbed and escaped', /colspan="8">error: /.test(Pb.Proofs) && Pb.Proofs.indexOf('@inbox.mailtrap.io') < 0 && Pb.Proofs.indexOf('[mailtrap inbox]') >= 0 && Pb.Proofs.indexOf('<b>') < 0, Pb.Proofs);
+  var noDoc = ecHandRecord({ doc: null }); var Pn = ecParts(rptEmailCheckSection(ecEntry(noDoc)));
+  ok('Proofs: without a copy doc no option is claimed', Pn.Proofs.indexOf('copy doc option') < 0 && Pn.Proofs.indexOf('Last call: order a kit today') >= 0);
+  var diff = ecHandRecord(); diff.proofs[0].facts.subject.built = 'Last chance: triple your gift';
+  ok('Proofs: a subject close to an option says closest', ecParts(rptEmailCheckSection(ecEntry(diff))).Proofs.indexOf('copy doc option 1, closest') >= 0);
+  var rp = ecHandRecord(); rp.proofs[0].facts.replyTo = 'help@example.org'; rp.proofs[0].facts.spam = null; rp.proofs[0].facts.dkim = [];
+  var Pr = ecParts(rptEmailCheckSection(ecEntry(rp))).Proofs;
+  ok('Proofs: a Reply-To is printed; no spam report and no DKIM are marked', Pr.indexOf('help@example.org') >= 0 && Pr.indexOf('score') < 0 && Pr.indexOf('none') >= 0, Pr);
+  ok('Proofs: none read', rptEmailCheckProofs({ proofs: [] }) === '<p class="rpt-muted">No proof was read.</p>' && rptEmailCheckProofs({}) === '<p class="rpt-muted">No proof was read.</p>');
+  // links
+  ok('Links: one block per proof that has links, headed by the proof id', P['Links and UTMs'].indexOf('<p><strong>regular-donors-v0</strong></p>') >= 0 && P['Links and UTMs'].indexOf('<strong>regular-donors-v1</strong>') < 0, P['Links and UTMs']);
+  ok('Links: the header', P['Links and UTMs'].indexOf('<th>Link</th><th>Role</th><th>Destination</th><th>UTM</th><th>Status</th>') >= 0);
+  ok('Links: label, linkId, role, destination origin + path', P['Links and UTMs'].indexOf('DONATE NOW') >= 0 && P['Links and UTMs'].indexOf('8001') >= 0 && P['Links and UTMs'].indexOf('donate') >= 0 && P['Links and UTMs'].indexOf('https://www.example.org/give/seed-kits/') >= 0, P['Links and UTMs']);
+  ok('Links: the UTM keys, one per line', P['Links and UTMs'].indexOf('utm_source=pardot<br>utm_medium=email<br>utm_content=02.01.27_EML_Seed_Kits_CRO-v0') >= 0, P['Links and UTMs']);
+  ok('Links: the statuses and the destination title', P['Links and UTMs'].indexOf('200 → 200') >= 0 && P['Links and UTMs'].indexOf('Example Relief | Give') >= 0);
+  ok('Links: a guarded link is listed as not opened, with nothing resolved', P['Links and UTMs'].indexOf('not opened: check by hand') >= 0 && P['Links and UTMs'].indexOf('unsubscribe link') >= 0, P['Links and UTMs']);
+  ok('Links: an unresolved link shows its error', P['Links and UTMs'].indexOf('not resolved: cap') >= 0);
+  ok('Links: no href is ever printed and no query string either', P['Links and UTMs'].indexOf('href=') < 0 && P['Links and UTMs'].indexOf('?') < 0, P['Links and UTMs']);
+  ok('Links: none listed', rptEmailCheckLinks({ links: [] }) === '<p class="rpt-muted">No link was listed.</p>' && rptEmailCheckLinks({}) === '<p class="rpt-muted">No link was listed.</p>');
+  var lk = ecHandRecord(); lk.links[0].labels = ['<i>x</i>']; lk.links[0].dest.utm = { utm_content: '"><b>' }; lk.links[0].destTitle = 'T <script>';
+  var Pl = ecParts(rptEmailCheckSection(ecEntry(lk)))['Links and UTMs'];
+  ok('Links: labels, UTM values and titles are escaped', Pl.indexOf('<i>') < 0 && Pl.indexOf('<b>') < 0 && Pl.indexOf('<script>') < 0 && Pl.indexOf('&lt;i&gt;x&lt;/i&gt;') >= 0, Pl);
+  var dl = ecHandRecord(); dl.links = [{ proofId: 'regular-donors-v0', linkId: null, slug: null, labels: [], role: 'social', kind: 'direct', guard: null, method: 'direct', pardotStatus: null, dest: { origin: 'https://www.example.net', path: '/page/', utm: {}, otherKeys: [] }, destStatus: 404, destTitle: null, error: null }];
+  var Pd = ecParts(rptEmailCheckSection(ecEntry(dl)))['Links and UTMs'];
+  ok('Links: a direct link has no linkId and no UTM; its status is the destination\'s', Pd.indexOf('https://www.example.net/page/') >= 0 && Pd.indexOf('404') >= 0 && Pd.indexOf('null') < 0, Pd);
+});
+
+TE('Email Check report: Copy differences, Email on Acid, Analysis, Not tested', function () {
+  var rec = ecHandRecord({ explain: { ok: true, bugs: [{ summary: 'The hero image has no alt <b>text</b>', checkIds: ['altTags@regular-donors-v0'], commentIds: ['420001'], severity: 'medium' }],
+    pgmQuestions: [{ question: 'Which address should replies reach?', checkIds: ['replyTo@regular-donors-v0'], commentIds: [] }],
+    commentChecks: [{ commentId: '420001', reproduced: 'not-checked', summary: 'No check covers it' }, { commentId: '420002', reproduced: 'yes', summary: 'Seen' }],
+    copyNotes: [{ checkId: 'preview@regular-donors-v0', note: 'Looks like a typo.' }, { checkId: 'subject@regular-donors-v0', note: 'NOT SHOWN' }], dropped: 0 } });
+  var P = ecParts(rptEmailCheckSection(ecEntry(rec)));
+  ok('Copy: the word diff marks the removed and the added word, tokens escaped', P['Copy differences'].indexOf('<del>today</del>') >= 0 && P['Copy differences'].indexOf('<ins>tonight</ins>') >= 0 && P['Copy differences'].indexOf('<b>') < 0 && P['Copy differences'].indexOf('&lt;') >= 0, P['Copy differences']);
+  ok('Copy: the check is named', P['Copy differences'].indexOf('<strong>preview@regular-donors-v0</strong>') >= 0);
+  ok('Copy: the Opus note of that check is marked advisory, and a note for a check with no diff is not shown', P['Copy differences'].indexOf('(Opus, advisory) Looks like a typo.') >= 0 && P['Copy differences'].indexOf('NOT SHOWN') < 0, P['Copy differences']);
+  var noEx = ecParts(rptEmailCheckSection(ecEntry(ecHandRecord())))['Copy differences'];
+  ok('Copy: without an analysis there is no advisory line', noEx.indexOf('Opus') < 0 && noEx.indexOf('<del>today</del>') >= 0);
+  var failedEx = ecParts(rptEmailCheckSection(ecEntry(ecHandRecord({ explain: { ok: false, error: 'x' } }))))['Copy differences'];
+  ok('Copy: a failed analysis adds no advisory line', failedEx.indexOf('Opus') < 0);
+  ok('Copy: none differ', rptEmailCheckCopy({ checks: [ecCk('subject', 'p', 'passed', '')] }) === '<p class="rpt-muted">No copy differs from the copy doc.</p>');
+  ok('Copy: a diff whose text is not a string is skipped', rptEmailCheckCopy({ checks: [ecCk('preview', 'p', 'in-progress', '', { evidence: { diffs: [{ doc: 1, build: null }] } })] }).indexOf('<del>') < 0);
+  // Email on Acid
+  var E1 = P['Email on Acid'];
+  ok('EoA: the variation, subject and inventory counts', E1.indexOf('<strong>v0</strong>') >= 0 && E1.indexOf('Last call: order a kit today') >= 0 && E1.indexOf('3 clients, 2 completed, 1 dark mode') >= 0, E1);
+  ok('EoA: a valid JPEG data URL is printed as an image with its alt', E1.indexOf('<img src="data:image/jpeg;base64,/9j/AAAA" alt="Client A"') >= 0, E1);
+  ok('EoA: any other value is never an image, only its caption', E1.indexOf('javascript:') < 0 && E1.indexOf('Client B (b_dm) · dark mode') >= 0 && (E1.match(/<img /g) || []).length === 1, E1);
+  var inj = ecHandRecord(); inj.renders = [{ variation: 'v0', code: 'a', name: 'A', dark: false, img: 'data:image/jpeg;base64,AAAA" onerror="alert(1)' }, { variation: 'v0', code: 'b', name: 'B', dark: false, img: 'data:image/png;base64,AAAA' }, { variation: 'v0', code: 'c', name: 'C', dark: false, img: 5 }];
+  var Ei = ecParts(rptEmailCheckSection(ecEntry(inj)))['Email on Acid'];
+  ok('EoA: an injected attribute, a PNG and a non-string print no <img>', Ei.indexOf('<img') < 0 && Ei.indexOf('onerror') < 0, Ei);
+  ['off', 'none', 'capped', 'error'].forEach(function (s) {
+    var r2 = ecHandRecord(); r2.sources.eoa[0].renders = { state: s, count: 0, error: s === 'error' ? 'canvas <b>' : null };
+    var T = ecParts(rptEmailCheckSection(ecEntry(r2)))['Email on Acid'];
+    var want = { off: 'Renders were turned off.', none: 'No renders were captured.', capped: 'Renders were capped: some clients have no image.', error: 'Renders could not be captured: canvas &lt;b&gt;' }[s];
+    ok('EoA: renders state ' + s, T.indexOf(want) >= 0, T);
+  });
+  var e3 = ecHandRecord(); e3.sources.eoa[0].state = 'error'; e3.sources.eoa[0].error = 'HTTP 403';
+  ok('EoA: an unreadable page shows its state and error', ecParts(rptEmailCheckSection(ecEntry(e3)))['Email on Acid'].indexOf('error: HTTP 403') >= 0);
+  ok('EoA: no link was given', rptEmailCheckEoa({ sources: { eoa: [] } }) === '<p class="rpt-muted">No Email on Acid link was given.</p>' && rptEmailCheckEoa({}) === '<p class="rpt-muted">No Email on Acid link was given.</p>');
+  // Analysis
+  var A = P['Analysis (Opus)'];
+  ok('Analysis: the heading line says statuses are unchanged', A.indexOf('Analysis (Opus): grouping only, statuses above are unchanged.') >= 0, A);
+  ok('Analysis: a bug, escaped, with its citations (check ids, comment ids, severity)', A.indexOf('The hero image has no alt &lt;b&gt;text&lt;/b&gt;') >= 0 && A.indexOf('(altTags@regular-donors-v0; comment 420001; medium)') >= 0, A);
+  ok('Analysis: the questions and the comment checks (not-checked is spelled with a space)', A.indexOf('Which address should replies reach?') >= 0 && A.indexOf('comment 420001: reproduced not checked — No check covers it') >= 0 && A.indexOf('comment 420002: reproduced yes — Seen') >= 0, A);
+  ok('Analysis: nothing of it leaks into the status sections', P.Failed.indexOf('hero image has no alt') < 0);
+  ok('Analysis: not run', rptEmailCheckAnalysis({ explain: null }).indexOf('The analysis did not run') >= 0 && rptEmailCheckAnalysis({}).indexOf('The analysis did not run') >= 0);
+  eq('Analysis: unavailable', rptEmailCheckAnalysis({ explain: { ok: false, error: 'No API key configured' } }), '<p class="rpt-muted">Analysis unavailable: No API key configured</p>');
+  ok('Analysis: an empty bug list says so', rptEmailCheckAnalysis({ explain: { ok: true, bugs: [], pgmQuestions: [], commentChecks: [], copyNotes: [] } }).indexOf('The analysis grouped no failed check into a bug.') >= 0);
+  var leak = rptEmailCheckAnalysis({ explain: { ok: true, bugs: [{ summary: 'see /e/900001/slug/8001/2000000002/h/SynthHash0 and tester+regular@inbox.mailtrap.io', checkIds: [], commentIds: [] }], pgmQuestions: [], commentChecks: [], copyNotes: [] } });
+  ok('Analysis: model text is scrubbed too', ecLeaks(leak, ['/h/SynthHash0']).length === 0, leak);
+  // Not tested
+  ok('Not tested: the not-tested check and the fixed rows', P['Not tested'].indexOf('visuals@regular-donors-v0 — Title of visuals: Stopped by the tester before this check ran') >= 0 && P['Not tested'].indexOf('Unsubscribe / View in browser: never opened: check by hand') >= 0, P['Not tested']);
+  ok('Not tested: nothing left untested', rptEmailCheckNotTested({ checks: [], notTested: [] }) === '<p class="rpt-muted">Everything this version checks was tested.</p>' && rptEmailCheckNotTested({}) === '<p class="rpt-muted">Everything this version checks was tested.</p>');
+});
+
+TE('Email Check report: Sheet changes', function () {
+  var tbl = { ecProposalHtml: function (sh, o) { return '<table class="ec-proposal"><tr><td>proposal ' + !!(o && o.editable) + '</td></tr></table>'; }, ecPasteHtml: function (rows) { return '<table class="ec-paste"><tr><td>paste ' + (rows || []).length + '</td></tr></table>'; },
+    ecPasteRows: function (checks, proofs) { return [{ row: 'derived from ' + checks.length + ' checks' }]; } };
+  withGlobals(tbl, function () {
+    var P = ecParts(rptEmailCheckSection(ecEntry(ecHandRecord({ sheet: ecSheetOK() }))))['Sheet changes'];
+    ok('connected: counts, tab and the not-applied sentence', P.indexOf('Proposed 4 status change(s) and 1 note(s) to "QA Round 1" — not applied when this report was built; apply from the Email Check panel.') >= 0, P);
+    ok('connected: the proposal table is read-only and gets the report table class', P.indexOf('<table class="rpt-table ec-proposal"><tr><td>proposal false</td></tr></table>') >= 0, P);
+    ok('connected: nothing can be applied from the report', P.indexOf('<button') < 0 && P.indexOf('<input') < 0);
+    var reasons = { 'no-test-plan-link': 'The ticket has no QA test plan link.', 'not-a-google-sheet-link': 'The QA test plan link is not a Google Sheet.', 'no-client-id': 'No Google OAuth client ID is set, so the test plan was not read.',
+      'not-connected': 'Google is not connected, so the test plan was not read.', 'no-tab-picked': 'No test-plan tab was picked, so the test plan was not read.' };
+    Object.keys(reasons).forEach(function (k) {
+      var Q = ecParts(rptEmailCheckSection(ecEntry(ecHandRecord({ sheet: { connected: false, reason: k, error: null, paste: [{ a: 1 }, { a: 2 }] } }))))['Sheet changes'];
+      ok('reason ' + k, Q.indexOf('<p>' + reasons[k] + ' Paste-ready rows:</p>') >= 0 && Q.indexOf('<table class="rpt-table ec-paste"><tr><td>paste 2</td></tr></table>') >= 0, Q);
+    });
+    var E1 = ecParts(rptEmailCheckSection(ecEntry(ecHandRecord({ sheet: { connected: false, error: 'boom <b>', paste: [] } }))))['Sheet changes'];
+    ok('a read error is printed, escaped', E1.indexOf('The test plan could not be read: boom &lt;b&gt; Paste-ready rows:') >= 0 && E1.indexOf('<b>') < 0, E1);
+    var N1 = ecParts(rptEmailCheckSection(ecEntry(ecHandRecord({ sheet: null }))))['Sheet changes'];
+    ok('no sheet at all: the generic sentence and the paste table derived from the checks', N1.indexOf('The test plan was not read. Paste-ready rows:') >= 0 && N1.indexOf('paste 1') >= 0, N1);
+  });
+});
+
+TE('Email Check report: problems (taModeProblems)', function () {
+  function probs(rec) { var out = []; taModeProblems(ecEntry(rec), function (sev, where, detail) { out.push({ sev: sev, where: where, detail: detail }); }); return out; }
+  function has(list, sev, where, text) { return list.some(function (p) { return p.sev === sev && p.where === where && (text === undefined || p.detail.indexOf(text) >= 0); }); }
+  jeqE('a clean record raises nothing', probs(ecCleanRecord()), []);
+  var p = probs(ecCleanRecord({ version: undefined }));
+  ok('no version: an error asking for a reload', has(p, 'error', 'email-check', 'This record came from an older service worker: reload Selenite in chrome://extensions and run again.'), p);
+  p = probs(ecCleanRecord({ error: 'Doc broke at https://docs.googleapis.com/v1/documents/abc?key=SECRET' }));
+  ok('a run error is an error, scrubbed (no query)', has(p, 'error', 'email-check', 'Doc broke at https://docs.googleapis.com/v1/documents/abc') && JSON.stringify(p).indexOf('key=SECRET') < 0, p);
+  ok('a stop is a note', has(probs(ecCleanRecord({ stopped: true })), 'info', 'email-check', 'Stopped by the tester: every check that had not run is Not tested.'));
+  var mtMsg = { 'signed-out': 'Mailtrap: this Chrome is signed out. Sign in to the shared Mailtrap account in this Chrome, then run again.',
+    'no-account': 'Mailtrap: the signed-in account does not own sandbox 7000001 (a personal account?). Sign out of Mailtrap, sign in to the shared account, then run again.',
+    challenge: 'Mailtrap shows a browser check. Open mailtrap.io in this Chrome, let it finish, then run again.', error: 'Mailtrap could not be read: boom' };
+  Object.keys(mtMsg).forEach(function (s) {
+    var r = ecCleanRecord(); r.sources.mailtrap = { state: s, error: s === 'error' ? 'boom' : null };
+    var q = probs(r);
+    ok('Mailtrap ' + s + ': an error with the documented sentence', has(q, 'error', 'email-check/mailtrap', mtMsg[s]), q);
+  });
+  var rs = ecCleanRecord(); rs.sources.mailtrap = { state: 'stopped', error: null };
+  ok('Mailtrap stopped: no Mailtrap error (the stop note covers it)', !probs(rs).some(function (x) { return x.where === 'email-check/mailtrap'; }));
+  var rd = ecCleanRecord(); rd.sources.doc = { state: 'needs-connect', error: null };
+  ok('doc needs-connect: a warning that says to connect again', has(probs(rd), 'warn', 'email-check/doc', 'Connect Google again: the Docs permission was added after you connected.'));
+  rd.sources.doc = { state: 'error', error: 'HTTP 403 at https://docs.googleapis.com/v1/documents/abc?key=S' };
+  var qd = probs(rd);
+  ok('doc error: a warning with the scrubbed reason', has(qd, 'warn', 'email-check/doc', 'The copy doc could not be read: HTTP 403') && JSON.stringify(qd).indexOf('key=S') < 0, qd);
+  ['no-link', 'not-a-doc-link', 'ok'].forEach(function (s) { var r = ecCleanRecord(); r.sources.doc = { state: s, error: null }; ok('doc ' + s + ' raises nothing (the rows say it)', probs(r).length === 0); });
+  var rp = ecCleanRecord(); rp.proofs.push({ id: 'regular-donors-v1', segment: 'Regular Donors', variation: 'v1', sandboxId: '7000001', messageId: '7100000006', state: 'not-found', error: null, facts: null });
+  rp.proofs.push({ id: 'major-donors-v0', segment: 'Major Donors', variation: 'v0', sandboxId: '7000001', messageId: '7100000007', state: 'error', error: 'HTTP 500', facts: null });
+  var qp = probs(rp);
+  ok('a proof not found: a warning naming the sandbox and the message', has(qp, 'warn', 'email-check/regular-donors-v1', 'Proof not found in sandbox 7000001 (message 7100000006).'), qp);
+  ok('a proof that failed: a warning with its reason', has(qp, 'warn', 'email-check/major-donors-v0', 'The proof could not be read: HTTP 500'), qp);
+  var re = ecCleanRecord(); re.sources.eoa[0].state = 'error'; re.sources.eoa[0].error = 'HTTP 404';
+  ok('an unreadable EoA page: a warning', has(probs(re), 'warn', 'email-check/eoa v0', 'The Email on Acid page could not be read: HTTP 404'));
+  var rc = ecCleanRecord(); rc.sources.eoa[0].renders = { state: 'capped', count: 16, error: null };
+  ok('capped renders: a note', has(probs(rc), 'info', 'email-check/eoa v0', 'Renders were capped'));
+  rc.sources.eoa[0].renders = { state: 'error', count: 0, error: 'canvas failed' };
+  ok('failed renders: a note with the reason', has(probs(rc), 'info', 'email-check/eoa v0', 'Renders could not be captured: canvas failed'));
+  ok('renders off or none raise nothing', (function () { var r = ecCleanRecord(); r.sources.eoa[0].renders = { state: 'off', count: 0, error: null }; var a = probs(r).length; r.sources.eoa[0].renders = { state: 'none', count: 0, error: null }; return a === 0 && probs(r).length === 0; })());
+  var rl = ecCleanRecord(); rl.links.push({ proofId: 'regular-donors-v0', linkId: '8003', slug: 's', labels: [], role: 'cta', kind: 'pardot', guard: null, method: null, pardotStatus: null, dest: null, destStatus: null, destTitle: null, error: 'not resolved: cap' },
+    { proofId: 'regular-donors-v0', linkId: '8004', slug: 's', labels: [], role: 'cta', kind: 'pardot', guard: null, method: null, pardotStatus: null, dest: null, destStatus: null, destTitle: null, error: null },
+    { proofId: 'regular-donors-v0', linkId: '8005', slug: 's', labels: [], role: 'guarded', kind: 'pardot', guard: 'unsubscribe link', method: null, pardotStatus: null, dest: null, destStatus: null, destTitle: null, error: 'x' },
+    { proofId: 'regular-donors-v0', linkId: null, slug: null, labels: [], role: 'social', kind: 'direct', guard: null, method: 'direct', pardotStatus: null, dest: null, destStatus: null, destTitle: null, error: 'y' });
+  var ql = probs(rl);
+  ok('unresolved links: one warning with the count and the first reason (guarded and direct links are not counted)', ql.length === 1 && has(ql, 'warn', 'email-check/links', '2 link(s) could not be resolved (not resolved: cap)'), ql);
+  ok('an analysis failure is a warning', has(probs(ecCleanRecord({ explain: { ok: false, error: 'No API key configured' } })), 'warn', 'email-check/analysis', 'Analysis (Opus) failed: No API key configured'));
+  ok('a test plan read failure is a warning', has(probs(ecCleanRecord({ sheet: { connected: false, error: 'HTTP 403', paste: [] } })), 'warn', 'email-check/sheet', 'Test plan not read: HTTP 403'));
+  ok('a failed Apply is a warning', has(probs(ecCleanRecord({ sheet: ecSheetOK({ applied: { ok: false, error: 'boom' } }) })), 'warn', 'email-check/sheet', 'Writing to the test plan failed: boom'));
+  ok('a good Apply raises nothing', probs(ecCleanRecord({ sheet: ecSheetOK({ applied: { ok: true } }) })).length === 0);
+  ok('every recorded text in the problems is scrubbed (no inbox address, no prospect id)', ecLeaks(JSON.stringify(probs(ecCleanRecord({ error: 'x tester+regular@inbox.mailtrap.io /e/900001/slug/8001/2000000002/h/SynthHash0' }))), ['/h/SynthHash0']).length === 0);
+  // the routing
+  var vdSrc = _pu.slice(_pu.indexOf('function vdCollectProblems'), _pu.indexOf('function taModeProblems'));
+  ok('vdCollectProblems routes the emailcheck entry to taModeProblems', vdSrc.indexOf("entry.mode === 'emailcheck'") !== -1);
+  ok('and still routes the qapass and the numbered modes', vdSrc.indexOf("entry.mode === 'qapass'") !== -1 && /entry\.mode === 4 \|\| entry\.mode === 5 \|\| entry\.mode === 6/.test(vdSrc));
+});
+
+TE('Email Check report: the debug section and the builders (wiring)', function () {
+  var rec = ecHandRecord({ ts: 1800000005000 });
+  withGlobals({ ecDebugProjection: function (d) { return { marker: d.ticketKey, hasProjection: true }; } }, function () {
+    var dbg = taDebugSection(ecEntry(rec));
+    ok('the debug section is status, reason, completedAt and the projection', dbg.status === 'ran' && dbg.reason === null && dbg.completedAt === new Date(1800000005000).toISOString() && dbg.marker === 'EX-2' && dbg.hasProjection === true, dbg);
+    jeqE('an entry that did not run keeps only its status and reason', taDebugSection({ mode: 'emailcheck', status: 'failed', reason: 'No active tab' }), { status: 'failed', reason: 'No active tab' });
+    eq('no entry is null', taDebugSection(undefined), null);
+  });
+  var src = _pu;
+  ok('buildDebugLog carries emailCheck: taDebugSection(modeEntry(\'emailcheck\')), after qaPass', /qaPass: taDebugSection\(modeEntry\('qapass'\)\),\s*emailCheck: taDebugSection\(modeEntry\('emailcheck'\)\),/.test(src));
+  ok('the builders map names rptEmailCheckSection under the string key emailcheck', /qapass: rptQaPassSection,\s*emailcheck: rptEmailCheckSection,/.test(src));
+  ok('the cover (abPageUrls) adds no page for Email Check', slicePopup('function abPageUrls(modes) {', '\n// Which configured metrics').indexOf('emailcheck') < 0);
+  // through buildReportBody: the section appears among the others
+  var rptAbSection = function () { return ''; }, rptWcagSection = function () { return ''; }, rptFunnelSection = function () { return ''; };
+  eval(slicePopup('function buildReportBody(sections) {', '\n// ── Debug log'));
+  var body = buildReportBody({ ts: 1800000005000, pageUrls: [], modes: [ecEntry(ecHandRecord())], extraHtml: '' });
+  ok('buildReportBody builds the Email Check section for the emailcheck mode key', body.indexOf('<h2>' + EC_NAME + '</h2>') >= 0 && ecH3s(body).slice(0, 11).join('|') === EC_HEADINGS.join('|'), ecH3s(body));
+  ok('a failed Email Check entry is the shared FAILED section, not this builder', buildReportBody({ ts: 1, pageUrls: [], modes: [{ mode: 'emailcheck', name: EC_NAME, status: 'failed', reason: 'No active tab' }], extraHtml: '' }).indexOf('No active tab') >= 0);
+  ok('the cover lists no Email Check page', body.indexOf('No page URLs recorded.') >= 0);
+  ok('the report carries none of the forbidden strings (scrub list of the synthetic data)', ecLeaks(body, ['/h/SynthHash0']).length === 0, ecLeaks(body, ['/h/SynthHash0']));
+});
+
+TE('Email Check report: records built from the synthetic fixtures (needs B2: ecTestRecord, ecDeriveChecks, projections)', function () {
+  ok('ecTestRecord is available (tests/email-check-fixture-record.js)', EC_REC_LOADED);
+  var clean = ecTestRecord(ecFx(), 'EX-2');
+  var h = rptEmailCheckSection(ecEntry(clean));
+  jeqE('clean EX-2: the eleven headings in order', ecH3s(h), EC_HEADINGS);
+  ok('clean EX-2 (64 passed, 24 in progress, none failed): NEEDS REVIEW', h.indexOf('NEEDS REVIEW') >= 0 && h.indexOf('64 passed') >= 0, h.slice(0, 400));
+  ok('  no sub-section failed to build', h.indexOf('could not be built') < 0);
+  ok('  the four proofs and sixteen passed keys are listed', (ecParts(h).Passed.match(/<li>/g) || []).length === 16 && (ecParts(h).Proofs.match(/regular-donors-v0|major-donors-v0/g) || []).length >= 2, ecParts(h).Passed);
+  ok('  none of the forbidden strings, and no raw "/h/" path', ecLeaks(h, ['/h/']).length === 0, ecLeaks(h, ['/h/']));
+  var ex1 = ecTestRecord(ecFx(), 'EX-1');
+  var h1 = rptEmailCheckSection(ecEntry(ex1));
+  ok('EX-1 (altTags failed on both v1 proofs): ISSUES FOUND, 2 failed', h1.indexOf('ISSUES FOUND') >= 0 && h1.indexOf('2 failed') >= 0, h1.slice(0, 400));
+  ok('  Failed names both v1 proofs', ecParts(h1).Failed.indexOf('altTags@') >= 0 && (ecParts(h1).Failed.match(/altTags@[a-z-]+-v1/g) || []).length === 2, ecParts(h1).Failed);
+  var withR = ecTestRecord(ecFx(), 'EX-2', { renders: true });
+  var hr = ecParts(rptEmailCheckSection(ecEntry(withR)))['Email on Acid'];
+  ok('renders: every printed image is a validated data URL', (hr.match(/<img src="([^"]*)"/g) || []).length === 32 && (hr.match(/<img src="data:image\/jpeg;base64,[A-Za-z0-9+\/=]+"/g) || []).length === 32, (hr.match(/<img /g) || []).length);
+  var sig = ecTestRecord(ecFx(), 'EX-2', { mailtrap: 'signed-out' });
+  var hs = rptEmailCheckSection(ecEntry(sig));
+  ok('Mailtrap signed out: Blocked lists 18 per proof, Needs a person the 4 that need no inbox', (ecParts(hs).Blocked.match(/<li>/g) || []).length === 72 && hs.indexOf('could not be built') < 0, (ecParts(hs).Blocked.match(/<li>/g) || []).length);
+  var tok = ecTestRecord(ecFx(), 'EX-2', { mutateProofs: function (pf) { pf[0].text = (pf[0].text || '') + '\n{{{dynamic_content_101}}}'; } });
+  var Pt = ecParts(rptEmailCheckSection(ecEntry(tok)));
+  ok('a token in one proof: rawTokens and conditional are failed on that proof only', /rawTokens@regular-donors-v0/.test(Pt.Failed) && /conditional@regular-donors-v0/.test(Pt.Failed) && Pt.Failed.indexOf('regular-donors-v1') < 0, Pt.Failed);
+  // the stored record must survive the report: nothing in the printed text can be a forbidden string even when the notes are re-scrubbed
+  var dirty = ecTestRecord(ecFx(), 'EX-2'); dirty.checks[0].note = 'leak tester+regular@inbox.mailtrap.io /api/testing_message_parts/SYNTHETICTOKEN/x bounce-SYNTH@bounce.example.net';
+  ok('a note carrying an inbox address, a message part and a bounce address is scrubbed on the way out', ecLeaks(rptEmailCheckSection(ecEntry(dirty))).length === 0, ecLeaks(rptEmailCheckSection(ecEntry(dirty))));
+  // the debug section through the real projection
+  var dbg = taDebugSection(ecEntry(withR));
+  ok('the debug section: renders became hasImage, no image data, no forbidden string', JSON.stringify(dbg).indexOf('data:image') < 0 && JSON.stringify(dbg).indexOf('hasImage') >= 0 && ecLeaks(JSON.stringify(dbg)).length === 0, Object.keys(dbg));
+  ok('the debug section keeps the status and the completion time', dbg.status === 'ran' && typeof dbg.completedAt === 'string');
+  ok('a stale record (no version) gives the error problem through the real checks', (function () { var rec = ecTestRecord(ecFx(), 'EX-2'); delete rec.version; var out = []; taModeProblems(ecEntry(rec), function (a, b, c) { out.push(a + ':' + b); }); return out.indexOf('error:email-check') >= 0; })());
+});
 
 // ── report ─────────────────────────────────────────────────────────────────
 print('\n' + (fail ? 'FAILURES:\n  - ' + failures.join('\n  - ') + '\n' : '') +

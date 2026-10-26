@@ -1076,6 +1076,7 @@
         <option value="6">Performance / Load</option>
         <option value="funnel">Funnel Crawl</option>
         <option value="qapass">QA Pass (platform + layout)</option>
+        <option value="emailcheck">Email Check (Mailtrap + copy doc)</option>
       </select>
     </div>
 
@@ -1241,6 +1242,41 @@
       <div style="font-size:10px;color:var(--fg3);margin-bottom:6px">Nothing is written to the sheet until you review the proposed changes after a run and click Apply.</div>
       <div id="qp-progress" style="font-size:10px;color:var(--fg3)"></div>
       <div id="qp-results" style="margin-top:8px"></div>
+    </div>
+    <div class="card" id="ec-body">
+      <div class="card-title" style="margin-bottom:1px">Email Check</div>
+      <div style="font-size:10px;color:var(--fg3);margin-bottom:8px">Mailtrap proofs against the copy doc, for the EMAIL Test Plan. Uses this Chrome's own Mailtrap sign-in (never signs in for you), resolves each Pardot link once, never opens Unsubscribe or View-in-browser links.</div>
+      <div id="ec-ctx" style="font-size:11px;color:var(--fg2);margin-bottom:8px">No active ticket context — use the Initialize tab</div>
+      <div class="arg-row" style="margin-bottom:6px"><span class="arg-lbl">Profile</span><select id="ec-profile">
+        <option value="" selected>Auto (from ticket)</option>
+      </select></div>
+      <label class="cap">Rules from the ticket</label>
+      <div class="arg-row" style="margin-bottom:4px"><span class="arg-lbl">UTMs</span><select id="ec-utm-rule">
+        <option value="" selected>Not stated (UTM row stays In Progress)</option>
+        <option value="identical">Identical between versions</option>
+        <option value="suffix">utm_content ends -v0 / -v1 per version</option>
+      </select></div>
+      <div id="ec-utm-hint" style="font-size:10px;color:var(--fg3);margin-bottom:4px"></div>
+      <div id="ec-seg-paths" style="display:flex;flex-direction:column;gap:4px;margin-bottom:4px"></div>
+      <div id="ec-rule-hint" style="font-size:10px;color:var(--fg3);margin-bottom:6px"></div>
+      <div class="arg-row" style="margin-bottom:6px"><span class="arg-lbl">Copy doc email</span><input type="number" id="ec-doc-email" min="1" placeholder="auto" style="width:90px;flex:0 0 auto;background:var(--overlay);border:1px solid var(--stroke);border-radius:4px;color:var(--fg1);padding:5px 8px;font-size:12px;font-family:inherit"></div>
+      <div style="display:flex;flex-direction:column;gap:1px;margin-bottom:8px">
+        <label class="suite-check"><input type="checkbox" id="ec-eoa-renders" checked>Capture Email on Acid renders for the report (opens each EoA page in a tab)</label>
+      </div>
+      <label class="cap">EMAIL Test Plan (Google Sheet)</label>
+      <div id="ec-sheet-status" style="font-size:10px;color:var(--fg3);margin-bottom:6px"></div>
+      <div class="row" style="gap:6px;margin-bottom:6px">
+        <button class="btn sm" id="btn-ec-google-connect" type="button">Connect Google</button>
+        <button class="btn ghost sm" id="btn-ec-google-disconnect" type="button" style="display:none">Disconnect</button>
+      </div>
+      <div class="arg-row" style="margin-bottom:4px"><span class="arg-lbl">Tab</span><select id="ec-sheet-tab" disabled><option value="">—</option></select></div>
+      <div style="display:flex;flex-direction:column;gap:1px;margin-bottom:8px">
+        <label class="suite-check"><input type="checkbox" id="ec-write-notes" checked>Write notes (V0 / Segment | Device | finding)</label>
+        <label class="suite-check"><input type="checkbox" id="ec-retest-inprogress">Re-test In Progress cells</label>
+      </div>
+      <div style="font-size:10px;color:var(--fg3);margin-bottom:6px">Nothing is written to the sheet until you review the proposed changes after a run and click Apply. Selenite never writes to Jira.</div>
+      <div id="ec-progress" style="font-size:10px;color:var(--fg3)"></div>
+      <div id="ec-results" style="margin-top:8px"></div>
     </div>
     </div>
 
@@ -1488,7 +1524,7 @@
     </div>
 
     <div class="card" id="set-google">
-      <div class="card-title">Google Sheets (QA Pass)</div>
+      <div class="card-title">Google Sheets and Docs (QA Pass, Email Check)</div>
       <div class="arg-row" style="margin-bottom:6px">
         <span class="arg-lbl">OAuth client ID</span>
         <input type="text" id="set-google-client" placeholder="….apps.googleusercontent.com">
@@ -1496,7 +1532,7 @@
       </div>
       <div id="set-google-status" style="font-size:10px;color:var(--fg3);margin-bottom:4px;min-height:12px"></div>
       <div style="font-size:10px;color:var(--fg3);margin-bottom:4px">Redirect URL for this install (add it to the OAuth client's Authorized redirect URIs): <code id="set-google-redirect">—</code> <button class="btn ghost sm" id="btn-set-google-copy" type="button">Copy</button></div>
-      <div style="font-size:10px;color:var(--fg3)">Lets QA Pass read the ticket's QA test plan and, only when you click Apply, write statuses and notes to the one tab you pick. The access token lives in this browser session only. One-time Google Cloud setup: see the README (QA Pass → Google Sheets setup).</div>
+      <div style="font-size:10px;color:var(--fg3)">Lets QA Pass read the ticket's QA test plan and, only when you click Apply, write statuses and notes to the one tab you pick. The access token lives in this browser session only. Email Check also reads the ticket's copy doc (Google Docs, read-only); after this permission was added, connect once more. One-time Google Cloud setup: see the README (QA Pass → Google Sheets setup).</div>
     </div>
 
     <div class="card" id="set-figma">
@@ -1518,6 +1554,7 @@
 <script src="figma.js"></script>
 <script src="browserstack.js"></script>
 <script src="qa-pass.js"></script>
+<script src="email-check.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>

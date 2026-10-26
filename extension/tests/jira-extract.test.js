@@ -30,6 +30,15 @@ eval(_pu.slice(_pu.indexOf('function resolveJiraAdfField(names, fields, label)')
 eval(_pu.slice(_pu.indexOf('function adfText(node)'),
                 _pu.indexOf('function parseRelatedTestBullets(lines)')));
 
+// Email Check: extractTestContext now reads the copy doc link and the Mailtrap / Email on Acid links. It needs email-check.js (loaded after
+// qa-pass.js, as in both panels), figma.js (the design-link helpers it calls) and the helpers sliced here.
+load('../qa-pass.js');
+load('../email-check.js');
+load('../figma.js');
+var _initDraft = null, _initWarnings = [];
+eval(_pu.slice(_pu.indexOf('function parseRelatedTestBullets(lines)'), _pu.indexOf('\n// Flattens the whole ADF description')));
+eval(_pu.slice(_pu.indexOf('function extractTestContext('), _pu.indexOf('\n// ── ADF (Atlassian Document Format) utilities')));
+
 // ── harness ────────────────────────────────────────────────────────────────
 var pass = 0, fail = 0, failures = [];
 function ok(name, cond, detail) {
@@ -196,6 +205,187 @@ ok('extractTestContext puts them on the draft', /comments: jiraContextComments\(
 ok('and jiraContextComments is defined between adfText and the section locator',
    _pu.indexOf('function adfText(node)') < _pu.indexOf('function jiraContextComments(commentField)') &&
    _pu.indexOf('function jiraContextComments(commentField)') < _pu.indexOf('// Section locator (shared by all three sections)'));
+
+// ── Email Check: Initialize ─────────────────────────────────────
+// SYNTHETIC DATA ONLY: the tickets are EX-1 and EX-2 of fixtures-email-jira.json (org Example Relief, hosts under example.org). A throwing section here is
+// one failure (T) and the next still runs.
+function T(title, fn) {
+  section(title);
+  var p0 = pass, f0 = fail;
+  try { fn(); } catch (e) { fail++; failures.push(title + '  THREW ' + String(e && e.message ? e.message : e).slice(0, 200)); }
+  print('  [' + (pass - p0) + ' passed, ' + (fail - f0) + ' failed]');
+}
+function jeq(name, actual, expected) { var a = JSON.stringify(actual), e = JSON.stringify(expected); ok(name, a === e, { actual: a, expected: e }); }
+var EXJ = JSON.parse(readFile('fixtures-email-jira.json'));
+function exIssue(tk, over) { var j = EXJ[tk]; return Object.assign({ key: tk, names: j.names, fields: j.fields }, over || {}); }
+function extract(issue) { _initDraft = null; _initWarnings = []; extractTestContext(issue, 'https://jira.example.org', null, []); return { draft: _initDraft, warnings: _initWarnings }; }
+var NO_COPY = 'No Copy File on this ticket: Email Check\'s copy rows will stay In Progress.';
+var MT = function (n) { return 'https://mailtrap.io/sandboxes/7000001/messages/' + n; };
+
+T('Initialize: Email Check fields from EX-1 (inlineCard links, a Copy File field)', function () {
+  var r = extract(exIssue('EX-1')), d = r.draft;
+  eq('the copy doc link is the Copy File field', d.copyFileUrl, 'https://docs.google.com/document/d/EXDOC_EX1_COPY_DOC_000000000001/edit?usp=sharing');
+  eq('four Mailtrap proofs', d.emailProofs.length, 4);
+  jeq('  segment, version and url, in the ticket\'s order', d.emailProofs, [
+    { segment: 'Regular Donors', variation: 'v0', url: MT('7100000001') }, { segment: 'Regular Donors', variation: 'v1', url: MT('7100000002') },
+    { segment: 'Major Donors', variation: 'v0', url: MT('7100000003') }, { segment: 'Major Donors', variation: 'v1', url: MT('7100000004') }]);
+  jeq('  exactly three keys each (no ids, no sandbox)', d.emailProofs.map(function (p) { return Object.keys(p).join(); }), ['segment,variation,url', 'segment,variation,url', 'segment,variation,url', 'segment,variation,url']);
+  jeq('two Email on Acid tests, version and url', d.emailEoa.map(function (e) { return [e.variation, /^https:\/\/app\.emailonacid\.com\/app\/acidtest\/EXEOA1V[01]0+\/list$/.test(e.url), Object.keys(e).join()]; }), [['v0', true, 'variation,url'], ['v1', true, 'variation,url']]);
+  ok('no Copy File warning, and no label warning', r.warnings.indexOf(NO_COPY) < 0 && !r.warnings.some(function (w) { return /Mailtrap link|Email on Acid link/.test(w); }), r.warnings);
+  eq('the existing fields are still extracted (key, summary, comments)', d.ticketKey + '|' + d.summary + '|' + d.comments.length, 'EX-1|Cold Route - Message 1|5');
+  ok('the QA test plan link is still read', /^https:\/\/docs\.google\.com\/spreadsheets\/d\/EXPLAN_EX1_TEST_PLAN_00000000001\//.test(d.qaTestPlanUrl), d.qaTestPlanUrl);
+});
+
+T('Initialize: Email Check fields from EX-2 (link marks, no Copy File field)', function () {
+  var r = extract(exIssue('EX-2')), d = r.draft;
+  eq('no Copy File field: the link is null', d.copyFileUrl, null);
+  ok('the warning says the copy rows stay In Progress', r.warnings.indexOf(NO_COPY) >= 0, r.warnings);
+  eq('the warning is there once', r.warnings.filter(function (w) { return w === NO_COPY; }).length, 1);
+  jeq('four proofs from link marks, one paragraph per line', d.emailProofs, [
+    { segment: 'Regular Donors', variation: 'v0', url: MT('7100000005') }, { segment: 'Regular Donors', variation: 'v1', url: MT('7100000006') },
+    { segment: 'Major Donors', variation: 'v0', url: MT('7100000007') }, { segment: 'Major Donors', variation: 'v1', url: MT('7100000008') }]);
+  jeq('two Email on Acid tests', d.emailEoa.map(function (e) { return e.variation; }), ['v0', 'v1']);
+  ok('the misleading slug in the link text never decides a version (labels do)', d.emailProofs.map(function (p) { return p.variation; }).join() === 'v0,v1,v0,v1');
+});
+
+T('Initialize: Email Check fields on tickets that are not email tickets, and odd inputs', function () {
+  // A/B ticket: Test Specifications in the description, nothing about email.
+  var ab = { type: 'doc', version: 1, content: [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Test Specifications' }] }, para('v0: Control'), para('Baseline'), para('v1: New Hero'), para('Bigger headline')] };
+  var r = extract({ key: 'EX-9', names: { description: 'Description' }, fields: { summary: 'Hero test', description: ab } }), d = r.draft;
+  jeq('an A/B ticket gets empty lists and no copy file', [d.emailProofs, d.emailEoa, d.copyFileUrl], [[], [], null]);
+  ok('  and no Email Check warning', !r.warnings.some(function (w) { return /Copy File|Mailtrap|Email on Acid/.test(w); }), r.warnings);
+  eq('  the variants are still parsed from it', d.variants.length, 2);
+  r = extract({ key: 'EX-9', names: {}, fields: { summary: 'No description' } });
+  jeq('a ticket with no description at all', [r.draft.emailProofs, r.draft.emailEoa, r.draft.copyFileUrl], [[], [], null]);
+  ok('  and no Email Check warning', !r.warnings.some(function (w) { return /Copy File|Mailtrap|Email on Acid/.test(w); }));
+  r = extract({ key: 'EX-9', names: {}, fields: { summary: 's', description: 'plain string description' } });
+  jeq('a description that is a plain string is not read for links', [r.draft.emailProofs, r.draft.copyFileUrl], [[], null]);
+  // a Mailtrap link with no v0 / v1 label: skipped, with the parser's warning, and no Copy File warning (no proof was parsed)
+  var nolabel = { type: 'doc', version: 1, content: [para('Mailtrap'), para('Regular Donors'), para('see ' + MT('7100000009'))] };
+  r = extract({ key: 'EX-9', names: {}, fields: { summary: 's', description: nolabel } });
+  eq('a link with no label is skipped', r.draft.emailProofs.length, 0);
+  ok('  the parser\'s warning is shown on the review card', r.warnings.indexOf('A Mailtrap link has no v0/v1 label and was skipped.') >= 0, r.warnings);
+  ok('  and with no proof parsed there is no Copy File warning', r.warnings.indexOf(NO_COPY) < 0);
+  // a Copy File field that exists but is empty, or holds ADF
+  var j = EXJ['EX-1'];
+  r = extract(exIssue('EX-1', { fields: Object.assign({}, j.fields, { customfield_90591: '   ' }) }));
+  ok('an empty Copy File field is null, with the warning (proofs were parsed)', r.draft.copyFileUrl === null && r.warnings.indexOf(NO_COPY) >= 0);
+  r = extract(exIssue('EX-1', { fields: Object.assign({}, j.fields, { customfield_90591: doc([para('  https://docs.google.com/document/d/EXDOC_ADF_COPY_DOC_0000000000001/edit  ')]) }) }));
+  eq('a Copy File field that is a rich-text doc gives its text, trimmed', r.draft.copyFileUrl, 'https://docs.google.com/document/d/EXDOC_ADF_COPY_DOC_0000000000001/edit');
+  r = extract(exIssue('EX-1', { names: Object.assign({}, j.names, { customfield_90591: 'copy file' }) }));
+  ok('the field name matches without regard to case', r.draft.copyFileUrl && /EXDOC_EX1/.test(r.draft.copyFileUrl));
+  var dup = { type: 'doc', version: 1, content: [para('Mailtrap'), para('Regular Donors'), para('v0: ' + MT('7100000001')), para('v0: ' + MT('7100000001'))] };
+  eq('the same message listed twice is one proof', extract({ key: 'EX-9', names: {}, fields: { summary: 's', description: dup } }).draft.emailProofs.length, 1);
+  ok('extractTestContext takes the links from the description through adfTextWithHrefs, not adfText', /ecParseEmailLinks\(adfTextWithHrefs\(f\.description\)\)/.test(_pu));
+  ok('and puts the three fields on the draft', /copyFileUrl,\s*\n\s*emailProofs: emailLinks\.proofs\.map/.test(_pu) && /emailEoa: emailLinks\.eoa\.map/.test(_pu));
+});
+
+T('Initialize: normalizeInitEmail (what Save stores)', function () {
+  eval(_pu.slice(_pu.indexOf('function normalizeInitEmail(d) {'), _pu.indexOf('\n// Save is the only path that writes into initContexts')));
+  var n = normalizeInitEmail({ copyFileUrl: '  https://docs.google.com/document/d/EXDOC_X_COPY_DOC_00000000000000/edit ',
+    emailProofs: [{ segment: '  Regular Donors ', variation: ' V1 ', url: ' ' + MT('1') + ' ' }, { segment: '', variation: 'v0', url: '' }, { segment: null, variation: 'V0', url: 'u' }, null, { variation: 'v2', url: '  ' }],
+    emailEoa: [{ variation: ' V0', url: ' e ' }, { variation: 'v1', url: '  ' }, undefined] });
+  jeq('exactly the three fields', Object.keys(n), ['copyFileUrl', 'emailProofs', 'emailEoa']);
+  eq('the copy file link is trimmed', n.copyFileUrl, 'https://docs.google.com/document/d/EXDOC_X_COPY_DOC_00000000000000/edit');
+  jeq('proofs: segment trimmed or null, version lower-cased and trimmed, url trimmed, an entry with no url dropped', n.emailProofs, [{ segment: 'Regular Donors', variation: 'v1', url: MT('1') }, { segment: null, variation: 'v0', url: 'u' }]);
+  jeq('Email on Acid: version lower-cased, url trimmed, empty urls dropped', n.emailEoa, [{ variation: 'v0', url: 'e' }]);
+  jeq('empty and missing fields', normalizeInitEmail({ copyFileUrl: '', emailProofs: 'x' }), { copyFileUrl: null, emailProofs: [], emailEoa: [] });
+  jeq('a draft made before Email Check', normalizeInitEmail({ ticketKey: 'EX-1' }), { copyFileUrl: null, emailProofs: [], emailEoa: [] });
+  var src = _pu.slice(_pu.indexOf('async function commitInitContext() {'), _pu.indexOf('async function clearActiveContext() {'));
+  ok('commitInitContext merges it into the draft after the related tests', /Object\.assign\(d, normalizeInitEmail\(d\)\);/.test(src) && src.indexOf('normalizeInitEmail') > src.indexOf('d.concurrentTests = normalizeRelated'), src.length);
+  // round trip: what Save stores is what Email Check accepts
+  var saved = Object.assign({ reviewed: true, ticketKey: 'EX-1', summary: 's' }, normalizeInitEmail(extract(exIssue('EX-1')).draft));
+  jeq('a saved EX-1 context is valid for Email Check', ecValidateContext(saved), { ok: true });
+  var w = ecCtxForWorker(saved);
+  eq('  and gives the worker four proofs and two Email on Acid tests', w.proofs.length + '/' + w.eoa.length + '/' + (w.copyFileUrl ? 'doc' : 'nodoc'), '4/2/doc');
+  jeq('a context saved before Email Check is refused with the Initialize sentence', ecValidateContext({ reviewed: true, ticketKey: 'EX-1' }), { ok: false, error: 'Re-run Initialize on the ticket: this saved context has no Mailtrap proof links.' });
+});
+
+T('Initialize: the review card (Copy File row, guarded lists)', function () {
+  eval(_pu.slice(_pu.indexOf('function esc(s) {'), _pu.indexOf('\nfunction ', _pu.indexOf('function esc(s) {') + 5)));
+  var host = { innerHTML: '' };
+  globalThis.document = { getElementById: function (id) { return id === 'init-review' ? host : null; } };
+  eval(_pu.slice(_pu.indexOf('function initEmailListsHtml(d, q) {'), _pu.indexOf('\n// ── Review / Commit UI')));
+  eval(_pu.slice(_pu.indexOf('function renderInitReview() {'), _pu.indexOf('\nfunction setInitPath(')));
+  try {
+    var r = extract(exIssue('EX-1'));
+    renderInitReview();
+    var h = host.innerHTML;
+    ok('the card renders and still offers Save and Discard', h.indexOf('id="btn-init-commit"') >= 0 && h.indexOf('id="btn-init-discard"') >= 0 && h.indexOf('data-init="summary"') >= 0);
+    ok('Copy File is an editable row with its value, after QA Test Plan and before the variants', h.indexOf('data-init="copyFileUrl" value="https://docs.google.com/document/d/EXDOC_EX1_COPY_DOC_000000000001/edit?usp=sharing"') > h.indexOf('data-init="qaTestPlanUrl"') && h.indexOf('data-init="copyFileUrl"') < h.indexOf('Variants (Test Specifications)'), h.indexOf('copyFileUrl'));
+    ok('  with an open link next to it', /<span class="arg-lbl">Copy File<\/span>[\s\S]*?open ↗/.test(h));
+    ok('the Email proof rows and the Email on Acid rows are editable, after the Concurrent Tests and before Save as', h.indexOf('data-init="emailProofs.3.url"') > h.indexOf('data-init-add="concurrentTests"') && h.indexOf('data-init="emailEoa.1.url"') < h.indexOf('id="init-save-name"'), h.indexOf('emailProofs'));
+    ok('  one row per proof, with the three fields, a remove and an add button', ['segment', 'variation', 'url'].every(function (f) { return h.indexOf('data-init="emailProofs.0.' + f + '"') >= 0; }) && h.indexOf('data-init-rm="emailProofs.3"') >= 0 && h.indexOf('data-init-add="emailProofs"') >= 0);
+    ok('  and one per Email on Acid test', h.indexOf('data-init="emailEoa.0.variation"') >= 0 && h.indexOf('data-init-rm="emailEoa.1"') >= 0 && h.indexOf('data-init-add="emailEoa"') >= 0 && h.indexOf('data-init-rm="emailEoa.2"') < 0);
+    // a draft made before Email Check
+    _initDraft = Object.assign({}, r.draft); delete _initDraft.copyFileUrl; delete _initDraft.emailProofs; delete _initDraft.emailEoa;
+    renderInitReview();
+    h = host.innerHTML;
+    ok('a draft without the new fields renders: an empty Copy File, empty lists, both add buttons', /data-init="copyFileUrl" value=""/.test(h) && h.indexOf('data-init-add="emailProofs"') >= 0 && h.indexOf('data-init-add="emailEoa"') >= 0 && h.indexOf('data-init-rm="emailProofs') < 0 && h.split('None found in ticket.').length >= 3, h.length);
+    // hostile values are escaped
+    _initDraft = Object.assign({}, r.draft, { copyFileUrl: '"><script>x</script>', emailProofs: [{ segment: '"><i>', variation: 'v0', url: '"><script>y</script>' }], emailEoa: [{ variation: 'v0', url: '"><b>' }] });
+    renderInitReview();
+    ok('values are escaped in the attributes', host.innerHTML.indexOf('<script>') < 0 && host.innerHTML.indexOf('<i>') < 0 && host.innerHTML.indexOf('"><b>') < 0 && host.innerHTML.indexOf('&quot;&gt;&lt;script&gt;') >= 0, host.innerHTML.length);
+    // the guard: a fault in the list markup must not take the review card down
+    var real = initEmailListsHtml;   // the binding renderInitReview resolves (both were eval'd into this scope)
+    initEmailListsHtml = function () { throw new Error('boom <b>'); };
+    _initDraft = r.draft; host.innerHTML = '';
+    var threw = false; try { renderInitReview(); } catch (e) { threw = true; }
+    ok('a throwing list builder does not break the card', !threw && host.innerHTML.indexOf('id="btn-init-commit"') >= 0 && host.innerHTML.indexOf('data-init="copyFileUrl"') >= 0);
+    ok('  it says what failed, escaped', host.innerHTML.indexOf('Email proof links could not be shown: boom &lt;b&gt;') >= 0 && host.innerHTML.indexOf('<b>') < 0, host.innerHTML.slice(0, 80));
+    initEmailListsHtml = real;
+  } finally { delete globalThis.document; }
+});
+
+T('Initialize: the list builder (DE-01)', function () {
+  eval(_pu.slice(_pu.indexOf('function initEmailListsHtml(d, q) {'), _pu.indexOf('\n// ── Review / Commit UI')));
+  var q = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+  var d = extract(exIssue('EX-1')).draft;
+  var h = initEmailListsHtml(d, q);
+  ok('the two captions', h.indexOf('<label class="cap">Email proofs (Mailtrap)') >= 0 && h.indexOf('<label class="cap">Email on Acid') >= 0 && h.indexOf('Email proofs (Mailtrap)') < h.indexOf('<label class="cap">Email on Acid'));
+  eq('four proof rows (a remove button each) and two Email on Acid rows', (h.match(/data-init-rm="emailProofs\.\d"/g) || []).length + ':' + (h.match(/data-init-rm="emailEoa\.\d"/g) || []).length, '4:2');
+  ok('each proof row: segment, variation and url inputs with their values', h.indexOf('data-init="emailProofs.2.segment" value="Major Donors"') >= 0 && h.indexOf('data-init="emailProofs.2.variation" value="v0"') >= 0 && h.indexOf('data-init="emailProofs.2.url" value="' + MT('7100000003') + '"') >= 0, h.slice(0, 300));
+  ok('the placeholders and widths of the documented shape', h.indexOf('placeholder="Segment" style="max-width:110px;flex:0 1 auto"') >= 0 && h.indexOf('placeholder="v0" style="max-width:50px;flex:0 1 auto"') >= 0 && h.indexOf('style="flex:2 1 200px"') >= 0);
+  ok('remove buttons are the btn-icon shape, add buttons the btn sm shape with their captions', h.indexOf('<button class="btn-icon" data-init-rm="emailProofs.0" title="Remove" style="color:var(--err)">✕</button>') >= 0 && h.indexOf('<button class="btn sm" data-init-add="emailProofs" style="margin:5px 0 10px">+ Add Email Proof</button>') >= 0 && h.indexOf('<button class="btn sm" data-init-add="emailEoa" style="margin:5px 0 10px">+ Add Email on Acid Test</button>') >= 0);
+  var e = initEmailListsHtml({ emailProofs: [], emailEoa: [] }, q);
+  eq('empty lists say none found, twice, and still offer both add buttons', e.split('None found in ticket.').length - 1 + ':' + (e.match(/data-init-add="/g) || []).length, '2:2');
+  jeq('missing lists behave as empty', initEmailListsHtml({}, q), e);
+  var x = initEmailListsHtml({ emailProofs: [{ segment: null, variation: undefined, url: '"><script>' }], emailEoa: [{ variation: '<i>', url: null }] }, q);
+  ok('null and undefined parts become empty values, markup is escaped through q', x.indexOf('<script>') < 0 && x.indexOf('<i>') < 0 && x.indexOf('data-init="emailProofs.0.segment" value=""') >= 0 && x.indexOf('&lt;i&gt;') >= 0, x);
+});
+
+T('Initialize: add, remove and edit on the review card', function () {
+  eval(_pu.slice(_pu.indexOf('function setInitPath(path, value) {'), _pu.indexOf('\nfunction onInitReviewInput(e) {')));
+  eval(_pu.slice(_pu.indexOf('function onInitReviewClick(e) {'), _pu.indexOf('\n// ── Initialize tab — AI field extraction')));
+  var rendered = 0;
+  globalThis.renderInitReview = function () { rendered++; };
+  globalThis.confirm = function () { return true; };
+  try {
+    function click(attr, val) { var tgt = { dataset: {} }; tgt.dataset[attr] = val; _initDraft = _initDraft; onInitReviewClick({ target: { closest: function () { return tgt; } } }); }
+    _initDraft = extract(exIssue('EX-1')).draft;
+    click('initAdd', 'emailProofs');
+    jeq('adding a proof appends an empty row with version v0', _initDraft.emailProofs[4], { segment: '', variation: 'v0', url: '' });
+    click('initAdd', 'emailEoa');
+    jeq('adding an Email on Acid test appends an empty row with version v0', _initDraft.emailEoa[2], { variation: 'v0', url: '' });
+    eq('each add re-renders the card', rendered, 2);
+    click('initRm', 'emailProofs.1');
+    ok('removing a proof removes exactly that row', _initDraft.emailProofs.length === 4 && _initDraft.emailProofs[1].segment === 'Major Donors' && _initDraft.emailProofs[0].variation === 'v0', _initDraft.emailProofs.map(function (p) { return p.url; }));
+    click('initRm', 'emailEoa.0');
+    jeq('removing an Email on Acid test removes exactly that row', _initDraft.emailEoa.map(function (e) { return e.variation; }), ['v1', 'v0']);
+    eq('each removal re-renders too', rendered, 4);
+    _initDraft = { ticketKey: 'EX-1' };
+    click('initAdd', 'emailProofs'); click('initAdd', 'emailEoa');
+    ok('adding to a draft made before Email Check creates the lists', _initDraft.emailProofs.length === 1 && _initDraft.emailEoa.length === 1);
+    // editing through data-init paths (the generic handler)
+    _initDraft = extract(exIssue('EX-1')).draft;
+    setInitPath('emailProofs.2.url', 'https://mailtrap.io/sandboxes/7000001/messages/7100000099');
+    setInitPath('emailProofs.2.segment', 'Other');
+    setInitPath('emailEoa.1.variation', 'v9');
+    setInitPath('copyFileUrl', 'https://docs.google.com/document/d/EXDOC_NEW_COPY_DOC_000000000001/edit');
+    ok('edits land on the draft', _initDraft.emailProofs[2].url.slice(-2) === '99' && _initDraft.emailProofs[2].segment === 'Other' && _initDraft.emailEoa[1].variation === 'v9' && /EXDOC_NEW/.test(_initDraft.copyFileUrl));
+    ok('the other add / remove branches are untouched', /list === 'variants'/.test(_pu) && /list === 'concurrentTests'/.test(_pu) && /if \(list === 'emailProofs'\)/.test(_pu) && /if \(list === 'emailEoa'\)/.test(_pu));
+  } finally { delete globalThis.renderInitReview; delete globalThis.confirm; }
+});
 
 // ── report ─────────────────────────────────────────────────────────────────
 print('');

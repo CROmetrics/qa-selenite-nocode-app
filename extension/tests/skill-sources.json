@@ -1,0 +1,234 @@
+{
+  "qapass": {
+    "mode": "QA Pass (Test Agent mode 'qapass')",
+    "code": [
+      "extension/qa-pass.js",
+      "extension/background.js: runQaPass, qpw*",
+      "extension/popup.js: runQaPassMode, initQaPass, qpUi*, rptQaPassSection",
+      "extension/popup.html and extension/sidepanel.html: #qp-body"
+    ],
+    "tests": [
+      "extension/tests/qa-pass.test.js",
+      "extension/tests/qa-report.test.js",
+      "extension/tests/qapass-gate/gate.py"
+    ],
+    "decisions": [
+      "Sheet: read AND write the QA test plan through chrome.identity and the Sheets API; a write happens only on Apply after a shown diff, and the paste table is the fallback (Will, 2026-10-21).",
+      "A/B: complement. QA Pass never captures variants for a copy, markup, visual or accessibility diff; that is the A/B tab (Will, 2026-10-21).",
+      "BrowserStack: out of QA Pass (Will, 2026-10-21).",
+      "Jira comments: {id, created, text}, no author (Will, 2026-10-21).",
+      "Code decides every status; Opus only explains."
+    ],
+    "synced": {
+      "hash": "6a24ba793f99aa69da7244bb8b915e5b1fac1565e8dd0afd71dad86f9f81b2c1",
+      "skillUpdatedAt": "2026-10-15T20:35:22.073902Z",
+      "acceptedOn": "2026-10-21",
+      "from": "the downloaded .skill QA Pass was built from (0.7.22); seeded 2026-10-26"
+    },
+    "sections": {
+      "(frontmatter)": {
+        "status": "n/a",
+        "note": "The skill's name and trigger description. A changed description can still announce new scope (an environment, a platform), so read it."
+      },
+      "(title)": {
+        "status": "partial",
+        "where": "qpDeriveChecks (qa-pass.js); rptQaPassSection (popup.js)",
+        "note": "The single-pass framing is ported: the report covers this run only, and the sheet and Jira comments are context for the explain (qpExplainInput). The pairs-with and writing-standard lines are for Claude."
+      },
+      "0. Confirm scope first": {
+        "status": "partial",
+        "where": "#qp-body settings (qp-widths, qp-quick-sweep, qp-sheet-tab, qp-sheet-col, qp-write-notes, qp-retest-inprogress) and qpUiReadSettings (popup.js); qpSkipRow, qpCellWritable, qpDefaultStatusCol (qa-pass.js)",
+        "note": "Ported: one tab and one status column per run (Desktop Chrome by default); Screenshots, Results and Traffic rows skipped; Excluded left alone, In Progress only with re-test on, a Passed changed only when this run contradicts it; Backlog and empty cells are the ones written. Not ported: the other environment columns (BrowserStack is out), reading sibling tabs, and asking the tester (the settings card replaces it)."
+      },
+      "1. Build the baseline": {
+        "status": "partial",
+        "where": "The Jira extractor in popup.js (comments as {id, created, text}); qpwSheetRead, qpSheetModel, qpSheetVocab; check A: qpwPhaseLinks, qpSnippetProbeFn, qpProbeSummary; check B: qpwPhaseProd, qpPageFactsFn, qpCompareFacts",
+        "note": "The handoff doc is the free-text Workarounds field (qp-workarounds), not a doc read. The sheet is read through the Sheets API, not an .xlsx export."
+      },
+      "2. Platform checks from the snippet": {
+        "status": "partial",
+        "where": "Check C: qpSnippetProbeFn, qpMatchGoals, qpSoftcodedCheck, qpUnlistedActive, qpWeights, qpAllocation",
+        "note": "Not ported, each listed in qpFixedNotTested: spec audiences (X.spec-audiences), the shared spec page ID (X.spec-page-id), softcoded IDs by id (X.softcoded-ids; matched by ticket key instead), the Optimizely-UI-only rows (X.optimizely-ui). The output-filter workaround is for Claude in Chrome; Selenite's counterpart is qpScrubUrls."
+      },
+      "3. Code-level check (local Chrome)": {
+        "status": "partial",
+        "where": "Bot check: qpPageFactsFn. State: qpwClearState (qp-clear-all). Check D, audience negatives: qpwPhaseAudiences, qpAudienceTests. Concurrency combos: qpwPhaseCombos, qpComboUrl. Check E, sweep: QP_WIDTHS, QP_PROFILES, qpwPhaseSweep, qpClipScanFn, qpEvaluateSweep, qpwCaptureTile. Check F, metrics on load: qpwInstallTrackShim, qpReadTrackFn",
+        "note": "The sweep runs over CDP inside the extension, not Playwright. Not ported, each an X.* in qpFixedNotTested: copy, markup and links (X.copy: the A/B tab), CTA click-through, modals, metrics on their trigger, click propagation and activation on a trigger (X.click-through), custom attributes against the spec (X.custom-attributes), redirect tests (X.redirect), concurrency with promo and UTM parameters (X.concurrency-params), experiment CSS and data attributes (X.css)."
+      },
+      "4. Time-based content": {
+        "status": "not ported",
+        "note": "X.time in qpFixedNotTested: the extension has no Date or time-zone override."
+      },
+      "5. BrowserStack device matrix": {
+        "status": "not ported",
+        "note": "Will's decision: BrowserStack is out of QA Pass. X.devices in qpFixedNotTested; iPhone and Android are emulated widths in desktop Chrome. The stream-typing tips have no counterpart."
+      },
+      "6. Explain results": {
+        "status": "ported",
+        "where": "qpExplainInput, qpExplainSystem, qpValidateExplain (qa-pass.js); qpwOpusJson (background.js)",
+        "note": "Opus cites comments, rules out environment noise and splits bugs from PGM questions; it never sets a status. 'Also on PROD' stays a bug."
+      },
+      "7. Update the test plan": {
+        "status": "partial",
+        "where": "qpBuildProposal, qpProposalEntry, qpCellWritable, qpNoteLine ('Auto QA (M/D): ...'), qpAppendNote, qpVerifyApply (qa-pass.js); qpwSheetApply (background.js); qpUiApply (popup.js); qpPasteRows as the fallback",
+        "note": "Ported: statuses from the Values tab vocabulary, Blocked-by-row notes, appended notes, re-read before write and verify after. The Sheets UI mechanics are n/a: writes go through the Sheets API. Not ported: parent/child mirroring (X.sheet-parents)."
+      },
+      "8. Report in chat": {
+        "status": "ported",
+        "where": "rptQaPassSection (popup.js), cases in tests/qa-report.test.js; qpSeverity (360-430 px high, 320 px and below low); tiles: qpwCaptureTile, qpTileMarkFn",
+        "note": "Order: Bugs, Passed, Needs PGM, Not tested, sheet rows."
+      },
+      "9. Bugs and questions for PGM": {
+        "status": "ported",
+        "where": "The bug and PGM-question lists of the explain schema (qpExplainSystem, qpValidateExplain)",
+        "note": "One item each, rows cited by check id. A new question kind is a prompt change; a new bug kind usually needs a new check."
+      }
+    }
+  },
+  "emailcheck": {
+    "mode": "Email Check (Test Agent mode 'emailcheck')",
+    "code": [
+      "extension/email-check.js (profiles are data: the 'Profiles' section)",
+      "extension/background.js: runEmailCheck, ecw*",
+      "extension/popup.js: runEmailCheckMode, initEmailCheck, ecUi*, rptEmailCheck*",
+      "extension/popup.html and extension/sidepanel.html: #ec-body"
+    ],
+    "tests": [
+      "extension/tests/email-check.test.js",
+      "extension/tests/email-check-worker.test.js",
+      "extension/tests/emailcheck-gate/",
+      "extension/tests/gen-email-fixtures.py (committed fixtures are synthetic)",
+      ".omnissiah/tests/email-check-real.test.js (local only, git-excluded: real data)"
+    ],
+    "decisions": [
+      "Mailtrap is read from the tester's own signed-in tab, with no API token. Signed-out and personal-account states are reported, never worked around; Selenite never signs in (Will, 2026-10-23).",
+      "The copy doc is read through the Google Docs API with documents.readonly (Will, 2026-10-23).",
+      "Sheet: the QA Pass sign-in and Apply after a shown diff; the paste table is the fallback (Will, 2026-10-23).",
+      "Code decides every status. Opus writes the explain and advisory copy notes only; visuals, dark mode and graphics stay In Progress; no model review of renders (Will, 2026-10-23).",
+      "Pardot: one resolve per linkId, with the guard list; never unsubscribe or view-in-browser (Will, 2026-10-23).",
+      "A generic email check plus a selectable organisation profile; a profile is data, not code, and holds public facts only (Will, 2026-10-23).",
+      "Real client data (proofs, copy, ticket text, plan notes, ids, URLs) never enters this public repo; committed fixtures are synthetic. Email Check only reads; its one write is to the test plan (Will, 2026-10-23)."
+    ],
+    "synced": {
+      "hash": "597971a92420ddb0de0166d5aa1d9dc15c51fe937e1357312e83661bb21d29cf",
+      "skillUpdatedAt": "2026-10-02T15:01:03.363720Z",
+      "acceptedOn": "2026-10-23",
+      "from": "the downloaded .skill Email Check was built from (0.7.23); seeded 2026-10-26"
+    },
+    "sections": {
+      "(frontmatter)": {
+        "status": "n/a",
+        "note": "The skill's name and trigger description. A changed description can still announce new scope (a new ticket type, a new tool), so read it."
+      },
+      "(title)": {
+        "status": "ported",
+        "where": "The four failure classes are rules: ecRuleRawTokens, ecRuleUtms, ecRuleLinks (destination path and title), ecImageOnlyCtaFindings (the alt of an image-only CTA)",
+        "note": "The pairs-with line is for Claude."
+      },
+      "Collect these first": {
+        "status": "partial",
+        "where": "ecParseEmailLinks, ecCtxForWorker, ecSuggestRules (the 'only difference' and UTM rules from comments), ecwReadDoc and ecParseDoc (the bold option is primary), ecSheetModel (Desktop, column E, by default), EC_PROOF_PREFIX_RE",
+        "note": "The copy doc's comments are not read (X.doc-comments)."
+      },
+      "Access: Mailtrap needs the right account, EoA doesn't": {
+        "status": "ported",
+        "where": "ecMailtrapProbeFn (email-check.js); ecwReadMailtrap (background.js)",
+        "note": "Signed-out, personal-account and browser-check states each get their own message; nothing is signed into or clicked."
+      },
+      "Set the test plan up right": {
+        "status": "not ported",
+        "note": "X.plan-setup: finding or copying the plan, filling A1 and labelling the groups are done by hand before the run. Email Check only reads the plan's groups as they are."
+      },
+      "Segments vs. variations": {
+        "status": "ported",
+        "where": "ecParseGroupLabel (the label in A or B), ecSheetModel, ecRowMap, ecSameSegment; per-segment destination paths are a run setting (ec-seg-paths), not profile data",
+        "note": "Email on Acid renders are read per version (ecwReadEoa)."
+      },
+      "The variation-labelling trap": {
+        "status": "partial",
+        "where": "ecRowMap (unmappedGroups)",
+        "note": "A group whose label doesn't fit the ticket's proofs is left unmapped with a 'relabel or split the plan by hand' reason; Email Check never restructures the sheet."
+      },
+      "Group geometry": {
+        "status": "ported",
+        "where": "EC_ROWS, ecSheetModel",
+        "note": "Test rows are found by their description text (EC_ROWS textRe), not by fixed offsets, so a new or moved row is an EC_ROWS change."
+      },
+      "Getting the email out of Mailtrap": {
+        "status": "partial",
+        "where": "ecMailtrapReadFn (email-check.js); ecwReadMailtrap (background.js)",
+        "note": "Same facts by another route: the Mailtrap web app's own same-origin API (body.htmlsource, body.txt, body.raw, mail_headers, spam_report) from the signed-in tab, not the iframe views. The phone, tablet and desktop views are not read (X.viewports). The sessionStorage stash is n/a."
+      },
+      "The output filter": {
+        "status": "n/a",
+        "note": "Claude in Chrome's output filter. Selenite's counterpart is its privacy scrub (ecScrubText, ecScrubDeep)."
+      },
+      "Headers (from `/raw`)": {
+        "status": "ported",
+        "where": "ecHeaderBlock, ecHeaderValues, ecDkimDomains, ecDecodeRfc2047, ecSubjectParts with EC_PROOF_PREFIX_RE",
+        "note": "mail_headers keeps one value per header, so DKIM is read from body.raw."
+      },
+      "Tech Info (from `/smtp_info`)": {
+        "status": "partial",
+        "where": "ecRuleFromAddress, ecRuleReplyTo, ecRcptTag (the segment tag in the recipient)",
+        "note": "Read from the message headers, not the Tech Info page. MAIL FROM is never compared, as the skill says."
+      },
+      "Rendered body, links, images, preheader (from `/html`)": {
+        "status": "ported",
+        "where": "ecVisibleText, ecStyleHides, ecStripInvisible, ecTextPart, ecImageFacts, ecAnchorFacts"
+      },
+      "Tracked links: resolve them, don't read them": {
+        "status": "ported",
+        "where": "ecPardotParse, ecLinkPlan (one GET per linkId), ecLinkGuard and ecwNeverFetch (unsubscribe, view-in-browser, preference and webmail links never opened), ecParseInterstitial, ecwPardotGet, ecwDestGet; the UTM shape: EC_UTM_SHAPE, ecUtmShapeProblems",
+        "note": "Resolved by a fetch with cookies omitted, not WebFetch."
+      },
+      "Email on Acid": {
+        "status": "partial",
+        "where": "ecwReadEoa, ecParseEoaPage, ecEoaImagesFn; rptEmailCheckEoa (popup.js)",
+        "note": "Renders go into the report and the visual and dark-mode rows stay In Progress (no model review). The URL Validation tab is not read (X.eoa-url-validation), nor are the per-client screenshot pages."
+      },
+      "Browser tooling quirks": {
+        "status": "n/a",
+        "note": "Claude in Chrome quirks; nothing in Selenite corresponds."
+      },
+      "The checks, and what actually breaks": {
+        "status": "ported",
+        "where": "The 22 row rules, ecRuleSubject to ecRuleDkim (email-check.js, 'The 22 row rules'); ecVariationDiff, ecImageOnlyCtaFindings, ecCompareBody, ecMatchOption",
+        "note": "Visuals and dark mode stay In Progress or Blocked; text inside images is not read (X.graphics-text). A change to a check's rule is a change to its ecRule* function and its tests."
+      },
+      "Statuses": {
+        "status": "ported",
+        "where": "ecMakeCheck, ecPrecondition, ecDeriveChecks",
+        "note": "Code decides every status; the model never does."
+      },
+      "Writing results back": {
+        "status": "ported",
+        "where": "ecBuildProposal, ecWritesFromProposal (email-check.js); ecwSheetApply (background.js); ecUiApply (popup.js); ecPasteRows as the fallback",
+        "note": "Apply after a shown diff; only the Desktop, Mobile, Web-Based and Notes cells can be written, and the rows are re-read before writing."
+      },
+      "Read the row map from the CSV export, not gviz": {
+        "status": "partial",
+        "where": "ecSheetModel over qpwSheetRead",
+        "note": "The Sheets API's values keep blank rows, which is what the CSV route is for; the header is read by its labels."
+      },
+      "Mechanics that bite": {
+        "status": "n/a",
+        "note": "Sheets UI typing mechanics; Email Check writes through the Sheets API."
+      },
+      "Note format": {
+        "status": "ported",
+        "where": "ecNoteLine",
+        "note": "'V<n>[ / <Segment>] | <devices> | <text>', scrubbed."
+      },
+      "Wrapping up": {
+        "status": "partial",
+        "where": "rptEmailCheckSection and its parts (popup.js); ecExplainSystem",
+        "note": "Grouped by outcome. Jira transitions and comments are never made (X.jira): Selenite never writes to Jira."
+      },
+      "Reference": {
+        "status": "n/a",
+        "note": "Links for Claude. A change to the process page it names can still matter, so read it."
+      }
+    }
+  }
+}

@@ -374,7 +374,8 @@
 
     w.send = function (msg) {
       var out = { done: false, res: undefined, returned: undefined };
-      out.returned = w.listeners[0](msg, { tab: { id: w.tab.id } }, function (r) { out.done = true; out.res = r; });
+      // From the panel: the worker refuses run, stop and status from anything but an extension page.
+      out.returned = w.listeners[0](msg, { url: 'chrome-extension://x/sidepanel.html', tab: { id: w.tab.id } }, function (r) { out.done = true; out.res = r; });
       return out;
     };
 

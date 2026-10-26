@@ -302,7 +302,7 @@ T('Initialize: normalizeInitEmail (what Save stores)', function () {
 });
 
 T('Initialize: the review card (Copy File row, guarded lists)', function () {
-  eval(_pu.slice(_pu.indexOf('function esc(s) {'), _pu.indexOf('\nfunction ', _pu.indexOf('function esc(s) {') + 5)));
+  eval(_pu.slice(_pu.indexOf('function esc(s) {'), _pu.indexOf('\nfunction ', _pu.indexOf('function safeHref(u) {') + 5)));
   var host = { innerHTML: '' };
   globalThis.document = { getElementById: function (id) { return id === 'init-review' ? host : null; } };
   eval(_pu.slice(_pu.indexOf('function initEmailListsHtml(d, q) {'), _pu.indexOf('\n// ── Review / Commit UI')));
@@ -323,6 +323,19 @@ T('Initialize: the review card (Copy File row, guarded lists)', function () {
     h = host.innerHTML;
     ok('a draft without the new fields renders: an empty Copy File, empty lists, both add buttons', /data-init="copyFileUrl" value=""/.test(h) && h.indexOf('data-init-add="emailProofs"') >= 0 && h.indexOf('data-init-add="emailEoa"') >= 0 && h.indexOf('data-init-rm="emailProofs') < 0 && h.split('None found in ticket.').length >= 3, h.length);
     // hostile values are escaped
+    _initDraft = Object.assign({}, r.draft, { copyFileUrl: '"><script>x</script>', emailProofs: [{ segment: '"><i>', variation: 'v0', url: '"><script>y</script>' }], emailEoa: [{ variation: 'v0', url: '"><b>' }] });
+    renderInitReview();
+    // hardening: a ticket's link fields become a link only when they are http(s), and a quote cannot leave the href
+    _initDraft = Object.assign({}, r.draft, { copyFileUrl: 'javascript:alert(1)', qaTestPlanUrl: ' JaVaScRiPt:alert(2)', itwLink: 'data:text/html,<b>x</b>' });
+    renderInitReview();
+    h = host.innerHTML;
+    ok('a javascript: or data: URL in a ticket field is never an href', !/href="\s*(?:javascript|data):/i.test(h) && h.indexOf('href=""') < 0, h.length);
+    ok('  and its value stays visible in the editable row', h.indexOf('data-init="copyFileUrl" value="javascript:alert(1)"') >= 0);
+    _initDraft = Object.assign({}, r.draft, { copyFileUrl: 'https://docs.example.org/d/1" onmouseover="alert(3)' });
+    renderInitReview();
+    ok('an http(s) URL with a quote in it cannot leave its href', host.innerHTML.indexOf('" onmouseover="') < 0 && host.innerHTML.indexOf('href="https://docs.example.org/d/1&quot; onmouseover=&quot;alert(3)"') >= 0);
+    eq('safeHref: http and https pass, escaped', [safeHref('https://a.example/x?q="1"&b=2'), safeHref(' http://a.example/ ')].join('|'), 'https://a.example/x?q=&quot;1&quot;&amp;b=2|http://a.example/');
+    eq('safeHref: every other scheme, a relative URL and nothing are empty', ['javascript:x', 'JAVASCRIPT:x', 'data:x', 'file:///etc', 'chrome://settings', '//evil.example/x', '/x', '', null, undefined].map(safeHref).join(''), '');
     _initDraft = Object.assign({}, r.draft, { copyFileUrl: '"><script>x</script>', emailProofs: [{ segment: '"><i>', variation: 'v0', url: '"><script>y</script>' }], emailEoa: [{ variation: 'v0', url: '"><b>' }] });
     renderInitReview();
     ok('values are escaped in the attributes', host.innerHTML.indexOf('<script>') < 0 && host.innerHTML.indexOf('<i>') < 0 && host.innerHTML.indexOf('"><b>') < 0 && host.innerHTML.indexOf('&quot;&gt;&lt;script&gt;') >= 0, host.innerHTML.length);

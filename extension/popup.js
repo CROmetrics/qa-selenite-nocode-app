@@ -2308,7 +2308,15 @@ function esc(s) {
   // entry's field going missing) — a throw here happens inside loadMetrics(),
   // which boots outside a try/catch, and would silently kill every listener
   // binding still to come in DOMContentLoaded.
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // The double quote too (as qpEsc does), so the same output is safe in a double-quoted attribute as well as in text.
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// A link target taken from data (a Jira field, a typed or extracted URL), escaped for an href: kept only when it is http(s),
+// so a javascript:, data: or file: URL in a ticket can never become a link in a Selenite page. '' otherwise.
+function safeHref(u) {
+  const s = String(u ?? '').trim();
+  return /^https?:\/\//i.test(s) ? esc(s) : '';
 }
 
 function setFilter(lv, btn) {
@@ -11909,7 +11917,7 @@ function renderInitReview() {
       ${d.platform === 'Convert' ? `<input type="text" data-init="goals.${i}.convertMetricId" value="${q(g.convertMetricId || '')}" placeholder="Convert ID" style="max-width:90px;flex:0 1 auto">` : ''}
       <button class="btn-icon" data-init-rm="goals.${i}" title="Remove" style="color:var(--err)">✕</button>
     </div>
-    ${g.resolutionNeeded ? `<div style="font-size:10px;color:var(--warn);margin:-2px 0 4px 2px">ID not in Jira — ${d.qaTestPlanUrl ? `<a href="${q(d.qaTestPlanUrl)}" target="_blank" style="color:var(--info)">check test plan</a>` : 'check the QA test plan'}</div>` : ''}`).join('')
+    ${g.resolutionNeeded ? `<div style="font-size:10px;color:var(--warn);margin:-2px 0 4px 2px">ID not in Jira — ${safeHref(d.qaTestPlanUrl) ? `<a href="${safeHref(d.qaTestPlanUrl)}" target="_blank" style="color:var(--info)">check test plan</a>` : 'check the QA test plan'}</div>` : ''}`).join('')
     : '<div style="font-size:11px;color:var(--fg3)">Not found in ticket — no goals extracted.</div>';
 
   // Softcoded Tests / Concurrent Tests — same flat row shape for both. Just
@@ -11931,7 +11939,7 @@ function renderInitReview() {
   host.innerHTML = `
   <div class="card">
     <div class="card-title" style="margin-bottom:1px">Review — ${esc(d.ticketKey)}</div>
-    <div style="font-size:10px;color:var(--fg3);margin-bottom:2px">Nothing is saved until you commit. <a href="${q(d.ticketUrl)}" target="_blank" style="color:var(--info)">Open ticket ↗</a></div>
+    <div style="font-size:10px;color:var(--fg3);margin-bottom:2px">Nothing is saved until you commit. <a href="${safeHref(d.ticketUrl)}" target="_blank" style="color:var(--info)">Open ticket ↗</a></div>
     <div style="font-size:10px;color:var(--fg3);margin-bottom:8px">Platform, Preview Links, ITW Link, and Goals below are AI-populated from the ticket — double-check before saving.</div>
     ${warnHtml}
     <div class="arg-row" style="margin-bottom:5px">
@@ -11953,12 +11961,12 @@ function renderInitReview() {
     <div class="arg-row" style="margin-bottom:5px">
       <span class="arg-lbl">QA Test Plan</span>
       <input type="text" data-init="qaTestPlanUrl" value="${q(d.qaTestPlanUrl || '')}" placeholder="link only — not parsed">
-      ${d.qaTestPlanUrl ? `<a href="${q(d.qaTestPlanUrl)}" target="_blank" style="font-size:11px;color:var(--info);flex-shrink:0">open ↗</a>` : ''}
+      ${safeHref(d.qaTestPlanUrl) ? `<a href="${safeHref(d.qaTestPlanUrl)}" target="_blank" style="font-size:11px;color:var(--info);flex-shrink:0">open ↗</a>` : ''}
     </div>
     <div class="arg-row" style="margin-bottom:10px">
       <span class="arg-lbl">Copy File</span>
       <input type="text" data-init="copyFileUrl" value="${q(d.copyFileUrl || '')}" placeholder="Google Doc link — Email Check's copy doc">
-      ${d.copyFileUrl ? `<a href="${q(d.copyFileUrl)}" target="_blank" style="font-size:11px;color:var(--info);flex-shrink:0">open ↗</a>` : ''}
+      ${safeHref(d.copyFileUrl) ? `<a href="${safeHref(d.copyFileUrl)}" target="_blank" style="font-size:11px;color:var(--info);flex-shrink:0">open ↗</a>` : ''}
     </div>
 
     <label class="cap">Variants (Test Specifications)</label>
@@ -11969,7 +11977,7 @@ function renderInitReview() {
     <div class="arg-row" style="margin-bottom:6px">
       <span class="arg-lbl">ITW Link</span>
       <input type="text" data-init="itwLink" value="${q(d.itwLink || '')}" placeholder="In-the-wild production URL — AI-detected">
-      ${d.itwLink ? `<a href="${q(d.itwLink)}" target="_blank" style="font-size:11px;color:var(--info);flex-shrink:0">open ↗</a>` : ''}
+      ${safeHref(d.itwLink) ? `<a href="${safeHref(d.itwLink)}" target="_blank" style="font-size:11px;color:var(--info);flex-shrink:0">open ↗</a>` : ''}
     </div>
     <div style="display:flex;flex-direction:column;gap:4px">${linkRows}</div>
     <button class="btn sm" data-init-add="previewLinks" style="margin:5px 0 10px">+ Add Preview Link</button>
@@ -12295,9 +12303,9 @@ async function renderActiveContext() {
   }).join('');
 
   body.innerHTML = `
-    <div><b><a href="${q(ctx.ticketUrl)}" target="_blank" style="color:var(--info)">${esc(ctx.ticketKey)}</a></b> — ${esc(ctx.summary || '')}</div>
+    <div><b><a href="${safeHref(ctx.ticketUrl)}" target="_blank" style="color:var(--info)">${esc(ctx.ticketKey)}</a></b> — ${esc(ctx.summary || '')}</div>
     <div>Platform: <b>${esc(ctx.platform || '—')}</b> · Experiment ID: <b>${esc(ctx.experimentId || '—')}</b></div>
-    <div>${(ctx.variants || []).length} variant(s) · ${(ctx.previewLinks || []).length} preview link(s)${ctx.itwLink ? ` · <a href="${q(ctx.itwLink)}" target="_blank" style="color:var(--info)">ITW ↗</a>` : ''} · committed ${esc(new Date(ctx.extractedAt).toLocaleString())}</div>
+    <div>${(ctx.variants || []).length} variant(s) · ${(ctx.previewLinks || []).length} preview link(s)${safeHref(ctx.itwLink) ? ` · <a href="${safeHref(ctx.itwLink)}" target="_blank" style="color:var(--info)">ITW ↗</a>` : ''} · committed ${esc(new Date(ctx.extractedAt).toLocaleString())}</div>
     ${goalsHtml ? `<label class="cap" style="margin-top:8px">Goals (tracked once added; not assertable until reviewed)</label>${goalsHtml}` : ''}`;
 
   body.querySelectorAll('[data-goal-metric]').forEach(btn => btn.addEventListener('click', () => {
@@ -14460,7 +14468,7 @@ function mxBuildReportBody() {
     const r = mxRun.results[t.url];
     const status = r.loadError ? '<span class="rpt-badge rpt-badge-fail">Error</span>' : '<span class="rpt-badge rpt-badge-pass">Complete</span>';
     return `<tr>
-      <td><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.url)}</a></td>
+      <td><a href="${safeHref(t.url)}" target="_blank" rel="noopener">${esc(t.url)}</a></td>
       ${sels.map(s => `<td>${mxReportBadge(r.findings?.[s.id])}</td>`).join('')}
       <td>${status}</td></tr>`;
   }).join('');

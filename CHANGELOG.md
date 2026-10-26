@@ -2,6 +2,31 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-27 — 0.7.24
+
+An on-command update path for QA Pass and Email Check: when the Claude skill a mode was ported from changes in the Claude app, `/sync-skills` shows what changed, section by section, and ports it. Nothing runs automatically.
+
+And hardening, after a security review of 0.7.23 and the sync work. The review found no exploitable vulnerability. These close the gaps it named, and one it didn't: the message router trusted every sender. Nothing changes for a tester using the panel.
+
+### Added
+
+- **`extension/tests/skill-sync.py`:** `status` compares the Claude app's local copy of each skill with the copy its mode was last synced to; `diff` prints each changed hunk under its section's map entry (ported, and where; or not ported, and why); `accept` records the current copy as synced and refuses while the section map and the skill disagree. `--from` reads a downloaded `.skill` file instead. No account information is stored, in the repo or out of it. The skills hold client accounts, ids and addresses, so their text is never kept: a diff shows the current text of added and changed lines, and a removed line only as a count. A skill is found by its section headings (which also survives a rename), never by a stored name, claude.ai id or app account folder; `--skill <name>` names one for a single run. The only local trace is a fingerprint under `.git/skill-sync/`, one 16-hex-digit hash per line of the synced copy.
+- **`extension/tests/skill-sources.json`:** for each mode, the hash and claude.ai time of the synced copy, the mode's code and tests, Will's scope decisions, and a map of every section of the skill to the code that ports it or the reason it isn't. Both are seeded at the copies the modes were built from (QA Pass 2026-10-21, Email Check 2026-10-23).
+- **`/sync-skills`** (`.claude/skills/sync-skills/SKILL.md`): the Claude Code command that runs the check, sorts each change (port, decided against, new, no effect), shows Will the table before editing, ports, updates the map and accepts.
+
+### Changed
+
+- **The worker's message router (`background.js`):** every action but the seven that Selenite's own content scripts send from inside web pages (`browserLog`, `bsDeviceLog`, `bsDeviceState`, `pickerResult`, `pickerCancel`, `sessionSegment`, `sessionEvents`) is refused unless it comes from an extension page ("Not allowed from a web page."). Before, only the Google and sheet actions checked their sender, so a subverted content script, or a future relay that forwarded page data, could have started a run, called a model, opened tabs or driven the debugger. The panel's `selenite-panel` port is likewise only accepted from an extension page.
+- **Email Check's address rule (`ecwMapUrl`, new `ecwPrivateHost` and `ecwIpv4`):** a host is now read the way the browser's URL parser reads it, so other spellings of a local address are refused too. That covers `127.1`, `0x7f.1`, `2130706433`, `0177.0.0.1`, a trailing dot, upper case, `%`-escapes and full-width digits. Also refused: 100.64/10 and 224/3, names with no dot (`router`, `nas`), and local-only suffixes (`.local`, `.internal`, `.lan`, `.home.arpa` and others).
+- **Redirects (`ecwFetch`):** where a followed redirect ends is held to the same rule. A public link that redirects to this computer or a private network has nothing read, kept or shown, its status and title included ("Refused: the address redirected to this computer or a private network (not read)."). The hops before it are already made by then. A worker fetch cannot see them; this is noted in the code.
+- **Panel HTML (`popup.js`):** `esc()` now escapes `"` as well, as `qpEsc` already did, so its output is safe inside an attribute. A new `safeHref()` makes a ticket's link fields (ticket, QA Test Plan, Copy File, ITW) and the matrix report's URLs a link only when they are http(s). A `javascript:` or `data:` URL in a Jira field stays visible as text and is never an `href`.
+
+### Tests
+
+- `email-check-worker` 547 → 627: other spellings of local addresses and local names refused, public ones (including `0x8.0x8.0x8.0x8`) still passing; a destination that redirects to a private address dropped unread; local links in a proof never requested; the router refusing ten panel actions from a web page, a sender with no URL, and a URL that only contains the extension prefix, while the seven relays still reach their handlers. With the router check removed, 12 of these fail.
+- `jira-extract` 113 → 118: the review card never makes a `javascript:` or `data:` URL an `href`, a quote cannot leave one, and `safeHref` keeps only http(s).
+- Two expectations updated for the escaped quote (`qa-report` caption, `&quot;`); the queue-agent harness now sends panel actions with an extension-page sender, as the panel does.
+
 ## 2026-10-26 — 0.7.23
 
 Email Check, a new Test Agent mode. For one ticket's email proof it checks the subject, preview, sender, From address, Reply-To, personalisation tokens, conditional content, body and alt text against the copy doc, the UTMs, the Pardot links and their destinations, the signature, and the DKIM and spam results; reads the Email on Acid renders; and proposes changes to the EMAIL test plan (the plan is written to, never checked against). Deterministic code decides every status; Opus, when Agentic Analysis is on, writes the analysis and advisory copy notes only. After a run the tester reviews a proposal, and only **Apply** writes statuses and notes to the test plan in Google Sheets.

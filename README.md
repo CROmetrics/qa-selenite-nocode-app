@@ -29,6 +29,18 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.24 — 2026-10-27
+
+**Development**
+- **`/sync-skills`**, a Claude Code command that brings QA Pass and Email Check up to date when the Claude skill each was ported from changes. It runs only when you ask. It shows what changed in the skill, section by section, with the code that implements each part or the reason it's left out, and asks you before porting anything. `/sync-skills status` only checks.
+- `extension/tests/skill-sync.py` does the checking (`status`, `diff`, `accept`; `--from` for a downloaded `.skill` file). It stores no account information: no skill text, name or claude.ai id, in the repo or on disk, only one hash per line of the synced copy.
+
+**Hardening**
+- The service worker takes panel actions (runs, model calls, Google, tabs, the debugger) only from Selenite's own pages. A web page can send it only the seven console, BrowserStack, picker and recorder lines Selenite's own page scripts relay.
+- Email Check refuses every spelling of a local or private-network address (such as `127.1`, `2130706433` or `printer.local`) and drops the answer of a link that redirects to one.
+- Ticket links in the panel (ticket, QA Test Plan, Copy File, ITW) and the matrix report's URLs are links only when they are http(s); escaped text is also safe inside attributes.
+- Needs an extension reload: the worker code loads only then.
+
 ### 0.7.23 — 2026-10-26
 
 **Test Agent**

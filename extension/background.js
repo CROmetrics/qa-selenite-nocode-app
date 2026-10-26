@@ -1685,7 +1685,8 @@ chrome.tabs.onDetached.addListener(async (tabId, { oldWindowId }) => {
 // window closed, or the document otherwise torn down) is detected reliably —
 // that's what releases the debugger attachment/banner for that window.
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'selenite-panel') return;
+  // Only the panel pages open this port; a content script naming it could otherwise point tab-following at any window.
+  if (port.name !== 'selenite-panel' || !qpwFromExtensionPage(port.sender)) return;
   let boundWinId = null;
   port.onMessage.addListener(async (msg) => {
     if (msg.action !== 'hello') return;
@@ -8667,9 +8668,54 @@ function ecwGateOrigins() {
   return out;
 }
 
+// The IPv4 address (a number) of a host whose last label is a number, read as the browser's URL parser reads it: one to four
+// parts, each decimal, octal (a leading 0) or hex (0x), the last filling the remaining bytes, so 127.1, 0x7f.1, 0177.0.0.1 and
+// 2130706433 are all 127.0.0.1. null where the parser would fail (then the browser would not request it either).
+function ecwIpv4(labels) {
+  if (labels.length > 4) return null;
+  const nums = [];
+  for (const p of labels) {
+    let n = NaN;
+    if (/^0x[0-9a-f]*$/.test(p)) n = p.length === 2 ? 0 : parseInt(p.slice(2), 16);
+    else if (/^0[0-7]+$/.test(p)) n = parseInt(p, 8);
+    else if (/^(?:0|[1-9]\d*)$/.test(p)) n = parseInt(p, 10);
+    if (!isFinite(n)) return null;
+    nums.push(n);
+  }
+  for (let i = 0; i < nums.length - 1; i++) if (nums[i] > 255) return null;
+  const last = nums[nums.length - 1];
+  if (last >= Math.pow(256, 5 - nums.length)) return null;
+  let ip = last;
+  for (let i = 0; i < nums.length - 1; i++) ip += nums[i] * Math.pow(256, 3 - i);
+  return ip;
+}
+
+// Whether a URL host (no port, no brackets) is this machine or a private network, read the way the browser reads it, so that
+// another spelling of an address cannot pass. Refused: anything but [a-z0-9._-] (a %-escape, or non-ASCII that IDNA would map
+// to digits and dots); a numeric host in any IPv4 notation in 0/8, 10/8, 100.64/10, 127/8, 169.254/16, 172.16/12, 192.168/16
+// or 224/3, or one the parser would fail; a name with no dot (an intranet name such as `router`); localhost and the
+// local-only suffixes. A public name that RESOLVES to a private address cannot be seen from here.
+function ecwPrivateHost(rawHost) {
+  let host = String(rawHost == null ? '' : rawHost).toLowerCase();
+  if (!/^[a-z0-9._-]+$/.test(host)) return true;
+  if (host.charAt(host.length - 1) === '.') host = host.slice(0, -1);
+  const labels = host.split('.');
+  if (labels.some((l) => l === '')) return true;
+  if (/^(?:0x[0-9a-f]*|\d+)$/.test(labels[labels.length - 1])) {
+    const ip = ecwIpv4(labels);
+    if (ip === null) return true;
+    const a = Math.floor(ip / 16777216), b = Math.floor(ip / 65536) % 256;
+    return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254)
+      || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+  }
+  if (labels.length < 2) return true;
+  return ['localhost', 'local', 'localdomain', 'internal', 'intranet', 'lan', 'home', 'corp'].indexOf(labels[labels.length - 1]) >= 0
+    || /\.home\.arpa$/.test(host);
+}
+
 // The address a request really goes to. In production, `url` itself, refused when it is not http(s), carries credentials, or
-// points at this machine or a private network (localhost, 127/8, 10/8, 172.16/12, 192.168/16, 169.254/16, 0/8, [IPv6]). With
-// the gate on: the mapped 127.0.0.1 address for a mapped origin, `url` unchanged for exactly http://127.0.0.1:<port>, else null.
+// points at this machine or a private network (ecwPrivateHost; IPv6 literals too). With the gate on: the mapped 127.0.0.1
+// address for a mapped origin, `url` unchanged for exactly http://127.0.0.1:<port>, else null.
 function ecwMapUrl(url) {
   const s = typeof url === 'string' ? url.trim() : '';
   const m = /^(https?:\/\/[^\/?#\\]*)([\s\S]*)$/i.exec(s);
@@ -8677,9 +8723,8 @@ function ecwMapUrl(url) {
   const gate = ecwGateOrigins();
   if (!gate) {
     // Production: nothing of ours has any business on the tester's own machine or network (an email's link or a tracked link's redirect is untrusted).
-    const host = m[1].replace(/^https?:\/\//i, '').replace(/:\d*$/, '').toLowerCase();
-    if (host === 'localhost' || /\.localhost$/.test(host) || host.charAt(0) === '[' || /^(?:0|10|127)\.\d+\.\d+\.\d+$/.test(host) || /^192\.168\.\d+\.\d+$/.test(host)
-      || /^172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(host) || /^169\.254\.\d+\.\d+$/.test(host)) return null;
+    const hostPort = m[1].replace(/^https?:\/\//i, '');
+    if (hostPort.charAt(0) === '[' || ecwPrivateHost(hostPort.replace(/:\d*$/, ''))) return null;
     return s;
   }
   const origin = m[1].toLowerCase();
@@ -8730,6 +8775,12 @@ async function ecwFetch(url, init) {
   try {
     const res = await fetch(target, Object.assign(o, { signal: ctl.signal }));
     const out = { ok: true, status: res.status, url: res.url ? String(res.url) : target };
+    // Where a followed redirect ENDED is held to the address rule too: a public link that redirects to this machine or a private
+    // network gets no answer read, kept or shown (its status and title included). The hops before it were already made.
+    if (out.url !== target && ecwMapUrl(out.url) === null) {
+      try { ctl.abort(); } catch (_) {}
+      return { ok: false, refused: true, redirected: true, error: 'Refused: the address redirected to this computer or a private network (not read).' };
+    }
     if (target !== asked) {   // the gate mapped the origin: report the final URL on the origin that was asked for
       const a = /^(https?:\/\/[^\/?#]*)/i.exec(asked), t = /^(https?:\/\/[^\/?#]*)/i.exec(target), f = /^(https?:\/\/[^\/?#]*)([\s\S]*)$/i.exec(out.url);
       if (a && t && f && t[1].toLowerCase() === f[1].toLowerCase()) out.url = a[1] + f[2];
@@ -9304,7 +9355,17 @@ async function ecwSheetApply(p) {
 }
 
 // ── Message listener ───────────────────────────────────────────────────────
+// The relays Selenite's own content scripts send from inside web pages (console-bridge, bs-live-bridge, picker, recorder).
+// They are the only actions a sender other than an extension page may use: a page that subverts a content script, or a
+// future relay that forwards page data, must not reach a run, a model call, Google, the debugger or a tab.
+const CONTENT_SCRIPT_ACTIONS = new Set(['browserLog', 'bsDeviceLog', 'bsDeviceState', 'pickerResult', 'pickerCancel', 'sessionSegment', 'sessionEvents']);
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || typeof msg !== 'object') return false;
+  if (!qpwFromExtensionPage(sender) && !CONTENT_SCRIPT_ACTIONS.has(msg.action)) {
+    sendResponse({ ok: false, error: 'Not allowed from a web page.' });
+    return false;
+  }
   if (msg.action === 'run') {
     // One queue at a time. Guarded on _running, which is in memory and so is
     // cleared by a worker restart; _runWin is NOT used for this, because it is

@@ -4174,7 +4174,7 @@ section('QA Pass: a record from the gate');
   eq('every figure has an img', (bugs.match(/<img /g) || []).length, rec.sweep.tiles.length);
   var first = figs.findIndex(function (f) { return f.indexOf('v1 · iPhone · 360 px') !== -1; });
   ok('the PROD tile at 360 px comes right before the variant tile at 360 px', first > 0 && figs[first - 1].indexOf('PROD · iPhone · 360 px') !== -1, first);
-  ok('the variant caption has the measured gap, the edge and the clipped text', /v1 · iPhone · 375 px · right edge −21 px · "CLIPPED-HERO/.test(bugs));
+  ok('the variant caption has the measured gap, the edge and the clipped text', /v1 · iPhone · 375 px · right edge −21 px · (?:"|&quot;)CLIPPED-HERO/.test(bugs));
   var cover = abPageUrls([entry]);
   eq('the cover lists the one page', cover.length, 1);
   ok('by path, with no query', /^http:\/\/127\.0\.0\.1:\d+\/shop\/$/.test(cover[0]), cover);

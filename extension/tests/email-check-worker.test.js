@@ -321,7 +321,7 @@ T('wiring: importScripts, the stop flag, names, the gate variable', function () 
   ok('and no line of it starts with an ec*/EC_/qp*/QP_ reference outside a function', !/^(?:ec[A-Z]|EC_|qp[A-Z]|QP_)/m.test(WORKER_SRC));
   var names = [], re = /^(?:async\s+)?function\s+(ecw\w*|runEmailCheck)\b|^let\s+(_ec\w+)/gm, m;
   while ((m = re.exec(WORKER_SRC))) names.push(m[1] || m[2]);
-  var EXPECT = ['_ecStopRequested', '_ecTabIds', 'ecwStopError', 'ecwIsStop', 'ecwCheckStop', 'ecwErr', 'ecwProgress', 'ecwGateOrigins', 'ecwMapUrl', 'ecwOriginOf', 'ecwNeverFetch', 'ecwTabUrl', 'ecwFetch',
+  var EXPECT = ['_ecStopRequested', '_ecTabIds', 'ecwStopError', 'ecwIsStop', 'ecwCheckStop', 'ecwErr', 'ecwProgress', 'ecwGateOrigins', 'ecwIpv4', 'ecwPrivateHost', 'ecwMapUrl', 'ecwOriginOf', 'ecwNeverFetch', 'ecwTabUrl', 'ecwFetch',
     'ecwExec', 'ecwOpenTab', 'ecwCloseTab', 'ecwLinkPlanOf', 'ecwReadMailtrap', 'ecwPardotGet', 'ecwDestGet', 'ecwDestFor', 'ecwResolveLinks', 'ecwReadEoa', 'ecwRender', 'ecwDocReadGoogle', 'ecwDocRead',
     'ecwReadDoc', 'ecwMarkStopped', 'runEmailCheck', 'ecwSheetApply'];
   jeq('the Email Check section defines exactly these names (a new one needs a line here and a reason in the log)', names.slice().sort(), EXPECT.slice().sort());
@@ -408,6 +408,18 @@ T('gate override: ecwMapUrl and ecwTabUrl map, pass 127.0.0.1, refuse the rest',
   ['http://localhost/x', 'https://localhost:8080/x', 'https://app.localhost/x', 'http://127.0.0.1/x', 'http://127.0.0.1:9222/json', 'http://127.1.2.3/x', 'http://10.0.0.5/x', 'http://192.168.1.1/x', 'http://172.16.0.1/x', 'http://172.31.255.255/x',
     'http://169.254.169.254/latest/meta-data', 'http://0.0.0.0/x', 'http://[::1]/x', 'https://[fe80::1]:8443/x'].forEach(function (u) { eq('production: the local or private address ' + u + ' is refused', M(u), null); });
   ['http://172.32.0.1/x', 'http://172.15.0.1/x', 'http://11.0.0.1/x', 'http://193.168.1.1/x', 'https://www.example.org.evil.example/x'].forEach(function (u) { eq('production: the public address ' + u + ' passes', M(u), u); });
+  // Hardening: other spellings of a local address, as the browser's URL parser reads them, and local-only names.
+  ['http://127.1/x', 'http://0x7f.1/x', 'http://0x7F000001/x', 'http://2130706433/x', 'http://0177.0.0.1/x', 'http://017700000001/x', 'http://10.1/x', 'http://192.168.257/x',
+    'http://3232235777/x', 'http://0xa9fea9fe/latest/meta-data', 'http://0/x', 'http://127.0.0.1./x', 'http://localhost./x', 'http://LOCALHOST/x', 'http://APP.LocalHost:3000/x',
+    'http://100.64.0.1/x', 'http://100.127.255.254/x', 'http://224.0.0.1/x', 'http://255.255.255.255/x', 'http://router/x', 'http://nas:5000/x', 'http://printer.local/x',
+    'http://intranet.corp/x', 'http://box.lan/x', 'http://db.internal/x', 'http://gw.home.arpa/x', 'http://x.localdomain/x', 'http://%31%32%37.0.0.1/x', 'http://１２７.０.０.１/x',
+    'http://127。0。0。1/x', 'http://foo.123/x', 'http://1.2.3.4.5/x', 'http://08.0.0.1/x', 'http://1.256.0.0/x', 'http://example..org/x', 'http://.example.org/x', 'http://example.org:abc/x'].forEach(function (u) {
+    eq('production: ' + u + ' is refused (a local address in another spelling, a local-only name, or one the browser would not parse)', M(u), null);
+  });
+  ['http://100.63.255.255/x', 'http://100.128.0.1/x', 'http://8.8.8.8/x', 'http://134744072/x', 'http://example.org./x', 'https://xn--bcher-kva.example/x', 'https://a_b.example.org/x',
+    'https://www.example.org:8443/x', 'http://0x8.0x8.0x8.0x8/x', 'https://123.example.org/x'].forEach(function (u) {
+    eq('production: the public address ' + u + ' still passes', M(u), u);
+  });
 
   globalThis.__ecGateOrigins = { 'https://mailtrap.io': 'http://127.0.0.1:8123', 'https://www.example.org': 'http://127.0.0.1:8123', 'https://host.example.net:8443': 'http://127.0.0.1:8124' };
   eq('gate: a mapped origin is rewritten, path and query kept', M('https://mailtrap.io/sandboxes/7/messages/9?x=1#y'), 'http://127.0.0.1:8123/sandboxes/7/messages/9?x=1#y');
@@ -457,6 +469,29 @@ T('router: the actions exist, a web page cannot call the sheet apply, unknown re
   eq('and from a sender with no url', ecCall(w, { action: 'ecSheetApply', payload: {} }, { tab: { id: 3 } }).error, 'Not allowed from a web page.');
   eq('nothing was requested for a refused call', w.st.reqs.length, 0);
   ok('ecSheetApply with no writes answers ok, 0 written, from an extension page', (function () { var q = ecCall(w, { action: 'ecSheetApply', payload: { writes: [] } }); return q.ok === true && q.written === 0; })());
+});
+
+T('router: only the content-script relays are taken from a web page; every other action is the panel\'s', function () {
+  var w = ecWorld({});
+  var PAGE = { url: 'https://evil.example/page', tab: { id: 3 } };
+  var REFUSED = { ok: false, error: 'Not allowed from a web page.' };
+  [{ action: 'runEmailCheck', payload: { ctx: mkCtx('EX-2'), settings: mkSettings('EX-2'), winId: 1 } }, { action: 'ecExplain', payload: {} }, { action: 'runQaPass', payload: {} },
+    { action: 'qpExplain', payload: {} }, { action: 'qpMapRows', payload: {} }, { action: 'run', payload: { queue: [] } }, { action: 'stop' }, { action: 'status' },
+    { action: 'summarizeTestAgentResults', payload: {} }, { action: 'qpGoogleConnect' }].forEach(function (m) {
+    var out = ecSend(w, m, PAGE);
+    jeq(m.action + ' from a web page is refused at once', out.res, REFUSED);
+  });
+  jeq('so is a sender with no url at all', ecSend(w, { action: 'runEmailCheck', payload: {} }, { tab: { id: 3 } }).res, REFUSED);
+  jeq('and a url that only contains the extension prefix', ecSend(w, { action: 'status' }, { url: 'https://evil.example/?u=chrome-extension://x/' }).res, REFUSED);
+  w.settle(function () { return false; }, 200);
+  eq('no request was made and no tab opened for any of them', w.st.reqs.length + '|' + w.st.created.length, '0|0');
+  ['browserLog', 'bsDeviceLog', 'bsDeviceState', 'pickerResult', 'pickerCancel', 'sessionSegment', 'sessionEvents'].forEach(function (a) {
+    var out = ecSend(w, { action: a, level: 'log', text: 'x', lines: [], state: 'bogus', events: [] }, PAGE);
+    w.settle(function () { return false; }, 50);
+    ok('the relay ' + a + ' from a web page still reaches its handler', JSON.stringify(out.res) !== JSON.stringify(REFUSED), out.res);
+  });
+  ok('a message that is not an object is ignored, not a crash', (function () { try { ecSend(w, null, PAGE); ecSend(w, 'run', PAGE); return true; } catch (e) { return false; } })());
+  ok('the panel is unaffected: status from an extension page answers', (function () { var q = ecCall(w, { action: 'status' }); return !!q && q.error !== REFUSED.error; })());
 });
 
 // ═══ the runs ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -871,6 +906,27 @@ T('never-fetch: where a followed redirect ENDS is checked against the never-open
   var w3 = ecWorld({ destFinal: function (path) { return /\/give\/seed-kits\/$/.test(path) ? 'https://www.example.org/give/seed-kits/thanks/' : null; } });
   var out3 = ecRun(w3, mkCtx('EX-2'), mkSettings('EX-2'));
   ok('a redirect that ends on an ordinary path is kept', out3.rec.links.filter(function (x) { return x.dest && x.dest.path === '/give/seed-kits/'; }).every(function (x) { return x.destStatus === 200 && !x.error; }));
+});
+
+T('address rule: a redirect that ENDS on this computer or a private network is dropped unread; a local link is never requested', function () {
+  ['http://192.168.1.1/admin/', 'http://127.1:8080/', 'http://router/setup/'].forEach(function (finalUrl) {
+    var w = ecWorld({ destFinal: function (path) { return /\/give\/seed-kits\/$/.test(path) ? finalUrl : null; } });
+    var out = ecRun(w, mkCtx('EX-2'), mkSettings('EX-2'));
+    var dl = out.rec.links.filter(function (x) { return x.dest && x.dest.path === '/give/seed-kits/'; });
+    ok('a destination redirected to ' + finalUrl + ': no status, no title, the refusal as the error', dl.length > 0 && dl.every(function (x) {
+      return x.destStatus === null && x.destTitle === null && x.error === 'Refused: the address redirected to this computer or a private network (not read).';
+    }), dl);
+    ok('and the record does not hold the local address', JSON.stringify(out.rec).indexOf(finalUrl.replace(/\/$/, '')) < 0);
+    var c = out.rec.checks.filter(function (x) { return x.key === 'links' && x.proofId === 'regular-donors-v0'; })[0];
+    ok('the links row is not Passed', !!c && c.status !== 'passed', c);
+  });
+  var anchors = '<p><a href="http://127.1:8080/admin/">Local link</a> <a href="http://2130706433/x/">Numeric link</a> <a href="http://printer.local/">Printer</a></p>';
+  var w2 = ecWorld({ inject: { '7100000005': anchors } });
+  var out2 = ecRun(w2, mkCtx('EX-2'), mkSettings('EX-2'));
+  eq('no request reached any of them (each is refused before fetch)', reqsTo(w2, /127\.1|2130706433|printer\.local/).length + w2.st.foreign.length, 0);
+  ok('each is listed with the refusal', ['Local link', 'Numeric link', 'Printer'].every(function (label) {
+    return out2.rec.links.some(function (l) { return l.labels.indexOf(label) >= 0 && /is not an allowed address for Email Check/.test(l.error || ''); });
+  }), out2.rec.links.filter(function (l) { return /Local|Numeric|Printer/.test(l.labels.join(' ')); }));
 });
 
 T('never-fetch: the cap of 20 distinct tracked linkIds per proof', function () {

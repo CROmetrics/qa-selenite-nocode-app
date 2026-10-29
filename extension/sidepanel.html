@@ -430,9 +430,11 @@
   #exp-headline{font-size:12px;font-weight:600;line-height:1.45;color:var(--fg1)}
   #exp-sub{font-size:11px;color:var(--fg2);line-height:1.45;
     font-family:'Cascadia Code','Menlo',monospace;word-break:break-word}
-  #exp-expected,#exp-actual{display:flex;align-items:baseline;gap:6px;font-size:11px;line-height:1.5}
+  #exp-expected,#exp-active,#exp-actual{display:flex;align-items:baseline;gap:6px;font-size:11px;line-height:1.5}
   .exp-k{flex:0 0 58px;color:var(--fg3);font-size:10px;text-transform:uppercase;letter-spacing:.4px}
   .exp-v{flex:1;min-width:0;color:var(--fg1);word-break:break-word}
+  .exp-v.exp-act-yes{color:var(--ok)}
+  .exp-v.exp-act-no{color:var(--warn)}
   .exp-src{flex:0 0 auto;font-size:9px;padding:1px 5px;border-radius:3px;
     background:var(--overlay);color:var(--fg2);white-space:nowrap}
   .exp-src.exp-src-weak{color:var(--warn);background:rgba(204,167,0,.14)}
@@ -889,6 +891,7 @@
       <div id="exp-headline">Waiting for a page…</div>
       <div id="exp-sub"></div>
       <div id="exp-expected"><span class="exp-k">Expected</span><span class="exp-v" id="exp-expected-v">—</span></div>
+      <div id="exp-active"><span class="exp-k">Active</span><span class="exp-v" id="exp-active-v">—</span></div>
       <div id="exp-actual">
         <span class="exp-k">On page</span>
         <span class="exp-v" id="exp-actual-v">—</span>

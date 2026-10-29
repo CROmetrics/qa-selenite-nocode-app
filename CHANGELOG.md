@@ -2,6 +2,32 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-10-29 — 0.7.25
+
+Whenever the Test Context's experiment is set, Selenite now says whether that experiment is active on the page, from the two fields a QA reads in DevTools: `isActive` and `reason` in `optimizely.get('state').getExperimentStates()`. A bucket alone no longer stands for it. Optimizely keeps a visitor's variation decision on every page once it is made, including pages where the experiment is not active. The recorded debug logs hold 32 such rows (a Starz experiment, bucketed into "v0: Control" with `isActive` false), and every consumer counted them as served: the Tracker card showed a green "Bucketed into v0", or "forced v1 but showing v0" behind a forcing link, when the page showed neither.
+
+### Changed
+
+- **The page probe (`expProbeFn`, `background.js`):** each Optimizely row keeps the raw `isActive` beside `active` (which `getActiveExperimentIds()` can also set). `null` means unread, so a missing field is never quoted as `isActive: false`. Convert rows have no such field.
+- **The Experiment Status card (`popup.js`, both panel pages):** a new **Active** row between Expected and On page: Yes, No or Unknown, then `isActive` and `reason` verbatim (`expActivity`, `expActivityText`). `reason` is shown raw, never interpreted; the only real values are `force` and absent. Two new states in `expEvaluate`: `BUCKETED_INACTIVE` ("X is not active on this page", the bucket named in the line below) and `ACTIVE_UNKNOWN` (bucketed, but the states couldn't be read). Both are warnings and are checked before the forced-variation comparison. The bucketed headlines now begin "Active · bucketed into". The softcoded and concurrent lists mark a bucket on an inactive experiment "(bucketed, not active)" and no longer highlight it.
+- **A/B capture verification (`vdVariantVerification`, `vd-diff.js`):** a forced variation held on an inactive row is `contradicted` ("bucketed into the forced variation … but experiment … is not active on this page (isActive false), so the variation was not applied"), so it reaches the error row and `vdServedNoVariation`. A bucket on an inactive experiment is no longer named as what the page served. A confirmed result carries `isActive` and the raw `platformReason` (`reason` there is already the explanation sentence), and the confirmed line ends "experiment active (isActive: …, reason: …)". The debug export's probe rows include `isActive`.
+- **QA Pass (`qpProbeSummary`, `qa-pass.js`):** a row with `active` false has no served variation. The link map's pass note keeps its wording, because `fixtures-qapass-record.json` pins it and is re-captured from a gate run, never edited by hand.
+
+### Fixed
+
+- **The card's not-running guard** was `row.known && !row.active && !row.bucketed`. Rows without `known`, which is every row loaded from a debug log, fell past it and were reported as a forced-variation mismatch or "Bucketed into null". The guard no longer depends on `known`. Over the recorded logs this moved 739 unbucketed, inactive rows to "not active on this page"; the live probe leaves `known` false only on rows it also marks active, so it wasn't affected.
+
+### Measured
+
+All 109 captures in the 106 recorded debug logs, through the old and new code: exactly the 32 bucketed-inactive rows change to `BUCKETED_INACTIVE`, and no A/B verdict moves (103 confirmed and 6 contradicted, as before; every confirmed hit was active).
+
+### Tests
+
+- New suite `exp-status` (54), added to CI. It drives `expProbeFn` against a fake `optimizely` (the raw `isActive`, a missing field, throwing state reads) and checks each `expEvaluate` state, Convert and old-worker rows, rows with no `known`, the related-list text, the rendered Active line, and that both panel pages have the row.
+- `vd-diff` 1355 → 1371: an inactive held forced variation, the real shape (an inactive bucket beside an active hit), an old row with no `isActive`, and the consumers (the info line, the error row, `vdServedNoVariation`).
+- `qa-pass` 1565 → 1571: an inactive bucket is not served, and the link-map check fails "not active on load".
+- With each fix removed in turn, a test fails.
+
 ## 2026-10-27 — 0.7.24
 
 An on-command update path for QA Pass and Email Check: when the Claude skill a mode was ported from changes in the Claude app, `/sync-skills` shows what changed, section by section, and ports it. Nothing runs automatically.

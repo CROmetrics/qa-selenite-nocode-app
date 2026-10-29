@@ -419,7 +419,9 @@
     if (!row && forced.length) {
       row = rows.filter(function (r) { return (r.variations || []).some(function (v) { return v && String(v.id) === forced[0]; }); })[0] || null;
     }
-    const servedId = row && row.variationId != null ? String(row.variationId) : null;
+    // A bucket on an experiment that is not active here is not served: Optimizely
+    // keeps the visitor's variation on every page once decided (isActive false).
+    const servedId = row && row.active !== false && row.variationId != null ? String(row.variationId) : null;
     return {
       platform: qpNul(probe.platform),
       catalogComplete: !!probe.catalogComplete,
@@ -428,7 +430,7 @@
       active: row ? !!row.active : null,
       bucketed: row ? !!row.bucketed : null,
       servedVariationId: servedId,
-      servedVariationName: row ? qpNul(row.variationName) : null,
+      servedVariationName: servedId !== null ? qpNul(row.variationName) : null,
       servedForced: servedId !== null && forced.indexOf(servedId) >= 0,
     };
   }

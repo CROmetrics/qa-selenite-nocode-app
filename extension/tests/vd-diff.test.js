@@ -659,6 +659,73 @@ section('variant verification');
   eq('a bare separator yields nothing', K(',').length, 0);
 })();
 
+(function aBucketOnAnInactiveExperimentIsNotServed() {
+  // Optimizely keeps a visitor's variation on every page once decided, and only
+  // getExperimentStates()'s isActive says whether the experiment applies on
+  // this one. Measured in the debug logs: 32 captures carried a row bucketed
+  // into "v0: Control" with isActive false, beside the experiment under test.
+  // None of them was the forced variation, so no recorded verdict moves; these
+  // pin the cases that would have. Ids are synthetic.
+  function probe(rows) {
+    return { ok: true, detected: { optimizely: true, convert: false, convertScript: false },
+      catalogComplete: true, forced: { cro_mode: 'qa' }, experiments: rows };
+  }
+  function row(id, variationId, active, extra) {
+    var r = { id: id, name: 'Exp ' + id, known: true, active: active, isActive: active, bucketed: true,
+      variationId: variationId, variationName: 'Var ' + variationId, variations: [], reason: null };
+    for (var k in (extra || {})) r[k] = extra[k];
+    return r;
+  }
+
+  var held = vdVariantVerification(probe([row('E1', 'V1', false)]), 'V1');
+  eq('the forced variation held on an INACTIVE experiment is CONTRADICTED, not confirmed', held.state, 'contradicted');
+  ok('  and the reason says the experiment is not active', /experiment E1 is not active on this page \(isActive false\)/.test(held.reason), held.reason);
+  eq('  naming the variation it holds', held.variationId, 'V1');
+
+  // The recorded shape: the experiment under test is active and serves the
+  // forced variation, and an unrelated inactive bucket sits beside it.
+  var real = vdVariantVerification(probe([row('S', 'V0', false), row('E1', 'V1', true, { reason: 'force' })]), 'V1');
+  eq('an inactive bucket beside the served one leaves it CONFIRMED', real.state, 'confirmed');
+  eq('  confirmed carries isActive', real.isActive, true);
+  eq('  and the raw platform reason', real.platformReason, 'force');
+  eq('  without taking over `reason`, which is the explanation sentence', real.reason, undefined);
+
+  var other = vdVariantVerification(probe([row('S', 'V0', false)]), 'V1');
+  eq('an inactive bucket on another variation is not named as what the page served', other.variationId, null);
+  ok('  it reads as nothing bucketed', /did not bucket into any variation/.test(other.reason), other.reason);
+
+  // A worker that has not been reloaded sends no isActive; `active` decides.
+  var oldRow = row('E1', 'V1', true);
+  delete oldRow.isActive;
+  var fromOld = vdVariantVerification(probe([oldRow]), 'V1');
+  eq('a row with no isActive field confirms on `active`', fromOld.state, 'confirmed');
+  eq('  and reports isActive as unread', fromOld.isActive, null);
+
+  // The consumer: what the report says, and whether the badge voids the pair.
+  function cap(label, rows, url) {
+    var c = capture(label, { fullPage: null, expProbe: probe(rows) });
+    c.url = url;
+    return c;
+  }
+  var ctl = cap('v0', [], 'https://example.com/p');
+  var on = cap('v1', [row('E1', 'V1', true, { reason: 'force' })], 'https://example.com/p?optimizely_x=V1');
+  var off = cap('v1', [row('E1', 'V1', false)], 'https://example.com/p?optimizely_x=V1');
+  var PV = [{ label: 'v1', diffMode: 'normal', matchedFraction: 0.9, structuralStats: {} }];
+
+  var onLines = vdCollectProblems(abSections([ctl, on], PV)).filter(function (x) { return x.where === 'capture/v1'; });
+  ok('the confirmed line says the experiment is active, quoting isActive and reason',
+     onLines.some(function (x) { return x.severity === 'info' && x.detail.indexOf('Variation confirmed by the platform: Var V1 in "Exp E1", experiment active (isActive: true, reason: force)') === 0; }),
+     onLines.map(function (x) { return x.detail; }));
+
+  var offLines = vdCollectProblems(abSections([ctl, off], PV)).filter(function (x) { return x.where === 'capture/v1'; });
+  ok('an inactive experiment is an ERROR row that says so',
+     offLines.some(function (x) { return x.severity === 'error' && /did not serve the variation/.test(x.detail) && /isActive false/.test(x.detail); }),
+     offLines.map(function (x) { return x.severity + ': ' + x.detail; }));
+  ok('  and is never reported as confirmed', !offLines.some(function (x) { return /Variation confirmed/.test(x.detail); }));
+  eq('the badge predicate voids the pair', vdServedNoVariation(vdCaptureVerification(off), vdCaptureVerification(ctl)), true);
+  eq('  and not the active one', vdServedNoVariation(vdCaptureVerification(on), vdCaptureVerification(ctl)), false);
+})();
+
 // ── requirements, checked deterministically ────────────────────────────────
 section('spec requirements');
 

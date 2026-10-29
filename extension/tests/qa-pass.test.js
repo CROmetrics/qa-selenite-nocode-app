@@ -380,6 +380,13 @@ ok('a null probe is all null', ps5.platform === null && ps5.expId === null && ps
 eq('a probe with an error is all null', qpProbeSummary({ error: 'x', platform: 'optimizely' }, 'E1', []).platform, null);
 eq('numeric ids are compared as strings', qpProbeSummary({ platform: 'optimizely', experiments: [{ id: 5, active: true, bucketed: true, variationId: 7, variations: [] }] }, 5, ['7']).servedForced, true);
 eq('a probe with no platform says so', qpProbeSummary({ ok: true, platform: null, experiments: [] }, 'E1', []).platform, null);
+// Optimizely keeps a visitor's variation on every page once decided; isActive false means it is not applied here.
+var psHeld = qpProbeSummary({ platform: 'optimizely', catalogComplete: true, experiments: [
+  { id: 'E1', name: 'one', active: false, isActive: false, bucketed: true, variationId: 'V2', variationName: 'v2: hero', variations: [] }] }, 'E1', ['V2']);
+eq('a bucket on an inactive experiment is not served', psHeld.servedVariationId, null);
+eq('  so the forced variation is not served either', psHeld.servedForced, false);
+eq('  and names no served variation', psHeld.servedVariationName, null);
+eq('  while the row still says bucketed and not active', psHeld.bucketed === true && psHeld.active === false, true);
 
 section('qpMatchGoals');
 var mg = qpMatchGoals([{ text: 'Sitewide scroll goals 25%' }], CAT.events);
@@ -894,6 +901,12 @@ recImm.settings.checks = { A: true, B: false, C: false, D: false, E: false, F: f
 var cA5 = qpDeriveChecks(recImm, wctxImm);
 eq('A: not active with immediate activation fails', chk(cA5, 'A.v1').status, 'failed');
 ok('A: and names the immediate activation', /activates immediately/.test(chk(cA5, 'A.v1').note), chk(cA5, 'A.v1').note);
+// The same experiment with the forced variation HELD but not active (isActive false): before, servedForced read the bucket and passed.
+var recHeld = recWith({ links: [plink('v1', { forcedIds: [immVar], probe: probeOf([expRow(EXP_EVERYONE, immVar, false)], [immVar], EXP_EVERYONE.id) })] });
+recHeld.settings.checks = { A: true, B: false, C: false, D: false, E: false, F: false };
+var cAHeld = qpDeriveChecks(recHeld, wctxImm);
+eq('A: a held bucket on an inactive experiment fails, it is not served', chk(cAHeld, 'A.v1').status, 'failed');
+ok('A: and says the experiment is not active on load', /is not active on load/.test(chk(cAHeld, 'A.v1').note), chk(cAHeld, 'A.v1').note);
 var pollVar = EXP_POLLING.variations[1].id;
 var wctxPoll = Object.assign({}, WCTX, { experimentId: EXP_POLLING.id, previewLinks: [{ id: 'v1', url: 'https://a.com/p?optimizely_x=' + pollVar }] });
 var recPoll = recWith({ links: [plink('v1', { forcedIds: [pollVar], probe: probeOf([expRow(EXP_POLLING, null, false)], [pollVar], EXP_POLLING.id) })] });

@@ -10093,7 +10093,9 @@ function vdCollectProblems(sections) {
       } else if (ver && ver.state === 'confirmed') {
         add('info', `capture/${c.label}`,
           `Variation confirmed by the platform: ${ver.variationName || ver.variationId}`
-          + `${ver.experimentName ? ` in "${ver.experimentName}"` : ''} — this page is the one the URL asked for.`);
+          + `${ver.experimentName ? ` in "${ver.experimentName}"` : ''}, experiment active`
+          + (ver.isActive != null ? ` (isActive: ${ver.isActive}, reason: ${ver.platformReason || '—'})` : '')
+          + ' — this page is the one the URL asked for.');
       }
       if (c.loadError) add('error', `capture/${c.label}`, `Page load failed — ${c.loadError}`);
       if (c.fullPage?.error) add('error', `capture/${c.label}`, `Full-page capture failed — ${c.fullPage.error}`);
@@ -10897,7 +10899,7 @@ function buildDebugLog(sections) {
         catalogComplete: !!c.expProbe.catalogComplete,
         forced: c.expProbe.forced || null,
         experiments: (c.expProbe.experiments || []).map(e => ({
-          id: e.id, name: e.name, active: e.active, bucketed: e.bucketed,
+          id: e.id, name: e.name, active: e.active, isActive: e.isActive ?? null, bucketed: e.bucketed,
           variationId: e.variationId, variationName: e.variationName, forced: e.forced, reason: e.reason || null,
         })),
         errors: c.expProbe.errors || [],
@@ -15090,6 +15092,37 @@ function expEvaluateRelated(list, probe) {
   });
 }
 
+// The ticket's experiment's own active state, stated outright whatever the
+// verdict below says: a variation decision is not an activation (see the
+// isActive comment in expProbeFn). `isActive` and `reason` are the raw
+// getExperimentStates() fields a QA reads in DevTools, quoted as they are.
+// `active` is null only when the visitor holds a bucket and the state that
+// would say whether it applies here could not be read. Pure.
+function expActivity(row, probe) {
+  if (!row) {
+    return probe?.catalogComplete
+      ? { active: false, isActive: null, reason: null, note: 'not in this page’s snippet' }
+      : { active: null, isActive: null, reason: null, note: 'the snippet’s catalog couldn’t be fully read' };
+  }
+  const unknown = !row.active && row.bucketed && row.isActive === null;
+  return {
+    active: unknown ? null : !!row.active,
+    isActive: typeof row.isActive === 'boolean' ? row.isActive : null,
+    reason: row.reason || null,
+    note: unknown ? 'getExperimentStates() couldn’t be read' : null,
+  };
+}
+
+function expActivityText(a) {
+  if (!a) return '—';
+  const verdict = a.active === true ? 'Yes' : a.active === false ? 'No' : 'Unknown';
+  const parts = [];
+  if (a.isActive !== null) parts.push(`isActive: ${a.isActive}`, `reason: ${a.reason || '—'}`);
+  else if (a.reason) parts.push(`reason: ${a.reason}`);
+  if (a.note) parts.push(a.note);
+  return parts.length ? `${verdict} — ${parts.join(', ')}` : verdict;
+}
+
 // ── The state machine ────────────────────────────────────────────────────────
 // Pure — no DOM, no storage, no async — which is what makes a chain this long
 // reviewable (and testable via JXA, see the plan's verification section).
@@ -15098,7 +15131,7 @@ function expEvaluateRelated(list, probe) {
 // competing with it, so e.g. a real collision with a second live experiment
 // is never swallowed just because the expected one also resolved cleanly.
 function expEvaluate(status, ctx, settings) {
-  const base = { expected: null, actual: null, others: [], notes: [], staleMs: null, softcoded: [], concurrent: [] };
+  const base = { expected: null, actual: null, activity: null, others: [], notes: [], staleMs: null, softcoded: [], concurrent: [] };
 
   if (!ctx) {
     return { ...base, state: 'NO_CONTEXT', severity: 'idle',
@@ -15175,6 +15208,7 @@ function expEvaluate(status, ctx, settings) {
   }
 
   const row = (probe.experiments || []).find((e) => String(e.id) === expected.experimentId) || null;
+  base.activity = expActivity(row, probe);
   // Every OTHER experiment the probe found running on this page — not just
   // ones this visitor happens to be bucketed into. A QA needs to know about
   // a live collision even when they were excluded from it (audience,
@@ -15200,14 +15234,16 @@ function expEvaluate(status, ctx, settings) {
       sub: 'The platform’s catalog couldn’t be fully read, so its absence here doesn’t prove it isn’t running.' };
   }
 
-  if (row.known && !row.active && !row.bucketed) {
+  // Not gated on row.known: past these two guards every row is bucketed or
+  // active, which is what the activity check below relies on.
+  if (!row.active && !row.bucketed) {
     return { ...base, state: 'EXPERIMENT_NOT_RUNNING', severity: 'warn',
-      headline: `${row.name || expected.experimentId} is not running`,
+      headline: `${row.name || expected.experimentId} is not active on this page`,
       sub: row.reason ? `Platform reason: ${row.reason}` : 'The experiment exists but isn’t active on this page.' };
   }
   if (row.active && !row.bucketed) {
     return { ...base, state: 'NOT_BUCKETED', severity: 'warn',
-      headline: `${row.name || expected.experimentId} is running, but this visitor isn't bucketed`,
+      headline: `${row.name || expected.experimentId} is active, but this visitor isn't bucketed`,
       sub: row.reason ? `Reason: ${row.reason}` : 'Excluded by audience, holdback, or traffic allocation.' };
   }
 
@@ -15215,6 +15251,24 @@ function expEvaluate(status, ctx, settings) {
   const { map: labelMap, notes: mapNotes } = expBuildLabelMap(ctx);
   base.notes = base.notes.concat(mapNotes);
   const mapped = expLabelFor(row.variationId, row, ctx, labelMap);
+
+  // Holding a bucket is not being in the experiment on this page: Optimizely
+  // keeps a visitor's variation everywhere once decided. Checked before the
+  // forced-variation comparison, which would otherwise report "showing v0" on
+  // a page showing nothing of this experiment. `actual` stays null — the
+  // bucket is not what's on the page.
+  if (base.activity.active !== true) {
+    const bucket = [mapped?.label, row.variationName || row.variationId].filter(Boolean).join(' — ');
+    if (base.activity.active === false) {
+      return { ...base, state: 'BUCKETED_INACTIVE', severity: 'warn',
+        headline: `${row.name || expected.experimentId} is not active on this page`,
+        sub: `This visitor is bucketed into ${bucket}, but isActive is false, so nothing from this experiment is applied here.` };
+    }
+    return { ...base, state: 'ACTIVE_UNKNOWN', severity: 'warn',
+      headline: `Bucketed into ${bucket}, but can't tell if it's active`,
+      sub: 'getExperimentStates() couldn’t be read on this page, so whether the experiment applies here is unknown.' };
+  }
+
   const actual = {
     experimentId: row.id, experimentName: row.name || null,
     variationId: row.variationId, variationName: row.variationName || null,
@@ -15234,12 +15288,12 @@ function expEvaluate(status, ctx, settings) {
 
   if (!mapped) {
     return { ...base, state: 'BUCKETED_UNMAPPED', severity: 'warn',
-      headline: `Bucketed into ${row.variationName || row.variationId}`,
+      headline: `Active · bucketed into ${row.variationName || row.variationId}`,
       sub: 'Couldn’t match this native variation id back to the ticket’s v0/v1 labels.' };
   }
 
   return { ...base, state: 'BUCKETED', severity: 'ok',
-    headline: `Bucketed into ${mapped.label} — ${row.variationName || row.variationId}`,
+    headline: `Active · bucketed into ${mapped.label} — ${row.variationName || row.variationId}`,
     sub: `${probe.platform === 'convert' ? 'Convert' : 'Optimizely'} · exp ${row.id} · var ${row.variationId}` };
 }
 
@@ -15258,10 +15312,11 @@ function expRenderRelatedList(wrapId, hostId, list) {
   wrap.style.display = '';
   host.innerHTML = list.map((r) => {
     const status = !r.found ? 'not detected on page'
-      : r.bucketed ? (r.variationName || r.variationId)
-      : r.active ? 'running, not bucketed'
+      : r.bucketed && r.active ? (r.variationName || r.variationId)
+      : r.bucketed ? `${r.variationName || r.variationId} (bucketed, not active)`
+      : r.active ? 'active, not bucketed'
       : 'not active';
-    const cls = !r.found ? 'exp-rel-miss' : r.bucketed ? 'exp-rel-hit' : 'exp-rel-warn';
+    const cls = !r.found ? 'exp-rel-miss' : r.bucketed && r.active ? 'exp-rel-hit' : 'exp-rel-warn';
     return `<div class="exp-rel-row ${cls}">
       <span class="exp-rel-lbl">${esc(r.ticketKey || r.label || '—')}</span>
       <span class="exp-rel-v">${esc(status)}</span>
@@ -15289,6 +15344,14 @@ function expRender() {
   if (expectedV) {
     const e = v.expected;
     expectedV.textContent = e ? ([e.ticketKey, e.platform, e.experimentId].filter(Boolean).join(' · ') || '—') : '—';
+  }
+
+  const activeV = document.getElementById('exp-active-v');
+  if (activeV) {
+    const a = v.activity;
+    activeV.textContent = expActivityText(a);
+    activeV.classList.toggle('exp-act-yes', a?.active === true);
+    activeV.classList.toggle('exp-act-no', a?.active === false);
   }
 
   const actualV = document.getElementById('exp-actual-v');

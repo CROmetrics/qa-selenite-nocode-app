@@ -1100,13 +1100,32 @@
       return unverifiable('the forced-variation parameter carried no variation id');
     }
     var exps = probe.experiments || [];
-    var bucketed = exps.filter(function (e) { return e && e.bucketed && e.variationId; });
+    // A variation decision is not a served variation: Optimizely keeps a
+    // visitor's bucket on every page, including pages where the experiment is
+    // not active (isActive false). Only an ACTIVE experiment's bucket is what
+    // the page shows. No recorded run changes: on all 106 debug logs every
+    // confirmed hit was active, and no capture was contradicted.
+    var held = exps.filter(function (e) { return e && e.bucketed && e.variationId; });
+    var bucketed = held.filter(function (e) { return e.active !== false; });
     var hit = bucketed.filter(function (e) { return keys.indexOf(String(e.variationId)) !== -1; })[0];
     if (hit) {
       return {
         state: 'confirmed', forcedId: String(forcedId),
         variationId: String(hit.variationId), variationName: hit.variationName || null,
         experimentId: hit.id || null, experimentName: hit.name || null,
+        // `reason` on these objects is the explanation sentence, so the raw
+        // getExperimentStates() field travels as platformReason.
+        isActive: typeof hit.isActive === 'boolean' ? hit.isActive : null, platformReason: hit.reason || null,
+      };
+    }
+    var inactive = held.filter(function (e) { return e.active === false && keys.indexOf(String(e.variationId)) !== -1; })[0];
+    if (inactive) {
+      return {
+        state: 'contradicted', forcedId: String(forcedId),
+        variationId: String(inactive.variationId), variationName: inactive.variationName || null,
+        experimentId: inactive.id || null, experimentName: inactive.name || null,
+        isActive: false, reason: 'the visitor is bucketed into the forced variation ' + inactive.variationId
+          + ' but experiment ' + inactive.id + ' is not active on this page (isActive false), so the variation was not applied',
       };
     }
     if (bucketed.length) {

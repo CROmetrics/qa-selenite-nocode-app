@@ -29,6 +29,19 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.25 — 2026-10-29
+
+**Metric Tracker**
+- The Experiment Status card says outright whether the Test Context's experiment is **active** on the page, in a new **Active** line read from Optimizely's `getExperimentStates()`: `Yes — isActive: true, reason: force`, `No — isActive: false, reason: —`, `No — not in this page’s snippet`, or `Unknown` when the states can't be read. Being bucketed no longer counts as being in the experiment: Optimizely keeps a visitor's variation on pages where the experiment isn't active, and the card now says "X is not active on this page" and names the bucket underneath, instead of a green "Bucketed into …". The green headline reads "Active · bucketed into …".
+- Softcoded and concurrent tests show "(bucketed, not active)" for a bucket on an inactive experiment.
+
+**A/B**
+- A forced variation held on an experiment that isn't active is reported as not served. The confirmed line now ends "experiment active (isActive: true, reason: force)".
+
+**Test Agent**
+- QA Pass's link map no longer counts a bucket on an inactive experiment as the served variation.
+- Needs an extension reload: the worker code loads only then.
+
 ### 0.7.24 — 2026-10-27
 
 **Development**

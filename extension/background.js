@@ -964,7 +964,7 @@ function expProbeFn() {
         // that same name first in case this catalog object shares it.
         rows.set(str(id), {
           id: str(id), name: cap(str((def && (def.experimentName ?? def.name)) || null), 200), known: true,
-          active: false, bucketed: false, variationId: null, variationName: null,
+          active: false, isActive: null, bucketed: false, variationId: null, variationName: null,
           variations: asArray(def && def.variations).slice(0, 12).map((v) => ({ id: str(v && v.id), name: cap(str(v && v.name) || null, 200) })),
           reason: null, forced: false, source: null,
         });
@@ -975,8 +975,15 @@ function expProbeFn() {
     if (states) {
       for (const [id, st] of Object.entries(states)) {
         const key = str(id);
-        const row = rows.get(key) || { id: key, name: null, known: true, active: false, bucketed: false, variationId: null, variationName: null, variations: [], reason: null, forced: false, source: null };
+        const row = rows.get(key) || { id: key, name: null, known: true, active: false, isActive: null, bucketed: false, variationId: null, variationName: null, variations: [], reason: null, forced: false, source: null };
         row.active = !!st.isActive;
+        // Kept raw beside `active`, which getActiveExperimentIds below can also
+        // set: this is the field a QA reads in DevTools, and a variation
+        // decision does NOT imply it. Measured in the debug logs: a visitor
+        // bucketed on an earlier visit keeps `variation` on every page,
+        // including pages where the experiment is not active (STRZ-1639,
+        // isActive false, variation "v0: Control").
+        row.isActive = typeof st.isActive === 'boolean' ? st.isActive : null;
         // Confirmed-real field (verified against a live getExperimentStates()
         // call) — wins over the catalog's unconfirmed name when present,
         // since this is the one source we know for certain is correct.
@@ -1011,7 +1018,7 @@ function expProbeFn() {
     if (Array.isArray(activeIds)) {
       for (const id of activeIds) {
         const key = str(id);
-        const row = rows.get(key) || { id: key, name: null, known: false, active: false, bucketed: false, variationId: null, variationName: null, variations: [], reason: null, forced: false, source: null };
+        const row = rows.get(key) || { id: key, name: null, known: false, active: false, isActive: null, bucketed: false, variationId: null, variationName: null, variations: [], reason: null, forced: false, source: null };
         row.active = true;
         rows.set(key, row);
       }

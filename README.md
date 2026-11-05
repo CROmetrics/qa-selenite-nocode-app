@@ -29,6 +29,11 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.27 — 2026-11-05
+
+**Test Agent**
+- QA Pass runs with Agentic Testing (Sonnet) and Agentic Analysis (Opus) on. Choosing QA Pass checks both boxes and locks them, as Funnel Crawl already did; another mode gets back the boxes as you had them.
+
 ### 0.7.26 — 2026-11-05
 
 **Test Agent**

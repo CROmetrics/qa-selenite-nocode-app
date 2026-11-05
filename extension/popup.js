@@ -539,6 +539,7 @@ const TA_MODES = {
   'funnel': {
     label: 'Funnel Crawl',
     standalone: true,   // heavy, runs alone: never offered in "Also Run"
+    agenticLocked: true,   // its engine IS the AI loop: Agentic Testing and Analysis are on and can't be unchecked (taShowPrimary)
     run: () => runFunnelCrawl(),
     isConfigured: () => !!(funnelState.start.trim() && funnelState.end.trim()),
     getData: () => _funnelLastRun,
@@ -549,6 +550,7 @@ const TA_MODES = {
   'qapass': {
     label: 'QA Pass (platform + layout)', bodyId: 'qp-body', homeParentId: 'ta-mode-homes',
     standalone: true,
+    agenticLocked: true,   // Will, 2026-11-05: QA Pass runs with Sonnet and Opus on, and the boxes can't be unchecked
     run: () => runQaPassMode(),
     isConfigured: () => true,   // context is async; run() returns {ok:false,error} when it is missing
     getData: () => _qpLastRun,
@@ -2117,18 +2119,21 @@ function taShowPrimary() {
   const testChk = document.getElementById('ta-agentic-testing');
   const analysisChk = document.getElementById('ta-agentic-analysis');
 
-  // Leaving funnel: restore the agentic checkboxes to the user's prior state.
-  if (val !== 'funnel' && _taCheckboxPrior) {
+  // A mode with agenticLocked (Funnel Crawl, QA Pass) runs with both agentic capabilities on: check both boxes and lock
+  // them while it is shown. Leaving it for a mode without the lock restores the boxes to the user's prior state.
+  const lockAgentic = !!(TA_MODES[val] && TA_MODES[val].agenticLocked);
+  if (!lockAgentic && _taCheckboxPrior) {
     testChk.checked = _taCheckboxPrior.testing; testChk.disabled = false;
     analysisChk.checked = _taCheckboxPrior.analysis; analysisChk.disabled = false;
     _taCheckboxPrior = null;
   }
-
-  if (val === 'funnel') {
-    // Funnel's engine IS the AI loop — force both agentic capabilities on and lock them.
+  if (lockAgentic) {
     if (!_taCheckboxPrior) _taCheckboxPrior = { testing: testChk.checked, analysis: analysisChk.checked };
     testChk.checked = true;  testChk.disabled = true;
     analysisChk.checked = true; analysisChk.disabled = true;
+  }
+
+  if (val === 'funnel') {
     _taActiveBody = 'funnel';
     taRenderFunnel();
     syncFunnelRunEnabled();

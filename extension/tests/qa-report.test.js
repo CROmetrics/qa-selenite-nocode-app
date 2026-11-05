@@ -3143,6 +3143,28 @@ section('Test Agent: re-showing the tab keeps the mode\'s settings body');
   ok('and WCAG to funnel: the body goes home', atHome(W.bodies['4']));
   tryShow('abtest');
 
+  // Agentic Testing (Sonnet) and Agentic Analysis (Opus): Funnel Crawl and QA Pass lock both on (agenticLocked); any other
+  // mode gets back what the user had.
+  var tChk = W.doc.getElementById('ta-agentic-testing'), aChk = W.doc.getElementById('ta-agentic-analysis');
+  var boxes = function () { return [tChk.checked, tChk.disabled, aChk.checked, aChk.disabled].join(); };
+  tChk.checked = false; tChk.disabled = false; aChk.checked = false; aChk.disabled = false;
+  W.sel.value = '4'; tryShow('testagent');
+  eq('lock: WCAG leaves the boxes as the user set them', boxes(), 'false,false,false,false');
+  W.sel.value = 'qapass'; tryShow('testagent');
+  eq('lock: QA Pass checks both boxes and locks them', boxes(), 'true,true,true,true');
+  tryShow('testagent');
+  eq('lock: and showing QA Pass again keeps them locked', boxes(), 'true,true,true,true');
+  W.sel.value = 'funnel'; tryShow('testagent');
+  eq('lock: QA Pass to Funnel keeps them locked', boxes(), 'true,true,true,true');
+  W.sel.value = '6'; tryShow('testagent');
+  eq('lock: then Performance restores what the user had before QA Pass, not the locked state', boxes(), 'false,false,false,false');
+  tChk.checked = true; aChk.checked = false;
+  W.sel.value = 'qapass'; tryShow('testagent');
+  W.sel.value = '4'; tryShow('testagent');
+  eq('lock: a second visit to QA Pass restores the newer choice', boxes(), 'true,false,false,false');
+  ok('lock: QA Pass and Funnel carry agenticLocked, no other mode does', Object.keys(TA_MODES).filter(function (n) { return TA_MODES[n].agenticLocked; }).sort().join() === 'funnel,qapass');
+  tryShow('abtest');
+
   // A body that cannot be found must never throw (appendChild(null)): the slot is emptied and the mode is still active.
   var W2 = world();
   globalThis.document = W2.doc;

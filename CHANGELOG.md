@@ -2,6 +2,19 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-11-05 — 0.7.27
+
+QA Pass now runs with **Agentic Testing (Sonnet)** and **Agentic Analysis (Opus)** on, like Funnel Crawl: choosing QA Pass checks both boxes and locks them. Will, 2026-11-05.
+
+### Changed
+
+- **`agenticLocked` on a `TA_MODES` entry (`popup.js`):** Funnel Crawl and QA Pass carry it. `taShowPrimary` checks and locks both boxes for any mode with the flag, where it used to test for `'funnel'` by name. Leaving for a mode without the flag gives back what the user had before the first locked mode, so moving from QA Pass to Funnel Crawl keeps them locked and does not overwrite that earlier choice.
+
+### Tests
+
+- `qa-report` 1789 → 1796: WCAG leaves the boxes as set; QA Pass checks and locks them, also when shown again; QA Pass → Funnel stays locked; Performance afterwards restores the choice from before QA Pass; a second visit restores the newer choice; only `funnel` and `qapass` carry the flag.
+- The other 12 suites unchanged: jira-extract 118, figma 104, vd-diff 1371, real-runs 1665, matrix 182, floating 10, queue-agent 169, browserstack 778, qa-pass 1633, email-check 2489, email-check-worker 627, exp-status 54; all 0 failed.
+
 ## 2026-11-05 — 0.7.26
 
 QA Pass has a **Live debug** box in its card: one line per step of the panel and of the worker, while the run goes. It was built because QA Pass runs looked dead in everyday Chrome. The first field run showed why: `chrome.storage.session` was full, and Chrome silently refuses every write that would grow it, including QA Pass's progress line.

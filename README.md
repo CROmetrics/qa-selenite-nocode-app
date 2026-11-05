@@ -29,6 +29,13 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.26 — 2026-11-05
+
+**Test Agent**
+- QA Pass has a **Live debug** box under its settings that shows every step of the run as it happens. It covers each page load with its time and result, what each preview link served, each width's clipping scan, and the Opus and test-plan steps. A Copy button copies it all. The box says when the worker goes quiet and how full Chrome's session storage is.
+- Known issue: with the panel open for a long time, the Console log fills Chrome's 10 MB session storage. QA Pass's progress line then stops moving, though the run itself still works. The Live debug box doesn't depend on that storage. Clearing the Console tab's log frees the space.
+- Needs an extension reload: the worker code loads only then.
+
 ### 0.7.25 — 2026-10-29
 
 **Metric Tracker**

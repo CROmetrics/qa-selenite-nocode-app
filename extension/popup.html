@@ -1244,6 +1244,13 @@
       </div>
       <div style="font-size:10px;color:var(--fg3);margin-bottom:6px">Nothing is written to the sheet until you review the proposed changes after a run and click Apply.</div>
       <div id="qp-progress" style="font-size:10px;color:var(--fg3)"></div>
+      <div id="qp-debug" style="display:none;margin-top:6px">
+        <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:3px">
+          <label class="cap" style="margin:0">Live debug</label>
+          <button class="btn ghost sm" id="btn-qp-debug-copy" type="button">Copy</button>
+        </div>
+        <div id="qp-debug-out" style="max-height:220px;overflow:auto;font:10px/1.4 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word;color:var(--fg2);background:var(--surface);border:1px solid var(--stroke);border-radius:4px;padding:4px 6px"></div>
+      </div>
       <div id="qp-results" style="margin-top:8px"></div>
     </div>
     <div class="card" id="ec-body">

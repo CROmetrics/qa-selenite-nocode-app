@@ -2,6 +2,50 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-11-05 — 0.7.26
+
+QA Pass has a **Live debug** box in its card: one line per step of the panel and of the worker, while the run goes. It was built because QA Pass runs looked dead in everyday Chrome. The first field run showed why: `chrome.storage.session` was full, and Chrome silently refuses every write that would grow it, including QA Pass's progress line.
+
+### Added
+
+- **The Live debug box (`#qp-debug`, both panel pages; `qpDebug*` in `qa-pass.js`):**
+  - **The steps:** the click, the ticket context and the settings, then the hand-off to the worker and each phase.
+  - **Every load:** a `→` line when it starts, then its time, whether it settled, where it landed, and any bot check, Chrome error page or load error.
+  - **Each preview link's probe:** whether the experiment is active, which variation was served, and whether it is the forced one.
+  - **The rest of the run:** the sweep plan, each width's clipping scan, notes, errors, the close, the Opus explanation and the test-plan step.
+- **How the lines read:** each is timed from the click and coloured by level. URLs are cut to origin + path (`qpScrubUrls`), and the workarounds text never appears. The box keeps the last run (also across a panel reopen), with a Copy button.
+- **Two warnings:** no worker step 8 s after the run was sent, and no new step for 60 s (repeated each minute, quoting the last step).
+- **How the worker's lines reach the panel (`qpwDebug`, `background.js`):**
+  - **Live:** each batch goes down the panel's port (`connectedPanels`), which no storage limit can block.
+  - **For a panel opened mid-run:** each batch is also written to the session as `qpDebug`.
+  - **At the end:** the `runQaPass` answer carries the whole feed next to the record, whose 23 keys are unchanged.
+  - **In the panel:** it keeps the newest snapshot of its own run (`qpUiDebugTake`), matched by a `runId` it sends with the run.
+- **Session storage in the box:** each run starts with "Session storage: X MB of 10 MB in use", a warning from 90%. A warning also appears when the worker could not write there during the run.
+
+### Found, not fixed
+
+- `addLog` appends every console line of the followed tab to the session `logs`, with no cap. With the panel open for long enough, the 10 MB session store fills. Chrome then refuses every write that grows it ("Session storage quota bytes exceeded. Values were not stored."): QA Pass's progress line, and the first build of this feed. Runs still work, because writes that keep their size go through. Capping `logs` changes how the Console tab detects new lines (`syncLogs` compares lengths), so it waits for a field reading of the new session-storage line. Clearing the Console tab's log frees the space.
+
+### Measured
+
+- **First field run (wowway.com, 2026-11-05):** 10 loads, all ok, then stopped by the tester. The box showed no worker step, although Chrome's service-worker script cache shows the worker running this code, registered 14 s before the run.
+- **Real Chrome with the session store within 200 bytes of its quota:** a 400-byte write is refused. With session-only delivery, the box reproduced the field run's warning word for word. With port delivery, it fills while the run goes.
+
+### Tests
+
+- `qa-pass` 1571 → 1633:
+  - the helpers;
+  - the worker's feed on a scripted run: one start and one result line per load, no query string, the runId, the copy in the answer;
+  - a session store that rejects growing writes: the run still answers, the port carries every line, and the error is named.
+- `qa-report` 1753 → 1789:
+  - the panel's lines and merging by runId;
+  - the newest-snapshot rule and both warnings;
+  - the explanation, test-plan and failure lines, and the session-storage line.
+- QA Pass gate 88 → 137 in real Chrome:
+  - every scenario checks that the box fills while the run is still going;
+  - a new `full` scenario runs with the session store filled.
+- With either delivery change removed, a test fails.
+
 ## 2026-10-29 — 0.7.25
 
 Whenever the Test Context's experiment is set, Selenite now says whether that experiment is active on the page, from the two fields a QA reads in DevTools: `isActive` and `reason` in `optimizely.get('state').getExperimentStates()`. A bucket alone no longer stands for it. Optimizely keeps a visitor's variation decision on every page once it is made, including pages where the experiment is not active. The recorded debug logs hold 32 such rows (a Starz experiment, bucketed into "v0: Control" with `isActive` false), and every consumer counted them as served: the Tracker card showed a green "Bucketed into v0", or "forced v1 but showing v0" behind a forcing link, when the page showed neither.

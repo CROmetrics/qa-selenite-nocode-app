@@ -7890,6 +7890,29 @@ function qpwIsStop(e) { return !!(e && e.qpStop); }
 function qpwIsFatal(e) { return !!(e && e.qpFatal); }
 function qpwSleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
+// The QA Pass card's Live debug box (qpDebug* in qa-pass.js): this run's steps as {runId, lines}, flushed at most every
+// 300 ms and once more before the record is returned. The panel shows only the lines of the runId it sent. Set for the
+// length of one runQaPass; null otherwise, and qpwDebug is a no-op then. _qpwDebugLast is the finished run's feed, which
+// the runQaPass answer carries next to the record.
+let _qpwDebug = null, _qpwDebugLast = null;
+function qpwDebug(level, text) {
+  const D = _qpwDebug;
+  if (!D) return;
+  qpDebugPush(D.lines, qpDebugEntry('worker', level, text));
+  if (!D.timer) D.timer = setTimeout(() => { D.timer = null; qpwDebugFlush(D); }, 300);
+}
+// Each flush goes two ways: down the run window's panel port, which no storage limit can block, and into the session
+// (qpDebug) for a panel opened mid-run. chrome.storage.session holds 10 MB for everything Selenite keeps there; once it
+// is full every write that grows it fails, and nothing else would say so, so the first failure is kept as storageError.
+async function qpwDebugFlush(D) {
+  if (D.timer) { clearTimeout(D.timer); D.timer = null; }
+  const feed = { runId: D.runId, lines: D.lines.slice() };
+  const port = connectedPanels.get(D.win);
+  if (port) { try { port.postMessage({ action: 'qpDebug', ...feed }); } catch (_) {} }
+  try { await ns(D.win).set({ qpDebug: feed }); }
+  catch (e) { if (!D.storageError) D.storageError = String((e && e.message) || e); }
+}
+
 // A page read made outside qpwLoad. chrome.scripting.executeScript can REJECT as well as resolve null (an error page, a
 // frame removed by a redirect after the load event, a tab that went away). That costs the one read, never the run: it
 // comes back as `err`, and the caller records it on the link, load or row it belongs to. Stop and a lost debugger
@@ -7906,7 +7929,11 @@ async function qpwRead(work) {
 // _conv_eforce or a token. Cut to origin + path, the record itself is clean for every consumer (report, debug log, prompts).
 function qpwReadNote(what, err) { return qpScrubUrls('The ' + what + ' could not be read after the page loaded (' + err + ').'); }
 // A link, combination or audience test keeps its read failures in probeNote, joined.
-function qpwAddNote(o, note) { if (note) o.probeNote = qpScrubUrls(o.probeNote ? o.probeNote + ' ' + note : note); }
+function qpwAddNote(o, note) {
+  if (!note) return;
+  o.probeNote = qpScrubUrls(o.probeNote ? o.probeNote + ' ' + note : note);
+  qpwDebug('warn', (o.label ? o.label + ': ' : '') + note);
+}
 
 async function qpwCdp(S, method, params) {
   try { return await chrome.debugger.sendCommand(S.target, method, params || {}); }
@@ -8001,6 +8028,7 @@ async function qpwLoad(S, o) {
     ok: false, loadError: null, blocked: null, finalUrl: null, ms: 0, settle: null, cleared: null };
   if (rec.loads.length < QP_MAX_LOADS_KEPT) rec.loads.push(L);
   try { await setTmProgress('qpProgress', { running: true, phase: o.role, label: o.label, profile: o.profile, width: o.width, loads: S.loadN }); } catch (_) {}
+  qpwDebug('info', '→ ' + qpDebugLoadName(L));
   try {
     L.cleared = await qpwClearState(S, o.url);
     await qpwApplyProfile(S, o.profile, o.width);
@@ -8017,6 +8045,8 @@ async function qpwLoad(S, o) {
     L.loadError = qpScrubUrls(String((e && e.message) || e));
   } finally {
     L.ms = Date.now() - t0;
+    const r = qpDebugLoadResult(L);
+    qpwDebug(r.level, r.text);
   }
   return L;
 }
@@ -8098,6 +8128,7 @@ async function qpwPhaseLinks(S) {
         S.scripts = S.scripts.filter((id) => id !== S.trackShimId);
         S.trackShim = false;
         S.trackShimOff = 'The metrics listener stopped the Optimizely snippet from loading on ' + qpPathOnly(t.url) + ', so it was removed for the rest of the run';
+        qpwDebug('warn', S.trackShimOff);
         if (!flags.length) {
           adopt(await qpwLoad(S, spec));
           if (L.ok) {
@@ -8153,6 +8184,8 @@ async function qpwPhaseLinks(S) {
       }
       entry.noTrackServes = serves;
     }
+    if (L.ok && !unread) { const pl = qpDebugProbeLine(t.label, entry.probe, forcedIds.length > 0); qpwDebug(pl.level, pl.text); }
+    if (entry.noTrackServes !== null) qpwDebug(entry.noTrackServes ? 'info' : 'warn', t.label + ' without its tracking flag ' + (entry.noTrackServes ? 'serves' : 'does NOT serve') + ' the forced variation');
     rec.links.push(entry);
   }
 }
@@ -8329,17 +8362,19 @@ async function qpwPhaseSweep(S) {
     if (profiles.indexOf(g.profile) < 0) profiles.push(g.profile);
   });
   rec.sweep.plan = { targets, profiles, widths: qpWidthOrder(settings.widths && settings.widths.length ? settings.widths : QP_WIDTHS) };
+  qpwDebug('info', 'Sweep plan: ' + (plan.map((g) => g.target + ' · ' + g.profile + ' · ' + g.mode + ' × ' + g.widths.length).join(', ') || 'nothing to sweep'));
+  const scanned = (row) => { const r = qpDebugScanLine(row); qpwDebug(r.level, r.text); };
   for (const g of plan) {
     const mk = (width, extra) => Object.assign({ target: g.target, role: g.role, profile: g.profile, width, mode: g.mode,
       loadId: null, ok: false, loadError: null, blocked: null, scan: null, tile: null }, extra || {});
     const blockFrom = (i) => { for (; i < g.widths.length; i++) rec.sweep.rows.push(mk(g.widths[i], { blocked: { reason: 'bot-check' } })); };
-    if (S.blocked.has(g.target)) { blockFrom(0); continue; }   // a bot-checked page is never loaded again
+    if (S.blocked.has(g.target)) { qpwDebug('warn', g.target + ' · ' + g.profile + ': not swept, its page showed a bot check'); blockFrom(0); continue; }   // a bot-checked page is never loaded again
     if (g.mode === 'reload') {
       for (let i = 0; i < g.widths.length; i++) {
         const w = g.widths[i];
         const L = await qpwLoad(S, { role: 'sweep', label: g.target, url: g.url, profile: g.profile, width: w });
         const row = mk(w, { loadId: L.id, ok: L.ok, loadError: L.loadError, blocked: L.blocked });
-        if (L.ok) row.scan = await qpwSettleAndScan(S, { scroll: true, freeze: true });
+        if (L.ok) { row.scan = await qpwSettleAndScan(S, { scroll: true, freeze: true }); scanned(row); }
         rec.sweep.rows.push(row);
         if (L.ok) await qpwSweepTile(S, row);
         if (L.blocked) { S.blocked.add(g.target); blockFrom(i + 1); break; }
@@ -8353,10 +8388,12 @@ async function qpwPhaseSweep(S) {
       }
       for (const w of g.widths) {
         if (_qpStopRequested) throw qpwStopError();
+        qpwDebug('info', '↔ ' + L.id + ' resized to ' + w + 'px (no reload)');
         await qpwApplyProfile(S, g.profile, w);
         await qpwSleep(QP_SETTLE.resizeWaitMs);
         const row = mk(w, { loadId: L.id, ok: true });
         row.scan = await qpwSettleAndScan(S, { firstWaitMs: 0, pollMs: 250, maxPolls: 8, scroll: true, freeze: true });
+        scanned(row);
         rec.sweep.rows.push(row);
         await qpwSweepTile(S, row);
       }
@@ -8367,24 +8404,52 @@ async function qpwPhaseSweep(S) {
 async function runQaPass(payload) {
   const ctx = (payload && payload.ctx) || {}, settings = (payload && payload.settings) || {};
   _qpStopRequested = false;
-  const rec = qpNewRecord(ctx, settings, Date.now());
+  const D = _qpwDebug = { runId: (payload && payload.runId) || null, win: _runWin, lines: [], timer: null, storageError: null };
+  _qpwDebugLast = null;
+  const t0 = Date.now();
+  const rec = qpNewRecord(ctx, settings, t0);
   const S = { rec, ctx, settings: rec.settings, on: rec.settings.checks, target: null, scripts: [], uaKey: null, trackShim: false, trackShimId: null, trackShimOff: null,
     tileWanted: new Set(), tileSrc: new Map(), blocked: new Set(), prodUrl: null, loadN: 0 };
   let tabId = null, attached = false;
+  const nLinks = (ctx.previewLinks || []).filter((l) => l && l.url).length;
+  qpwDebug('info', 'The worker started the run: ' + nLinks + ' preview link(s)' + (ctx.itwLink ? ' and the ITW link' : ', no ITW link'));
   const heartbeat = setInterval(() => { try { chrome.runtime.getPlatformInfo(() => {}); } catch (_) {} }, 20000);
   try {
     const tab = await chrome.tabs.create({ url: 'about:blank', active: true, ...runTabWindow() });
     tabId = tab.id; S.target = { tabId };
+    qpwDebug('info', 'Opened the run tab');
     await chrome.debugger.attach(S.target, CDP_VERSION); attached = true;
     await qpwCdp(S, 'Page.enable');
+    qpwDebug('info', 'Attached the debugger to it');
+    qpwDebug('info', 'A · link map: each preview link' + (ctx.itwLink ? ' and the ITW link' : '') + ' at ' + QP_PHASE_WIDTH + 'px');
     await qpwPhaseLinks(S);                       // always: platform, catalog, control facts, noTrack
-    if (S.on.B) await qpwPhaseProd(S);
-    else if (S.on.E) S.prodUrl = qpwProdUrl(S);
-    if (S.on.C && S.settings.combos) await qpwPhaseCombos(S);
-    if (S.on.D) await qpwPhaseAudiences(S);
-    if (S.on.E) await qpwPhaseSweep(S);
+    qpwDebug(rec.platform ? 'info' : 'warn', 'Platform: ' + (rec.platform || 'none found on the links') + ' · snippet catalog ' + (rec.catalog ? 'read from ' + rec.catalogFrom : 'not read'));
+    if (S.on.B) {
+      qpwDebug('info', 'B · Control against PROD');
+      await qpwPhaseProd(S);
+      const cvp = rec.controlVsProd;
+      if (cvp && cvp.skipped) qpwDebug('warn', 'B: ' + cvp.skipped);
+      else if (cvp) qpwDebug('info', 'PROD: ' + (cvp.prodProbe ? (cvp.prodProbe.activeIds || []).length + ' live experiment(s) on the plain page' : 'not probed') + (cvp.compare ? ' · compared with Control' : ' · not compared with Control'));
+    } else if (S.on.E) S.prodUrl = qpwProdUrl(S);
+    if (S.on.C && S.settings.combos) {
+      qpwDebug('info', 'C · concurrency combinations');
+      await qpwPhaseCombos(S);
+      qpwDebug('info', (rec.combos || []).length + ' combination(s)');
+    }
+    if (S.on.D) {
+      qpwDebug('info', 'D · audience exclusions on the ITW link');
+      await qpwPhaseAudiences(S);
+      const au = rec.audiences;
+      qpwDebug(au && au.skipped ? 'warn' : 'info', au && au.skipped ? 'D skipped: ' + au.skipped : ((au && au.tests) || []).length + ' audience test(s)');
+    }
+    if (S.on.E) {
+      qpwDebug('info', 'E · breakpoint and clipping sweep');
+      await qpwPhaseSweep(S);
+      qpwDebug('info', rec.sweep.rows.length + ' sweep row(s)');
+    }
   } catch (e) {
     if (!qpwIsStop(e)) rec.error = qpScrubUrls(String((e && e.message) || e));
+    qpwDebug(qpwIsStop(e) ? 'warn' : 'error', qpwIsStop(e) ? 'Stopped on request' : 'The run ended on an error: ' + rec.error);
   } finally {
     clearInterval(heartbeat);
     if (attached) {
@@ -8399,6 +8464,10 @@ async function runQaPass(payload) {
     rec.stopped = !!_qpStopRequested;
     rec.finishedAt = Date.now();
     try { rec.checks = qpDeriveChecks(rec, ctx); } catch (e) { rec.error = rec.error || qpScrubUrls('Deriving checks failed: ' + e.message); }
+    qpwDebug('info', (tabId != null ? 'Closed the run tab' : 'The run tab was never opened') + ' after ' + S.loadN + ' load(s) in ' + qpDebugSecs(rec.finishedAt - t0) + ' · checks: ' + qpDebugCheckCounts(rec.checks));
+    await qpwDebugFlush(D);
+    _qpwDebugLast = { runId: D.runId, lines: D.lines.slice(), storageError: D.storageError };
+    if (_qpwDebug === D) _qpwDebug = null;
   }
   return rec;
 }
@@ -10197,7 +10266,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       await beginTmRun(msg.payload);
       try {
         const record = await runQaPass(msg.payload || {});
-        sendResponse({ ok: true, record });
+        sendResponse({ ok: true, record, debug: _qpwDebugLast });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       } finally {

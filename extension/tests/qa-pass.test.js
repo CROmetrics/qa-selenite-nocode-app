@@ -1318,7 +1318,9 @@ var EXPECTED = ['QP_RECORD_VERSION', 'QP_WIDTHS', 'QP_PROFILES', 'QP_MOBILE_MAX'
   'qpExplainInput', 'qpExplainSystem', 'qpExplainUser', 'qpValidateExplain', 'qpMapInput', 'qpMapSystem', 'qpMapUser', 'qpValidateMapping', 'qpColLetter', 'qpColIndex',
   'qpQuoteTab', 'qpRange', 'qpSheetModel', 'qpIsDesktopChromeHeader', 'qpDefaultStatusCol', 'qpSheetVocab', 'qpSkipRow', 'qpCellWritable', 'qpRowStatus', 'qpNoteLine',
   'qpAppendNote', 'qpBuildProposal', 'qpRebuildEntry', 'qpWritesFromProposal', 'qpGridFromValues', 'qpApplyPlan', 'qpVerifyApply', 'qpAssertBodyInTab', 'qpPasteRows',
-  'qpProposalHtml', 'qpPasteHtml', 'qpScrubUrls', 'qpAllocation', 'qpProdLive', 'qpFreshVisitors', 'qpFreshVisitorsText'];
+  'qpProposalHtml', 'qpPasteHtml', 'qpScrubUrls', 'qpAllocation', 'qpProdLive', 'qpFreshVisitors', 'qpFreshVisitorsText',
+  'QP_DEBUG_MAX_LINES', 'qpDebugEntry', 'qpDebugPush', 'qpDebugMerge', 'qpDebugLineText', 'qpDebugText', 'qpDebugHtml', 'qpDebugSecs', 'qpDebugCtxLine',
+  'qpDebugSettingsLine', 'qpDebugLoadName', 'qpDebugLoadResult', 'qpDebugProbeLine', 'qpDebugScanLine', 'qpDebugCheckCounts', 'qpDebugSheetLine'];
 var missing = EXPECTED.filter(function (n) { return typeof globalThis[n] === 'undefined'; });
 jeq('every planned name is exported', missing, []);
 eq('the Sheets scope is the spreadsheets scope', QP_SHEETS_SCOPE, 'https://www.googleapis.com/auth/spreadsheets');
@@ -1923,6 +1925,82 @@ eq('and appends the cleaned message after the old note', suPropNote && suPropNot
 ok('qpDeriveChecks over a clean record still has every URL-free note as it was', qpDeriveChecks(recWith({ links: [plink('v0')] }), WCTX).every(function (c) { return typeof c.note !== 'string' || noOpt(c.note); }));
 eq('a note that names a path keeps it (the path is not a query string)', chk(only({ links: [plink('v0', { probe: qpProbeSummary({ platform: null, experiments: [] }, EXP_META.id, [V0]) })] }, 'A'), 'A.v0').note, 'No Optimizely or Convert snippet was detected on https://a.com/p');
 
+// ── the Live debug feed (qpDebug*) ─────────────────────────────────────────
+section('qpDebug*: the Live debug feed');
+(function () {
+  var e1 = qpDebugEntry('panel', 'info', 'Run clicked', 1000);
+  jeq('an entry: time, source, level, text', e1, { t: 1000, src: 'panel', level: 'info', text: 'Run clicked' });
+  eq('an unknown source is the panel', qpDebugEntry('page', 'info', 'x', 1).src, 'panel');
+  eq('an unknown level is info', qpDebugEntry('worker', 'debug', 'x', 1).level, 'info');
+  eq('a null text is empty', qpDebugEntry('worker', 'info', null, 1).text, '');
+  eq('a URL in a line is cut to origin + path', qpDebugEntry('worker', 'error', 'Timed out loading https://shop.example/p?optimizely_x=1&optimizely_token=SECRET#top.', 1).text, 'Timed out loading https://shop.example/p.');
+
+  var capped = [];
+  for (var i = 0; i < 10; i++) qpDebugPush(capped, qpDebugEntry('worker', 'info', 'l' + i, i), 4);
+  eq('past the cap the oldest lines go, the first one stays', capped.map(function (e) { return e.text; }).join(), 'l0,l7,l8,l9');
+  var big = [];
+  for (var j = 0; j < QP_DEBUG_MAX_LINES + 5; j++) qpDebugPush(big, qpDebugEntry('worker', 'info', 'x', j));
+  eq('the default cap', big.length, QP_DEBUG_MAX_LINES);
+
+  var panel = [qpDebugEntry('panel', 'info', 'p1', 1000), qpDebugEntry('panel', 'info', 'p2', 2500)];
+  var worker = [qpDebugEntry('worker', 'info', 'w1', 2500), qpDebugEntry('worker', 'warn', 'w0', 1500)];
+  eq('merge: time order; a panel line before a worker line of the same millisecond', qpDebugMerge(panel, worker).map(function (e) { return e.text; }).join(), 'p1,w0,p2,w1');
+  eq('merge: either side may be missing', qpDebugMerge(null, worker).length, 2);
+
+  var lines = [qpDebugEntry('panel', 'info', 'start', 0), qpDebugEntry('worker', 'warn', 'slow', 61234), qpDebugEntry('worker', 'error', 'boom <b>', 125999)];
+  var txt = qpDebugText(lines).split('\n');
+  ok('text: time since the first line, source, level when not info', / \+0:00\.0  panel   start$/.test(txt[0]) && / \+1:01\.2  worker  WARN slow$/.test(txt[1]) && / \+2:05\.9  worker  ERROR boom <b>$/.test(txt[2]), txt);
+  ok('text: a clock time first', txt.every(function (l) { return /^\d\d:\d\d:\d\d  \+/.test(l); }), txt);
+  var html = qpDebugHtml(lines);
+  ok('html: one div per line, escaped', (html.match(/<div/g) || []).length === 3 && html.indexOf('boom &lt;b&gt;') > 0 && html.indexOf('<b>') < 0, html);
+  ok('html: warn and error lines are coloured, info lines are not', /<div style="color:var\(--warn\)">[^<]*slow/.test(html) && /<div style="color:var\(--err\)">[^<]*boom/.test(html) && /^<div>[^<]*start/.test(html), html);
+  eq('text and html of nothing', qpDebugText([]) + qpDebugHtml(null), '');
+
+  var ctx = { ticketKey: 'QP-1', experimentId: '9001', platform: 'Optimizely', controlId: 'v0',
+    previewLinks: [{ id: 'v0', url: 'https://a.example/p?optimizely_x=1' }, { id: 'v1', url: 'https://a.example/p?optimizely_x=2' }, { id: 'v2', url: '' }], itwLink: 'https://a.example/p?cro_mode=qa' };
+  eq('the context line: ticket, experiment, platform, the links with a URL, the control, the ITW link', qpDebugCtxLine(ctx),
+    'Ticket QP-1 · experiment 9001 · platform Optimizely · 2 preview link(s): v0 (control), v1 · ITW link: yes');
+  eq('the context line of an empty context', qpDebugCtxLine(null), 'Ticket (no key) · experiment not given · platform not given · 0 preview link(s):  · ITW link: none');
+  eq('the settings line', qpDebugSettingsLine({ checks: { A: true, B: true, C: false, D: true, E: true, F: true }, widths: [375, 1280], quickSweep: true, prodMobile: true, combos: false, clearAllSiteData: true }),
+    'Checks A B D E F · 2 sweep width(s), quick sweep · PROD swept as iPhone and Android too · all site data cleared between loads');
+  eq('the settings line with no widths counts the default ones', qpDebugSettingsLine({ checks: {} }), 'Checks none · ' + QP_WIDTHS.length + ' sweep width(s)');
+
+  var L = { id: 'L3', role: 'sweep', label: 'v1', profile: 'iphone', width: 375, path: 'https://shop.example/p', ok: true, ms: 3420, settle: { stable: true, polls: 5 }, finalUrl: 'https://shop.example/p?optimizely_x=2' };
+  eq('a load name: id, role, label, device, width, path', qpDebugLoadName(L), 'L3 sweep · v1 · iPhone · 375px · https://shop.example/p');
+  jeq('a load that settled', qpDebugLoadResult(L), { level: 'info', text: 'L3 loaded in 3.4s · settled after 5 poll(s)' });
+  jeq('a load that landed elsewhere and did not settle', qpDebugLoadResult(Object.assign({}, L, { settle: { stable: false, polls: 12 }, finalUrl: 'https://www.shop.example/p?x=1' })),
+    { level: 'warn', text: 'L3 loaded in 3.4s · still changing after 12 poll(s) · landed on https://www.shop.example/p' });
+  jeq('a load error', qpDebugLoadResult({ id: 'L4', ms: 30010, loadError: 'Timed out' }), { level: 'error', text: 'L4 did not load (30.0s): Timed out' });
+  jeq('a bot check', qpDebugLoadResult({ id: 'L5', ms: 2000, blocked: { reason: 'bot-check', signal: 'cf-challenge' } }), { level: 'warn', text: 'L5 was stopped by a bot check (cf-challenge) after 2.0s' });
+  jeq('a Chrome error page', qpDebugLoadResult({ id: 'L6', ms: 900, ok: true, settle: null, finalUrl: 'chrome-error://chromewebdata/' }), { level: 'error', text: 'L6 ended on a Chrome error page (0.9s)' });
+  jeq('a load that never finished (a stop)', qpDebugLoadResult({ id: 'L7', ms: 100, ok: false }), { level: 'warn', text: 'L7 did not finish (0.1s)' });
+
+  jeq('a probe: forced variation served', qpDebugProbeLine('v1', { platform: 'optimizely', expId: '9001', active: true, servedVariationId: '2', servedVariationName: 'Hero', servedForced: true }, true),
+    { level: 'info', text: 'v1: optimizely · experiment 9001 active · serves Hero (the forced variation)' });
+  jeq('a probe: another variation served', qpDebugProbeLine('v1', { platform: 'optimizely', expId: '9001', active: true, servedVariationId: '1', servedVariationName: 'Control', servedForced: false }, true),
+    { level: 'warn', text: 'v1: optimizely · experiment 9001 active · serves Control (NOT the forced variation)' });
+  jeq('a probe: bucketed but not active', qpDebugProbeLine('v1', { platform: 'optimizely', expId: '9001', active: false, bucketed: true, servedVariationId: null }, true),
+    { level: 'warn', text: 'v1: optimizely · experiment 9001 NOT active (bucketed only) · serves nothing' });
+  jeq('a probe of a link that forces nothing says nothing about forcing', qpDebugProbeLine('ITW', { platform: 'optimizely', expId: '9001', active: true, servedVariationId: '1', servedVariationName: 'Control', servedForced: false }, false),
+    { level: 'info', text: 'ITW: optimizely · experiment 9001 active · serves Control' });
+  jeq('a probe without the experiment', qpDebugProbeLine('v0', { platform: null, expId: null }, true), { level: 'warn', text: 'v0: no testing platform found · the ticket\'s experiment is not on this page' });
+  jeq('no probe', qpDebugProbeLine('v0', null, true), { level: 'warn', text: 'v0: the snippet probe read nothing' });
+
+  jeq('a scan with clipping and a sideways scroll', qpDebugScanLine({ target: 'PROD', profile: 'android', width: 360, scan: { offenderCount: 2, worstGapPx: -14, pageOverflowPx: 20 } }),
+    { level: 'warn', text: 'PROD · Android · 360px: 2 clipped element(s), worst \u221214 px · the page scrolls sideways by 20px' });
+  jeq('a clean scan', qpDebugScanLine({ target: 'v1', profile: 'desktop', width: 1280, scan: { offenderCount: 0, worstGapPx: 0, pageOverflowPx: 0 } }), { level: 'info', text: 'v1 · Desktop · 1280px: nothing clipped' });
+  jeq('a scan error', qpDebugScanLine({ target: 'v1', profile: 'desktop', width: 1280, scan: { error: 'The clipping scan returned no data' } }), { level: 'warn', text: 'v1 · Desktop · 1280px: The clipping scan returned no data' });
+  jeq('no scan', qpDebugScanLine({ target: 'v1', profile: 'desktop', width: 1280, scan: null }), { level: 'warn', text: 'v1 · Desktop · 1280px: not scanned' });
+
+  eq('check counts, in first-seen order', qpDebugCheckCounts([{ status: 'passed' }, { status: 'failed' }, { status: 'passed' }, {}]), '2 passed, 1 failed, 1 unknown');
+  eq('no checks', qpDebugCheckCounts(null), 'none');
+  jeq('the sheet: not used', qpDebugSheetLine({ reason: 'no-client-id' }), { level: 'warn', text: 'Test plan not used (no-client-id); the paste-ready table is in the results' });
+  jeq('the sheet: an error', qpDebugSheetLine({ error: 'The test plan could not be read.' }), { level: 'error', text: 'Test plan: The test plan could not be read.' });
+  jeq('the sheet: read and mapped', qpDebugSheetLine({ tabTitle: 'QA', proposal: { entries: [1, 2], unmapped: [3] }, mapError: null }), { level: 'info', text: 'Test plan read: tab "QA" · 2 row(s) mapped, 1 unmapped' });
+  jeq('the sheet: mapping failed', qpDebugSheetLine({ tabTitle: 'QA', proposal: null, mapError: 'timeout' }), { level: 'warn', text: 'Test plan read: tab "QA" · mapping failed: timeout' });
+  jeq('the sheet: nothing', qpDebugSheetLine(null), { level: 'warn', text: 'Test plan: no result' });
+})();
+
 // ── Step 7: the worker (runQaPass in the REAL background.js, against a scripted page) ──────────
 // queue-agent-harness.js runs the whole worker as a service worker would: its own chrome, a virtual
 // clock, one page. Below, chrome.debugger and chrome.scripting.executeScript are replaced by a model
@@ -2069,6 +2147,7 @@ function wkWorld(sc) {
     return Promise.resolve([{ documentId: 'd', frameId: 0, result: r === undefined ? null : r }]);
   };
   w.chrome.tabs.remove = function () { st.tabsRemoved++; return Promise.resolve(); };
+  if (sc.beforeBoot) sc.beforeBoot(w);   // a scenario can replace a chrome.* part the worker binds at load (onConnect)
   w.boot();
   return w;
 }
@@ -2079,7 +2158,7 @@ function wkCtx(over) {
     itwLink: B + '?cro_mode=qa', goals: [{ text: 'Hero CTA click' }, { text: 'Purchase completed' }], softcodedTests: [{ ticketKey: 'QP-2', label: 'Softcoded promo' }], concurrentTests: [] }, over || {});
 }
 function wkRun(w, ctx, settings) {
-  var out = wkSendExt(w, { action: 'runQaPass', payload: { ctx: ctx, settings: Object.assign({ widths: [300, 375, 1280], prodMobile: true, combos: true }, settings || {}), winId: 1 } });
+  var out = wkSendExt(w, { action: 'runQaPass', payload: { ctx: ctx, settings: Object.assign({ widths: [300, 375, 1280], prodMobile: true, combos: true }, settings || {}), winId: 1, runId: 'run-1' } });
   w.settle(function () { return out.done; });
   return out;
 }
@@ -2123,6 +2202,56 @@ eq('main: one navigation per load record', wkW.st.nav.length, wkRec.loads.length
 ok('main: no query string in a load record path', wkRec.loads.every(function (l) { return l.path.indexOf('?') < 0; }));
 ok('main: the progress is cleared at the end', (wkW.session('qpProgress') || {}).running === false);
 ok('main: the progress was written during the run', wkW.sets.some(function (s) { return /qpProgress/.test(s); }));
+// The Live debug feed: the worker's steps in the session under qpDebug, tagged with the panel's runId.
+var wkDbg = wkW.session('qpDebug') || {};
+var wkDl = wkDbg.lines || [];
+eq('debug: the lines carry the runId the panel sent', wkDbg.runId, 'run-1');
+ok('debug: every line is a worker line with a time and a level', wkDl.length > 20 && wkDl.every(function (e) { return e.src === 'worker' && typeof e.t === 'number' && /^(info|warn|error)$/.test(e.level); }), wkDl.length);
+ok('debug: the first line says the worker started the run, with the link count', /^The worker started the run: 2 preview link\(s\) and the ITW link$/.test((wkDl[0] || {}).text), wkDl[0]);
+ok('debug: the last line closes the run tab, with the load count and the checks', new RegExp('^Closed the run tab after ' + wkW.st.nav.length + ' load\\(s\\) in [0-9.]+s · checks: \\d+ ').test((wkDl[wkDl.length - 1] || {}).text), wkDl[wkDl.length - 1]);
+eq('debug: one start line per load', wkDl.filter(function (e) { return /^→ L\d+ /.test(e.text); }).length, wkW.st.nav.length);
+eq('debug: one result line per load', wkDl.filter(function (e) { return /^L\d+ (loaded in|did not|was stopped|ended on)/.test(e.text); }).length, wkW.st.nav.length);
+ok('debug: each phase that ran is named', ['A · link map', 'B · Control against PROD', 'C · concurrency combinations', 'D · audience exclusions', 'E · breakpoint and clipping sweep', 'Sweep plan: '].every(function (p) { return wkDl.some(function (e) { return e.text.indexOf(p) === 0; }); }));
+ok('debug: each link reports what its probe found', ['v0: ', 'v1: ', 'ITW: '].every(function (p) { return wkDl.some(function (e) { return e.text.indexOf(p) === 0 && /experiment|platform|probe/.test(e.text); }); }), wkDl.filter(function (e) { return /^(v0|v1|ITW): /.test(e.text); }).map(function (e) { return e.text; }));
+eq('debug: one scan line per scanned sweep row', wkDl.filter(function (e) { return /px: (nothing clipped|\d+ clipped|not scanned|The )/.test(e.text); }).length, wkRec.sweep.rows.filter(function (r) { return r.ok; }).length);
+ok('debug: no line carries a query string, a forcing flag or a token', wkDl.every(function (e) { return !/optimizely_|_conv_|cro_mode|\?[a-z_]+=/.test(e.text); }), wkDl.filter(function (e) { return /optimizely_|_conv_|cro_mode|\?[a-z_]+=/.test(e.text); }).map(function (e) { return e.text; }));
+ok('debug: the answer carries the same feed next to the record', wkOut.res.debug && wkOut.res.debug.runId === 'run-1' && wkOut.res.debug.lines.length === wkDl.length && wkOut.res.debug.storageError === null, wkOut.res.debug && [wkOut.res.debug.runId, wkOut.res.debug.lines.length, wkDl.length, wkOut.res.debug.storageError]);
+ok('debug: the feed is no longer written after the run', (function () { var n = wkW.sets.filter(function (s) { return /qpDebug/.test(s); }).length; wkW.settle(function () { return true; }); return wkW.sets.filter(function (s) { return /qpDebug/.test(s); }).length === n; })());
+
+// chrome.storage.session full (10 MB for everything Selenite keeps there): Chrome rejects every write that grows it, here
+// the progress line and the feed. The run must still finish, its steps must still reach the panel over its port, and the
+// answer must say the session write failed.
+section('worker: the Live debug feed with session storage full');
+(function () {
+  var QUOTA = 'Session storage quota bytes exceeded. Values were not stored.';
+  var onConnect = null;
+  var w = wkWorld({ beforeBoot: function (w0) {
+    w0.chrome.runtime.onConnect = { addListener: function (fn) { onConnect = fn; } };
+    var realSet = w0.chrome.storage.session.set;
+    w0.chrome.storage.session.set = function (o, cb) {
+      if (Object.keys(o).some(function (k) { return /qpDebug|qpProgress/.test(k); })) return Promise.reject(new Error(QUOTA));
+      return realSet(o, cb);
+    };
+  } });
+  var posted = [], msgFns = [];
+  var port = { name: 'selenite-panel', sender: { url: 'chrome-extension://x/sidepanel.html' },
+    postMessage: function (m) { posted.push(JSON.parse(JSON.stringify(m))); },
+    onMessage: { addListener: function (fn) { msgFns.push(fn); } }, onDisconnect: { addListener: function () {} } };
+  ok('full: the worker listens for panel ports', typeof onConnect === 'function');
+  onConnect(port);
+  msgFns.forEach(function (fn) { fn({ action: 'hello', winId: 1 }); });
+  w.settle(function () { return true; });
+  var out = wkRun(w, wkCtx());
+  ok('full: the run still answers ok with a record', out.done && out.res && out.res.ok === true && !!out.res.record, out.res && out.res.error);
+  var dbg = (out.res && out.res.debug) || {};
+  eq('full: the answer names the failed session write', dbg.storageError, QUOTA);
+  ok('full: and carries the whole feed, start to close', (dbg.lines || []).length > 20 && /^The worker started the run/.test(dbg.lines[0].text) && /^Closed the run tab after /.test(dbg.lines[dbg.lines.length - 1].text), (dbg.lines || []).length);
+  ok('full: nothing reached the session', !Object.keys(w.store.session).some(function (k) { return /qpDebug/.test(k); }));
+  var feeds = posted.filter(function (m) { return m.action === 'qpDebug'; });
+  ok('full: the feed went down the panel port while the run went (more than one message)', feeds.length > 2, feeds.length);
+  ok('full: every port message is this run, a whole snapshot that only grows', feeds.every(function (m, i) { return m.runId === 'run-1' && Array.isArray(m.lines) && (i === 0 || m.lines.length >= feeds[i - 1].lines.length); }));
+  eq('full: the last port message holds every line', feeds.length && feeds[feeds.length - 1].lines.length, (dbg.lines || []).length);
+})();
 eq('main: the platform is read from the page', wkRec.platform, 'optimizely');
 eq('main: the catalog came from the first link', wkRec.catalogFrom, 'v0');
 eq('main: link entries v0, v1, ITW', wkRec.links.map(function (l) { return l.label; }).join(), 'v0,v1,ITW');
@@ -2952,7 +3081,7 @@ ok('qa-pass.js carries no model id string', readFile('../qa-pass.js').indexOf('c
 section('names: no qp*/QP_ collision with background.js or popup.js');
 (function () {
   var names = QP_EXPORTED_NAMES;
-  ok('qa-pass.js exports its qp*/QP_ names (106 today: every one is listed in the exports section above)', names.length === EXPECTED.length && EXPECTED.every(function (n) { return names.indexOf(n) >= 0; }), [names.length, EXPECTED.length, names.filter(function (n) { return EXPECTED.indexOf(n) < 0; })]);
+  ok('qa-pass.js exports its qp*/QP_ names (122 today: every one is listed in the exports section above)', names.length === EXPECTED.length && EXPECTED.every(function (n) { return names.indexOf(n) >= 0; }), [names.length, EXPECTED.length, names.filter(function (n) { return EXPECTED.indexOf(n) < 0; })]);
   ok('and it exports the ones the worker and the panel call', ['qpBuildUrl', 'qpDeriveChecks', 'qpPathOnly', 'QP_TRACK_SHIM', 'qpDebugProjection', 'qpBadge'].every(function (n) { return names.indexOf(n) >= 0; }));
   var texts = { 'background.js': readFile('../background.js'), 'popup.js': readFile('../popup.js') };
   Object.keys(texts).forEach(function (file) {

@@ -12,6 +12,8 @@ Scenarios:
   bot     a Cloudflare-style "Just a moment..." page: the bot check is named, never attempted again
   live    /shop-live/ runs an experiment for every visitor, as a launched test does: the plain PROD load shows it, so PROD
           is swept by resizing one tab per device (checks A, B and E, widths 360 and 375: 3 PROD sweep loads instead of 6)
+  full    chrome.storage.session filled to within 200 bytes of its quota (as an uncapped Console log leaves it): the run
+          still finishes, and the Live debug box still fills (over the panel port) and says the session store is full
   starz   (network; loads https://www.starz.com/us/en/ with NO query string, a REAL client site) only with
           GATE_ALLOW_REAL_SITE=1; without it the scenario prints SKIPPED and counts nothing
 
@@ -29,7 +31,7 @@ Needs: macOS or Linux with Google Chrome 154+, python3. This never touches your 
 
 Do not edit anything under extension/ while a run is in progress: an MV3 worker restart re-reads its files from disk.
 """
-import importlib.util, json, os, shutil, sys, tempfile, time
+import importlib.util, json, os, re, shutil, sys, tempfile, time
 sys.dont_write_bytecode = True
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..', 'browserstack-gate'))
@@ -197,6 +199,8 @@ class Gate:
             raise RuntimeError('QA Pass was not started: %s' % shown)
         last = ''
         end = t0 + RUN_TIMEOUT_S
+        mid = []    # the Live debug box, sampled while the run is going: (worker lines, total lines, results already shown)
+        dbg_js = "(() => { const o = document.getElementById('qp-debug-out'); return o ? o.innerText : null; })()"
         while time.time() < end:
             time.sleep(2)
             s = self.pev("document.getElementById('ta-status').textContent") or ''
@@ -204,9 +208,14 @@ class Gate:
                 last = s
             if s.startswith('Done') or 'failed' in s or 'could not' in s:
                 break
+            d = self.pev(dbg_js) or ''
+            ls = [x for x in d.split('\n') if x.strip()]
+            mid.append((sum(1 for x in ls if '  worker  ' in x), len(ls), 'Results shown below' in d))
         else:
             raise TimeoutError('QA Pass did not settle in %d s (status: %s)' % (RUN_TIMEOUT_S, last))
         out = {'status': last, 'seconds': round(time.time() - t0, 1)}
+        out['debug_text'] = self.pev(dbg_js) or ''
+        self.check_live_debug(mid, out['debug_text'])
         out['rec'] = json.loads(self.pev('JSON.stringify(typeof _qpLastRun === "undefined" ? null : _qpLastRun)') or 'null')
         rep = self.pev("""(async () => {
           const keys = (await idbReq((await idb()).transaction('reports').objectStore('reports').getAllKeys())).sort();
@@ -233,6 +242,26 @@ class Gate:
         out['dbg_targets'] = self.pev('(async () => (await chrome.debugger.getTargets()).map(t => ({ url: t.url, attached: !!t.attached, type: t.type })))()')
         return out
 
+    # The QA Pass card's Live debug box, in the real panel: it must fill while the run goes (worker lines reach the panel
+    # through the session before the record does), and afterwards hold the whole run with no query string in it.
+    def check_live_debug(self, mid, text):
+        live = [m for m in mid if m[0] > 0 and not m[2]]
+        chk('live debug: worker steps were in the box while the run was still going', len(live) > 0, mid[:6])
+        # Growth needs two samples inside the run; a run shorter than two poll intervals (bot: about 3 s) shows only one.
+        chk('live debug: and it grew during the run (when the run lasted long enough to sample it twice)',
+            len(live) < 2 or len(set(m[1] for m in live)) >= 2, (len(live), sorted(set(m[1] for m in live))[:6]))
+        line = re.compile(r'^\d\d:\d\d:\d\d  \+\d+:\d\d\.\d  (?:panel |worker)  (?:WARN |ERROR )?(.*)$')
+        ls = [x for x in text.split('\n') if x.strip()]
+        body = [(line.match(x).group(1) if line.match(x) else '?? ' + x) for x in ls]
+        chk('live debug: every line has the clock, elapsed, source, level format', not any(b.startswith('?? ') for b in body), [b for b in body if b.startswith('?? ')][:3])
+        chk('live debug: the box starts with the click and ends with the results', bool(body) and body[0].startswith('Run clicked') and body[-1] == 'Results shown below', (body[:1], body[-1:]))
+        chk('live debug: the worker started and closed the run tab in it', any(b.startswith('The worker started the run') for b in body) and any(b.startswith('Closed the run tab after ') for b in body))
+        starts = sum(1 for b in body if b.startswith('→ L'))
+        ends = sum(1 for b in body if re.match(r'^L\d+ (loaded in|did not|was stopped|ended on) ', b))
+        chk('live debug: every load that started has its result line', starts > 0 and starts == ends, (starts, ends))
+        chk('live debug: no forcing flag, tracking flag or query string in the box', not any(k in text for k in ('optimizely_', '_conv_', 'cro_mode')) and '?' not in ''.join(b for b in body if '://' in b), [b for b in body if 'optimizely_' in b or '?' in b][:3])
+        chk('live debug: the panel does not call this worker older than itself', 'older code than this panel' not in text)
+
 
 def dump(name, res, requests):
     d = os.path.join(OUT, name)
@@ -242,6 +271,7 @@ def dump(name, res, requests):
                'qaPass': (res.get('report') or {}).get('qaPass'), 'tabs': res.get('tabs'), 'dbg_targets': res.get('dbg_targets'),
                'requests': requests}, open(os.path.join(d, 'debug.json'), 'w'), indent=1)
     open(os.path.join(d, 'report.txt'), 'w').write(res.get('report_text') or '')
+    open(os.path.join(d, 'live-debug.txt'), 'w').write(res.get('debug_text') or '')
     open(os.path.join(d, 'report.html'), 'w').write((res.get('report') or {}).get('bodyHtml') or '')
 
 
@@ -473,7 +503,35 @@ def scen_starz(g):
     return res
 
 
-SCENARIOS = {'main': scen_main, 'strict': scen_strict, 'bot': scen_bot, 'live': scen_live, 'starz': scen_starz}
+def scen_full(g):
+    # 2026-11-05: in everyday Chrome the box showed no worker step at all while the worker ran the new code and the run
+    # worked. chrome.storage.session (10 MB for everything Selenite keeps there) fills up when the uncapped Console log
+    # grows until a write fails; after that every write that grows it fails, silently. Fill it to the brim here.
+    print('full: chrome.storage.session filled to within 200 bytes of its quota; the run and its Live debug box must still work')
+    B = g.site.base
+    fill = g.pev("""(async () => {
+      const s = chrome.storage.session, q = s.QUOTA_BYTES || 10485760;
+      const room = q - (await s.getBytesInUse(null)) - 150 - 'qpGateFiller'.length - 2;
+      if (room > 0) await s.set({ qpGateFiller: 'x'.repeat(room) });
+      return { used: await s.getBytesInUse(null), quota: q };
+    })()""")
+    chk('full: session storage is within 200 bytes of its quota before the run', bool(fill) and fill['quota'] - fill['used'] <= 200, fill)
+    grew = g.pev("chrome.storage.session.set({ qpGateGrow: 'y'.repeat(400) }).then(() => 'stored', (e) => String(e && e.message || e))")
+    note('a 400-byte write to the full session store: %s' % grew)
+    chk('full: and Chrome refuses a write that would grow it', grew != 'stored', grew)
+    try:
+        res = g.run_qapass(ctx_main(B), settings(widths='375', prod_mobile=False))
+    finally:
+        g.pev("chrome.storage.session.remove(['qpGateFiller', 'qpGateGrow']).then(() => true)")
+    dump('full', res, [])
+    common_after_run(res, g)
+    text = res.get('debug_text') or ''
+    chk('full: the box says session storage is nearly full', 'Nearly full: a write that grows it fails' in text, text[:600])
+    chk("full: the box names the worker's failed session write", "could not write to Chrome's session storage during the run" in text, [l for l in text.split('\n') if 'session' in l.lower()][:4])
+    return res
+
+
+SCENARIOS = {'main': scen_main, 'strict': scen_strict, 'bot': scen_bot, 'live': scen_live, 'full': scen_full, 'starz': scen_starz}
 
 if __name__ == '__main__':
     if '--list' in sys.argv[1:]:

@@ -94,6 +94,8 @@ let _panelPort = null;
 function connectPanelPort() {
   _panelPort = chrome.runtime.connect({ name: 'selenite-panel' });
   _panelPort.postMessage({ action: 'hello', winId: WIN_ID });
+  // QA Pass's worker steps come down this port as they happen (qpwDebugFlush), whatever room chrome.storage.session has.
+  _panelPort.onMessage.addListener((msg) => { if (msg && msg.action === 'qpDebug') qpUiDebugTake(msg); });
   _panelPort.onDisconnect.addListener(() => {
     _panelPort = null;
     setTimeout(connectPanelPort, 500);
@@ -1556,15 +1558,29 @@ function qpUiSlim(rec) {
 
 async function runQaPassMode() {
   const resultsEl = qpUiEl('qp-results');
+  const runId = qpUiDebugStart();
+  qpUiDebug('info', 'Run clicked: reading the active ticket context');
   const ctx = await getActiveContext().catch(() => null);
   const v = qpValidateContext(ctx);
   if (!v.ok) {
+    qpUiDebug('error', v.error);
+    qpUiDebugEnd();
     if (resultsEl) resultsEl.innerHTML = '<div style="color:var(--err);font-size:11px">' + esc(v.error) + '</div>';
     return { ok: false, error: v.error };
   }
+  qpUiDebug('info', qpDebugCtxLine(ctx));
   const settings = qpUiReadSettings();
+  qpUiDebug('info', qpDebugSettingsLine(settings));
+  const use = _qpDebug.sessionUse = await qpUiSessionUse();
+  if (use) {
+    const full = use.used >= use.quota * 0.9;
+    qpUiDebug(full ? 'warn' : 'info', 'Session storage: ' + qpUiMb(use.used) + ' of ' + qpUiMb(use.quota) + ' in use'
+      + (full ? '. Nearly full: a write that grows it fails, so the progress line above may not move. This box does not depend on it.' : ''));
+  }
   const progressEl = qpUiEl('qp-progress'), statusEl = qpUiEl('ta-status');
   const tick = async () => {
+    await qpUiDebugPull();
+    qpUiDebugWatch(Date.now());
     try {
       const { qpProgress } = await sessionNS.get('qpProgress');
       if (!qpProgress || !qpProgress.running) return;
@@ -1582,39 +1598,150 @@ async function runQaPassMode() {
     // worker gets its length.
     const { workarounds, ...forWorker } = settings;
     let res;
+    const sentAt = Date.now();
+    _qpDebug.sentAt = sentAt;
+    qpUiDebug('info', 'Sent the run to the service worker');
     try {
       res = await chrome.runtime.sendMessage({ action: 'runQaPass', payload: { ctx: qpCtxForWorker(ctx),
-        settings: { ...forWorker, workaroundsLength: (workarounds || '').length }, winId: WIN_ID } });
+        settings: { ...forWorker, workaroundsLength: (workarounds || '').length }, winId: WIN_ID, runId } });
     } catch (e) {
       // A message nobody answered is rejected by Chrome ("message port closed", "no receiving end"): a worker that has no
       // runQaPass (older than this panel), or one Chrome stopped mid-run (an extension reload). Say what to do.
       const m = String((e && e.message) || e);
-      return { ok: false, error: /message port closed|Could not establish connection|Receiving end does not exist/i.test(m) ? NO_ANSWER : m };
+      const error = /message port closed|Could not establish connection|Receiving end does not exist/i.test(m) ? NO_ANSWER : m;
+      await qpUiDebugPull();
+      qpUiDebug('error', error === m ? 'The run message failed: ' + m : 'Chrome rejected the run message ("' + m + '"): ' + error);
+      return { ok: false, error };
     }
-    if (!res || !res.ok || !res.record) return { ok: false, error: (res && res.error) || 'QA Pass failed' };
+    await qpUiDebugPull();
+    qpUiDebugTake(res && res.debug);
+    if (res && res.debug && res.debug.storageError) {
+      const u = _qpDebug.sessionUse;
+      qpUiDebug('warn', 'The worker could not write to Chrome\'s session storage during the run (' + res.debug.storageError + ')'
+        + (u ? '; it was ' + qpUiMb(u.used) + ' of ' + qpUiMb(u.quota) + ' full when the run started' : '') + '. Its steps reached this box over the panel\'s connection.');
+    }
+    if (!res || !res.ok || !res.record) {
+      const error = (res && res.error) || 'QA Pass failed';
+      qpUiDebug('error', 'The worker answered without a record: ' + error);
+      return { ok: false, error };
+    }
     const record = res.record;
     if (record.version !== QP_RECORD_VERSION) {
+      qpUiDebug('error', 'The worker sent a version ' + record.version + ' record; this panel reads version ' + QP_RECORD_VERSION);
       return { ok: false, error: STALE_WORKER };
     }
+    qpUiDebug(record.error ? 'warn' : 'info', 'The worker answered after ' + qpDebugSecs(Date.now() - sentAt) + ' · ' + (record.loads || []).length + ' load(s) kept · checks: '
+      + qpDebugCheckCounts(record.checks) + (record.stopped ? ' · stopped' : '') + (record.error ? ' · error: ' + record.error : ''));
+    if (!_qpDebug.worker.length) qpUiDebug('warn', 'The worker sent no step of its own, so it runs older code than this panel. Reload Selenite in chrome://extensions before the next run.');
     if (record.error && !(record.loads || []).length) return { ok: false, error: record.error };
     record.abReport = await qpUiLastAbReport(ctx.ticketKey);
     const analysisOn = !!(qpUiEl('ta-agentic-analysis') || {}).checked;
     if (analysisOn && !record.stopped && !_taStopRequested) {
+      qpUiDebug('info', 'Opus explain: started');
+      const t1 = Date.now();
       const r = await chrome.runtime.sendMessage({ action: 'qpExplain', payload: qpExplainInput(record, ctx, record.abReport, workarounds) }).catch((e) => ({ ok: false, error: e.message }));
       record.explain = r && r.ok ? r.explain : { ok: false, error: (r && r.error) || 'failed' };
+      if (record.explain.ok) qpUiDebug('info', 'Opus explain: done in ' + qpDebugSecs(Date.now() - t1) + ' · ' + (record.explain.bugs || []).length + ' bug(s), ' + (record.explain.pgmQuestions || []).length + ' PGM question(s)');
+      else qpUiDebug('error', 'Opus explain failed after ' + qpDebugSecs(Date.now() - t1) + ': ' + record.explain.error);
     } else {
       record.explain = null;
+      qpUiDebug('info', 'Opus explain: skipped (' + (!analysisOn ? 'Agentic Analysis is off' : 'the run was stopped') + ')');
     }
+    qpUiDebug('info', 'Test plan: preparing');
     record.sheet = await qpUiPrepareSheet(record, ctx, analysisOn);
+    const sl = qpDebugSheetLine(record.sheet);
+    qpUiDebug(sl.level, sl.text);
     record.ts = Date.now();
     _qpLastRun = record;
     try { await sessionNS.set({ qpLastRun: qpUiSlim(record) }); } catch (_) {}
     qpUiRenderResults(record);
+    qpUiDebug('info', 'Results shown below');
     return { ok: true };
   } finally {
     clearInterval(timer);
     if (progressEl) progressEl.textContent = '';
+    qpUiDebugEnd();
   }
+}
+
+// The QA Pass card's Live debug box (qpDebug* in qa-pass.js): the panel's own steps, and the worker's from the session key
+// qpDebug (only the lines of the runId this panel sent), merged in time order while the run goes. The box keeps the last
+// run afterwards (also across a panel reopen, as qpDebugLast) and its Copy button copies it as text.
+let _qpDebug = { runId: null, panel: [], worker: [], sentAt: 0, lastWorkerAt: 0, silentWarned: false, stallWarnedAt: 0, sessionUse: null, done: true };
+const QP_UI_DEBUG_SILENT_MS = 8000, QP_UI_DEBUG_STALL_MS = 60000;
+function qpUiDebugStart() {
+  _qpDebug = { runId: Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), panel: [], worker: [], sentAt: 0, lastWorkerAt: 0,
+    silentWarned: false, stallWarnedAt: 0, sessionUse: null, done: false };
+  qpUiDebugRender();
+  return _qpDebug.runId;
+}
+function qpUiDebug(level, text) {
+  qpDebugPush(_qpDebug.panel, qpDebugEntry('panel', level, text));
+  qpUiDebugRender();
+}
+function qpUiDebugLines() { return qpDebugMerge(_qpDebug.panel, _qpDebug.worker); }
+function qpUiDebugRender() {
+  const lines = qpUiDebugLines();
+  const box = qpUiEl('qp-debug'), out = qpUiEl('qp-debug-out');
+  if (box) box.style.display = lines.length ? '' : 'none';
+  if (!out) return;
+  const atBottom = !(out.scrollHeight > 0) || out.scrollHeight - out.scrollTop <= out.clientHeight + 4;
+  out.innerHTML = qpDebugHtml(lines);
+  if (atBottom) out.scrollTop = out.scrollHeight;
+}
+// The worker's lines of this run arrive three ways: down the panel port, in the session (qpDebug), and with the record.
+// Each is a whole snapshot; the newest one wins (a capped feed keeps its length, so the last line's time is compared too).
+function qpUiDebugTake(feed) {
+  const w = feed && feed.runId != null && feed.runId === _qpDebug.runId && Array.isArray(feed.lines) ? feed.lines : null;
+  const had = _qpDebug.worker;
+  if (!w || !w.length) return;
+  if (w.length > had.length || (had.length && w[w.length - 1].t > had[had.length - 1].t)) {
+    _qpDebug.worker = w;
+    _qpDebug.lastWorkerAt = Date.now();
+    qpUiDebugRender();
+  }
+}
+async function qpUiDebugPull() {
+  try {
+    const { qpDebug } = await sessionNS.get('qpDebug');
+    qpUiDebugTake(qpDebug);
+  } catch (_) {}
+}
+// Chrome's session storage, where Selenite keeps the progress line, the Console log and more: QUOTA_BYTES (10 MB) for all
+// of it. {used, quota} in bytes, or null where it cannot be read.
+async function qpUiSessionUse() {
+  try {
+    const s = chrome.storage && chrome.storage.session;
+    if (!s || typeof s.getBytesInUse !== 'function') return null;
+    const used = await s.getBytesInUse(null);
+    return typeof used === 'number' ? { used, quota: s.QUOTA_BYTES || 10485760 } : null;
+  } catch (_) {
+    return null;
+  }
+}
+function qpUiMb(n) { return (n / 1048576).toFixed(1) + ' MB'; }
+// While the run is with the worker: say so when it has written nothing yet, or nothing new for a minute.
+function qpUiDebugWatch(now) {
+  const D = _qpDebug;
+  if (D.done || !D.sentAt) return;
+  if (!D.worker.length) {
+    if (!D.silentWarned && now - D.sentAt >= QP_UI_DEBUG_SILENT_MS) {
+      D.silentWarned = true;
+      qpUiDebug('warn', 'No step from the worker ' + Math.round((now - D.sentAt) / 1000) + ' s after the run was sent. A worker that runs older code than this panel writes none: reload Selenite in chrome://extensions and run again.'
+        + (D.sessionUse ? ' (Session storage was ' + qpUiMb(D.sessionUse.used) + ' of ' + qpUiMb(D.sessionUse.quota) + ' when the run started.)' : ''));
+    }
+    return;
+  }
+  const quiet = now - D.lastWorkerAt;
+  if (quiet >= QP_UI_DEBUG_STALL_MS && now - D.stallWarnedAt >= QP_UI_DEBUG_STALL_MS) {
+    D.stallWarnedAt = now;
+    qpUiDebug('warn', 'No new step from the worker for ' + Math.round(quiet / 1000) + ' s. Its last: ' + D.worker[D.worker.length - 1].text);
+  }
+}
+function qpUiDebugEnd() {
+  _qpDebug.done = true;
+  qpUiDebugRender();
+  try { Promise.resolve(sessionNS.set({ qpDebugLast: qpUiDebugLines() })).catch(() => {}); } catch (_) {}
 }
 
 async function qpUiPrepareSheet(record, ctx, analysisOn) {
@@ -1958,6 +2085,19 @@ async function initQaPass() {
     _qpLastRun = qpLastRun;
     qpUiRenderResults(qpLastRun);
   }
+  // And so does its Live debug box.
+  qpUiEl('btn-qp-debug-copy')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    try { await navigator.clipboard.writeText(qpDebugText(qpUiDebugLines())); btn.textContent = 'Copied'; } catch (_) { btn.textContent = 'Copy failed'; }
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+  });
+  try {
+    const { qpDebugLast } = await sessionNS.get('qpDebugLast');
+    if (Array.isArray(qpDebugLast) && qpDebugLast.length && _qpDebug.done && !_qpDebug.panel.length) {
+      _qpDebug.panel = qpDebugLast;
+      qpUiDebugRender();
+    }
+  } catch (_) {}
 }
 
 function taMoveBodyHome(n) {

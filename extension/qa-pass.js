@@ -2131,5 +2131,146 @@
     qpGridFromValues, qpApplyPlan, qpVerifyApply, qpAssertBodyInTab, qpPasteRows, qpProposalHtml, qpPasteHtml,
   });
 
+  // ── Live debug feed ──────────────────────────────────────────────────────
+  // The QA Pass card's Live debug box: one line per step of the panel and of the worker while a run goes, kept there
+  // afterwards with a Copy button. A line is {t, src: 'panel'|'worker', level: 'info'|'warn'|'error', text}. Every URL in
+  // a line is cut to origin + path (qpScrubUrls), so a preview link's forcing flags and tokens never reach the box.
+  const QP_DEBUG_MAX_LINES = 1500;
+  function qpDebugEntry(src, level, text, t) {
+    return {
+      t: typeof t === 'number' ? t : Date.now(),
+      src: src === 'worker' ? 'worker' : 'panel',
+      level: level === 'warn' || level === 'error' ? level : 'info',
+      text: qpScrubUrls(String(text == null ? '' : text)),
+    };
+  }
+  // Appends in place. Past the cap the oldest lines go, except the first (the run's start).
+  function qpDebugPush(lines, entry, max) {
+    lines.push(entry);
+    const cap = Math.max(2, max || QP_DEBUG_MAX_LINES);
+    if (lines.length > cap) lines.splice(1, lines.length - cap);
+    return lines;
+  }
+  // The panel's lines and the worker's, in time order; a panel line and a worker line of the same millisecond keep the
+  // order they were given in (panel first).
+  function qpDebugMerge(panel, worker) {
+    return (panel || []).concat(worker || []).map(function (e, i) { return { e: e, i: i }; })
+      .sort(function (x, y) { return (x.e.t - y.e.t) || (x.i - y.i); })
+      .map(function (x) { return x.e; });
+  }
+  function qpDebugPad(n) { return (n < 10 ? '0' : '') + n; }
+  // "HH:MM:SS  +m:ss.s  worker  WARN text": clock time, time since the first line, source, level when not info.
+  function qpDebugLineText(e, t0) {
+    const d = new Date(e.t);
+    const ms = Math.max(0, e.t - t0);
+    const s = Math.floor(ms / 1000);
+    const since = Math.floor(s / 60) + ':' + qpDebugPad(s % 60) + '.' + Math.floor((ms % 1000) / 100);
+    return qpDebugPad(d.getHours()) + ':' + qpDebugPad(d.getMinutes()) + ':' + qpDebugPad(d.getSeconds())
+      + '  +' + since + '  ' + (e.src === 'worker' ? 'worker' : 'panel ') + '  ' + (e.level === 'info' ? '' : e.level.toUpperCase() + ' ') + e.text;
+  }
+  function qpDebugText(lines) {
+    lines = lines || [];
+    const t0 = lines.length ? lines[0].t : 0;
+    return lines.map(function (e) { return qpDebugLineText(e, t0); }).join('\n');
+  }
+  function qpDebugHtml(lines) {
+    lines = lines || [];
+    const t0 = lines.length ? lines[0].t : 0;
+    return lines.map(function (e) {
+      const color = e.level === 'error' ? ' style="color:var(--err)"' : e.level === 'warn' ? ' style="color:var(--warn)"' : '';
+      return '<div' + color + '>' + qpEsc(qpDebugLineText(e, t0)) + '</div>';
+    }).join('');
+  }
+  function qpDebugSecs(ms) { return (Math.max(0, ms || 0) / 1000).toFixed(1) + 's'; }
+
+  // What the run is about to test, from the context the panel validated.
+  function qpDebugCtxLine(ctx) {
+    ctx = ctx || {};
+    const links = (ctx.previewLinks || []).filter(function (l) { return l && l.url; });
+    const cl = qpControlLink(ctx);
+    return 'Ticket ' + (ctx.ticketKey || '(no key)') + ' · experiment ' + (ctx.experimentId || 'not given') + ' · platform '
+      + (ctx.platform || 'not given') + ' · ' + links.length + ' preview link(s): '
+      + links.map(function (l) { return l.id + (cl && cl.id === l.id ? ' (control)' : ''); }).join(', ')
+      + ' · ITW link: ' + (ctx.itwLink ? 'yes' : 'none');
+  }
+  function qpDebugSettingsLine(s) {
+    s = s || {};
+    const on = ['A', 'B', 'C', 'D', 'E', 'F'].filter(function (k) { return s.checks && s.checks[k]; });
+    const n = (s.widths && s.widths.length) || QP_WIDTHS.length;
+    return 'Checks ' + (on.join(' ') || 'none') + ' · ' + n + ' sweep width(s)' + (s.quickSweep ? ', quick sweep' : '')
+      + (s.prodMobile ? ' · PROD swept as iPhone and Android too' : '') + (s.combos ? ' · concurrency combinations' : '')
+      + (s.clearAllSiteData ? ' · all site data cleared between loads' : '');
+  }
+  // One load, before and after (the worker's qpwLoad record L).
+  function qpDebugLoadName(L) {
+    const p = QP_PROFILES[L.profile];
+    return L.id + ' ' + L.role + ' · ' + L.label + ' · ' + (p ? p.label : (L.profile || '?')) + ' · ' + L.width + 'px · ' + (L.path || '(no address)');
+  }
+  function qpDebugLoadResult(L) {
+    const took = qpDebugSecs(L.ms);
+    if (L.loadError) return { level: 'error', text: L.id + ' did not load (' + took + '): ' + L.loadError };
+    if (L.blocked) return { level: 'warn', text: L.id + ' was stopped by a bot check (' + (L.blocked.signal || L.blocked.reason || 'challenge') + ') after ' + took };
+    if (!L.ok) return { level: 'warn', text: L.id + ' did not finish (' + took + ')' };
+    const fin = L.finalUrl ? (qpPathOnly(L.finalUrl) || String(L.finalUrl).split(/[?#]/)[0]) : null;
+    if (fin && /^chrome-error:/i.test(fin)) return { level: 'error', text: L.id + ' ended on a Chrome error page (' + took + ')' };
+    const settle = L.settle ? (L.settle.stable ? 'settled after ' + L.settle.polls + ' poll(s)' : 'still changing after ' + L.settle.polls + ' poll(s)') : 'settle not read';
+    return {
+      level: L.settle && L.settle.stable ? 'info' : 'warn',
+      text: L.id + ' loaded in ' + took + ' · ' + settle + (fin && fin !== L.path ? ' · landed on ' + fin : ''),
+    };
+  }
+  // What one link's snippet probe found (qpProbeSummary); `forced` when the link forces a variation.
+  function qpDebugProbeLine(label, probe, forced) {
+    if (!probe) return { level: 'warn', text: label + ': the snippet probe read nothing' };
+    const platform = probe.platform || 'no testing platform found';
+    if (probe.expId == null) return { level: 'warn', text: label + ': ' + platform + ' · the ticket\'s experiment is not on this page' };
+    const served = probe.servedVariationId != null;
+    const text = label + ': ' + platform + ' · experiment ' + probe.expId + (probe.active ? ' active' : ' NOT active')
+      + (probe.bucketed && !probe.active ? ' (bucketed only)' : '')
+      + ' · serves ' + (served ? (probe.servedVariationName || probe.servedVariationId) : 'nothing')
+      + (forced && served ? (probe.servedForced ? ' (the forced variation)' : ' (NOT the forced variation)') : '');
+    return { level: probe.active && served && (!forced || probe.servedForced) ? 'info' : 'warn', text: text };
+  }
+  // One sweep row's clipping scan.
+  function qpDebugScanLine(row) {
+    const s = row && row.scan;
+    const where = row.target + ' · ' + (QP_PROFILES[row.profile] ? QP_PROFILES[row.profile].label : row.profile) + ' · ' + row.width + 'px';
+    if (!s) return { level: 'warn', text: where + ': not scanned' };
+    if (s.error) return { level: 'warn', text: where + ': ' + s.error };
+    const n = s.offenderCount || 0;
+    return {
+      level: n || s.pageOverflowPx ? 'warn' : 'info',
+      text: where + ': ' + (n ? n + ' clipped element(s), worst ' + qpMinus(s.worstGapPx) + ' px' : 'nothing clipped')
+        + (s.pageOverflowPx ? ' · the page scrolls sideways by ' + s.pageOverflowPx + 'px' : ''),
+    };
+  }
+  // The checks of a record by status: "3 passed, 1 failed".
+  function qpDebugCheckCounts(checks) {
+    const order = [], n = {};
+    (checks || []).forEach(function (c) {
+      const k = (c && c.status) || 'unknown';
+      if (!(k in n)) { n[k] = 0; order.push(k); }
+      n[k]++;
+    });
+    return order.length ? order.map(function (k) { return n[k] + ' ' + k; }).join(', ') : 'none';
+  }
+  function qpDebugSheetLine(sheet) {
+    if (!sheet) return { level: 'warn', text: 'Test plan: no result' };
+    if (sheet.error) return { level: 'error', text: 'Test plan: ' + sheet.error };
+    if (sheet.reason) return { level: 'warn', text: 'Test plan not used (' + sheet.reason + '); the paste-ready table is in the results' };
+    const p = sheet.proposal;
+    return {
+      level: sheet.mapError ? 'warn' : 'info',
+      text: 'Test plan read: tab "' + (sheet.tabTitle || '?') + '"' + (p ? ' · ' + (p.entries || []).length + ' row(s) mapped, '
+        + (p.unmapped || []).length + ' unmapped' : '') + (sheet.mapError ? ' · mapping failed: ' + sheet.mapError : ''),
+    };
+  }
+
+  Object.assign(EXPORTS, {
+    QP_DEBUG_MAX_LINES, qpDebugEntry, qpDebugPush, qpDebugMerge, qpDebugLineText, qpDebugText, qpDebugHtml, qpDebugSecs,
+    qpDebugCtxLine, qpDebugSettingsLine, qpDebugLoadName, qpDebugLoadResult, qpDebugProbeLine, qpDebugScanLine,
+    qpDebugCheckCounts, qpDebugSheetLine,
+  });
+
   Object.keys(EXPORTS).forEach(function (k) { g[k] = EXPORTS[k]; });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

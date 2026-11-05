@@ -3394,6 +3394,117 @@ section('QA Pass: panel');
   jeq('the worker context has exactly the nine keys', Object.keys(runMsg.payload.ctx).sort(), ['concurrentTests', 'controlId', 'experimentId', 'goals', 'itwLink', 'platform', 'previewLinks', 'softcodedTests', 'ticketKey']);
   eq('the window id rides along', runMsg.payload.winId, 7);
   ok('the settings carry the checks and widths', runMsg.payload.settings.checks.E === true && runMsg.payload.settings.widths.join() === '375');
+
+  // ── the Live debug box: the panel's steps and the worker's (session key qpDebug, this run's runId only) ──
+  function dbg() { return el('qp-debug-out').innerHTML; }
+  function inOrder(text, parts) { var at = -1; return parts.every(function (p) { var i = text.indexOf(p, at + 1); if (i < 0) return false; at = i; return true; }); }
+  reset(); ctx = null; runMode();
+  ok('debug: a run without a context shows the click, then the error in the error colour', inOrder(dbg(), ['Run clicked', 'No active ticket context']) && /<div style="color:var\(--err\)">[^<]*No active ticket context/.test(dbg()), dbg());
+  eq('debug: and the box is shown', el('qp-debug').style.display, '');
+  ok('debug: the run is kept for a panel reopen', sessionSets.some(function (o) { return Array.isArray(o.qpDebugLast) && o.qpDebugLast.length === 2; }));
+
+  reset(); ctx = wctx(); el('ta-agentic-analysis').checked = true;
+  var dbgRunId = null;
+  replies.runQaPass = function (msg) {
+    dbgRunId = msg.payload.runId;
+    sessionGets.qpDebug = { runId: msg.payload.runId, lines: [qpDebugEntry('worker', 'info', 'The worker started the run: 2 preview link(s) and the ITW link'),
+      qpDebugEntry('worker', 'warn', 'v1: optimizely · experiment 9001 NOT active (bucketed only) · serves nothing')] };
+    return { ok: true, record: wrec() };
+  };
+  replies.qpExplain = { ok: true, explain: { ok: true, bugs: [{ title: 'x' }], pgmQuestions: [], noise: [], commentChecks: [], dropped: 0 } };
+  runMode();
+  ok('debug: the run message carries a runId', typeof dbgRunId === 'string' && dbgRunId.length > 5, dbgRunId);
+  ok('debug: the panel steps in order', inOrder(dbg(), ['Run clicked', 'Ticket QP-1 · experiment 9001 · platform Optimizely · 2 preview link(s): v0 (control), v1 · ITW link: yes',
+    'Checks A B C D E F · 1 sweep width(s)', 'Sent the run to the service worker', 'The worker answered after', 'checks: 1 failed, 2 passed', 'Opus explain: started',
+    'Opus explain: done in', '1 bug(s), 0 PGM question(s)', 'Test plan: preparing', 'Test plan not used (no-test-plan-link)', 'Results shown below']), dbg());
+  ok('debug: the worker\'s lines of this run are merged in, tagged worker', /worker  The worker started the run/.test(dbg()) && /<div style="color:var\(--warn\)">[^<]*worker  WARN v1: optimizely/.test(dbg()), dbg());
+  ok('debug: a worker that wrote lines is not called old', dbg().indexOf('sent no step of its own') < 0);
+  ok('debug: the workarounds text never reaches the box', dbg().indexOf('secret handoff') < 0);
+  ok('debug: no preview link query reaches the box', !/optimizely_|cro_mode/.test(dbg()), dbg());
+
+  reset(); ctx = wctx();
+  replies.runQaPass = function (msg) { sessionGets.qpDebug = { runId: 'another-run', lines: [qpDebugEntry('worker', 'info', 'The worker started the run: OLD')] }; return { ok: true, record: wrec() }; };
+  runMode();
+  ok('debug: lines of another runId are ignored', dbg().indexOf('OLD') < 0);
+  ok('debug: and with no line of its own the worker is named as older than the panel', /<div style="color:var\(--warn\)">[^<]*The worker sent no step of its own, so it runs older code than this panel/.test(dbg()), dbg());
+  ok('debug: Agentic Analysis off says the explain was skipped', /Opus explain: skipped \(Agentic Analysis is off\)/.test(dbg()));
+
+  reset(); ctx = wctx(); el('ta-agentic-analysis').checked = true;
+  replies.runQaPass = { ok: true, record: wrec() }; replies.qpExplain = { ok: false, error: 'No API key configured' };
+  runMode();
+  ok('debug: a failed explain is an error line with the reason', /<div style="color:var\(--err\)">[^<]*Opus explain failed after [0-9.]+s: No API key configured/.test(dbg()), dbg());
+  reset(); ctx = wctx(); replies.runQaPass = { ok: true, record: wrec({ version: undefined }) };
+  runMode();
+  ok('debug: a record of another version names both versions', /The worker sent a version undefined record; this panel reads version 1/.test(dbg()), dbg());
+  reset(); ctx = wctx(); replies.runQaPass = function () { return Promise.reject(new Error('The message port closed before a response was received.')); };
+  runMode();
+  ok('debug: a rejected run message quotes Chrome and says what to do', /Chrome rejected the run message \(&quot;The message port closed before a response was received\.&quot;\): The service worker did not answer the run/.test(dbg()), dbg());
+  reset(); ctx = wctx(); replies.runQaPass = function () { return Promise.reject(new Error('Extension context invalidated.')); };
+  runMode();
+  ok('debug: any other rejection is quoted once', /The run message failed: Extension context invalidated\./.test(dbg()), dbg());
+  reset(); ctx = wctx(); replies.runQaPass = { ok: false, error: 'Boom' };
+  runMode();
+  ok('debug: a worker error without a record', /The worker answered without a record: Boom/.test(dbg()), dbg());
+
+  // The watch, on a run the worker has not answered yet.
+  reset(); ctx = wctx(); var pendingId = null;
+  replies.runQaPass = function (msg) { pendingId = msg.payload.runId; return new Promise(function () {}); };
+  var pending = runMode();
+  ok('debug: the run is still waiting for the worker', !pending.done && /Sent the run to the service worker/.test(dbg()));
+  var sentAtish = Date.now();
+  qpUiDebugWatch(sentAtish + 5000);
+  ok('debug: no warning before 8 s of silence', dbg().indexOf('No step from the worker') < 0);
+  qpUiDebugWatch(sentAtish + 9000); qpUiDebugWatch(sentAtish + 12000);
+  eq('debug: after 8 s of silence, one warning that names an older worker', dbg().split('No step from the worker').length - 1, 1);
+  ok('debug: it says to reload Selenite', /writes none: reload Selenite in chrome:\/\/extensions and run again/.test(dbg()));
+  sessionGets.qpDebug = { runId: pendingId, lines: [qpDebugEntry('worker', 'info', '→ L7 sweep · v1 · iPhone · 375px · https://shop.example/p')] };
+  settle(qpUiDebugPull());
+  ok('debug: a pull takes the worker\'s new line', /worker  → L7 sweep/.test(dbg()), dbg());
+  var pulledAt = Date.now();
+  qpUiDebugWatch(pulledAt + 59000);
+  ok('debug: no stall warning within a minute of the last step', dbg().indexOf('No new step from the worker') < 0);
+  qpUiDebugWatch(pulledAt + 61000); qpUiDebugWatch(pulledAt + 90000);
+  eq('debug: one stall warning per minute, naming the last step', dbg().split('No new step from the worker').length - 1, 1);
+  ok('debug: the stall warning quotes the last step', /No new step from the worker for 6\d s\. Its last: → L7 sweep · v1 · iPhone · 375px · https:\/\/shop\.example\/p/.test(dbg()), dbg());
+  qpUiDebugWatch(pulledAt + 122000);
+  eq('debug: and again a minute later', dbg().split('No new step from the worker').length - 1, 2);
+
+  // Snapshots from the port, the session and the answer: the newest wins, an older or foreign one never replaces it.
+  qpUiDebugTake({ runId: pendingId, lines: [qpDebugEntry('worker', 'info', 'a', 1), qpDebugEntry('worker', 'info', 'b', 2), qpDebugEntry('worker', 'info', 'c', 3)] });
+  ok('debug: a longer snapshot of this run replaces the shorter one', /worker  c</.test(dbg()) && dbg().indexOf('worker  → L7 sweep') < 0, dbg());
+  qpUiDebugTake({ runId: pendingId, lines: [qpDebugEntry('worker', 'info', 'OLDER', 1)] });
+  qpUiDebugTake({ runId: 'someone-else', lines: [1, 2, 3, 4, 5].map(function (i) { return qpDebugEntry('worker', 'info', 'FOREIGN', i); }) });
+  qpUiDebugTake(null); qpUiDebugTake({ runId: pendingId, lines: 'x' });
+  ok('debug: an older snapshot, another run\'s and junk are ignored', dbg().indexOf('OLDER') < 0 && dbg().indexOf('FOREIGN') < 0 && /worker  c</.test(dbg()), dbg());
+  qpUiDebugTake({ runId: pendingId, lines: [qpDebugEntry('worker', 'info', 'b2', 2), qpDebugEntry('worker', 'info', 'c2', 3), qpDebugEntry('worker', 'info', 'd2', 4)] });
+  ok('debug: a capped snapshot of the same length with a newer last line replaces it', /worker  d2</.test(dbg()), dbg());
+
+  // Session storage: measured at the start, and named when the worker could not write there.
+  var sessionStub = { used: 1048576 * 2.5 };
+  chrome.storage.session = { QUOTA_BYTES: 10485760, getBytesInUse: function (k) { return Promise.resolve(sessionStub.used); } };
+  reset(); ctx = wctx(); replies.runQaPass = { ok: true, record: wrec() };
+  runMode();
+  ok('debug: the start says how full session storage is', /<div>[^<]*Session storage: 2\.5 MB of 10\.0 MB in use</.test(dbg()), dbg());
+  sessionStub.used = 10400000;
+  reset(); ctx = wctx();
+  replies.runQaPass = function (msg) {
+    return { ok: true, record: wrec(), debug: { runId: msg.payload.runId, storageError: 'Session storage quota bytes exceeded. Values were not stored.',
+      lines: [qpDebugEntry('worker', 'info', 'The worker started the run: 2 preview link(s) and the ITW link'), qpDebugEntry('worker', 'info', 'Closed the run tab after 9 load(s) in 30.0s · checks: 3 passed')] } };
+  };
+  runMode();
+  ok('debug: nearly full is a warning that says what it breaks', /<div style="color:var\(--warn\)">[^<]*Session storage: 9\.9 MB of 10\.0 MB in use\. Nearly full: a write that grows it fails, so the progress line above may not move\. This box does not depend on it\./.test(dbg()), dbg());
+  ok('debug: the worker lines that came with the answer are in the box', /worker  The worker started the run/.test(dbg()) && /worker  Closed the run tab after 9 load/.test(dbg()), dbg());
+  ok('debug: the failed session write is named, with how full it was', /could not write to Chrome's session storage during the run \(Session storage quota bytes exceeded\. Values were not stored\.\); it was 9\.9 MB of 10\.0 MB full when the run started\. Its steps reached this box over the panel's connection\./.test(dbg()), dbg());
+  ok('debug: a worker that answered with its lines is not called old', dbg().indexOf('sent no step of its own') < 0, dbg());
+  reset(); ctx = wctx(); replies.runQaPass = function () { return new Promise(function () {}); };
+  runMode();
+  qpUiDebugWatch(Date.now() + 9000);
+  ok('debug: the silence warning adds how full session storage was', /No step from the worker \d+ s after the run was sent\.[^<]*\(Session storage was 9\.9 MB of 10\.0 MB when the run started\.\)/.test(dbg()), dbg());
+  chrome.storage.session.getBytesInUse = function () { return Promise.reject(new Error('nope')); };
+  reset(); ctx = wctx(); replies.runQaPass = { ok: true, record: wrec() };
+  runMode();
+  ok('debug: an unreadable session size adds no line', dbg().indexOf('Session storage') < 0, dbg());
+  delete chrome.storage.session;
   Object.keys(runStubs).forEach(function (k) { delete globalThis[k]; });
 
   // ── the whole section, for everything else ──

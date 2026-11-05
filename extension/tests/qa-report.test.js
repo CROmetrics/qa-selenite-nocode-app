@@ -44,6 +44,8 @@ load('../vd-diff.js');
 load('../qa-pass.js');
 // email-check.js: the Email Check panel and report sections below call its pure functions (loaded after qa-pass.js, as in both panels).
 load('../email-check.js');
+// qa-kit.js, the two modes built on it, and the fake io (qk-fake-io.js): the "Shared kit modes" sections below run the real engines on the synthetic sites to make their records.
+load('../qa-kit.js'); load('../itw-activation.js'); load('../responsiveness.js'); load('qk-fake-io.js');
 
 var _pu = readFile('../popup.js');
 function slicePopup(from, to) {
@@ -88,6 +90,8 @@ eval(slicePopup('function rptPerfSection(entry) {', '\nfunction rptFunnelSection
 eval(slicePopup('function rptQaPassSection(entry) {', '\n// ── Report assembly'));
 // Email Check's report section and its eleven helpers (they sit just before QA Pass's section): buildReportBody names rptEmailCheckSection too.
 eval(slicePopup('function rptEmailCheckSection(entry) {', "\n// ── QA Pass (Test Agent mode 'qapass'): the report section"));
+// The shared-kit modes' report sections (ITW Activation, Responsiveness): they sit just before Email Check's block; buildReportBody names both.
+eval(slicePopup('// ── Shared kit modes (ITW Activation, Responsiveness): the report sections', "\n// ── Email Check (Test Agent mode 'emailcheck'): the report section"));
 
 // ── harness ────────────────────────────────────────────────────────────────
 var pass = 0, fail = 0, failures = [];
@@ -2982,7 +2986,7 @@ section('QA Pass: registration');
   ok('  its run and getData are functions', q && typeof q.run === 'function' && typeof q.getData === 'function');
   eq('funnel is standalone too', TA_MODES.funnel.standalone, true);
   ok('the numbered modes are not standalone', !TA_MODES['4'].standalone && !TA_MODES['6'].standalone);
-  eq('mode keys', Object.keys(TA_MODES).join(), '4,6,funnel,qapass,emailcheck');
+  eq('mode keys', Object.keys(TA_MODES).join(), '4,6,funnel,qapass,emailcheck,itwactivation,responsiveness');
 
   // "Also Run" is never offered for a standalone mode, and a standalone mode is never offered in it.
   var card = el('ta-multi-card'), list = el('ta-multi-list');
@@ -4457,7 +4461,7 @@ TE('Email Check panel: registration', function () {
     eq('  with an onShow', typeof (m && m.onShow), 'function');
     eq('  always configured (the context is read when it runs)', m && m.isConfigured(), true);
     ok('  its run and getData are functions', m && typeof m.run === 'function' && typeof m.getData === 'function');
-    eq('the mode keys end with emailcheck, after qapass', Object.keys(TA_MODES).join(), '4,6,funnel,qapass,emailcheck');
+    eq('the mode keys: emailcheck after qapass, then the two shared-kit modes', Object.keys(TA_MODES).join(), '4,6,funnel,qapass,emailcheck,itwactivation,responsiveness');
     eq('  and its getData answers the last run (null before any)', m.getData(), null);
     var card = E.el('ta-multi-card'), list = E.el('ta-multi-list');
     globalThis._taActiveBody = 'emailcheck'; globalThis.taQueuedExtra.add('6');
@@ -5729,6 +5733,255 @@ TE('Email Check report: records built from the synthetic fixtures (needs B2: ecT
   ok('the debug section keeps the status and the completion time', dbg.status === 'ran' && typeof dbg.completedAt === 'string');
   ok('a stale record (no version) gives the error problem through the real checks', (function () { var rec = ecTestRecord(ecFx(), 'EX-2'); delete rec.version; var out = []; taModeProblems(ecEntry(rec), function (a, b, c) { out.push(a + ':' + b); }); return out.indexOf('error:email-check') >= 0; })());
 });
+
+// ── Shared kit modes: report ──────────────────────────────────────────────
+section('Shared kit modes: report');
+
+var KR_B = QK_FAKE.base;
+var KR_IA_NAME = 'ITW Activation', KR_RS_NAME = 'Responsiveness';
+function krSettle(p) { p.then(function () {}, function (e) { throw e; }); drainMicrotasks(); }
+// What the worker does around an engine: sanitize, record, run, catch halt / stop / error, derive.
+function krRun(engine, input, site, ioOpts) {
+  var io = QK_FAKE.makeIo(site, ioOpts || {});
+  var inp = engine.sanitize(input);
+  var rec = engine.newRecord(inp, io.now());
+  var p = (async function () {
+    try { await engine.run(io, rec, inp); } catch (e) {
+      if (qkIsHalt(e)) rec.halted = e.halted; else if (qkIsStop(e)) rec.stopped = true; else rec.error = qkMaskOutput(String(e && e.message || e));
+    }
+  })();
+  krSettle(p);
+  rec.finishedAt = io.now();
+  rec.rows = engine.derive(rec);
+  return rec;
+}
+function krItwCtx(over) {
+  var c = {
+    ticketKey: 'QK-1', experimentId: '7001', platform: 'Optimizely', reviewed: true,
+    previewLinks: [{ id: 'v0', url: KR_B + '/itw/?optimizely_x=7101&cro_mode=qa&optimizely_force_tracking=true' }, { id: 'v1', url: KR_B + '/itw/?optimizely_x=7102&cro_mode=qa' }],
+    itwLink: KR_B + '/itw/?cro_mode=qa', activationType: 'trigger', triggerDescription: 'Clicking Start quiz', triggerSelector: '#start-quiz',
+    subPages: ['/itw/help/'], stayActivePages: ['/itw/step2/'],
+    specAudiences: [
+      { name: 'QA param', role: 'inclusion', type: 'query', param: 'cro_mode', value: 'qa', description: '' },
+      { name: 'No Meta', role: 'exclusion', type: 'query', param: 'utm_source', value: 'meta', description: '' },
+      { name: 'No Impact', role: 'exclusion', type: 'query', param: 'utm_campaign', value: 'impact', description: '' },
+      { name: 'Desktop Only', role: 'inclusion', type: 'device', param: null, value: 'desktop', description: '' }],
+    storedStateKeys: ['qk_quiz_*'], returningVisitor: 'active', redirectDestination: KR_B + '/landing-ok/',
+  };
+  Object.keys(over || {}).forEach(function (k) { c[k] = over[k]; });
+  return c;
+}
+function krIa(ctx, siteOpts, ioOpts) {
+  var b = iaBuildInput(ctx, {});
+  if (!b.ok) throw new Error(b.error);
+  return krRun(IA_ENGINE, b.input, QK_FAKE.sites.itw(siteOpts), ioOpts);
+}
+function krRsCtx(over) {
+  return Object.assign({
+    ticketKey: 'QK-6', experimentId: '7201', platform: 'Optimizely', reviewed: true,
+    previewLinks: [{ id: 'v0', url: KR_B + '/resp/?optimizely_x=7301&cro_mode=qa' }, { id: 'v1', url: KR_B + '/resp/?optimizely_x=7302&cro_mode=qa' }],
+    itwLink: KR_B + '/resp/?cro_mode=qa',
+  }, over || {});
+}
+function krRs(ctx, values, siteOpts, ioOpts) {
+  var v = Object.assign({ widths: '320,375,1280', ignore: RS_IGNORE_DEFAULTS.join('\n') }, values || {});
+  var b = rsBuildInput(ctx, v);
+  if (!b.ok) throw new Error(b.error);
+  return krRun(RS_ENGINE, b.input, QK_FAKE.sites.resp(siteOpts), ioOpts);
+}
+function krEntry(mode, rec, over) { return Object.assign({ mode: mode, name: mode === 'itwactivation' ? KR_IA_NAME : KR_RS_NAME, status: 'ran', data: rec }, over || {}); }
+function krRender(rec, mode) { return (mode === 'itwactivation' ? rptItwActivationSection : rptResponsivenessSection)(krEntry(mode, rec)); }
+// The text of every table cell, tags stripped.
+function krCells(html) {
+  var out = [], re = /<td>([\s\S]*?)<\/td>/g, m;
+  while ((m = re.exec(html))) out.push(m[1].replace(/<[^>]*>/g, ''));
+  return out;
+}
+function krCount(html, re) { return (html.match(re) || []).length; }
+function krRow(rec, id) { return rec.rows.filter(function (r) { return r.id === id; })[0]; }
+var KR_JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
+
+var krIaMain = krIa(krItwCtx());
+var krIaBad = krIa(krItwCtx({ ticketKey: 'QK-2', itwLink: null, previewLinks: [{ id: 'v0', url: KR_B + '/itw-bad/?optimizely_x=7101&cro_mode=qa' }], redirectDestination: KR_B + '/landing/', subPages: [], stayActivePages: [], specAudiences: [], storedStateKeys: [], returningVisitor: null, triggerSelector: null, activationType: null }));
+var krIaBot = krIa(krItwCtx({ ticketKey: 'QK-5', itwLink: KR_B + '/blocked/?cro_mode=qa' }));
+var krIaStop = krIa(krItwCtx(), {}, { stopAfterLoads: 2 });
+var krRsMain = krRs(krRsCtx());
+var krRsLive = krRs(krRsCtx({ ticketKey: 'QK-7', experimentId: '7201', previewLinks: [{ id: 'v1', url: KR_B + '/resp-live/?optimizely_x=7302&cro_mode=qa' }], itwLink: KR_B + '/resp-live/?cro_mode=qa' }), { widths: '375,1280' });
+var krRsBot = krRs(krRsCtx({ ticketKey: 'QK-8', previewLinks: [{ id: 'v0', url: KR_B + '/blocked/?optimizely_x=7301' }], itwLink: null }), { widths: '375,1280' });
+var krRsStop = krRs(krRsCtx(), {}, {}, { stopAfterLoads: 3 });
+
+(function () {
+  var h = krRender(krIaMain, 'itwactivation');
+  ok('ITW main: a Fail row gives the ISSUES FOUND badge', h.indexOf('rpt-badge-fail') >= 0 && h.indexOf('ISSUES FOUND') >= 0, h.slice(0, 300));
+  ok('ITW main: the summary line is the five-word counts line', h.indexOf(qkCountsLine(qkCounts(krIaMain.rows))) >= 0 && h.indexOf('1 Fail · 19 Pass') >= 0, qkCountsLine(qkCounts(krIaMain.rows)));
+  eq('ITW main: one <tr> per row, plus the header', krCount(h, /<tr>/g), krIaMain.rows.length + 1);
+  ok('ITW main: the verdict words are printed (Pass, Fail, Not Tested)', h.indexOf('>Pass<') >= 0 && h.indexOf('>Fail<') >= 0 && h.indexOf('>Not Tested<') >= 0);
+  ok('ITW main: the section names the pages loaded and the desktop-only line', h.indexOf('Pages loaded: ') >= 0 && h.indexOf('Desktop Chrome at 1440 px') >= 0);
+  ok('ITW main: no halted banner', h.indexOf('halted the run') < 0);
+
+  var hb = krRender(krIaBad, 'itwactivation');
+  var failed7 = krIaBad.rows.filter(function (r) { return /^ia\.7\./.test(r.id) && r.status === 'failed'; });
+  ok('ITW bad: four ia.7 rows failed', failed7.length === 4, failed7.map(function (r) { return r.id; }));
+  var rem = qkEsc(qkMaskOutput(IA_CONTROL_REMEDY));
+  eq('ITW bad: every failed ia.7 row carries IA_CONTROL_REMEDY in the report', krCount(hb, new RegExp(rem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')), 4);
+  ok('ITW bad: the redirect Fail carries IA_REDIRECT_REMEDY', hb.indexOf(qkEsc(qkMaskOutput(IA_REDIRECT_REMEDY))) >= 0);
+  eq('ITW bad: one <tr> per row', krCount(hb, /<tr>/g), krIaBad.rows.length + 1);
+
+  var hh = krRender(krIaBot, 'itwactivation');
+  ok('ITW bot: the halted banner names the signal and the path', hh.indexOf('<strong>A bot check (') >= 0 && hh.indexOf('/blocked/') >= 0 && hh.indexOf('Selenite never attempts these') >= 0 && hh.indexOf('color:#c62828') >= 0, hh.slice(0, 400));
+  ok('ITW bot: the summary says halted by a bot check, the badge is HALTED', hh.indexOf('halted by a bot check') >= 0 && hh.indexOf('HALTED: BOT CHECK') >= 0);
+  var hs = krRender(krIaStop, 'itwactivation');
+  ok('ITW stop: the summary says stopped by the tester, the badge is INCOMPLETE or a Fail', hs.indexOf('stopped by the tester') >= 0 && (hs.indexOf('INCOMPLETE') >= 0 || hs.indexOf('ISSUES FOUND') >= 0), hs.slice(0, 300));
+
+  var hr = krRender(krRsMain, 'responsiveness');
+  ok('Resp main: Fail rows give ISSUES FOUND', hr.indexOf('ISSUES FOUND') >= 0 && hr.indexOf('rpt-badge-fail') >= 0);
+  ok('Resp main: the counts line', hr.indexOf(qkCountsLine(qkCounts(krRsMain.rows))) >= 0 && hr.indexOf('4 Fail') >= 0, qkCountsLine(qkCounts(krRsMain.rows)));
+  eq('Resp main: one <tr> per row, plus the header', krCount(hr, /<tr>/g), krRsMain.rows.length + 1);
+  ok('Resp main: the foot names the emulated widths and the pages loaded', hr.indexOf('Pages loaded: ') >= 0 && hr.indexOf('emulated viewport widths 320, 375, 1280') >= 0);
+  ok('Resp main: no CAROUSEL row', hr.indexOf('CAROUSEL') < 0);
+  ok('Resp main: Pass (emulated) and the plain Pass of rs.prod both print', hr.indexOf('Pass (emulated)') >= 0 && hr.indexOf('>Pass<') >= 0);
+  var hrb = krRender(krRsBot, 'responsiveness');
+  ok('Resp bot: halted banner and every row Not Tested', hrb.indexOf('A bot check (') >= 0 && krRsBot.rows.every(function (r) { return qkVerdictLabel(r) === 'Not Tested'; }) && hrb.indexOf('HALTED: BOT CHECK') >= 0);
+  var hrs = krRender(krRsStop, 'responsiveness');
+  ok('Resp stop: stopped by the tester in the summary', hrs.indexOf('stopped by the tester') >= 0);
+
+  // A record is rendered, never changed by rendering.
+  var before = JSON.stringify(krIaMain);
+  krRender(krIaMain, 'itwactivation');
+  eq('rendering does not change the record', JSON.stringify(krIaMain), before);
+
+  // Skipped entries and a bare record.
+  ok('skipped ITW entry is a skipped section', rptItwActivationSection({ mode: 'itwactivation', name: KR_IA_NAME, status: 'skipped', reason: 'Not configured.' }).indexOf('SKIPPED') >= 0);
+  ok('skipped Resp entry is a skipped section', rptResponsivenessSection({ mode: 'responsiveness', name: KR_RS_NAME, status: 'skipped', reason: 'Not configured.' }).indexOf('SKIPPED') >= 0);
+  var bare = rptItwActivationSection({ mode: 'itwactivation', name: KR_IA_NAME, status: 'ran' });
+  ok('a ran entry with no data renders without throwing, INCONCLUSIVE', bare.indexOf('INCONCLUSIVE') >= 0);
+  var bare2 = rptResponsivenessSection({ mode: 'responsiveness', name: KR_RS_NAME, status: 'ran' });
+  ok('the same for Responsiveness', bare2.indexOf('INCONCLUSIVE') >= 0);
+
+  // Tiles: only validated JPEG data URLs are printed.
+  var tileRec = JSON.parse(JSON.stringify(krRsMain));
+  eq('Resp main has 3 tiles in the record', tileRec.tiles.length, 3);
+  var htr = krRender(tileRec, 'responsiveness');
+  var krTileRows = function (rec, ids) { return rec.rows.filter(function (r) { return r.tile && ids.indexOf(r.tile) >= 0; }).length; };
+  eq('every row that names a tile prints one <img>', krCount(htr, /<img class="qk-tile"/g), krTileRows(tileRec, ['T1', 'T2', 'T3']));
+  ok('every printed src is a validated JPEG data URL', (htr.match(/src="([^"]*)"/g) || []).every(function (m) { return /^src="data:image\/jpeg;base64,[A-Za-z0-9+\/=]+"$/.test(m); }));
+  var evil = JSON.parse(JSON.stringify(krRsMain));
+  evil.tiles[0].img = 'javascript:alert(1)';
+  evil.tiles[1].img = 'data:image/png;base64,AAAA';
+  evil.tiles[2].img = KR_JPEG;
+  var he = krRender(evil, 'responsiveness');
+  eq('a javascript: src and a PNG src are dropped; only the JPEG tile prints', krCount(he, /<img class="qk-tile"/g), krTileRows(evil, ['T3']));
+  ok('neither bad src appears anywhere in the HTML', he.indexOf('javascript:') < 0 && he.indexOf('image/png') < 0);
+  var evil2 = JSON.parse(JSON.stringify(krRsMain)); evil2.tiles[0].img = KR_JPEG + '" onerror="x';
+  ok('a src with a quote breaking out is dropped', krRender(evil2, 'responsiveness').indexOf('onerror') < 0);
+  var evil3 = JSON.parse(JSON.stringify(krRsMain)); evil3.tiles = { T1: KR_JPEG };
+  ok('a tiles value that is not a list is tolerated in the report form too', krRender(evil3, 'responsiveness').indexOf('<table') >= 0);
+
+  // No ASCII ? & = inside any table cell text.
+  [[krIaMain, 'itwactivation'], [krIaBad, 'itwactivation'], [krIaBot, 'itwactivation'], [krRsMain, 'responsiveness'], [krRsLive, 'responsiveness'], [krRsBot, 'responsiveness']].forEach(function (x, i) {
+    var cells = krCells(krRender(x[0], x[1]));
+    var bad = cells.filter(function (c) { return /[?&=]/.test(c.replace(/&(amp|lt|gt|quot|#39);/g, '')); });
+    ok('no ASCII ? & = in any cell text (record ' + i + ', ' + cells.length + ' cells)', cells.length > 0 && bad.length === 0, bad.slice(0, 2));
+  });
+  // A raw query smuggled into a row is masked on the way out.
+  var dirty = JSON.parse(JSON.stringify(krIaMain));
+  dirty.rows[0].observed = 'went to https://shop.example/p?session=abc&x=1';
+  var hd = krRender(dirty, 'itwactivation');
+  ok('a raw URL query in a cell is masked to fullwidth', hd.indexOf('?session') < 0 && hd.indexOf('session=abc') < 0 && hd.indexOf('？session') >= 0);
+  var xss = JSON.parse(JSON.stringify(krIaMain)); xss.rows[0].check = '<script>alert(1)</script>';
+  ok('a script tag in a cell is escaped', krRender(xss, 'itwactivation').indexOf('<script>') < 0);
+  var hx = JSON.parse(JSON.stringify(krIaBot)); hx.halted = { signal: '<b>x</b>', path: '/blocked/?a=1' };
+  var hxh = krRender(hx, 'itwactivation');
+  ok('the halted banner is escaped and masked', hxh.indexOf('<b>x</b>') < 0 && hxh.indexOf('?a=1') < 0);
+  // Resp: the tiles-capped sentence in the body.
+  var capRec = JSON.parse(JSON.stringify(krRsMain)); capRec.tilesCapped = { perTarget: ['v0'], total: true, at: {} };
+  var hc = krRender(capRec, 'responsiveness');
+  ok('a capped record prints rsTilesCappedText in the body', rsTilesCappedText(capRec.tilesCapped) !== '' && hc.indexOf(qkEsc(qkMaskOutput(rsTilesCappedText(capRec.tilesCapped)))) >= 0, rsTilesCappedText(capRec.tilesCapped));
+  ok('an uncapped record prints none', hr.indexOf('Tiles are capped') < 0 && rsTilesCappedText(krRsMain.tilesCapped || null) === '');
+})();
+
+// ── Shared kit modes: problems, debug log, cover ─────────────────────────
+section('Shared kit modes: problems, debug log, cover');
+
+(function () {
+  eval(slicePopup('function taModeProblems(entry, add) {', '\n// The debug-log section for a WCAG'));
+  eval(slicePopup('function taDebugSection(entry) {', '\n// ONE projection for a finding'));
+  eval(slicePopup('function abPageUrls(modes) {', '\n// '));
+  function probs(mode, rec) { var out = []; taModeProblems(krEntry(mode, rec), function (sev, where, detail) { out.push({ sev: sev, where: where, detail: detail }); }); return out; }
+  function has(list, sev, where, re) { return list.some(function (p) { return p.sev === sev && p.where === where && (!re || re.test(p.detail)); }); }
+
+  var clean = probs('itwactivation', krIaMain);
+  eq('a clean ITW run has no problem entries', clean.length, 0);
+  var nov = JSON.parse(JSON.stringify(krIaMain)); delete nov.version;
+  ok('ITW: no version is an error naming the stale worker', has(probs('itwactivation', nov), 'error', 'itw-activation', /older service worker/));
+  var novR = JSON.parse(JSON.stringify(krRsMain)); delete novR.version;
+  ok('Resp: no version is an error', has(probs('responsiveness', novR), 'error', 'responsiveness', /older service worker/));
+  ok('ITW halted is an error naming the signal and the path', has(probs('itwactivation', krIaBot), 'error', 'itw-activation', /A bot check \(.+\) on .*\/blocked\/ halted the run; Selenite never attempts these\./), probs('itwactivation', krIaBot));
+  ok('Resp halted is an error', has(probs('responsiveness', krRsBot), 'error', 'responsiveness', /halted the run/));
+  ok('ITW stopped is info', has(probs('itwactivation', krIaStop), 'info', 'itw-activation', /Stopped by the tester: every row that had not run is Not Tested\./));
+  ok('Resp stopped is info', has(probs('responsiveness', krRsStop), 'info', 'responsiveness', /Stopped by the tester/));
+  var err = JSON.parse(JSON.stringify(krIaMain)); err.error = 'boom at https://shop.example/x?token=abc';
+  var pe = probs('itwactivation', err);
+  ok('d.error is an error and is masked', has(pe, 'error', 'itw-activation', /boom/) && pe.every(function (p) { return p.detail.indexOf('?token') < 0; }), pe);
+  var le = JSON.parse(JSON.stringify(krIaMain)); le.loads[0].loadError = 'net::ERR_FAILED';
+  ok('a load error is a warn named <where>/<label>', probs('itwactivation', le).some(function (p) { return p.sev === 'warn' && p.where === 'itw-activation/' + (le.loads[0].label || le.loads[0].id) && /Failed to load \(net::ERR_FAILED\)/.test(p.detail); }), probs('itwactivation', le));
+  var lr = JSON.parse(JSON.stringify(krRsMain)); lr.loads[1].loadError = 'timeout';
+  ok('Resp: a load error is a warn', probs('responsiveness', lr).some(function (p) { return p.sev === 'warn' && /^responsiveness\//.test(p.where); }));
+  var ref = JSON.parse(JSON.stringify(krIaMain)); ref.refusedItw = true;
+  ok('ITW refusedItw is a warn', has(probs('itwactivation', ref), 'warn', 'itw-activation', /forces a variation/));
+  ok('Resp resize PROD is info naming the live ids', has(probs('responsiveness', krRsLive), 'info', 'responsiveness', /^PROD: /) && krRsLive.plan.prodMode === 'resize', probs('responsiveness', krRsLive));
+  var capR = JSON.parse(JSON.stringify(krRsMain)); capR.tilesCapped = { perTarget: ['v0'], total: true, at: {} };
+  ok('Resp tiles capped is info with rsTilesCappedText', has(probs('responsiveness', capR), 'info', 'responsiveness', null) && probs('responsiveness', capR).some(function (p) { return p.detail.indexOf(qkMaskOutput(rsTilesCappedText(capR.tilesCapped))) >= 0; }));
+  var inv = JSON.parse(JSON.stringify(krRsMain)); inv.sweep[0] = Object.assign({}, inv.sweep[0], { scan: Object.assign({}, inv.sweep[0].scan || {}, { ignoreInvalid: ['div['] }) });
+  ok('Resp invalid ignore selector is a warn', has(probs('responsiveness', inv), 'warn', 'responsiveness', /not valid for the page and were dropped: div\[/), probs('responsiveness', inv));
+  var trn = JSON.parse(JSON.stringify(krRsMain)); trn.sweep[0] = Object.assign({}, trn.sweep[0], { scan: Object.assign({}, trn.sweep[0].scan || {}, { truncated: true }) });
+  ok('Resp truncated scan is info', has(probs('responsiveness', trn), 'info', 'responsiveness', /stopped at the node limit/));
+  ok('refusedItw is Mode 1 only: a Resp record never gets it', !has(probs('responsiveness', Object.assign({}, krRsMain, { refusedItw: true })), 'warn', 'responsiveness', /forces a variation/));
+
+  // The guard in vdCollectProblems (source pin) and the builders map.
+  var vc = _pu.slice(_pu.indexOf('function vdCollectProblems'), _pu.indexOf('function taModeProblems'));
+  ok('vdCollectProblems guard includes both modes (source pin)', vc.indexOf("entry.mode === 'itwactivation' || entry.mode === 'responsiveness')) taModeProblems(entry, add)") >= 0);
+  var rb = slicePopup('function buildReportBody(sections) {', '\n// ── Debug log');
+  ok('buildReportBody builders map names both sections', /itwactivation: rptItwActivationSection,/.test(rb) && /responsiveness: rptResponsivenessSection,/.test(rb));
+  (function () {
+    var rptAbSection = function () { return ''; }, rptWcagSection = function () { return ''; }, rptFunnelSection = function () { return ''; };
+    eval(slicePopup('function buildReportBody(sections) {', '\n// ── Debug log'));
+    var full = buildReportBody({ ts: 1700000100000, pageUrls: abPageUrls([{ mode: 'itwactivation', data: krIaMain }, { mode: 'responsiveness', data: krRsMain }]), modes: [krEntry('itwactivation', krIaMain), krEntry('responsiveness', krRsMain)], extraHtml: '' });
+    ok('buildReportBody renders both sections through the builders', full.indexOf(KR_IA_NAME) >= 0 && full.indexOf(KR_RS_NAME) >= 0 && full.indexOf('qk-table') >= 0);
+    var failedMode = buildReportBody({ ts: 1700000100000, pageUrls: [], modes: [{ mode: 'itwactivation', name: KR_IA_NAME, status: 'failed', reason: 'it broke' }], extraHtml: '' });
+    ok('a failed entry is reported as failed, not built', failedMode.indexOf('it broke') >= 0);
+  })();
+
+  // taDebugSection: hasImage, never an image.
+  var dbgR = taDebugSection(krEntry('responsiveness', krRsMain));
+  ok('Resp debug section: tiles become hasImage, no data:image anywhere', JSON.stringify(dbgR).indexOf('data:image') < 0 && JSON.stringify(dbgR).indexOf('"hasImage":true') >= 0, Object.keys(dbgR));
+  ok('Resp debug section keeps the status and rows', dbgR.status === 'ran' && Array.isArray(dbgR.rows) && dbgR.rows.length === krRsMain.rows.length);
+  var dbgI = taDebugSection(krEntry('itwactivation', krIaMain));
+  ok('ITW debug section carries the rows and no data:image', dbgI.status === 'ran' && Array.isArray(dbgI.rows) && JSON.stringify(dbgI).indexOf('data:image') < 0);
+  var dirtyD = JSON.parse(JSON.stringify(krIaMain)); dirtyD.rows[0].observed = 'to https://shop.example/p?session=abc';
+  ok('the debug section masks a raw query', JSON.stringify(taDebugSection(krEntry('itwactivation', dirtyD))).indexOf('?session') < 0);
+  var dbgSrc = slicePopup('function taDebugSection(entry) {', '\n// ONE projection for a finding');
+  ok('taDebugSection routes both modes (source pin)', dbgSrc.indexOf("entry.mode === 'itwactivation'") >= 0 && dbgSrc.indexOf('iaDebugProjection(d)') >= 0 && dbgSrc.indexOf("entry.mode === 'responsiveness'") >= 0 && dbgSrc.indexOf('rsDebugProjection(d)') >= 0);
+
+  // buildDebugLog: both sections right after emailCheck (source pin).
+  var bd = _pu.slice(_pu.indexOf('function buildDebugLog(sections) {'));
+  var iEc = bd.indexOf("emailCheck: taDebugSection(modeEntry('emailcheck')),"), iIa = bd.indexOf("itwActivation: taDebugSection(modeEntry('itwactivation')),"), iRs = bd.indexOf("responsiveness: taDebugSection(modeEntry('responsiveness')),");
+  ok('buildDebugLog carries itwActivation and responsiveness right after emailCheck', iEc > 0 && iIa > iEc && iRs > iIa && bd.slice(iEc, iRs).split('\n').length <= 4, [iEc, iIa, iRs]);
+
+  // abPageUrls: every page a load reached, whatever its role (A39), no query, no fullwidth question mark.
+  var urlsI = abPageUrls([{ mode: 'itwactivation', data: krIaMain }]);
+  var urlsR = abPageUrls([{ mode: 'responsiveness', data: krRsMain }]);
+  // The 12 loads of D.3 reach four pages: the ITW page (itw, returning, audience, control and PROD loads), the stay page, the sub-page and the redirect destination, in load order.
+  eq('ITW pages: the ITW, stay, sub-page and redirect pages, in load order', JSON.stringify(urlsI), JSON.stringify([KR_B + '/itw/', KR_B + '/itw/step2/', KR_B + '/itw/help/', KR_B + '/landing-ok/']));
+  eq('Resp pages: the swept variations and PROD share the one /resp/ path', JSON.stringify(urlsR), JSON.stringify([KR_B + '/resp/']));
+  ok('Resp pages: the swept path is listed', urlsR.some(function (u) { return /\/resp\/$/.test(u); }), urlsR);
+  ok('no listed page has a query or a fullwidth ？ or ＆ or ＝', urlsI.concat(urlsR).every(function (u) { return !/[?&=？＆＝]/.test(u); }), urlsI.concat(urlsR));
+  eq('a record with no loads adds none', abPageUrls([{ mode: 'responsiveness', data: { loads: [] } }]).length, 0);
+  var odd = abPageUrls([{ mode: 'responsiveness', data: { loads: [{ role: 'variant', final: 'https://shop.example/b/' }, { role: 'prod', final: 'https://shop.example/a/' }, { role: 'variant', final: 'chrome-error://chromewebdata/' }, { role: 'prod', final: null }, null] } }]);
+  eq('every role is listed: a variation page that differs from PROD comes first; a non-web final, a failed load and a null load add nothing', JSON.stringify(odd), '["https://shop.example/b/","https://shop.example/a/"]');
+  eq('a record with no loads array adds none', abPageUrls([{ mode: 'itwactivation', data: {} }]).length, 0);
+  ok('the cover takes every load whatever its role (no role filter in abPageUrls)', slicePopup('function abPageUrls(modes) {', '\n// Which configured metrics').indexOf('l.role') < 0);
+})();
 
 // ── report ─────────────────────────────────────────────────────────────────
 print('\n' + (fail ? 'FAILURES:\n  - ' + failures.join('\n  - ') + '\n' : '') +

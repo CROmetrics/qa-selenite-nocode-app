@@ -400,6 +400,23 @@ T('Initialize: add, remove and edit on the review card', function () {
   } finally { delete globalThis.renderInitReview; delete globalThis.confirm; }
 });
 
+// ── ITW Activation: Initialize fields on the draft (S8) ─────────
+// SYNTHETIC DATA ONLY: the tickets are the EX-1 and EX-9 fixtures above.
+T('Initialize: ITW Activation fields on the draft', function () {
+  var ab = { type: 'doc', version: 1, content: [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Test Specifications' }] }, para('v0: Control'), para('Baseline'), para('v1: New Hero'), para('Bigger headline')] };
+  var r = extract({ key: 'EX-9', names: { description: 'Description' }, fields: { summary: 'Hero test', description: ab } }), d = r.draft;
+  jeq('an A/B ticket gets the nine ITW Activation defaults', [d.activationType, d.triggerDescription, d.triggerSelector, d.subPages, d.stayActivePages, d.specAudiences, d.storedStateKeys, d.returningVisitor, d.redirectDestination], [null, null, null, [], [], [], [], null, null]);
+  var e1 = extract(exIssue('EX-1')).draft;
+  jeq('EX-1 gets the same nine defaults', [e1.activationType, e1.triggerDescription, e1.triggerSelector, e1.subPages, e1.stayActivePages, e1.specAudiences, e1.storedStateKeys, e1.returningVisitor, e1.redirectDestination], [null, null, null, [], [], [], [], null, null]);
+  ok('the defaults line follows the emailEoa line', /emailEoa: emailLinks\.eoa\.map\(e => \(\{ variation: e\.variation, url: e\.url \}\)\),\n    activationType: null, triggerDescription: null, triggerSelector: null, subPages: \[\], stayActivePages: \[\], specAudiences: \[\], storedStateKeys: \[\], returningVisitor: null, redirectDestination: null,\n    comments: jiraContextComments/.test(_pu));
+  ok('the Copy File / emailProofs adjacency is intact', /copyFileUrl,\n    emailProofs: emailLinks\.proofs\.map/.test(_pu));
+  ok('renderInitReview builds itwFieldsHtml inside a try/catch', /let itwFieldsHtml = '';\n  try \{ itwFieldsHtml = typeof iaInitFieldsHtml === 'function' \? iaInitFieldsHtml\(d\) : ''; \} catch \(e\) \{ itwFieldsHtml = /.test(_pu));
+  ok('and prints it right after the email lists', /    \$\{emailListsHtml\}\n    \$\{itwFieldsHtml\}\n/.test(_pu));
+  ok('the four add branches exist', /if \(list === 'subPages' \|\| list === 'stayActivePages' \|\| list === 'storedStateKeys'\) \{ _initDraft\[list\] = _initDraft\[list\] \|\| \[\]; _initDraft\[list\]\.push\(''\); \}/.test(_pu) && /if \(list === 'specAudiences'\) \{ _initDraft\.specAudiences = _initDraft\.specAudiences \|\| \[\]; _initDraft\.specAudiences\.push\(\{ name: '', role: 'exclusion', type: 'query', param: '', value: '', description: '' \}\); \}/.test(_pu));
+  ok('the merge line is typeof-guarded', /if \(typeof iaCtxFieldsFromAi === 'function'\) Object\.assign\(_initDraft, iaCtxFieldsFromAi\(f\.itw\)\);/.test(_pu));
+  ok('the commit line is typeof-guarded', /if \(typeof iaNormalizeCtxFields === 'function'\) Object\.assign\(d, iaNormalizeCtxFields\(d\)\);/.test(_pu));
+});
+
 // ── report ─────────────────────────────────────────────────────────────────
 print('');
 if (failures.length) {

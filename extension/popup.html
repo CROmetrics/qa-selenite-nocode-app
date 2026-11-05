@@ -1080,6 +1080,8 @@
         <option value="funnel">Funnel Crawl</option>
         <option value="qapass">QA Pass (platform + layout)</option>
         <option value="emailcheck">Email Check (Mailtrap + copy doc)</option>
+        <option value="itwactivation">ITW Activation</option>
+        <option value="responsiveness">Responsiveness</option>
       </select>
     </div>
 
@@ -1287,6 +1289,74 @@
       <div style="font-size:10px;color:var(--fg3);margin-bottom:6px">Nothing is written to the sheet until you review the proposed changes after a run and click Apply. Selenite never writes to Jira.</div>
       <div id="ec-progress" style="font-size:10px;color:var(--fg3)"></div>
       <div id="ec-results" style="margin-top:8px"></div>
+    </div>
+    <div class="card" id="ia-body">
+      <div class="card-title" style="margin-bottom:1px">ITW Activation</div>
+      <div style="font-size:10px;color:var(--fg3);margin-bottom:8px">Does the experiment activate for exactly the right visitors on the real ITW link, and is Control genuinely PROD? Desktop Chrome only. Audience checks run on the plain ITW link: a forced preview link (optimizely_x) bypasses audiences, so this mode refuses them there.</div>
+      <div id="ia-ctx" style="font-size:11px;color:var(--fg2);margin-bottom:8px">No active ticket context — use the Initialize tab, or fill in the inputs below</div>
+      <label class="cap">Inputs (empty: taken from the ticket)</label>
+      <div class="arg-row" style="margin-bottom:4px"><span class="arg-lbl">ITW link</span><input type="text" id="ia-itw" placeholder="not on the ticket"></div>
+      <div class="arg-row" style="margin-bottom:4px"><span class="arg-lbl">Control link</span><input type="text" id="ia-control" placeholder="not on the ticket"></div>
+      <div class="arg-row" style="margin-bottom:4px"><span class="arg-lbl">Experiment ID</span><input type="text" id="ia-exp" placeholder="not on the ticket"></div>
+      <div class="arg-row" style="margin-bottom:4px"><span class="arg-lbl">Activation</span><select id="ia-activation">
+        <option value="" selected>From the ticket</option>
+        <option value="immediate">On page load</option>
+        <option value="trigger">On a trigger</option>
+      </select></div>
+      <div class="arg-row" style="margin-bottom:6px"><span class="arg-lbl">Trigger selector</span><input type="text" id="ia-trigger" placeholder="not on the ticket"></div>
+      <label class="cap">Sub-pages where it must not activate on load (one URL or /path per line)</label>
+      <textarea id="ia-subpages" placeholder="not on the ticket" style="width:100%;height:38px;font-size:11px;margin-bottom:6px"></textarea>
+      <label class="cap">Pages where it must stay active after the trigger (one per line)</label>
+      <textarea id="ia-stay" placeholder="not on the ticket" style="width:100%;height:38px;font-size:11px;margin-bottom:6px"></textarea>
+      <label class="cap">Spec audiences (one per line: exclude param=value, include param=value, device desktop or device mobile)</label>
+      <textarea id="ia-audiences" placeholder="not on the ticket" style="width:100%;height:38px;font-size:11px;margin-bottom:6px"></textarea>
+      <label class="cap">Stored-state keys cleared between loads (one per line; a trailing * matches a prefix)</label>
+      <textarea id="ia-keys" placeholder="not on the ticket" style="width:100%;height:38px;font-size:11px;margin-bottom:6px"></textarea>
+      <div class="arg-row" style="margin-bottom:4px"><span class="arg-lbl">Returning visitor</span><select id="ia-returning">
+        <option value="" selected>From the ticket</option>
+        <option value="active">Stays active</option>
+        <option value="inactive">Not active</option>
+      </select></div>
+      <div class="arg-row" style="margin-bottom:6px"><span class="arg-lbl">Redirect destination</span><input type="text" id="ia-redirect" placeholder="not on the ticket"></div>
+      <div class="row" style="margin-bottom:8px"><button class="btn ghost sm" id="btn-ia-clear-inputs" type="button">Clear typed inputs</button></div>
+      <div id="ia-visitor-note" style="font-size:10px;color:var(--warn);margin-bottom:8px">Every clean ITW, sub-page, audience, PROD and destination load is a new visitor to the live site (Selenite clears the Optimizely cookies before each). Selenite never loads optimizely_force_tracking and never attempts a bot check.</div>
+      <div id="ia-progress" style="font-size:10px;color:var(--fg3)"></div>
+      <div id="ia-debug" style="display:none;margin-top:6px">
+        <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:3px">
+          <label class="cap" style="margin:0">Live debug</label>
+          <button class="btn ghost sm" id="btn-ia-debug-copy" type="button">Copy</button>
+        </div>
+        <div id="ia-debug-out" style="max-height:220px;overflow:auto;font:10px/1.4 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word;color:var(--fg2);background:var(--surface);border:1px solid var(--stroke);border-radius:4px;padding:4px 6px"></div>
+      </div>
+      <div id="ia-results" style="margin-top:8px"></div>
+    </div>
+    <div class="card" id="rs-body">
+      <div class="card-title" style="margin-bottom:1px">Responsiveness</div>
+      <div style="font-size:10px;color:var(--fg3);margin-bottom:8px">Text that is clipped or runs outside its margins, at each width, in every variation and on plain PROD. Desktop Chrome with emulated viewport widths (no window resize, no phone user agent). A clip that PROD has too is still a Fail.</div>
+      <div id="rs-ctx" style="font-size:11px;color:var(--fg2);margin-bottom:8px">No active ticket context — use the Initialize tab, or fill in the inputs below</div>
+      <label class="cap">Inputs (empty: taken from the ticket)</label>
+      <label class="cap">Variation links (one per line: label URL)</label>
+      <textarea id="rs-targets" placeholder="not on the ticket" style="width:100%;height:38px;font-size:11px;margin-bottom:6px"></textarea>
+      <div class="arg-row" style="margin-bottom:4px"><span class="arg-lbl">PROD URL</span><input type="text" id="rs-prod" placeholder="not on the ticket"></div>
+      <div class="arg-row" style="margin-bottom:6px"><span class="arg-lbl">Experiment ID</span><input type="text" id="rs-exp" placeholder="not on the ticket"></div>
+      <label class="cap">Stored-state keys cleared between loads (optional)</label>
+      <textarea id="rs-keys" placeholder="not on the ticket" style="width:100%;height:38px;font-size:11px;margin-bottom:6px"></textarea>
+      <label class="cap">Sweep widths (px)</label>
+      <input type="text" id="rs-widths" style="width:100%;margin-bottom:6px">
+      <label class="cap">Ignore list (one CSS selector per line: clipped by design)</label>
+      <textarea id="rs-ignore" style="width:100%;height:90px;font-size:11px;margin-bottom:4px"></textarea>
+      <div id="rs-ignore-status" style="font-size:10px;color:var(--err);margin-bottom:4px"></div>
+      <div class="row" style="margin-bottom:8px"><button class="btn ghost sm" id="btn-rs-ignore-reset" type="button">Reset to defaults</button><button class="btn ghost sm" id="btn-rs-clear-inputs" type="button">Clear typed inputs</button></div>
+      <div id="rs-visitor-note" style="font-size:10px;color:var(--warn);margin-bottom:8px">PROD is loaded once per width as a new visitor, unless the plain PROD page shows a live experiment: then it is swept by resizing one load. Variation links are forced (optimizely_x) and never carry optimizely_force_tracking.</div>
+      <div id="rs-progress" style="font-size:10px;color:var(--fg3)"></div>
+      <div id="rs-debug" style="display:none;margin-top:6px">
+        <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:3px">
+          <label class="cap" style="margin:0">Live debug</label>
+          <button class="btn ghost sm" id="btn-rs-debug-copy" type="button">Copy</button>
+        </div>
+        <div id="rs-debug-out" style="max-height:220px;overflow:auto;font:10px/1.4 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word;color:var(--fg2);background:var(--surface);border:1px solid var(--stroke);border-radius:4px;padding:4px 6px"></div>
+      </div>
+      <div id="rs-results" style="margin-top:8px"></div>
     </div>
     </div>
 
@@ -1565,6 +1635,9 @@
 <script src="browserstack.js"></script>
 <script src="qa-pass.js"></script>
 <script src="email-check.js"></script>
+<script src="qa-kit.js"></script>
+<script src="itw-activation.js"></script>
+<script src="responsiveness.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>

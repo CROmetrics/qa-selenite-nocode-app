@@ -18,7 +18,7 @@
 // captureFullPageAndViewport/vdShowCandidateOverlay below (a separate
 // executeScript call, not this importScripts) — see domCandidateWalkFn's
 // own header comment for why.
-importScripts('metric-match.js', 'pixelmatch.js', 'vd-config.js', 'vd-diff.js', 'figma.js', 'browserstack.js', 'qa-pass.js', 'email-check.js');
+importScripts('metric-match.js', 'pixelmatch.js', 'vd-config.js', 'vd-diff.js', 'figma.js', 'browserstack.js', 'qa-kit.js', 'itw-activation.js', 'responsiveness.js', 'qa-pass.js', 'email-check.js');
 
 // ── Toolbar icon: the side panel, or the floating window when unpinned ────
 // Pinned, the default, Selenite docks in Chrome's side panel: with
@@ -354,7 +354,7 @@ const FN_REPORT_TOOL_DEF = {
 // Preview Links, ITW Link, and Goals — fields real tickets format loosely
 // enough that regex/heading parsing misses them. Everything the ticket
 // contributes arrives as data in the user turn, never in this system prompt,
-// so ticket text can't be read as an instruction.
+// so ticket text can't be read as an instruction. It is also authoritative for the ITW Activation fields (itw), which no regex reads.
 const INIT_FIELD_EXTRACTION_SCHEMA = {
   type: 'object',
   properties: {
@@ -383,9 +383,40 @@ const INIT_FIELD_EXTRACTION_SCHEMA = {
         additionalProperties: false,
       },
     },
+    itw: {
+      type: 'object',
+      properties: {
+        activationType: { anyOf: [{ type: 'string', enum: ['immediate', 'trigger'] }, { type: 'null' }] },
+        triggerDescription: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        triggerSelector: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        subPages: { type: 'array', items: { type: 'string' } },
+        stayActivePages: { type: 'array', items: { type: 'string' } },
+        audiences: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              role: { type: 'string', enum: ['inclusion', 'exclusion'] },
+              type: { type: 'string', enum: ['query', 'cookie', 'device', 'other'] },
+              param: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+              value: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+              description: { type: 'string' },
+            },
+            required: ['name', 'role', 'type', 'param', 'value', 'description'],
+            additionalProperties: false,
+          },
+        },
+        storedStateKeys: { type: 'array', items: { type: 'string' } },
+        returningVisitor: { anyOf: [{ type: 'string', enum: ['active', 'inactive'] }, { type: 'null' }] },
+        redirectDestination: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      },
+      required: ['activationType', 'triggerDescription', 'triggerSelector', 'subPages', 'stayActivePages', 'audiences', 'storedStateKeys', 'returningVisitor', 'redirectDestination'],
+      additionalProperties: false,
+    },
     flags: { type: 'array', items: { type: 'string' } },
   },
-  required: ['platform', 'itwLink', 'previewLinks', 'goals', 'flags'],
+  required: ['platform', 'itwLink', 'previewLinks', 'goals', 'itw', 'flags'],
   additionalProperties: false,
 };
 
@@ -602,6 +633,17 @@ previewLinks — every variation preview URL, one entry per variation, taken fro
 goals — every goal listed on the ticket, each as {text, isNew}. text is the goal's own wording, with any leading numbering stripped. isNew is true only if the ticket marks that goal "[NEW]" or equivalent. Do not compute or invent a Convert metric ID — leave numeric-ID resolution out of text entirely; the caller resolves it separately. Empty array if none found.
 
 flags — a short list of QA-readiness inconsistencies worth a human's attention: the Platform Experiment ID given below (for reference) not matching an ID embedded in a preview link URL; goals or preview links with "TBD" or missing identifiers; a preview link that appears to point at a different experiment; a missing QA Test Plan link; a Labels value that conflicts with the platform referenced elsewhere in the ticket. Empty array if nothing looks off.
+
+itw — how the spec says this experiment activates and whom it targets, for Selenite's ITW Activation check. Read the description, the Test Specifications and any Targeting, Audiences or Activation section. Take every value from the ticket; never infer one from general knowledge.
+  activationType — "trigger" when the spec says the experiment activates on a visitor action or condition (a click, a quiz answer, a modal opening, a callback, conditional or manual activation, a polling condition); "immediate" when it says the experiment runs on page load; null when the spec does not say.
+  triggerDescription — the spec's own words for the trigger, one sentence; null when there is none.
+  triggerSelector — a CSS selector for the trigger element ONLY when the spec literally gives one (an id, a class, a data attribute or a full selector); null otherwise. Never build a selector from a button's visible text.
+  subPages — URLs or paths the spec says the experiment must NOT activate on. Empty array when none.
+  stayActivePages — URLs or paths the spec says the visitor moves to after the trigger, where the experiment must stay active. Empty array when none.
+  audiences — every audience condition the spec names, each {name, role: "inclusion" or "exclusion", type: "query" (a URL parameter), "cookie", "device" or "other", param (the query parameter or cookie name; null for device and other), value (the value that matches; "desktop" or "mobile" for device; null when the spec gives none), description (the spec's words)}. The QA parameter cro_mode=qa is an inclusion audience of type query when the spec names it. Empty array when none.
+  storedStateKeys — names of browser storage keys or cookies the spec says hold saved answers, quiz progress or other state a returning visitor brings back; a trailing * when the spec gives a family of keys. Empty array when none.
+  returningVisitor — "active" when the spec says a returning visitor (with stored answers or state) sees the experiment again, "inactive" when it says they do not, null when the spec does not say.
+  redirectDestination — for a redirect test, the destination URL the variation redirects to, verbatim from the ticket; null when this is not a redirect test or the URL is not given.
 
 Never invent a URL, id, or value that doesn't appear in the content below. If something looks truncated or cut off, say so in flags rather than guessing at what's missing.`;
 
@@ -7054,6 +7096,8 @@ function buildTestAgentSummaryPrompt(modeResults, ticketContext) {
     }
     const json = JSON.stringify(entry.mode === 'qapass' && typeof qpSummaryProjection === 'function' ? qpSummaryProjection(entry.data)
       : entry.mode === 'emailcheck' && typeof ecSummaryProjection === 'function' ? ecSummaryProjection(entry.data)
+      : entry.mode === 'itwactivation' && typeof iaSummaryProjection === 'function' ? iaSummaryProjection(entry.data)
+      : entry.mode === 'responsiveness' && typeof rsSummaryProjection === 'function' ? rsSummaryProjection(entry.data)
       : (entry.data ?? null));
     const trimmed = json.length > 4000 ? json.slice(0, 4000) + '…' : json;
     return `${entry.name}: ran\n${trimmed}`;
@@ -7871,6 +7915,444 @@ async function runFunnelCrawl({ waypoints = [], supplementalPrompt = '' }) {
 
   const reachedEnd = segments.length > 0 && segments.every(s => s.reached) && segments[segments.length - 1].to === clean[clean.length - 1];
   return { segments, reachedEnd };
+}
+
+// ── Shared kit modes (ITW Activation, Responsiveness): the worker side ─────
+// One run of a kit mode = one new tab, one debugger attach, one cleanup. This section owns the tab, the attach, the
+// document-start shims, the cleanup and the logging (D5); the mode (itw-activation.js, responsiveness.js, loaded by
+// importScripts) does the orchestration through the `io` object qkwIo builds, and never touches the browser itself.
+// Rules this section keeps (plan 0.4-0.6 and D5):
+//   - 0.4: an injected page function that throws resolves {result:null} in Chrome 154+, so every read below treats
+//     null and {error} as "no data" and a rejected executeScript costs the one read, never the run (qkwRead);
+//   - 0.5: every URL a mode loads was built by qkBuildUrl or qkProdUrl, which strip optimizely_force_tracking and
+//     _conv_eforce; qkwLoad still refuses (as a load error) any address that carries one, and the only click is
+//     qkwTrustedClick, which dispatches nothing at a covered or unsafe target;
+//   - 0.6: desktop Chrome only. No user-agent override and no touch emulation is ever sent; the one viewport call
+//     is mobile:false at scale 1;
+//   - D5: no top-level reference to a qk*/QK_* / ia*/IA_* / rs*/RS_* global (other suites slice this file without
+//     loading those modules): they are used inside functions only.
+let _qkStopRequested = false;
+let _qkRunning = false;
+let _qkwDebug = null, _qkwDebugLast = null;
+function qkwStopError() { const e = new Error('Stopped'); e.qkStop = true; return e; }
+function qkwSleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// The mode card's Live debug box: this run's steps as {runId, mode, lines}. Every flush is the WHOLE snapshot (the panel
+// replaces its worker lines with the newest snapshot of its current runId), at most every 300 ms and once more at the
+// end. Set for the length of one qkwRunMode; null otherwise, and qkwDebug is a no-op then. _qkwDebugLast is the finished
+// run's feed, which the answer carries next to the record.
+function qkwDebug(level, text) {
+  const D = _qkwDebug;
+  if (!D) return;
+  qkDebugPush(D.lines, qkDebugEntry('worker', level, text));
+  if (!D.timer) D.timer = setTimeout(() => { D.timer = null; qkwDebugFlush(D); }, 300);
+}
+// Down the run window's panel port (no storage limit can block it) and into the session for a panel opened mid-run.
+// The first failed session write is kept as storageError.
+async function qkwDebugFlush(D) {
+  if (D.timer) { clearTimeout(D.timer); D.timer = null; }
+  const feed = { runId: D.runId, mode: D.mode, lines: D.lines.slice() };
+  const port = connectedPanels.get(D.win);
+  if (port) { try { port.postMessage({ action: 'qkDebug', ...feed }); } catch (_) {} }
+  try { await ns(D.win).set({ qkDebug: feed }); }
+  catch (e) { if (!D.storageError) D.storageError = String((e && e.message) || e); }
+}
+
+// A page read made outside qkwLoad. executeScript can REJECT as well as resolve null: that costs the one read, which comes
+// back as `err`. Stop and a lost debugger still end the run.
+async function qkwRead(work) {
+  try { return { v: await work(), err: null }; }
+  catch (e) {
+    if (qkIsStop(e) || qkIsFatal(e)) throw e;
+    return { v: null, err: qkMaskOutput(String((e && e.message) || e)) };
+  }
+}
+
+async function qkwCdp(S, method, params) {
+  try { return await chrome.debugger.sendCommand(S.target, method, params || {}); }
+  catch (e) {
+    const m = String(e && e.message || e);
+    if (/not attached|Detached while|No tab with id|Cannot access a closed/i.test(m)) {
+      const f = new Error('The debugger was detached from the run tab (the tab was closed, DevTools opened on it, or the "started debugging this browser" bar was cancelled).');
+      f.qkFatal = true; throw f;
+    }
+    throw e;
+  }
+}
+
+// Poll until done() or the load timeout; true when done() held.
+async function qkwWaitLoad(S, done) {
+  const t0 = Date.now();
+  while (!done()) {
+    if (_qkStopRequested) throw qkwStopError();
+    if (Date.now() - t0 >= QK_LOAD_TIMEOUT_MS) return false;
+    await qkwSleep(50);
+  }
+  return true;
+}
+
+// Navigate the run tab and resolve on Page.loadEventFired (or reject: timeout, a refused navigation). Every exit removes
+// the listener and the timer. The main frame id of the navigation is kept for qkwTrustedClick.
+function qkwNavigate(S, url) {
+  return new Promise((resolve, reject) => {
+    const tabId = S.target.tabId;
+    let done = false, timer = null;
+    const onEvent = (source, method) => {
+      if (source && source.tabId === tabId && method === 'Page.loadEventFired') finish(null);
+    };
+    function finish(err) {
+      if (done) return;
+      done = true;
+      try { chrome.debugger.onEvent.removeListener(onEvent); } catch (_) {}
+      if (timer) clearTimeout(timer);
+      if (err) reject(err); else resolve();
+    }
+    chrome.debugger.onEvent.addListener(onEvent);
+    timer = setTimeout(() => finish(new Error('Page load timed out after ' + Math.round(QK_LOAD_TIMEOUT_MS / 1000) + 's')), QK_LOAD_TIMEOUT_MS);
+    qkwCdp(S, 'Page.navigate', { url: normalizeUrl(url) }).then(
+      (r) => {
+        if (r && r.frameId) S.mainFrameId = r.frameId;
+        if (r && r.errorText) finish(new Error(qkMaskOutput(r.errorText)));
+      },
+      (e) => finish(e),
+    );
+  });
+}
+
+// Desktop metrics only (rule 0.6): the viewport at `w`, no user agent, no touch.
+async function qkwViewport(S, w) {
+  const h = qkHeightFor(w);
+  await qkwCdp(S, 'Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false, screenWidth: w, screenHeight: h });
+}
+
+// State hygiene without signing the user out (D6): delete over CDP the Optimizely/Convert cookies and the cookies the
+// (cleaned, A9) app-key patterns match. Returns the names (never values), or null when the CDP calls failed or the URL
+// has no origin.
+async function qkwClearState(S, url, appKeys) {
+  const full = normalizeUrl(url);
+  if (!originOf(full)) return null;
+  try {
+    const patterns = qkCleanPatterns(appKeys);
+    const r = await qkwCdp(S, 'Network.getCookies', { urls: [qkPathOnly(full) || full] });
+    const names = [];
+    for (const c of ((r && r.cookies) || [])) {
+      const name = String(c && c.name || '');
+      if (!name) continue;
+      if (!/^(optimizely|_conv_)/i.test(name) && !qkKeyMatches(name, patterns)) continue;
+      await qkwCdp(S, 'Network.deleteCookies', { name: c.name, domain: c.domain, path: c.path });
+      names.push(name);
+    }
+    return names;
+  } catch (e) {
+    if (qkIsFatal(e)) throw e;
+    return null;
+  }
+}
+
+// One load (D6, D23): refuse a tracking flag, clean (clear cookies, shim at document start, removed right after the load
+// event) or keepState (no shim, no deletion), viewport, navigate, settle (no scroll), the bot-check facts. The record
+// is the caller's to keep (qkLoadInto); nothing here pushes it.
+async function qkwLoad(S, spec) {
+  if (_qkStopRequested) throw qkwStopError();
+  spec = spec || {};
+  const tabId = S.target.tabId, t0 = Date.now();
+  const L = qkNewLoad(spec, ++S.loadN);
+  qkwDebug('info', '→ ' + qkDebugLoadName(L));
+  let shimId = null;
+  const dropShim = async () => {
+    if (shimId == null) return;
+    const id = shimId; shimId = null;
+    const i = S.scripts.indexOf(id);
+    if (i >= 0) S.scripts.splice(i, 1);
+    try { await chrome.debugger.sendCommand(S.target, 'Page.removeScriptToEvaluateOnNewDocument', { identifier: id }); } catch (_) {}
+  };
+  try {
+    if (qkTrackingFlags(normalizeUrl(spec.url)).length) { L.loadError = 'Refused: the address carries a tracking flag'; return L; }
+    let cookieNames = null;
+    if (!spec.keepState) {
+      cookieNames = await qkwClearState(S, spec.url, spec.appKeys);
+      const r = await qkwCdp(S, 'Page.addScriptToEvaluateOnNewDocument', { source: qkHygieneShim(qkCleanPatterns(spec.appKeys)) });
+      if (r && r.identifier != null) { shimId = r.identifier; S.scripts.push(shimId); }
+    }
+    await qkwViewport(S, spec.width || QK_PHASE_WIDTH);
+    await qkwNavigate(S, spec.url);
+    await dropShim();
+    const st = await exec(tabId, qkSettleFn, [{ firstWaitMs: QK_SETTLE.firstWaitMs, pollMs: QK_SETTLE.pollMs, maxPolls: QK_SETTLE.maxPolls }]);
+    L.settle = (st && !st.error) ? { stable: !!st.stable, polls: st.polls } : null;
+    const facts0 = await exec(tabId, qkPageFactsFn, []);
+    if (facts0 && facts0.bot && facts0.bot.challenge) L.blocked = { reason: 'bot-check', signal: facts0.bot.signal };
+    else L.ok = true;
+    if (!spec.keepState) {
+      const c = await qkwRead(() => execMain(tabId, qkClearedFn, []));
+      const shimNames = (c.v && Array.isArray(c.v.names)) ? c.v.names.map(String) : [];
+      const all = (cookieNames || []).map((n) => 'cookie:' + n).concat(shimNames);
+      L.cleared = all.filter((n, i) => all.indexOf(n) === i).slice(0, 60);
+    }
+    const tab = await chrome.tabs.get(tabId);
+    const tu = tab && tab.url;
+    L.final = tu ? (qkPathOnly(tu) || String(tu).split(/[?#]/)[0]) : null;
+  } catch (e) {
+    if (qkIsStop(e) || qkIsFatal(e)) throw e;
+    L.loadError = qkMaskOutput(String((e && e.message) || e));
+  } finally {
+    await dropShim();
+    L.ms = Date.now() - t0;
+    const r = qkDebugLoadResult(L);
+    qkwDebug(r.level, r.text);
+  }
+  return L;
+}
+
+// D7: the experiment state of the loaded page, MAIN world.
+async function qkwReadExperimentState(S, args) {
+  args = args || {};
+  const r = await qkwRead(() => execMain(S.target.tabId, qkExperimentStateFn, [args]));
+  if (r.err) return { readable: false, error: r.err };
+  return qkStateSummary(r.v, args.forcedIds);
+}
+
+// Settle with a scroll, then the page facts (bot check included). {error} when either read could not be made.
+async function qkwFacts(S) {
+  const tabId = S.target.tabId;
+  const a = await qkwRead(() => exec(tabId, qkSettleFn, [{ scroll: true }]));
+  if (a.err) return { error: a.err };
+  const b = await qkwRead(() => exec(tabId, qkPageFactsFn, []));
+  if (b.err) return { error: b.err };
+  return b.v == null ? { error: 'no result (the page script failed)' } : b.v;
+}
+
+// The snippet catalog, MAIN world, read once per run and kept only when the platform is Optimizely. A page with no
+// Optimizely snippet answers null and is not cached, so a later page can still supply it.
+async function qkwCatalog(S) {
+  if (S.catalog) return S.catalog;
+  const r = await qkwRead(() => execMain(S.target.tabId, qkSnippetProbeFn, [{}]));
+  if (r.err) return { error: r.err };
+  const cat = r.v;
+  if (cat == null) return { error: 'no result (the page script failed)' };
+  if (cat.error) return cat;
+  if (cat.platform === 'optimizely') { S.catalog = cat; return cat; }
+  return null;
+}
+
+// D8: one real click. Nothing is dispatched at a covered, unsafe or missing target.
+async function qkwTrustedClick(S, selector) {
+  if (_qkStopRequested) throw qkwStopError();
+  const tabId = S.target.tabId;
+  const t = await qkwRead(() => exec(tabId, qkClickTargetFn, [selector]));
+  const target = t.err ? { ok: false, reason: 'error', error: t.err } : (t.v == null ? { ok: false, reason: 'error', error: 'no result (the page script failed)' } : t.v);
+  if (!target.ok) return target;
+  let started = false, loaded = false;
+  const onEvent = (source, method, params) => {
+    if (!source || source.tabId !== tabId) return;
+    if (method === 'Page.frameStartedLoading') {
+      if (S.mainFrameId == null || (params && params.frameId === S.mainFrameId)) started = true;
+    } else if (method === 'Page.loadEventFired') loaded = true;
+  };
+  let navigated = false, blocked = null, final = null;
+  chrome.debugger.onEvent.addListener(onEvent);
+  try {
+    await qkwCdp(S, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.x, y: target.y });
+    await qkwCdp(S, 'Input.dispatchMouseEvent', { type: 'mousePressed', x: target.x, y: target.y, button: 'left', clickCount: 1 });
+    await qkwCdp(S, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x: target.x, y: target.y, button: 'left', clickCount: 1 });
+    await qkwSleep(QK_CLICK_NAV_WAIT_MS);
+    navigated = started;
+    if (started && !loaded) await qkwWaitLoad(S, () => loaded);
+  } finally {
+    try { chrome.debugger.onEvent.removeListener(onEvent); } catch (_) {}
+  }
+  await qkwRead(() => exec(tabId, qkSettleFn, [{ firstWaitMs: 400, pollMs: 250, maxPolls: 8 }]));
+  const f = await qkwRead(() => exec(tabId, qkPageFactsFn, []));
+  if (f.v && f.v.bot && f.v.bot.challenge) blocked = { reason: 'bot-check', signal: f.v.bot.signal };
+  const tr = await qkwRead(() => chrome.tabs.get(tabId));
+  const tu = tr.v && tr.v.url;
+  final = tu ? (qkPathOnly(tu) || String(tu).split(/[?#]/)[0]) : null;
+  return { ok: true, x: target.x, y: target.y, label: target.label, matches: target.matches, navigated, final, blocked };
+}
+
+// Storage and cookie names (never values) that match the (cleaned, A9) patterns or the Optimizely default.
+async function qkwStorageNames(S, patterns) {
+  const r = await qkwRead(() => exec(S.target.tabId, qkStorageNamesFn, [qkCleanPatterns(patterns)]));
+  if (r.err) return { error: r.err };
+  return r.v == null ? { error: 'no result (the page script failed)' } : r.v;
+}
+
+// Settle the page, then the clipping scan. Every failure is masked into {error}: no data for this width, and the mode goes on.
+async function qkwScan(S, opts) {
+  opts = opts || {};
+  const tabId = S.target.tabId;
+  const st = await qkwRead(() => exec(tabId, qkSettleFn, [opts.settle || { scroll: true, freeze: true }]));
+  if (st.err) return { error: qkMaskOutput('The page could not be settled for the clipping scan (' + st.err + ')') };
+  const r = await qkwRead(() => exec(tabId, qkClipScanFn, [{ ignoreList: opts.ignoreList }]));
+  if (r.err) return { error: qkMaskOutput('The clipping scan could not run after the page loaded (' + r.err + ')') };
+  return r.v == null ? { error: 'The clipping scan returned no data' } : r.v;
+}
+
+// Outline the text at m.text / m.y, wait, capture the viewport. {data (base64, no prefix), mark} or {error}.
+async function qkwShot(S, m) {
+  if (_qkStopRequested) throw qkwStopError();
+  m = m || {};
+  const tabId = S.target.tabId;
+  try {
+    const mk = await exec(tabId, qkTileMarkFn, [m.text, m.y]);
+    await qkwSleep(150);
+    const shot = await qkwCdp(S, 'Page.captureScreenshot', { format: 'jpeg', quality: 70 });
+    if (!shot || !shot.data) return { error: 'the capture returned no image' };
+    return { data: shot.data, mark: mk == null ? null : mk };
+  } catch (e) {
+    if (qkIsStop(e) || qkIsFatal(e)) throw e;
+    return { error: qkMaskOutput(String((e && e.message) || e)) };
+  }
+}
+
+// Draw a tile composition with OffscreenCanvas: a JPEG data URL, or null on any failure. The ops are Appendix A.8's
+// schema (A20), read strictly: `op` names the kind; rect {x, y, w, h, fill}; text {x, y, text, fill, font}; image {src,
+// sx, sy, sw, sh, dx, dy, dw, dh} with src 'prod' or 'variant'; line {x1, y1, x2, y2, stroke, width}. imgs = {prod,
+// variant}: each the shot's base64 JPEG without the prefix, or null when that half was not captured. An op of another
+// kind, or an image op whose src has no decoded capture, fails the tile (null) rather than guess: a capture drawn in
+// the wrong half would show PROD clipping what only the variation clips. The bytes go into the Blob as a Uint8Array:
+// qkBase64Decode returns a plain array, which a Blob stores as the text "255,216,…" (Chrome then cannot decode it).
+async function qkwCompose(layout, imgs) {
+  const bitmaps = {};
+  try {
+    imgs = imgs || {};
+    for (const k of ['prod', 'variant']) {
+      if (typeof imgs[k] !== 'string' || !imgs[k]) continue;
+      const bytes = qkBase64Decode(imgs[k]);
+      if (!bytes || !bytes.length) throw new Error('the ' + k + ' capture is not base64');
+      bitmaps[k] = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }));
+    }
+    const canvas = new OffscreenCanvas(layout.w, layout.h);
+    const ctx = canvas.getContext('2d');
+    for (const op of layout.ops) {
+      if (op.op === 'rect') {
+        ctx.fillStyle = op.fill;
+        ctx.fillRect(op.x, op.y, op.w, op.h);
+      } else if (op.op === 'text') {
+        ctx.font = op.font;
+        ctx.fillStyle = op.fill;
+        ctx.fillText(op.text, op.x, op.y);
+      } else if (op.op === 'image') {
+        const bmp = (op.src === 'prod' || op.src === 'variant') ? bitmaps[op.src] : null;
+        if (!bmp) throw new Error('an image op names no captured half: ' + op.src);
+        ctx.drawImage(bmp, op.sx, op.sy, op.sw, op.sh, op.dx, op.dy, op.dw, op.dh);
+      } else if (op.op === 'line') {
+        ctx.strokeStyle = op.stroke;
+        ctx.lineWidth = op.width;
+        ctx.beginPath();
+        ctx.moveTo(op.x1, op.y1);
+        ctx.lineTo(op.x2, op.y2);
+        ctx.stroke();
+      } else {
+        throw new Error('unknown op ' + op.op);
+      }
+    }
+    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: layout.quality });
+    return 'data:image/jpeg;base64,' + qkBase64(new Uint8Array(await blob.arrayBuffer()));
+  } catch (_) {
+    return null;
+  } finally {
+    for (const k of Object.keys(bitmaps)) { try { bitmaps[k].close(); } catch (_) {} }
+  }
+}
+
+// The run's one start line and one end line in the Console tab. The line arrives whole, [label] prefix included
+// (qkConsoleStart/qkConsoleEnd): this adds no prefix of its own (A3).
+async function qkwConsole(line) {
+  try { await addBrowserConsoleLog(_runWin, { level: line.level, text: qkMaskOutput(line.text), source: 'selenite-mode' }); } catch (_) {}
+}
+
+// The §3.1 io object for one run. Every call checks Stop first.
+function qkwIo(S, engine) {
+  const stop = () => { if (_qkStopRequested) throw qkwStopError(); };
+  return {
+    now: () => Date.now(),
+    checkStop: () => stop(),
+    sleep: (ms) => qkwSleep(ms),
+    debug: (level, text) => qkwDebug(level, text),
+    progress: async (p) => {
+      stop();
+      p = p || {};
+      try { await setTmProgress('qkProgress', { running: true, mode: engine.mode, phase: p.phase, label: p.label, width: p.width, loads: S.loadN }); } catch (_) {}
+    },
+    load: (spec) => qkwLoad(S, spec),
+    state: async (args) => { stop(); return qkwReadExperimentState(S, args); },
+    facts: async () => { stop(); return qkwFacts(S); },
+    catalog: async () => { stop(); return qkwCatalog(S); },
+    click: (selector) => qkwTrustedClick(S, selector),
+    storageNames: async (patterns) => { stop(); return qkwStorageNames(S, patterns); },
+    viewport: async (width) => { stop(); return qkwViewport(S, width); },
+    scan: async (opts) => { stop(); return qkwScan(S, opts); },
+    shot: (m) => qkwShot(S, m),
+    compose: async (layout, imgs) => { stop(); return qkwCompose(layout, imgs); },
+  };
+}
+
+// One run of a kit mode (D24, D25): guard, record, start line, tab + one attach, engine.run through the io object,
+// then the cleanup in a fixed order whatever happened (success, error, Stop, halt). Returns {ok:true, record, debug}.
+async function qkwRunMode(engine, payload) {
+  payload = payload || {};
+  if (_qkRunning) return { ok: false, error: 'An ITW Activation or Responsiveness run is already going in this browser. Stop it first.' };
+  _qkRunning = true;
+  _qkStopRequested = false;
+  let D = null;
+  try {
+    const t0 = Date.now();
+    const input = engine.sanitize(payload.input);
+    const rec = engine.newRecord(input, t0);
+    D = _qkwDebug = { runId: payload.runId || null, mode: engine.mode, win: _runWin, lines: [], timer: null, storageError: null };
+    _qkwDebugLast = null;
+    const S = { rec, target: null, scripts: [], loadN: 0, mainFrameId: null, catalog: null };
+    let tabId = null, attached = false;
+    qkwDebug('info', 'The worker started the ' + engine.label + ' run');
+    await qkwConsole(qkConsoleStart(engine.label, rec));
+    const heartbeat = setInterval(() => { try { chrome.runtime.getPlatformInfo(() => {}); } catch (_) {} }, 20000);
+    try {
+      const tab = await chrome.tabs.create({ url: 'about:blank', active: true, ...runTabWindow() });
+      tabId = tab.id; S.target = { tabId };
+      qkwDebug('info', 'Opened the run tab');
+      await chrome.debugger.attach(S.target, CDP_VERSION); attached = true;
+      await qkwCdp(S, 'Page.enable');
+      qkwDebug('info', 'Attached the debugger to it');
+      await engine.run(qkwIo(S, engine), rec, input);
+    } catch (e) {
+      if (qkIsHalt(e)) {
+        rec.halted = e.halted;
+        qkwDebug('warn', 'Halted: ' + e.message);
+      } else if (qkIsStop(e)) {
+        qkwDebug('warn', 'Stopped on request');
+      } else {
+        rec.error = qkMaskOutput(String((e && e.message) || e));
+        qkwDebug('error', 'The run ended on an error: ' + rec.error);
+      }
+    } finally {
+      clearInterval(heartbeat);
+      if (attached) {
+        try { await chrome.debugger.sendCommand(S.target, 'Emulation.clearDeviceMetricsOverride', {}); } catch (_) {}
+        for (const id of S.scripts.slice()) { try { await chrome.debugger.sendCommand(S.target, 'Page.removeScriptToEvaluateOnNewDocument', { identifier: id }); } catch (_) {} }
+        S.scripts.length = 0;
+        try { await chrome.debugger.detach(S.target); } catch (_) {}
+      }
+      if (tabId != null) { try { await chrome.tabs.remove(tabId); } catch (_) {} }
+      try { await setTmProgress('qkProgress', { running: false }); } catch (_) {}
+      rec.stopped = !!_qkStopRequested && !rec.halted;
+      rec.finishedAt = Date.now();
+      let rows = [];
+      try { rows = engine.derive(rec); } catch (e) { rec.error = rec.error || qkMaskOutput('Deriving the rows failed: ' + ((e && e.message) || e)); rows = []; }
+      rec.rows = Array.isArray(rows) ? rows : [];
+      qkwDebug('info', (tabId != null ? 'Closed the run tab' : 'The run tab was never opened') + ' after ' + S.loadN + ' load(s) in ' + qkDebugSecs(rec.finishedAt - t0) + ' · rows: ' + qkCountsLine(qkCounts(rec.rows)));
+      await qkwConsole(qkConsoleEnd(engine.label, rec));
+      await qkwDebugFlush(D);
+      _qkwDebugLast = { runId: D.runId, mode: D.mode, lines: D.lines.slice(), storageError: D.storageError };
+      if (_qkwDebug === D) _qkwDebug = null;
+      _qkRunning = false;
+    }
+    return { ok: true, record: rec, debug: _qkwDebugLast };
+  } catch (e) {
+    if (D && _qkwDebug === D) _qkwDebug = null;
+    return { ok: false, error: qkMaskOutput(String((e && e.message) || e)) };
+  } finally {
+    _qkRunning = false;
+  }
 }
 
 // ── QA Pass (Test Agent mode 'qapass') ─────────────────────────────────────
@@ -9461,6 +9943,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     _funnelStopRequested = true;   // …and any funnel crawl
     _qpStopRequested = true;       // …and any QA Pass run
     _ecStopRequested = true;       // …and any Email Check run
+    _qkStopRequested = true;       // …and any ITW Activation or Responsiveness run
     _visionAbortController?.abort();   // …and any in-flight Agentic Testing / funnel vision call
     sendResponse({ ok: true });
 
@@ -10375,6 +10858,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   } else if (msg.action === 'ecSheetApply') {
     qpwRespond(sendResponse, sender, () => ecwSheetApply(msg.payload || {}));
+    return true;
+
+  } else if (msg.action === 'runItwActivation' || msg.action === 'runResponsiveness') {
+    (async () => {
+      const engine = msg.action === 'runItwActivation'
+        ? (typeof IA_ENGINE === 'object' ? IA_ENGINE : null)
+        : (typeof RS_ENGINE === 'object' ? RS_ENGINE : null);
+      if (!engine) { sendResponse({ ok: false, error: 'This mode is not loaded in the service worker: reload Selenite in chrome://extensions.' }); return; }
+      if (_qkRunning) { sendResponse({ ok: false, error: 'An ITW Activation or Responsiveness run is already going in this browser. Stop it first.' }); return; }
+      await beginTmRun(msg.payload);
+      try {
+        sendResponse(await qkwRunMode(engine, msg.payload || {}));
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      } finally {
+        await endTmRun();
+      }
+    })();
     return true;
 
   } else if (msg.action === 'summarizeTestAgentResults') {

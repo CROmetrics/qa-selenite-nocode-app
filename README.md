@@ -29,6 +29,15 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.28 — 2026-11-05
+
+**Test Agent**
+- New mode **ITW Activation**: does the experiment activate for exactly the right visitors on the real ITW link, and does Control (the `cro_mode=qa` link) match PROD? It covers the trigger (a real, trusted click that is refused when something covers the target), load-time and sub-page negatives, stay pages, a returning visitor, audience exclusions with both halves, and a redirect destination. A forced preview link given as the ITW link is refused for the audience and activation checks.
+- New mode **Responsiveness**: clipped or out-of-margin text at 18 widths (300 to 2080 px), in every variation and on PROD, with severity bands, "also on PROD", labelled tiles (PROD above the variation, with the gap written on the image), and an ignore list you can edit per run.
+- Both are Desktop Chrome only, write one row per check (Check, Expected, Observed, Verdict, Evidence) with CSV export, and have their own Live debug box plus a start and an end line in the Console tab. They mask `?`, `&` and `=` in everything they write, and stop at a bot check.
+- Initialize also extracts the ITW Activation inputs (activation type, trigger, sub-pages, stay pages, spec audiences, stored-state keys, returning visitor, redirect destination), shown on the review card.
+- Needs an extension reload: the worker code loads only then.
+
 ### 0.7.27 — 2026-11-05
 
 **Test Agent**
@@ -471,6 +480,44 @@ Checks an email proof for the active ticket against its copy doc, reads its Emai
 
 **Tests.** The committed fixtures are synthetic: an organisation called "Example Relief", with the tickets EX-1 and EX-2. The tests that check real proofs run only in a local suite outside the repository.
 
+#### ITW Activation
+
+Checks whether the experiment activates for exactly the right visitors on the real in-the-wild (ITW) link: the trigger, the audience and exclusion rules, the sub-pages and stay pages, the stored state, the returning visitor and the redirect. It also checks that the Control (the variation link carrying `cro_mode=qa`) is the page PROD visitors get. It is a standalone Test Agent mode and runs alone.
+
+**Inputs.** The ITW link, the Control link, and the activation rules. With a reviewed Test Context (Initialize tab) they come from the ticket; a field left empty uses the ticket's value, and a typed value is kept for that ticket only. Without a context each field is typed in the card.
+
+**Rules.**
+- **Preview links are refused.** An ITW link carrying `optimizely_x` (or another forcing key such as `optimizely_force_tracking` or `_conv_eforce`) bypasses audience conditions, so Mode 1 loads nothing on it. Steps 1 to 6 become one row that says so; steps 7 and 8 still run. Give the ITW link without the forcing key.
+- **A covered trigger is never clicked.** The trusted click first checks that the trigger is the element on top at its centre. When something else covers it, nothing is clicked and the row names the element on top (a cookie banner or an ad, say).
+- **Unsafe controls are refused.** A target whose text reads as a purchase, payment, unsubscribe, deletion or sign-out action is never clicked.
+- **Negatives need a positive partner.** An exclusion or removed-inclusion row that passes counts only when its partner row in the same run passed. Otherwise it is Needs PGM with the reason. An expected activation that does not happen on a page with partial traffic allocation is also Needs PGM, not Fail.
+- **Control and PROD are compared on six facts:** title, canonical path, text length, page height, the chat, banner and modal widgets, and a normalised text hash. A hash difference alone is Needs PGM; a hash difference with a failed length row is Fail. Every failed Control row ends with a remedy that says to find what alters the page for this visitor. It never says to edit Control to match the variation.
+- **Bot checks halt the run.** A challenge page stops the run at once. Every row not yet observed becomes Blocked, the page is not loaded again, and the Console end line says the run halted on that path.
+- **Fresh visitors.** A load that is neither a kept state nor forced is a new visitor to the live site. Selenite clears the Optimizely cookies before each of those loads, and the report says how many there were.
+- **Desktop Chrome only.** No phone user agent or touch emulation is used. The phone half of a Mobile Only check is Not Tested.
+- **Never done:** Selenite never sends `optimizely_force_tracking` or `_conv_eforce`, never emulates a phone, and never clicks a purchase or account control.
+
+**Output.** A table of Check, Expected, Observed, Verdict and Evidence, the Live debug box in the card, and one start and one end line per run in the Console tab. The report shows the same rows, with the pages loaded by path.
+
+#### Responsiveness
+
+Checks whether the variation clips or overflows at each width, on desktop, and whether PROD clips the same text at the same width. It is a standalone Test Agent mode and runs alone.
+
+**Inputs.** The PROD URL, the variation links (up to 6), the experiment ID, the stored keys and the widths. The widths default to 18 (300 to 2080 px), are read in severity order (360 to 430 first, then the medium widths, then 320 and below) and are capped at 30. Widths and the ignore list are tool settings: they are global, not taken from the ticket.
+
+**Rules.**
+- **Every variation is checked at every width.** Each variation link reloads once per width, and the served variation is checked on every load. If a load does not serve the forced variation, the rest of that link is blocked. A link carrying `_conv_eforce` is never loaded.
+- **PROD is measured once per width.** When PROD has no live experiment, each width is a clean reload. When it has one, the run resizes one page through the widths rather than making a new visitor for each.
+- **Severity:** 360 to 430 px is high, 320 px and below is low, and every other width is medium. Every clipped row is Fail whatever the severity.
+- **Also on PROD:** when PROD clips the same text at that width, the evidence says `also on PROD` and the row stays Fail. When it does not, the evidence says `new in this variation (regression)`.
+- **Clipping is scanned per variation and width,** with up to 5 rows listed and any more summarised as one `N more` Fail row.
+- **Ignore list.** One CSS selector per line, seeded with the 16 built-in selectors and saved with the tool settings; "Reset to defaults" restores them. The run refuses any line that is not a valid selector and names it.
+- **Tiles.** For each failing width within the caps, the worst element is outlined and captured, and the same text is marked and captured on PROD. Each tile puts the PROD half above the variation half, with the gap in pixels written beside the clipped edge. Caps: 6 tiles per variation and 12 per run; a row past a cap says so.
+- **Bot checks halt the run,** as in ITW Activation.
+- **Desktop Chrome only,** with the viewport width emulated and no phone user agent or touch.
+
+**Output.** A table with Width, Variant, Element selector, Gap px, Also on PROD and Severity, and a Tile column. The panel and report list rows that need attention first. The CSV has every row, and "Download tiles (HTML)" saves the tiles as one self-contained file. Formula-like cells are quoted so the CSV opens in Sheets without warnings.
+
 ### A/B Variant Comparison
 
 The **A/B** tab QAs an A/B experiment (Optimizely, Convert, or similar) by loading the same page once per variant and diffing the captures — no interaction steps, just load and compare. Differences are shown neutrally (a variant is *supposed* to differ from control); only JS errors and load failures are styled as errors.
@@ -533,6 +580,9 @@ extension/
 ├── popup.js            # Queue builder, Metrics section, UI logic (shared by both UIs)
 ├── browserstack.js     # BrowserStack Live links, device presets, the Local check and what Live did with a launch (A/B tab's Devices section)
 ├── qa-pass.js          # QA Pass (Test Agent): checks, sweep, Sheets helpers, shared by the worker and the panel
+├── qa-kit.js           # Shared layer for ITW Activation and Responsiveness: page functions, URL and masking helpers, the run engine's io contract (copies of QA Pass's proven code)
+├── itw-activation.js   # ITW Activation (Test Agent): does the experiment activate for the right visitors on the ITW link, and does Control match PROD
+├── responsiveness.js   # Responsiveness (Test Agent): clipping at each width, on desktop, for the variations and PROD, with tiles and CSV export
 ├── background.js       # Service worker (queue execution, console capture, metrics)
 ├── picker.js           # In-page element picker (injected on demand)
 ├── selector.js         # Shared CSS-selector builder (used by picker.js and recorder.js)

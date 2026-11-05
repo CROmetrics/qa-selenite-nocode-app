@@ -96,6 +96,7 @@ function connectPanelPort() {
   _panelPort.postMessage({ action: 'hello', winId: WIN_ID });
   // QA Pass's worker steps come down this port as they happen (qpwDebugFlush), whatever room chrome.storage.session has.
   _panelPort.onMessage.addListener((msg) => { if (msg && msg.action === 'qpDebug') qpUiDebugTake(msg); });
+  _panelPort.onMessage.addListener((msg) => { if (msg && msg.action === 'qkDebug' && typeof qkUiDebugTake === 'function') qkUiDebugTake(msg); });
   _panelPort.onDisconnect.addListener(() => {
     _panelPort = null;
     setTimeout(connectPanelPort, 500);
@@ -265,6 +266,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     await initEmailCheck();
   } catch (e) {
     console.error('Selenite: Email Check failed to initialize —', e);
+  }
+
+  // Shared-kit modes. One try each: a fault in one must not take the other, or the Settings and Test Agent bindings below, with it.
+  try {
+    await initItwActivation();
+  } catch (e) {
+    console.error('Selenite: ITW Activation failed to initialize —', e);
+  }
+  try {
+    await initResponsiveness();
+  } catch (e) {
+    console.error('Selenite: Responsiveness failed to initialize —', e);
   }
 
   // ── Settings overlay ─────────────────────────────────────────────────────
@@ -566,6 +579,24 @@ const TA_MODES = {
     getData: () => _ecLastRun,
     onShow: () => { ecUiOnShow().catch(() => {}); },
   },
+  // ITW Activation: does the experiment activate for exactly the right visitors on the real ITW link (itw-activation.js, qkUi* below, qkwRunMode in background.js).
+  'itwactivation': {
+    label: 'ITW Activation', bodyId: 'ia-body', homeParentId: 'ta-mode-homes',
+    standalone: true,
+    run: () => runItwActivationMode(),
+    isConfigured: () => true,   // inputs fall back to the ticket; run() returns {ok:false,error} when it has none
+    getData: () => qkUiState('itwactivation').last,
+    onShow: () => { qkUiOnShow(IA_PANEL).catch(() => {}); },
+  },
+  // Responsiveness: clipped or overflowing text per width, per variation and on plain PROD (responsiveness.js, same engine).
+  'responsiveness': {
+    label: 'Responsiveness', bodyId: 'rs-body', homeParentId: 'ta-mode-homes',
+    standalone: true,
+    run: () => runResponsivenessMode(),
+    isConfigured: () => true,   // inputs fall back to the ticket; run() returns {ok:false,error} when it has none
+    getData: () => qkUiState('responsiveness').last,
+    onShow: () => { qkUiOnShow(RS_PANEL).catch(() => {}); },
+  },
 };
 let _taActiveBody = null;       // '4' | '6' | 'funnel' | null — which mode currently owns #ta-settings-slot
 const taQueuedExtra = new Set(); // mode ids checked in the "Also Run" list, not persisted across popup reopen
@@ -866,6 +897,465 @@ async function runFunnelCrawl() {
     : { ts: Date.now(), segments: [], reachedEnd: false, error: res?.error || 'Funnel crawl failed' };
   if (resultsEl) renderFunnelResults(resultsEl, _funnelLastRun);
 }
+
+// ── Shared kit modes (ITW Activation, Responsiveness) — panel side ─────────
+// One generic engine (qkUi*) drives both cards from a per-mode config object (IA_PANEL in itw-activation.js, RS_PANEL in
+// responsiveness.js: mode, label, prefix, action, version, columns, overridesKey, settingsKey, lastRunKey, debugLastKey,
+// csvBase, fields[{key, id, kind, scope, ph(ctx), dflt}], buildInput, ctxLine, inputLine). The worker is qkwRunMode in
+// background.js; nothing here calls a model (D10). Names here are qkUi*, plus _qkUi, runItwActivationMode,
+// runResponsivenessMode, initItwActivation and initResponsiveness. The run record is the mode's getData(): qkUiState(mode).last.
+// Stored (chrome.storage.local): <overridesKey>[ticketKey] {savedAt, values} (≤ 30 tickets, key `_none` without a context;
+// D14), <settingsKey> {<key>: value} for the global fields. Session (sessionNS): <lastRunKey> (qkUiSlim: no tile images),
+// <debugLastKey> (the Live debug box), qkProgress and qkDebug (written by the worker). D25: the debug box merges the panel's
+// own lines with the worker's, which arrive down the panel port, in qkDebug, and with the record.
+const _qkUi = {};
+const qkUiDebugSilentMs = 8000, qkUiDebugStallMs = 60000, qkUiMaxTickets = 30;
+
+function qkUiEl(id) { return document.getElementById(id); }
+function qkUiState(mode) {
+  if (!_qkUi[mode]) {
+    _qkUi[mode] = { last: null, debug: { runId: null, panel: [], worker: [], sentAt: 0, lastWorkerAt: 0, silentWarned: false, stallWarnedAt: 0, sessionUse: null, done: true }, loadedFor: null };
+  }
+  return _qkUi[mode];
+}
+function qkUiTicketKey(ctx) {
+  const k = ctx && ctx.ticketKey != null ? String(ctx.ticketKey).trim() : '';
+  return k || '_none';
+}
+// A field's element: f.id is the whole markup id of Appendix B ('ia-itw', 'rs-ignore'), the only form (A11).
+function qkUiField(cfg, f) {
+  return qkUiEl(f.id);
+}
+function qkUiReadValues(cfg) {
+  const v = {};
+  (cfg.fields || []).forEach((f) => {
+    const el = qkUiField(cfg, f);
+    v[f.key] = el ? String(el.value == null ? '' : el.value) : '';
+  });
+  return v;
+}
+function qkUiFillFields(cfg, saved) {
+  (cfg.fields || []).forEach((f) => {
+    if (f.scope !== 'ticket') return;
+    const el = qkUiField(cfg, f);
+    if (!el) return;
+    el.value = saved && saved[f.key] != null ? String(saved[f.key]) : '';
+  });
+}
+// The ctx line, the placeholders of the ticket-scope fields only (a global field's placeholder is never set: its value never
+// comes from the ticket), and each ticket-scope select's first option (D14).
+function qkUiRenderCtx(cfg, ctx) {
+  const line = qkUiEl(cfg.prefix + '-ctx');
+  if (line) {
+    let t = '';
+    try { t = ctx ? cfg.ctxLine(ctx) : ''; } catch (_) { t = ''; }
+    line.textContent = t || 'No active ticket context — use the Initialize tab, or fill in the inputs below';
+  }
+  (cfg.fields || []).forEach((f) => {
+    if (f.scope !== 'ticket') return;
+    const el = qkUiField(cfg, f);
+    if (!el) return;
+    let ph = '';
+    try { ph = f.ph && ctx ? f.ph(ctx) : ''; } catch (_) { ph = ''; }
+    ph = ph == null ? '' : String(ph).trim();
+    if (f.kind === 'select') {
+      const first = el.options && el.options[0];
+      if (first) first.textContent = 'From the ticket: ' + (ph || 'not stated');
+    } else {
+      el.setAttribute('placeholder', ph || 'not on the ticket');
+    }
+  });
+}
+async function qkUiLoadOverrides(cfg, key) {
+  try {
+    const got = await chrome.storage.local.get(cfg.overridesKey);
+    const all = (got && got[cfg.overridesKey]) || {};
+    const e = all[key];
+    return e && e.values && typeof e.values === 'object' ? e.values : null;
+  } catch (_) {
+    return null;
+  }
+}
+async function qkUiSaveOverrides(cfg) {
+  try {
+    const st = qkUiState(cfg.mode);
+    const key = st.loadedFor || '_none';
+    const values = {};
+    let any = false;
+    (cfg.fields || []).forEach((f) => {
+      if (f.scope !== 'ticket') return;
+      const el = qkUiField(cfg, f);
+      const val = el ? String(el.value == null ? '' : el.value) : '';
+      values[f.key] = val;
+      if (val.trim()) any = true;
+    });
+    const got = await chrome.storage.local.get(cfg.overridesKey);
+    const all = Object.assign({}, (got && got[cfg.overridesKey]) || {});
+    if (any) all[key] = { savedAt: Date.now(), values };
+    else delete all[key];
+    const keys = Object.keys(all);
+    if (keys.length > qkUiMaxTickets) {
+      keys.sort((a, b) => ((all[a] && all[a].savedAt) || 0) - ((all[b] && all[b].savedAt) || 0));
+      keys.slice(0, keys.length - qkUiMaxTickets).forEach((k) => { delete all[k]; });
+    }
+    await chrome.storage.local.set({ [cfg.overridesKey]: all });
+  } catch (_) {}
+}
+// The global fields (a tool setting, never from the ticket) go to chrome.storage.local[settingsKey].
+async function qkUiSaveSettings(cfg) {
+  if (!cfg.settingsKey) return;
+  try {
+    const s = {};
+    (cfg.fields || []).forEach((f) => {
+      if (f.scope !== 'global') return;
+      const el = qkUiField(cfg, f);
+      if (el) s[f.key] = String(el.value == null ? '' : el.value);
+    });
+    await chrome.storage.local.set({ [cfg.settingsKey]: s });
+  } catch (_) {}
+}
+async function qkUiClearOverrides(cfg) {
+  qkUiFillFields(cfg, null);
+  try {
+    const key = qkUiState(cfg.mode).loadedFor || '_none';
+    const got = await chrome.storage.local.get(cfg.overridesKey);
+    const all = Object.assign({}, (got && got[cfg.overridesKey]) || {});
+    delete all[key];
+    await chrome.storage.local.set({ [cfg.overridesKey]: all });
+  } catch (_) {}
+}
+// D20: the first line that is not a valid CSS selector, else null.
+function qkUiValidateSelectors(lines) {
+  const frag = document.createDocumentFragment();
+  for (const line of lines || []) {
+    try { frag.querySelector(line); } catch (_) { return line; }
+  }
+  return null;
+}
+// Chrome's session storage: {used, quota} in bytes, or null (a copy of qpUiSessionUse).
+async function qkUiSessionUse() {
+  try {
+    const s = chrome.storage && chrome.storage.session;
+    if (!s || typeof s.getBytesInUse !== 'function') return null;
+    const used = await s.getBytesInUse(null);
+    return typeof used === 'number' ? { used, quota: s.QUOTA_BYTES || 10485760 } : null;
+  } catch (_) {
+    return null;
+  }
+}
+function qkUiMb(n) { return (n / 1048576).toFixed(1) + ' MB'; }
+
+// ── the Live debug box ──
+function qkUiDebugStart(cfg) {
+  const st = qkUiState(cfg.mode);
+  st.prefix = cfg.prefix;
+  st.debug = { runId: Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), panel: [], worker: [], sentAt: 0, lastWorkerAt: 0,
+    silentWarned: false, stallWarnedAt: 0, sessionUse: null, done: false };
+  qkUiDebugRender(cfg.mode);
+  return st.debug.runId;
+}
+function qkUiDebug(cfg, level, text) {
+  const st = qkUiState(cfg.mode);
+  qkDebugPush(st.debug.panel, qkDebugEntry('panel', level, text));
+  qkUiDebugRender(cfg.mode);
+}
+function qkUiDebugLines(mode) {
+  const D = qkUiState(mode).debug;
+  return qkDebugMerge(D.panel, D.worker);
+}
+function qkUiDebugRender(mode) {
+  const p = qkUiState(mode).prefix;
+  if (!p) return;
+  const lines = qkUiDebugLines(mode);
+  const box = qkUiEl(p + '-debug'), out = qkUiEl(p + '-debug-out');
+  if (box) box.style.display = lines.length ? '' : 'none';
+  if (!out) return;
+  const atBottom = !(out.scrollHeight > 0) || out.scrollHeight - out.scrollTop <= out.clientHeight + 4;
+  out.innerHTML = qkDebugHtml(lines);
+  if (atBottom) out.scrollTop = out.scrollHeight;
+}
+// A feed {runId, mode, lines} is a whole snapshot; only the current run of its mode is taken, and the newest snapshot wins.
+function qkUiDebugTake(feed) {
+  if (!feed || feed.mode == null || !Array.isArray(feed.lines) || !feed.lines.length) return;
+  const st = qkUiState(feed.mode), D = st.debug;
+  if (feed.runId == null || feed.runId !== D.runId) return;
+  const had = D.worker;
+  if (feed.lines.length > had.length || (had.length && feed.lines[feed.lines.length - 1].t > had[had.length - 1].t)) {
+    D.worker = feed.lines;
+    D.lastWorkerAt = Date.now();
+    qkUiDebugRender(feed.mode);
+  }
+}
+async function qkUiDebugPull(cfg) {
+  try {
+    const { qkDebug } = await sessionNS.get('qkDebug');
+    if (qkDebug && (qkDebug.mode == null || qkDebug.mode === cfg.mode)) qkUiDebugTake(Object.assign({}, qkDebug, { mode: cfg.mode }));
+  } catch (_) {}
+}
+// While the run is with the worker: say so when it has written nothing yet, or nothing new for a minute (QA Pass's wording).
+function qkUiDebugWatch(cfg, now) {
+  const D = qkUiState(cfg.mode).debug;
+  if (D.done || !D.sentAt) return;
+  if (!D.worker.length) {
+    if (!D.silentWarned && now - D.sentAt >= qkUiDebugSilentMs) {
+      D.silentWarned = true;
+      qkUiDebug(cfg, 'warn', 'No step from the worker ' + Math.round((now - D.sentAt) / 1000) + ' s after the run was sent. A worker that runs older code than this panel writes none: reload Selenite in chrome://extensions and run again.'
+        + (D.sessionUse ? ' (Session storage was ' + qkUiMb(D.sessionUse.used) + ' of ' + qkUiMb(D.sessionUse.quota) + ' when the run started.)' : ''));
+    }
+    return;
+  }
+  const quiet = now - D.lastWorkerAt;
+  if (quiet >= qkUiDebugStallMs && now - D.stallWarnedAt >= qkUiDebugStallMs) {
+    D.stallWarnedAt = now;
+    qkUiDebug(cfg, 'warn', 'No new step from the worker for ' + Math.round(quiet / 1000) + ' s. Its last: ' + D.worker[D.worker.length - 1].text);
+  }
+}
+function qkUiDebugEnd(cfg) {
+  qkUiState(cfg.mode).debug.done = true;
+  qkUiDebugRender(cfg.mode);
+  try { Promise.resolve(sessionNS.set({ [cfg.debugLastKey]: qkUiDebugLines(cfg.mode) })).catch(() => {}); } catch (_) {}
+}
+
+// A deep copy without the tile images (the session copy of the last run).
+function qkUiSlim(rec) {
+  const c = JSON.parse(JSON.stringify(rec));
+  if (Array.isArray(c.tiles)) c.tiles.forEach((t) => { if (t) delete t.img; });
+  return c;
+}
+
+async function qkUiRunMode(cfg) {
+  const resultsEl = qkUiEl(cfg.prefix + '-results');
+  const runId = qkUiDebugStart(cfg);
+  // A refusal can echo a line the tester typed (an ignore selector, a stored key), so it is masked like every other output.
+  const fail = (raw) => {
+    const error = qkMaskOutput(raw);
+    qkUiDebug(cfg, 'error', error);
+    qkUiDebugEnd(cfg);
+    if (resultsEl) resultsEl.innerHTML = '<div style="color:var(--err);font-size:11px">' + esc(error) + '</div>';
+    return { ok: false, error };
+  };
+  qkUiDebug(cfg, 'info', 'Run clicked: reading the active ticket context');
+  const ctx = await getActiveContext().catch(() => null);
+  const values = qkUiReadValues(cfg);
+  // D20: an invalid ignore-list line refuses the run before anything is sent.
+  for (const f of cfg.fields || []) {
+    if (f.kind !== 'selectors') continue;
+    const bad = qkUiValidateSelectors(qkLines(values[f.key]));
+    if (bad != null) return fail('Ignore list: not a valid CSS selector: ' + bad);
+  }
+  let b;
+  try { b = cfg.buildInput(ctx, values); } catch (e) { b = { ok: false, error: String((e && e.message) || e) }; }
+  if (!b || !b.ok) return fail((b && b.error) || cfg.label + ' could not read its inputs');
+  try { qkUiDebug(cfg, 'info', cfg.ctxLine(ctx)); } catch (_) {}
+  try { qkUiDebug(cfg, 'info', cfg.inputLine(b.input)); } catch (_) {}
+  const D = qkUiState(cfg.mode).debug;
+  const use = D.sessionUse = await qkUiSessionUse();
+  if (use) {
+    const full = use.used >= use.quota * 0.9;
+    qkUiDebug(cfg, full ? 'warn' : 'info', 'Session storage: ' + qkUiMb(use.used) + ' of ' + qkUiMb(use.quota) + ' in use'
+      + (full ? '. Nearly full: a write that grows it fails, so the progress line above may not move. This box does not depend on it.' : ''));
+  }
+  const progressEl = qkUiEl(cfg.prefix + '-progress'), statusEl = qkUiEl('ta-status');
+  const tick = async () => {
+    await qkUiDebugPull(cfg);
+    qkUiDebugWatch(cfg, Date.now());
+    try {
+      const { qkProgress } = await sessionNS.get('qkProgress');
+      if (!qkProgress || !qkProgress.running || qkProgress.mode !== cfg.mode) return;
+      const line = cfg.label + ' — ' + (qkProgress.phase || '') + ' ' + (qkProgress.label || '') + ' · ' + (qkProgress.width || '') + 'px (' + (qkProgress.loads || 0) + ' loads)';
+      if (progressEl) progressEl.textContent = line;
+      if (statusEl) statusEl.textContent = line;
+    } catch (_) {}
+  };
+  const timer = setInterval(tick, 800);
+  // Two causes, two sentences: a record of another version came from an older worker; a rejected message was never answered.
+  const STALE_WORKER = 'The service worker is older than this panel — reload Selenite in chrome://extensions and run again.';
+  const NO_ANSWER = 'The service worker did not answer the run: it is older than this panel, or Chrome stopped it mid-run. Reload Selenite in chrome://extensions and run again.';
+  try {
+    let res;
+    const sentAt = Date.now();
+    D.sentAt = sentAt;
+    qkUiDebug(cfg, 'info', 'Sent the run to the service worker');
+    try {
+      res = await chrome.runtime.sendMessage({ action: cfg.action, payload: { input: b.input, winId: WIN_ID, runId } });
+    } catch (e) {
+      const m = String((e && e.message) || e);
+      const error = /message port closed|Could not establish connection|Receiving end does not exist/i.test(m) ? NO_ANSWER : m;
+      await qkUiDebugPull(cfg);
+      qkUiDebug(cfg, 'error', error === m ? 'The run message failed: ' + m : 'Chrome rejected the run message ("' + m + '"): ' + error);
+      return { ok: false, error: qkMaskOutput(error) };
+    }
+    await qkUiDebugPull(cfg);
+    if (res && res.debug) qkUiDebugTake(Object.assign({}, res.debug, { mode: cfg.mode }));
+    if (res && res.debug && res.debug.storageError) {
+      const u = D.sessionUse;
+      qkUiDebug(cfg, 'warn', 'The worker could not write to Chrome\'s session storage during the run (' + res.debug.storageError + ')'
+        + (u ? '; it was ' + qkUiMb(u.used) + ' of ' + qkUiMb(u.quota) + ' full when the run started' : '') + '. Its steps reached this box over the panel\'s connection.');
+    }
+    if (!res || !res.ok || !res.record) {
+      const error = (res && res.error) || cfg.label + ' failed';
+      qkUiDebug(cfg, 'error', 'The worker answered without a record: ' + error);
+      return { ok: false, error: qkMaskOutput(error) };
+    }
+    const record = res.record;
+    if (record.version !== cfg.version) {
+      qkUiDebug(cfg, 'error', 'The worker sent a version ' + record.version + ' record; this panel reads version ' + cfg.version);
+      return { ok: false, error: STALE_WORKER };
+    }
+    qkUiDebug(cfg, record.error ? 'warn' : 'info', 'The worker answered after ' + qkDebugSecs(Date.now() - sentAt) + ' · ' + (record.loads || []).length + ' load(s) kept · '
+      + qkCountsLine(qkCounts(record.rows)) + (record.stopped ? ' · stopped' : '') + (record.halted ? ' · halted by a bot check' : '') + (record.error ? ' · error: ' + qkMaskOutput(record.error) : ''));
+    if (!D.worker.length) qkUiDebug(cfg, 'warn', 'The worker sent no step of its own, so it runs older code than this panel. Reload Selenite in chrome://extensions before the next run.');
+    if (record.error && !(record.loads || []).length) return { ok: false, error: qkMaskOutput(record.error) };
+    record.ts = Date.now();
+    qkUiState(cfg.mode).last = record;
+    try { await sessionNS.set({ [cfg.lastRunKey]: qkUiSlim(record) }); } catch (_) {}
+    qkUiRenderResults(cfg, record);
+    qkUiDebug(cfg, 'info', 'Results shown below');
+    return { ok: true };
+  } finally {
+    clearInterval(timer);
+    if (progressEl) progressEl.textContent = '';
+    qkUiDebugEnd(cfg);
+  }
+}
+
+function qkUiRenderResults(cfg, record) {
+  const el = qkUiEl(cfg.prefix + '-results');
+  if (!el || !record) return;
+  const rows = record.rows || [];
+  const badge = qkBadge(rows, record.stopped, record.halted);
+  const color = badge.kind === 'fail' ? 'var(--err)' : badge.kind === 'pass' ? 'var(--ok)' : 'var(--warn)';
+  const p = '#' + cfg.prefix + '-results';
+  let h = '<style>' + p + ' .qk-table{width:100%;border-collapse:collapse;font-size:10px}' + p + ' .qk-table td,' + p + ' .qk-table th{border-bottom:1px solid var(--border,#333);padding:2px 3px;text-align:left;vertical-align:top;word-break:break-word}' + p + ' details{margin-top:6px;font-size:10px}</style>'
+    + '<div style="font-size:11px;font-weight:700;color:' + color + ';margin-bottom:2px">' + esc(badge.label) + '</div>'
+    + '<div style="font-size:11px;color:var(--fg2);margin-bottom:6px">' + esc(qkCountsLine(qkCounts(rows))) + (record.stopped ? ' · stopped' : '') + '</div>';
+  if (record.halted) {
+    h += '<div style="font-size:11px;color:var(--err);margin-bottom:6px">' + esc(qkMaskOutput('A bot check (' + (record.halted.signal || 'unknown') + ') on ' + (record.halted.path || 'the page')
+      + ' halted the run. Selenite never attempts these: open the page yourself in this Chrome, then run again once it loads normally.')) + '</div>';
+  }
+  if (record.error) h += '<div style="font-size:11px;color:var(--err);margin-bottom:4px">' + esc(qkMaskOutput(record.error)) + '</div>';
+  const hasImg = Array.isArray(record.tiles) && record.tiles.some((t) => t && t.img);
+  h += '<div style="display:flex;gap:6px;margin-bottom:6px"><button class="btn sm" type="button" data-qk-csv>Download CSV</button>'
+    + (hasImg ? '<button class="btn ghost sm" type="button" data-qk-tiles>Download tiles (HTML)</button>' : '') + '</div>';
+  h += qkResultsHtml(cfg.columns, rows, { tiles: record.tiles });
+  el.innerHTML = h;
+}
+
+function qkUiDownload(filename, text, mime) {
+  const blob = new Blob([text], { type: mime });
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+}
+function qkUiOnResultsClick(cfg, e) {
+  const t = e && e.target && e.target.closest ? e.target.closest('[data-qk-csv],[data-qk-tiles]') : null;
+  if (!t) return;
+  const rec = qkUiState(cfg.mode).last;
+  if (!rec) return;
+  const ts = rec.ts || Date.now();
+  if (t.hasAttribute('data-qk-csv')) {
+    qkUiDownload(qkFileName(cfg.csvBase, rec.ticketKey, ts, 'csv'), qkCsv(cfg.columns, rec.rows || []), 'text/csv');
+  } else {
+    // The record's tile LIST, never a map (A8).
+    qkUiDownload(qkFileName(cfg.csvBase + '-tiles', rec.ticketKey, ts, 'html'),
+      qkTilesHtmlFile(cfg.label + ' tiles · ' + (rec.ticketKey || 'no ticket'), rec.tiles || [], rec.rows || []), 'text/html');
+  }
+}
+
+// Shown each time the mode is selected: the context line and placeholders, and, only when the ticket changed since the last
+// show, that ticket's typed overrides in the ticket-scope fields (so an edit in progress is never overwritten by a re-show).
+async function qkUiOnShow(cfg) {
+  const st = qkUiState(cfg.mode);
+  st.prefix = cfg.prefix;
+  let ctx = null;
+  try { ctx = await getActiveContext(); } catch (_) {}
+  try { qkUiRenderCtx(cfg, ctx); } catch (_) {}
+  const key = qkUiTicketKey(ctx);
+  if (st.loadedFor !== key) {
+    const saved = await qkUiLoadOverrides(cfg, key);
+    qkUiFillFields(cfg, saved);
+    st.loadedFor = key;
+  }
+}
+
+async function qkUiInit(cfg) {
+  const body = qkUiEl(cfg.prefix + '-body');
+  if (!body) return;
+  const st = qkUiState(cfg.mode);
+  st.prefix = cfg.prefix;
+  const globals = (cfg.fields || []).filter((f) => f.scope === 'global');
+  let saved = {};
+  if (cfg.settingsKey && globals.length) {
+    try { const got = await chrome.storage.local.get(cfg.settingsKey); saved = (got && got[cfg.settingsKey]) || {}; } catch (_) {}
+  }
+  globals.forEach((f) => {
+    const el = qkUiField(cfg, f);
+    if (!el) return;
+    const d = Array.isArray(f.dflt) ? f.dflt.join('\n') : (f.dflt == null ? '' : String(f.dflt));
+    el.value = typeof saved[f.key] === 'string' ? saved[f.key] : d;
+  });
+  const showIgnoreStatus = () => {
+    (cfg.fields || []).forEach((f) => {
+      if (f.kind !== 'selectors') return;
+      const el = qkUiField(cfg, f), status = qkUiEl(cfg.prefix + '-ignore-status');
+      if (!el || !status) return;
+      const bad = qkUiValidateSelectors(qkLines(el.value));
+      status.textContent = bad == null ? '' : 'Not a valid CSS selector: ' + bad;
+    });
+  };
+  const onBody = (e) => {
+    const t = e && e.target;
+    if (t && t.closest && t.closest('#' + cfg.prefix + '-results')) return;
+    qkUiSaveOverrides(cfg);
+    qkUiSaveSettings(cfg);
+    showIgnoreStatus();
+  };
+  body.addEventListener('input', onBody);
+  body.addEventListener('change', onBody);
+  qkUiEl('btn-' + cfg.prefix + '-clear-inputs')?.addEventListener('click', () => { qkUiClearOverrides(cfg); });
+  (cfg.fields || []).forEach((f) => {
+    if (f.kind !== 'selectors') return;
+    qkUiEl('btn-' + cfg.prefix + '-ignore-reset')?.addEventListener('click', () => {
+      const el = qkUiField(cfg, f);
+      if (el) el.value = Array.isArray(f.dflt) ? f.dflt.join('\n') : (f.dflt == null ? '' : String(f.dflt));
+      qkUiSaveSettings(cfg);
+      showIgnoreStatus();
+    });
+  });
+  showIgnoreStatus();
+  qkUiEl(cfg.prefix + '-results')?.addEventListener('click', (e) => { qkUiOnResultsClick(cfg, e); });
+  qkUiEl('btn-' + cfg.prefix + '-debug-copy')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    try { await navigator.clipboard.writeText(qkDebugText(qkUiDebugLines(cfg.mode))); btn.textContent = 'Copied'; } catch (_) { btn.textContent = 'Copy failed'; }
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+  });
+  // The last run survives a panel reopen when its record version is the current one (the session copy has no tile images).
+  try {
+    const got = (await sessionNS.get(cfg.lastRunKey)) || {};
+    const last = got[cfg.lastRunKey];
+    if (last && last.version === cfg.version) {
+      st.last = last;
+      qkUiRenderResults(cfg, last);
+    }
+  } catch (_) {}
+  // And so does its Live debug box.
+  try {
+    const got = (await sessionNS.get(cfg.debugLastKey)) || {};
+    const lines = got[cfg.debugLastKey];
+    if (Array.isArray(lines) && lines.length && st.debug.done && !st.debug.panel.length) {
+      st.debug.panel = lines;
+      qkUiDebugRender(cfg.mode);
+    }
+  } catch (_) {}
+}
+
+// async (A19): when itw-activation.js or responsiveness.js failed to load, the missing IA_PANEL/RS_PANEL becomes a rejected
+// promise, which runTestAgent's .catch reports as a failed mode, instead of a throw out of its loop.
+async function runItwActivationMode() { return qkUiRunMode(IA_PANEL); }
+async function runResponsivenessMode() { return qkUiRunMode(RS_PANEL); }
+async function initItwActivation() { return qkUiInit(IA_PANEL); }
+async function initResponsiveness() { return qkUiInit(RS_PANEL); }
 
 // ── Email Check (Test Agent mode 'emailcheck') — panel side ────────────────
 // The shared logic is email-check.js (loaded before this file); the Mailtrap, Pardot, Email on Acid and copy-doc reads are the worker's
@@ -8519,6 +9009,11 @@ function abPageUrls(modes) {
       for (const l of m.data?.links || []) add(l.finalUrl);
       add(m.data?.controlVsProd?.prodFinalUrl);
     }
+    // The shared-kit modes: every page a load reached, whatever its role, by where it ended up (`final` holds no
+    // query). A non-web final (a Chrome error page) or a load that failed before the tab was read adds nothing (A22).
+    if (m?.mode === 'itwactivation' || m?.mode === 'responsiveness') {
+      for (const l of m.data?.loads || []) { const p = l ? qkPathOnly(l.final) : ''; if (p) add(p); }
+    }
   }
   return out;
 }
@@ -9488,6 +9983,43 @@ function rptFunnelSection(entry) {
   return rptSection(entry.name, badge, summary, body);
 }
 
+// ── Shared kit modes (ITW Activation, Responsiveness): the report sections ──
+// Every row was decided by the mode's derive function (itw-activation.js / responsiveness.js); nothing here changes a
+// status. One badge (qkBadge) drives the header, the counts are the five verdict words, and every string is masked
+// (qkMaskOutput) and escaped. The tables show finalUrl-style paths only: the records hold no query.
+function rptItwActivationSection(entry) {
+  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
+  const d = entry.data || {};
+  const rows = Array.isArray(d.rows) ? d.rows : [];
+  const badge = qkBadge(rows, d.stopped, d.halted);
+  const summary = qkCountsLine(qkCounts(rows)) + (d.stopped ? ' · stopped by the tester' : '') + (d.halted ? ' · halted by a bot check' : '');
+  const h = d.halted;
+  const halted = h
+    ? `<p class="rpt-muted" style="color:#c62828"><strong>${esc(qkMaskOutput(`A bot check (${h.signal || 'unknown'}) on ${h.path || 'a page'} halted the run. Selenite never attempts these, so every row not yet observed is Blocked.`))}</strong></p>`
+    : '';
+  const body = halted + qkResultsHtml(IA_COLUMNS, rows, { report: true, tiles: d.tiles })
+    + `<p class="rpt-muted">${iaReportFootHtml(d)}</p>`;
+  return rptSection(entry.name, rptBadge(badge.kind, badge.label), summary, body);
+}
+
+function rptResponsivenessSection(entry) {
+  if (entry.status === 'skipped') return rptSkipped(entry.name, entry.reason);
+  const d = entry.data || {};
+  const rows = Array.isArray(d.rows) ? d.rows : [];
+  const badge = qkBadge(rows, d.stopped, d.halted);
+  const summary = qkCountsLine(qkCounts(rows)) + (d.stopped ? ' · stopped by the tester' : '') + (d.halted ? ' · halted by a bot check' : '');
+  const h = d.halted;
+  const halted = h
+    ? `<p class="rpt-muted" style="color:#c62828"><strong>${esc(qkMaskOutput(`A bot check (${h.signal || 'unknown'}) on ${h.path || 'a page'} halted the run. Selenite never attempts these, so every row not yet observed is Blocked.`))}</strong></p>`
+    : '';
+  const capped = d.tilesCapped ? rsTilesCappedText(d.tilesCapped) : '';
+  // rsReportFootHtml returns <div> lines, so it sits in a div, not a p.
+  const body = halted + qkResultsHtml(RS_COLUMNS, rows, { report: true, tiles: d.tiles })
+    + (capped ? `<p class="rpt-muted">${esc(qkMaskOutput(capped))}</p>` : '')
+    + `<div class="rpt-muted" style="margin:8px 0">${rsReportFootHtml(d)}</div>`;
+  return rptSection(entry.name, rptBadge(badge.kind, badge.label), summary, body);
+}
+
 // ── Email Check (Test Agent mode 'emailcheck'): the report section ───────────
 // Every status here was decided by ecDeriveChecks (email-check.js). The Opus analysis only groups, annotates and asks: it
 // never adds, removes or changes a status. The eleven sub-headings are printed here, in order; each rptEmailCheck* helper
@@ -9928,6 +10460,8 @@ function buildReportBody(sections) {
     funnel: rptFunnelSection, queue: rptQueueSection,
     qapass: rptQaPassSection,
     emailcheck: rptEmailCheckSection,
+    itwactivation: rptItwActivationSection,
+    responsiveness: rptResponsivenessSection,
   };
   let diagnosticsHtml = '';
   try { diagnosticsHtml = rptDiagnosticsSection(vdCollectProblems(sections)); } catch (_) {}
@@ -10171,7 +10705,7 @@ function vdCollectProblems(sections) {
         `Did not complete — ${entry.reason || 'no reason recorded'}. Nothing from it is in the report.`);
     }
     if (entry.error) add('error', entry.name || `mode ${entry.mode}`, entry.error);
-    if (entry.data && (entry.mode === 4 || entry.mode === 5 || entry.mode === 6 || entry.mode === 'qapass' || entry.mode === 'emailcheck')) taModeProblems(entry, add);
+    if (entry.data && (entry.mode === 4 || entry.mode === 5 || entry.mode === 6 || entry.mode === 'qapass' || entry.mode === 'emailcheck' || entry.mode === 'itwactivation' || entry.mode === 'responsiveness')) taModeProblems(entry, add);
     if (entry.mode !== 2 || !entry.data) continue;
 
     // Geometry mismatch invalidates the whole comparison, so it is checked
@@ -10853,6 +11387,41 @@ function taModeProblems(entry, add) {
       add('warn', 'email-check/sheet', `Writing to the test plan failed: ${ecScrubText(d.sheet.applied.error || 'no reason given')}`);
     }
   }
+  // ITW Activation and Responsiveness: what degraded the run. Every text goes through qkMaskOutput.
+  if (entry.mode === 'itwactivation' || entry.mode === 'responsiveness') {
+    const where = entry.mode === 'itwactivation' ? 'itw-activation' : 'responsiveness';
+    const m = (s) => qkMaskOutput(String(s));
+    if (d.version == null) {
+      add('error', where, 'This record came from an older service worker: reload Selenite in chrome://extensions and run again.');
+    }
+    if (d.error) add('error', where, m(d.error));
+    if (d.halted) {
+      add('error', where, m(`A bot check (${d.halted.signal || 'unknown'}) on ${d.halted.path || 'a page'} halted the run; Selenite never attempts these.`));
+    }
+    if (d.stopped) add('info', where, 'Stopped by the tester: every row that had not run is Not Tested.');
+    for (const l of d.loads || []) {
+      if (l && l.loadError) add('warn', `${where}/${m(l.label || l.id || 'load')}`, m(`Failed to load (${l.loadError}), so its checks did not run.`));
+    }
+    if (entry.mode === 'itwactivation') {
+      if (d.refusedItw) add('warn', where, 'The ITW link forces a variation (optimizely_x), so audience and activation checks were not run on it; steps 7 and 8 still ran.');
+    } else {
+      const sw = Array.isArray(d.sweep) ? d.sweep : [];
+      const trunc = sw.filter((e) => e && e.scan && e.scan.truncated);
+      if (trunc.length) {
+        add('info', where, m(`${trunc.length} scan(s) stopped at the node limit, so elements past it were not measured (${trunc.slice(0, 3).map((e) => `${e.target} at ${e.width} px`).join(', ')}).`));
+      }
+      const inv = [];
+      sw.forEach((e) => { ((e && e.scan && e.scan.ignoreInvalid) || []).forEach((s) => { if (inv.indexOf(s) < 0) inv.push(s); }); });
+      if (inv.length) {
+        add('warn', where, m(`${inv.length} ignore-list selector(s) were not valid for the page and were dropped: ${inv.slice(0, 5).join(', ')}.`));
+      }
+      if (d.tilesCapped) {
+        const t = rsTilesCappedText(d.tilesCapped);
+        if (t) add('info', where, m(t));
+      }
+      if (d.plan && d.plan.prodMode === 'resize') add('info', where, m(`PROD: ${rsProdModeText(d.plan)}.`));
+    }
+  }
 }
 
 // The debug-log section for a WCAG (4), A/B accessibility (5) or Performance (6)
@@ -10929,6 +11498,10 @@ function taDebugSection(entry) {
   } else if (entry.mode === 'emailcheck') {
     // Renders become hasImage, paragraphs are cut, every string is scrubbed again, sheet rows become counts (ecDebugProjection).
     Object.assign(out, ecDebugProjection(d));
+  } else if (entry.mode === 'itwactivation') {
+    Object.assign(out, iaDebugProjection(d));
+  } else if (entry.mode === 'responsiveness') {
+    Object.assign(out, rsDebugProjection(d));
   }
   return out;
 }
@@ -11208,6 +11781,8 @@ function buildDebugLog(sections) {
     performance: taDebugSection(modeEntry(6)),
     qaPass: taDebugSection(modeEntry('qapass')),
     emailCheck: taDebugSection(modeEntry('emailcheck')),
+    itwActivation: taDebugSection(modeEntry('itwactivation')),
+    responsiveness: taDebugSection(modeEntry('responsiveness')),
     // The Function Queue's Test Agent run. Steps are already stored compact and
     // without anything a tester typed (fnQueueSegmentExport), so they pass through
     // as recorded. null (not omitted) when no such run was in the report.
@@ -11746,6 +12321,7 @@ function extractTestContext(issue, origin, ticketKeyFromPage, links) {
     copyFileUrl,
     emailProofs: emailLinks.proofs.map(p => ({ segment: p.segment, variation: p.variation, url: p.url })),
     emailEoa: emailLinks.eoa.map(e => ({ variation: e.variation, url: e.url })),
+    activationType: null, triggerDescription: null, triggerSelector: null, subPages: [], stayActivePages: [], specAudiences: [], storedStateKeys: [], returningVisitor: null, redirectDestination: null,
     comments: jiraContextComments(f.comment),
     figmaUrl, figmaNodeId,
     // Set by fetchCompAttachment() after this returns — it needs the Jira tab
@@ -12082,6 +12658,8 @@ function renderInitReview() {
   // Email Check's two lists. Guarded: a fault in the new markup must not take the whole review card (and with it the Initialize tab) down.
   let emailListsHtml = '';
   try { emailListsHtml = initEmailListsHtml(d, q); } catch (e) { emailListsHtml = `<div style="font-size:10px;color:var(--warn);margin-bottom:8px">Email proof links could not be shown: ${esc(String((e && e.message) || e))}</div>`; }
+  let itwFieldsHtml = '';
+  try { itwFieldsHtml = typeof iaInitFieldsHtml === 'function' ? iaInitFieldsHtml(d) : ''; } catch (e) { itwFieldsHtml = `<div style="font-size:10px;color:var(--warn);margin-bottom:8px">ITW Activation fields could not be shown: ${esc(String((e && e.message) || e))}</div>`; }
 
   host.innerHTML = `
   <div class="card">
@@ -12142,6 +12720,7 @@ function renderInitReview() {
     <button class="btn sm" data-init-add="concurrentTests" style="margin:5px 0 10px">+ Add Concurrent Test</button>
 
     ${emailListsHtml}
+    ${itwFieldsHtml}
 
     <div class="arg-row" style="margin-top:8px">
       <span class="arg-lbl">Save as</span>
@@ -12202,6 +12781,8 @@ function onInitReviewClick(e) {
     if (list === 'concurrentTests') _initDraft.concurrentTests.push({ ticketKey: '', label: '' });
     if (list === 'emailProofs')  { _initDraft.emailProofs = _initDraft.emailProofs || []; _initDraft.emailProofs.push({ segment: '', variation: 'v0', url: '' }); }
     if (list === 'emailEoa')     { _initDraft.emailEoa = _initDraft.emailEoa || []; _initDraft.emailEoa.push({ variation: 'v0', url: '' }); }
+    if (list === 'subPages' || list === 'stayActivePages' || list === 'storedStateKeys') { _initDraft[list] = _initDraft[list] || []; _initDraft[list].push(''); }
+    if (list === 'specAudiences') { _initDraft.specAudiences = _initDraft.specAudiences || []; _initDraft.specAudiences.push({ name: '', role: 'exclusion', type: 'query', param: '', value: '', description: '' }); }
     renderInitReview();
   }
 }
@@ -12270,6 +12851,7 @@ function mergeAiFieldsIntoDraft(aiRes) {
       return { text, isNew: !!g.isNew, convertMetricId, resolutionNeeded };
     }) : [];
     (f.flags || []).forEach(flag => _initWarnings.push(flag));
+    if (typeof iaCtxFieldsFromAi === 'function') Object.assign(_initDraft, iaCtxFieldsFromAi(f.itw));
     if (aiRes.truncated) _initWarnings.push('AI field extraction was cut off at the output limit — Preview Links/Goals may be incomplete.');
   } else {
     const reason = aiRes?.error === 'No API key configured'
@@ -12398,6 +12980,7 @@ async function commitInitContext() {
   d.softcodedTests  = normalizeRelated(d.softcodedTests);
   d.concurrentTests = normalizeRelated(d.concurrentTests);
   Object.assign(d, normalizeInitEmail(d));
+  if (typeof iaNormalizeCtxFields === 'function') Object.assign(d, iaNormalizeCtxFields(d));
 
   const ctx = { ...d, summary: (d.summary || '').trim(), experimentId: (d.experimentId || '').trim() || null, qaTestPlanUrl: (d.qaTestPlanUrl || '').trim() || null, reviewed: true };
 

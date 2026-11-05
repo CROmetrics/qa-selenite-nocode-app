@@ -2,6 +2,53 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-11-05 — 0.7.28
+
+Two new Test Agent modes, **ITW Activation** and **Responsiveness**, on a shared kit (`qa-kit.js`). They are the first two of five modes that QA Pass will be split into; QA Pass is unchanged until all five exist.
+
+### Added
+
+- **ITW Activation (Test Agent mode, `itw-activation.js`):** checks whether the experiment activates for exactly the right visitors on the real ITW link (trigger, audience and exclusion rules, sub-pages, stay pages, stored state, returning visitor, redirect), and whether Control (the `cro_mode=qa` link) matches what PROD visitors get. Desktop Chrome only. Standalone: it runs alone.
+- **Responsiveness (Test Agent mode, `responsiveness.js`):** checks clipping at each width, on desktop, for every variation and for PROD. Severity bands, "also on PROD", tiles (PROD above the variation, the gap written), an editable ignore list, CSV and "Download tiles (HTML)". Standalone.
+- **Shared layer (`qa-kit.js`):** the page functions, URL and output masking, and the run engine's `io` contract, copied from QA Pass's proven code (`qk` names). Parity tests pin each copy to its QA Pass original.
+- **Worker and panel (`background.js`, `popup.js`, both HTML files):** one run = one tab and one debugger attach, detached and closed on every end path. Live debug box per mode. One Console start line and one end line per run.
+- **Tests:** `qa-kit`, `itw-activation`, `responsiveness`, `qk-worker` and `qk-panel` suites, the modes gate (`extension/tests/modes-gate/`, ten scenarios on 127.0.0.1 with a synthetic site), and the five new suites in the CI loop (`.github/workflows/run-tests.yml`).
+- **README:** `#### ITW Activation` and `#### Responsiveness` under Test Agent; the three new files in Project Structure.
+
+### Changed
+
+- **Initialize:** the extraction schema has an `itw` field (required) and a prompt paragraph for it. The draft carries the nine defaults, the review card shows the fields, and Save normalises them.
+- **Review card:** shows the ITW Activation fields; Save keeps edits.
+- **qa-report tests:** two assertions that list the mode keys now include the two new modes.
+
+### Decisions
+
+- **D1:** QA Pass is not re-pointed. The shared layer is a copy, with parity tests, so QA Pass's code and tests stay unchanged for the later deletion run.
+- **D6:** Clean load: Optimizely and `_conv_` cookies are deleted over CDP before navigation, and app-key state is cleared by a shim that is removed after the load event. Names are recorded, values never read.
+- **D8:** A covered trigger is never clicked. The click checks the element on top at five points and refuses when another element covers the target. Purchase, payment, unsubscribe, deletion and sign-out controls are refused.
+- **D16:** Mode 1 refuses an ITW link that forces a variation (`optimizely_x` and related keys). Steps 1 to 6 become one Not Tested row; steps 7 and 8 still run.
+- **D17:** Control is the `cro_mode=qa` link, PROD is the ITW link without tracking or forcing parameters. Six facts are compared; a hash difference alone is Needs PGM.
+- **D18:** Every failed Control row ends with a fixed remedy that says to fix the targeting or setup, never to edit Control to match the variation.
+- **D20:** Mode 5 ignore list: CSS selectors, seeded with QA Pass's 16 defaults, validated at Run, saved with the tool settings.
+- **D21:** Mode 5 sweep: widths in severity order, every variation at every width, PROD clean-reloaded per width unless it runs a live experiment, then resized through the widths. Severity and "also on PROD" as specified.
+- **D22:** Tiles: up to 6 per variation and 12 per run, composed on an OffscreenCanvas, PROD half above the variation half, with the gap written.
+- **D23:** A bot check halts the run: the page is not loaded again, unfinished rows become Blocked, and the Console end line says so.
+
+### Verification
+
+Measured on the final tree in the S16c run.
+
+- Changed suites: `jira-extract` 118 → 127; `qa-report` 1796 → 1874.
+- Unchanged, all 0 failed: `figma` 104, `vd-diff` 1371, `real-runs` 1665, `matrix` 182, `floating` 10, `queue-agent` 169, `browserstack` 778, `qa-pass` 1633, `email-check` 2489, `email-check-worker` 627, `exp-status` 54.
+- New, all 0 failed: `qa-kit` 815, `itw-activation` 621, `responsiveness` 419, `qk-worker` 465, `qk-panel` 512 (507 at Phase 4, plus 5 for the masked refusal message).
+- Modes gate: 10 scenarios, 465 passed, 0 failed, ALL PASSED.
+
+### Not verified
+
+- Nothing has run on a live Optimizely site. The modes gate runs in real Chrome against a synthetic site on 127.0.0.1.
+- The new CI loop has not run in GitHub Actions.
+- Field checks, after the commit and a reload of Selenite: the Initialize `itw` fields on a real ticket with a trigger-activated experiment; ITW Activation in everyday Chrome (the trigger click, the exclusion halves, Control vs PROD, the Console lines, the debug box); the forced-preview refusal on a real ticket; Responsiveness on a real ticket (widths, the PROD resize line, tiles, CSV in Sheets); a cookie banner covering the trigger (the covered row, nothing clicked).
+
 ## 2026-11-05 — 0.7.27
 
 QA Pass now runs with **Agentic Testing (Sonnet)** and **Agentic Analysis (Opus)** on, like Funnel Crawl: choosing QA Pass checks both boxes and locks them. Will, 2026-11-05.

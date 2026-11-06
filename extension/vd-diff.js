@@ -192,7 +192,12 @@
   // and simply passes the residue through to path-only intact. (Caught by
   // hand-simulating the wrapper-insertion case before trusting it to the
   // test suite -- the first draft had these two passes swapped.)
-  function vdRunExactPass(unmatchedA, unmatchedB, pairs, tierName, keyFn) {
+  // uniqueOnly: pair a key only when exactly ONE element carries it on each
+  // side, instead of pairing equal-count duplicates by document order. For a
+  // key built from content (text, an href) two equal counts are evidence; for
+  // one that ignores structure entirely, duplicates are not (see
+  // keyTextlessVisual in vdMatchCandidates).
+  function vdRunExactPass(unmatchedA, unmatchedB, pairs, tierName, keyFn, uniqueOnly) {
     if (!unmatchedA.length || !unmatchedB.length) return;
     var byKey = new Map();
     var i, a, b, k, entry;
@@ -223,6 +228,7 @@
       // pass (ultimately the fuzzy pass, or left as add/remove) rather than
       // guess which ones correspond.
       if (aList.length !== bList.length) continue;
+      if (uniqueOnly && aList.length !== 1) continue;
       var as = aList.slice().sort(vdByDocOrder), bs = bList.slice().sort(vdByDocOrder);
       for (var idx = 0; idx < as.length; idx++) {
         pairs.push({ a: as[idx], b: bs[idx], tier: tierName });
@@ -255,8 +261,8 @@
     // same tag and nothing else scores 0.44 and correctly fails; a shared
     // 4-deep path tail (the wrapper-insertion case) scores 0.78 and pairs at
     // any distance; proximity alone pairs only within |dy| <= ~133px. All
-    // three only ever apply to elements the eight exact passes -- path-only
-    // included -- have already declined.
+    // three only ever apply to elements the exact passes -- textless-visual
+    // and path-only included -- have already declined.
     if (!a.textNorm && !b.textNorm) return structural / 0.45;
     return 0.55 * vdTokenSimilarity(a.textNorm, b.textNorm) + structural;
   }
@@ -325,11 +331,41 @@
     // Same reasoning, one tier narrower: textShape('') is '', so without the
     // guard this pairs any two textless siblings under one parent slot.
     function keyShapePpath(c) { return (hasRealText(c) && c.shapeHash) ? (c.tag + ' ' + c.shapeHash + ' ' + (c.ppath || '')) : null; }
+    // What a textless element DRAWS: its image source (src is captured only
+    // under VD_CAPTURE_EXTENDED), its background image, and its accessible
+    // name, plus its box size. Nothing positional at all. Without it a
+    // textless element's only identity was its ordinal path, and one inserted
+    // sibling shifted every later path by one: measured in real Chrome
+    // (2026-10-16), a text tile inserted first in a six-image gallery paired
+    // each image with its neighbour, giving five `style:src` findings plus a
+    // false removal and a false addition for one real change. Giving the
+    // images alt text did not help, because path+text ran before the aria
+    // tiers ever saw them. No payload, no key: an svg or input with no name
+    // keeps the old behaviour rather than gaining a guess.
+    function keyTextlessVisual(c) {
+      if (hasRealText(c) || !c.rect) return null;
+      var s = c.styles || {}, name = ariaOrAlt(c);
+      if (!s.src && !s.backgroundImage && !name) return null;
+      return c.tag + ' src=' + (s.src || '') + ' bg=' + (s.backgroundImage || '')
+        + ' name=' + (name || '') + ' ' + c.rect.w + 'x' + c.rect.h;
+    }
 
     // 1: stable per-element attribute, cheapest and least ambiguous.
     vdRunExactPass(unmatchedA, unmatchedB, pairs, 'testid', keyTestid);
     // 2: a real, non-generated id.
     vdRunExactPass(unmatchedA, unmatchedB, pairs, 'stableId', keyStableId);
+    // 2b: a textless element identified by what it draws. BEFORE path+text,
+    // because for a textless element path+text IS path-only (the text hash it
+    // corroborates with is the hash of ''), so it misfires on a shifted subtree
+    // exactly the way the header above vdRunExactPass describes for path-only
+    // -- and running first is the only way a correct payload pairing gets a
+    // turn. Unique keys only: equal counts of a duplicated source (a lazy-load
+    // placeholder, a spacer) say nothing about which copy is which, the same
+    // reason keyText refuses empty text. Those fall through to the path tiers
+    // unchanged. Where payload and path agree (an untouched element whose
+    // payload is unique), this pass makes the same pair path+text would have;
+    // only the tier name differs.
+    vdRunExactPass(unmatchedA, unmatchedB, pairs, 'textless-visual', keyTextlessVisual, true);
     // 3: structural position AND content both agree -- zero ambiguity, the
     // bulk of a normal page lands here.
     vdRunExactPass(unmatchedA, unmatchedB, pairs, 'path+text', keyPathText);

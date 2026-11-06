@@ -2,6 +2,28 @@
 
 All notable changes to Selenite are documented here.
 
+## 2026-11-06 — 0.7.29
+
+Two fixes built and measured in real Chrome 155 on 2026-10-16 and held back until now: an A/B variant that redirects to another host keeps its load-time console lines and errors, and Visual Diff matches an element with no text by what it draws instead of by its position alone.
+
+### Fixed
+
+- **A/B load-time capture across a redirect (`abEarlyCaptureMatches`, `registerAbEarlyCapture`, `captureVariant`, `background.js`):** the document_start hooks (0.7.14, 0.7.15) were registered for the host the variant was opened on, with its scheme. A 302 to another host lost the parse-time line, error and rejection in 5 of 5 runs (1 of 2 lines and 1 of 3 errors captured), and an `http://` URL its server sends on to `https://` on the same host lost them in 2 of 2. Patterns now use `*://`, which covers both schemes. The other host can't be learned in time to register for it: `tabs.onUpdated` reports the new URL only once the page has started to parse (registering then missed the parse-time line in 5 of 5 loads), and a HEAD from the worker follows an HTTP redirect but not a script's `location.replace` (0 of 5), which is how a split-URL test sends a visitor on. So when a variant lands on a host its hooks don't cover, `captureVariant` registers both hosts and opens the variant once more in a fresh tab (a fresh tab, not `tabs.update`, so the request is the first one's again and a late line from the first tab can't reach the second one's buffer), then closes the first. Through the real panel, 10 of 10 runs then had every line and 3 of 3 errors for a cross-host 302, a script redirect and a two-hop chain.
+- **Visual Diff matching of textless elements (`keyTextlessVisual`, `vdMatchCandidates`, `vd-diff.js`):** an element with no text had only its ordinal path as identity, because `keyText` and `keyShapePpath` refuse empty text and path+text is path-only when the text is `''`. One inserted sibling shifted every later path by one. In real Chrome, a text tile inserted first in a six-image gallery gave the added tile plus seven wrong findings: five `style:src` (each image paired with its neighbour), a false removal and a false addition. A new exact pass, `textless-visual`, runs before path+text and keys on tag, image source (captured under `VD_CAPTURE_EXTENDED`), background image, accessible name and box size, with nothing positional. It pairs a key only when exactly one element carries it on each side (`vdRunExactPass`'s new `uniqueOnly`), so a duplicated image (a lazy-load placeholder, a spacer) falls through to the path tiers unchanged. An element with none of those keeps the old behaviour.
+
+### Changed
+
+- **The debug log (`buildDebugLog`, `popup.js`):** each capture carries `earlyCapture`: `{ matches, reopened }`, the patterns in force for the captured load and the host that caused a second open (`null` if none), or `null` when nothing was registered. Missing (not `null`) when the worker predates it.
+
+### Measured
+
+- The real `domCandidateWalkFn` in Chrome 155 on local gallery pages, its output run through the old and new matcher: the inserted-tile gallery goes from 7 wrong findings to the one added tile; a reversed gallery's six findings change from six wrong "image changed" to six right "moved"; an unchanged gallery stays at 0. Where an image's payload is unique and its path unchanged, the new pass makes the same pair path+text made, so on a page shaped like the recorded corpus only the tier name moves. The recorded debug logs carry no candidate lists, so the corpus could not be replayed through the matcher; `real-runs` is unchanged by construction.
+
+### Tests
+
+- `vd-diff` 1371 → 1418: the `*://` patterns; the re-open (a cross-host 302 opens once more and keeps only the second tab's lines; a same-host redirect or an http-to-https upgrade does not; a variant that lands somewhere new every time is reopened once, never twice; Chrome refusing either registration; the second tab never loading or failing to open; Keep tabs open); `earlyCapture` in the debug log; and the gallery cases rebuilt from the real Chrome capture (inserted tile, reversed, unchanged, duplicated sources, one real image change beside an insert). Removing either fix makes its own tests fail: 16 without the matcher pass, 17 without the redirect re-open.
+- The other 17 suites unchanged; all 0 failed.
+
 ## 2026-11-05 — 0.7.28
 
 Two new Test Agent modes, **ITW Activation** and **Responsiveness**, on a shared kit (`qa-kit.js`). They are the first two of five modes that QA Pass will be split into; QA Pass is unchanged until all five exist.

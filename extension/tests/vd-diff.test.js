@@ -2050,6 +2050,153 @@ function composeFor(a, b, over) {
   eq('  and nothing is reported dropped when nothing was capped', unchangedOnly.dropped.length, 0);
 })();
 
+// ── 6b. textless identity, built from a real Chrome 155 capture ────────────
+section('textless identity (gallery shape)');
+// Geometry and paths copy the real domCandidateWalkFn's output on the
+// 2026-10-16 battery's gallery page (Chrome 155, 1280px): six 180x180 <img>s,
+// each in its own div.tile, on a 199px pitch from y=665, with 14 paragraphs
+// above and 16 below. A variant that inserts a 60px text tile first pushes
+// every image and footer down 72px and every image's path along by one div.
+// Replayed through the matcher before keyTextlessVisual, that real capture
+// gave exactly the field result: the added tile, five `style:src` rows pairing
+// each image with its neighbour, tile0 removed and tile5 added.
+function gallery(o) {
+  o = o || {};
+  var order = o.order || [0, 1, 2, 3, 4, 5];
+  var srcs = o.srcs || ['tile0', 'tile1', 'tile2', 'tile3', 'tile4', 'tile5'];
+  var shift = o.insert ? 72 : 0, firstDiv = o.insert ? 2 : 1, out = [], i;
+  for (i = 0; i < 14; i++) {
+    out.push(cand({ tag: 'p', text: 'Paragraph ' + (i + 1) + ' meadow copy', x: 114, y: 133 + i * 38, w: 1052, h: 24,
+                    path: '/body[1]/main[1]/p[' + (i + 2) + ']', ppath: '/body[1]/main[1]' }));
+  }
+  if (o.insert) {
+    out.push(cand({ tag: 'div', text: 'New arrivals', x: 114, y: 665, w: 1052, h: 60, region: 'section',
+                    path: '/body[1]/main[1]/section[1]/div[1]', ppath: '/body[1]/main[1]/section[1]' }));
+  }
+  order.forEach(function (k, slot) {
+    var div = '/body[1]/main[1]/section[1]/div[' + (slot + firstDiv) + ']';
+    out.push(cand({ tag: 'img', x: 114, y: 665 + shift + slot * 199, w: 180, h: 180, region: 'section',
+                    path: div + '/img[1]', ppath: div, alt: o.alt ? 'Tile ' + (k + 1) : null,
+                    // noSrc is a capture with VD_CAPTURE_EXTENDED off: src absent.
+                    styles: o.noSrc ? { display: 'inline' }
+                                    : { display: 'inline', src: 'https://shop.test/img/' + srcs[k] + '.png' } }));
+  });
+  for (i = 0; i < 16; i++) {
+    out.push(cand({ tag: 'p', text: 'Footer ' + (i + 1) + ' harbor copy', x: 114, y: 1859 + shift + i * 38, w: 1052, h: 24,
+                    path: '/body[1]/main[1]/p[' + (i + 16) + ']', ppath: '/body[1]/main[1]' }));
+  }
+  return out;
+}
+function imgOf(c) { return c && c.tag === 'img' ? (c.styles.src || c.attrs.alt || '').split('/').pop() : null; }
+function rowsOf(r) {
+  return r.composed.findings.map(function (f) {
+    return f.changeClass + ':' + (imgOf(f.a) || (f.a && f.a.text) || '-') + '>' + (imgOf(f.b) || (f.b && f.b.text) || '-');
+  });
+}
+function visualPairs(r) { return r.match.pairs.filter(function (p) { return p.tier === 'textless-visual'; }); }
+
+(function insertedTileIsOneFinding() {
+  if (!HAVE_COMPOSE) return;
+  // THE field case. Truth: one tile added, nothing else changed.
+  [['src', {}], ['alt only, extended capture off', { alt: true, noSrc: true }]].forEach(function (c) {
+    var r = composeFor(gallery(c[1]), gallery(Object.assign({ insert: true }, c[1])));
+    var rows = rowsOf(r), tl = visualPairs(r);
+    eq('inserted tile (' + c[0] + '): one row, the added text tile', rows.join(' | '), 'added:->New arrivals');
+    eq('  all six images pair by what they draw', tl.length, 6);
+    ok('  each with its own image, never its neighbour',
+       tl.every(function (p) { return imgOf(p.a) === imgOf(p.b); }),
+       tl.map(function (p) { return imgOf(p.a) + '>' + imgOf(p.b); }));
+    eq('  nothing removed', r.match.removed.length, 0);
+  });
+})();
+
+(function reversedGalleryReadsAsMoves() {
+  if (!HAVE_COMPOSE) return;
+  // Same count before and after the tier -- six rows -- but opposite truth:
+  // before, every slot "changed its image"; now each image moved. Six distinct
+  // shift amounts, so no band explains them and all six are reported.
+  var r = composeFor(gallery(), gallery({ order: [5, 4, 3, 2, 1, 0] }));
+  var rows = rowsOf(r), tl = visualPairs(r);
+  eq('reversed gallery: six rows', rows.length, 6);
+  ok('  every one a move, none a src change',
+     r.composed.findings.every(function (f) { return f.changeClass === 'moved'; }), rows);
+  ok('  each image paired with itself',
+     tl.length === 6 && tl.every(function (p) { return imgOf(p.a) === imgOf(p.b); }),
+     tl.map(function (p) { return imgOf(p.a) + '>' + imgOf(p.b); }));
+})();
+
+(function unchangedGalleryMakesThePathPairs() {
+  if (!HAVE_COMPOSE) return;
+  // The corpus's shape. Where payload and path agree the tier must make
+  // exactly the pairs path+text made; only the tier name moves.
+  var r = composeFor(gallery(), gallery());
+  var tl = visualPairs(r);
+  eq('unchanged gallery: nothing reported', r.composed.findings.length, 0);
+  eq('  every element pairs', r.match.pairs.length, 36);
+  eq('  the six images at textless-visual', tl.length, 6);
+  ok('  each pair is the same-path pair path+text would have made',
+     tl.every(function (p) { return p.a.path === p.b.path; }), tl.map(function (p) { return p.a.path + ' ' + p.b.path; }));
+  eq('  the text keeps path+text', r.match.pairs.filter(function (p) { return p.tier === 'path+text'; }).length, 30);
+})();
+
+(function duplicateSourceStaysUnclaimed() {
+  if (!HAVE_COMPOSE) return;
+  // Tiles 1 and 4 draw the same image on both pages, the shape of a lazy-load
+  // placeholder or a repeated spacer. Two equal counts are no evidence which
+  // copy is which, so this tier must leave both alone and the older passes
+  // decide, exactly as before it existed.
+  var srcs = ['tile0', 'tile1', 'tile2', 'tile3', 'tile1', 'tile5'];
+  function dups(r) { return r.match.pairs.filter(function (p) { return imgOf(p.a) === 'tile1.png'; }); }
+
+  var same = composeFor(gallery({ srcs: srcs }), gallery({ srcs: srcs }));
+  eq('duplicate src, unchanged: neither copy claimed by textless-visual',
+     dups(same).map(function (p) { return p.tier; }).join(','), 'path+text,path+text');
+  eq('  the four unique images are', visualPairs(same).length, 4);
+  eq('  nothing reported', same.composed.findings.length, 0);
+
+  var ins = composeFor(gallery({ srcs: srcs }), gallery({ srcs: srcs, insert: true }));
+  var d = dups(ins);
+  ok('duplicate src, tile inserted: neither copy claimed by textless-visual',
+     d.length === 2 && d.every(function (p) { return p.tier !== 'textless-visual'; }),
+     d.map(function (p) { return p.tier; }));
+  eq('  the four unique images are', visualPairs(ins).length, 4);
+  // The copies are then left to the fuzzy pass, whose proximity term pairs
+  // each with the copy 72px below it (the same outcome real Chrome gave).
+  ok('  each copy pairs with the copy in its own slot',
+     d.length === 2 && d.every(function (p) { return p.b.rect.y - p.a.rect.y === 72; }),
+     d.map(function (p) { return p.a.rect.y + '>' + p.b.rect.y; }));
+  eq('  one row, the added text tile', rowsOf(ins).join(' | '), 'added:->New arrivals');
+})();
+
+(function insertedTilePlusRealSwap() {
+  if (!HAVE_COMPOSE) return;
+  // One real image change one perturbation away from the corpus's shape. The
+  // old matcher reported it against tile3 (the neighbour) among seven wrong
+  // rows; it must be reported once, against tile2.
+  var r = composeFor(gallery(), gallery({ insert: true, srcs: ['tile0', 'tile1', 'SWAPPED', 'tile3', 'tile4', 'tile5'] }));
+  eq('inserted tile + swapped image: the added tile and the swap, nothing else',
+     rowsOf(r).sort().join(' | '), 'added:->New arrivals | style-changed:tile2.png>SWAPPED.png');
+  var swap = r.composed.findings.filter(function (f) { return f.changeClass === 'style-changed'; });
+  ok('  the swap carries style:src', swap.length === 1 && swap[0].signals.indexOf('style:src') !== -1, swap.length && swap[0].signals);
+})();
+
+(function sizeAndPayloadAreTheIdentity() {
+  // Box size is part of the key: the same picture as a thumbnail and as a hero
+  // is two elements, not one moved. And an element with nothing to draw (no
+  // src, no background image, no name) gets no key at all.
+  var a = anchors(10).concat([
+    cand({ tag: 'img', y: 600, w: 600, h: 300, path: '/body[1]/main[1]/div[1]/img[1]', styles: { src: 'https://shop.test/hero.png' } }),
+    cand({ tag: 'svg', y: 900, w: 24, h: 24, path: '/body[1]/main[1]/div[2]/svg[1]' }),
+  ]);
+  var b = anchors(10).concat([
+    cand({ tag: 'img', y: 2600, w: 120, h: 60, path: '/body[1]/footer[1]/div[1]/img[1]', styles: { src: 'https://shop.test/hero.png' } }),
+    cand({ tag: 'svg', y: 2900, w: 24, h: 24, path: '/body[1]/footer[1]/div[2]/svg[1]' }),
+  ]);
+  var m = vdMatchCandidates(a, b);
+  eq('same src at another size, no-payload svg: neither pairs by payload',
+     m.pairs.filter(function (p) { return p.tier === 'textless-visual'; }).length, 0);
+})();
+
 // ── 7. end-to-end, built from the real page's measured shape ────────────────
 section('end-to-end (Zapier shape)');
 (function endToEnd() {
@@ -5551,10 +5698,16 @@ section('A/B early capture: console and error hooks are in the page before its o
      'unregister selenite-ab-early-bridge,selenite-ab-early-capture,selenite-ab-early-errors / left: 0');
   eval(slice('async function captureVariant(', '\nasync function runVariantComparison('));
 
-  eq('the pattern is the scheme and host', JSON.stringify(abEarlyCaptureMatches('https://shop.example.com/p?optimizely_x=1#top')), '["https://shop.example.com/*"]');
-  eq('without the port, which Chrome would ignore anyway', JSON.stringify(abEarlyCaptureMatches('http://localhost:8777/ab.html')), '["http://localhost/*"]');
+  // `*`, not the URL's scheme: an http:// variant its server sends on to
+  // https:// on the same host lost its parse-time line and errors (2 of 2,
+  // 2026-10-16), and `*` matches both.
+  eq('the pattern is the host, for either scheme', JSON.stringify(abEarlyCaptureMatches('https://shop.example.com/p?optimizely_x=1#top')), '["*://shop.example.com/*"]');
+  eq('without the port, which Chrome would ignore anyway', JSON.stringify(abEarlyCaptureMatches('http://localhost:8777/ab.html')), '["*://localhost/*"]');
   eq('only http(s)', abEarlyCaptureMatches('chrome://settings') + ':' + abEarlyCaptureMatches('file:///tmp/a.html'), 'null:null');
   eq('nothing for something that is not a URL', abEarlyCaptureMatches('not a url'), null);
+  eq('one pattern per host, in order, whatever the scheme; the rest skipped',
+     JSON.stringify(abEarlyCaptureMatches('https://shop.example.com/a', 'http://shop.example.com/b', 'chrome://settings', 'https://alt.example.com/c')),
+     '["*://shop.example.com/*","*://alt.example.com/*"]');
 
   function run(url) {
     var out = null;
@@ -5583,7 +5736,7 @@ section('A/B early capture: console and error hooks are in the page before its o
      seen[0].id === 'selenite-ab-early-bridge' && seen[0].js.join() === 'console-bridge.js' && seen[0].world === undefined &&
      seen[1].id === 'selenite-ab-early-capture' && seen[1].js.join() === 'console-capture.js' && seen[1].world === 'MAIN' &&
      seen[2].id === 'selenite-ab-early-errors' && seen[2].js.join() === 'ab-error-collector.js' && seen[2].world === 'MAIN' &&
-     seen.every(function (s) { return s.runAt === 'document_start' && s.allFrames === false && s.persistAcrossSessions === false && JSON.stringify(s.matches) === '["https://shop.example.com/*"]'; }),
+     seen.every(function (s) { return s.runAt === 'document_start' && s.allFrames === false && s.persistAcrossSessions === false && JSON.stringify(s.matches) === '["*://shop.example.com/*"]'; }),
      seen);
 
   reset();
@@ -5607,6 +5760,169 @@ section('A/B early capture: console and error hooks are in the page before its o
   registered['selenite-ab-early-capture'] = { id: 'selenite-ab-early-capture' };
   run('https://shop.example.com/p');
   eq('a leftover half is cleared before registering (Chrome refuses a duplicate id)', events[0], 'unregister selenite-ab-early-capture');
+})();
+
+section('A/B early capture: a variant redirected to another host is opened again with both hosts registered');
+(function abRedirectedVariantIsOpenedAgain() {
+  // Measured 2026-10-16 in Chrome 155 with the real worker and the real panel:
+  // a variant whose URL 302s to another host captured 1 of 2 tagged lines and
+  // 1 of 3 errors, and a script redirect, a two-hop chain and an http:// URL
+  // upgraded to https:// each lost the errors thrown while the page parsed.
+  // Nothing tells the worker the new host before the page starts to parse
+  // (tabs.onUpdated reports it at commit, tab.pendingUrl keeps the URL that
+  // was opened), so a variant that lands on a host the hooks weren't
+  // registered for is opened once more with both hosts registered. Chrome's
+  // side was measured; this pins the worker's: when it reopens, what it
+  // registers, which tab it captures and buffers, and that both tabs and the
+  // registration are gone afterwards.
+  var slice = function (from, to) {
+    var a = _bg.indexOf(from), b = _bg.indexOf(to, a + 1);
+    if (a === -1 || b === -1) throw new Error('slice marker missing: ' + from);
+    return _bg.slice(a, b);
+  };
+  function URL(u) {
+    var m = /^([a-z][a-z0-9+.-]*:)\/\/([^\/:?#]*)/i.exec(String(u));
+    if (!m) throw new TypeError('Invalid URL');
+    this.protocol = m[1].toLowerCase(); this.hostname = m[2].toLowerCase();
+  }
+  var events, registered, tabs, nextId, creates, registers, landing, failRegisterOn, failCreateOn, failLoadOn;
+  function reset(land) {
+    events = []; registered = {}; tabs = {}; nextId = 1; creates = 0; registers = 0;
+    landing = land; failRegisterOn = 0; failCreateOn = 0; failLoadOn = 0;
+  }
+  var chrome = {
+    scripting: {
+      registerContentScripts: function (list) {
+        if (++registers === failRegisterOn) return Promise.reject(new Error('Duplicate script ID'));
+        list.forEach(function (s) { registered[s.id] = s; });
+        events.push('register ' + list[0].matches.join(' '));
+        return Promise.resolve();
+      },
+      getRegisteredContentScripts: function (filter) {
+        return Promise.resolve(filter.ids.filter(function (id) { return registered[id]; }).map(function (id) { return registered[id]; }));
+      },
+      unregisterContentScripts: function (filter) {
+        filter.ids.forEach(function (id) { delete registered[id]; });
+        events.push('unregister ' + filter.ids.length);
+        return Promise.resolve();
+      },
+      executeScript: function () { return Promise.resolve([{ result: [] }]); },
+    },
+    tabs: {
+      // Every tab lands where `landing` sends the URL it was opened on.
+      create: function (o) {
+        if (++creates === failCreateOn) return Promise.reject(new Error('No current window'));
+        var id = nextId++;
+        tabs[id] = landing(o.url, creates);
+        events.push('create ' + id);
+        return Promise.resolve({ id: id });
+      },
+      get: function (id) { return Promise.resolve({ id: id, url: tabs[id], title: 'P' }); },
+      remove: function (id) { events.push('remove ' + id); return Promise.resolve(); },
+    },
+  };
+  var _abCapture = null;
+  // Each injection stands in for a tagged line that tab logs, delivered the
+  // way the browserLog branch delivers it: only to the tab being captured.
+  var injectCapture = function (id) {
+    events.push('inject ' + id);
+    if (_abCapture && _abCapture.tabId === id) _abCapture.lines.push({ level: 'BROWSER', text: '[cro] from tab ' + id });
+    return Promise.resolve();
+  };
+  var injectAbErrorCollector = function () { return Promise.resolve(); };
+  var waitForLoadTimeout = function (id) {
+    events.push('load ' + id);
+    return id === failLoadOn ? Promise.reject(new Error('Page load timed out after 30s')) : Promise.resolve();
+  };
+  var runTabWindow = function () { return {}; };
+  var exec = function () { return Promise.resolve([]); };
+  eval(slice('function normalizeUrl(url) {', '\n// scheme://host:port only'));
+  eval(slice('// Console lines and JS errors a variant produces while it loads.', 'async function captureVariant('));
+  eval(slice('async function captureVariant(', '\nasync function runVariantComparison('));
+  drainMicrotasks();
+
+  function run(url, keepTabs) {
+    var out = null;
+    captureVariant({ label: 'v1', url: url }, { settleMs: 0, selectors: [], keepTabs: !!keepTabs, captureForVision: false, captureFullPage: false, a11yChecks: null, winId: 1 })
+      .then(function (o) { out = o; });
+    drainMicrotasks();
+    return out;
+  }
+  var toAlt = function () { return 'https://alt.example.com/p?v=1'; };
+  var texts = function (o) { return o ? o.console.map(function (l) { return l.text; }).join(' | ') : null; };
+
+  reset(toAlt);
+  var o1 = run('https://shop.example.com/r?v=1');
+  eq('a 302 to another host: registered for both hosts and opened again, in a new tab opened before the first is closed',
+     events.join(' | '),
+     'register *://shop.example.com/* | create 1 | inject 1 | load 1 | unregister 3 | register *://shop.example.com/* *://alt.example.com/* | create 2 | inject 2 | remove 1 | load 2 | inject 2 | unregister 3 | remove 2');
+  eq('  the debug log says so', o1 && JSON.stringify(o1.earlyCapture),
+     '{"matches":["*://shop.example.com/*","*://alt.example.com/*"],"reopened":"alt.example.com"}');
+  eq('  only the second tab\'s lines are kept', texts(o1), '[cro] from tab 2 | [cro] from tab 2');
+  ok('  and the capture is the second load\'s', o1 && o1.loadError === null && o1.finalUrl === 'https://alt.example.com/p?v=1' && o1.tabId === null, o1);
+  eq('  nothing is left registered', JSON.stringify(registered), '{}');
+
+  reset(function () { return 'https://shop.example.com/p?v=1'; });
+  var o2 = run('https://shop.example.com/r?v=1');
+  eq('a redirect on the same host is not opened again', events.filter(function (e) { return /^create/.test(e); }).join(), 'create 1');
+  eq('  the debug log says what was registered, and no reopen', o2 && JSON.stringify(o2.earlyCapture), '{"matches":["*://shop.example.com/*"],"reopened":null}');
+
+  reset(function (u) { return u.replace(/^http:/, 'https:'); });
+  var o3 = run('http://shop.example.com/p?v=1');
+  ok('http:// upgraded to https:// on the same host is covered already, so not opened again',
+     o3 && creates === 1 && o3.finalUrl === 'https://shop.example.com/p?v=1' && JSON.stringify(o3.earlyCapture) === '{"matches":["*://shop.example.com/*"],"reopened":null}',
+     [events, o3 && o3.earlyCapture]);
+
+  reset(function (u, n) { return 'https://edge' + n + '.example.com/p'; });
+  var o4 = run('https://shop.example.com/p');
+  ok('a variant that lands somewhere new every time is opened again once, never twice, and still captured',
+     o4 && creates === 2 && o4.loadError === null && o4.finalUrl === 'https://edge2.example.com/p' && o4.earlyCapture.reopened === 'edge1.example.com',
+     [events, o4 && o4.earlyCapture]);
+
+  reset(toAlt);
+  failRegisterOn = 2;
+  var o5 = run('https://shop.example.com/r?v=1');
+  ok('Chrome refusing the second registration: the first load is captured as before',
+     o5 && creates === 1 && o5.loadError === null && o5.finalUrl === 'https://alt.example.com/p?v=1' && texts(o5) === '[cro] from tab 1 | [cro] from tab 1',
+     [events, o5]);
+  eq('  the debug log names the hooks that load had, and no reopen', o5 && JSON.stringify(o5.earlyCapture), '{"matches":["*://shop.example.com/*"],"reopened":null}');
+  eq('  nothing is left registered', JSON.stringify(registered), '{}');
+
+  reset(toAlt);
+  failRegisterOn = 1;
+  var o6 = run('https://shop.example.com/r?v=1');
+  ok('Chrome refusing the first registration: nothing to widen, so the variant is opened once, as before',
+     o6 && creates === 1 && o6.loadError === null && o6.earlyCapture === null, [events, o6 && o6.earlyCapture]);
+
+  reset(toAlt);
+  failLoadOn = 2;
+  var o7 = run('https://shop.example.com/r?v=1');
+  eq('the second tab never loading is the capture\'s load error', o7 && o7.loadError, 'Page load timed out after 30s');
+  eq('  both tabs are closed and nothing is left registered',
+     events.filter(function (e) { return /^remove/.test(e); }).join() + ' / ' + JSON.stringify(registered), 'remove 1,remove 2 / {}');
+
+  reset(toAlt);
+  failCreateOn = 2;
+  var o8 = run('https://shop.example.com/r?v=1');
+  eq('the second tab failing to open is the capture\'s load error', o8 && o8.loadError, 'No current window');
+  eq('  the first tab is closed and nothing is left registered',
+     events.filter(function (e) { return /^remove/.test(e); }).join() + ' / ' + JSON.stringify(registered), 'remove 1 / {}');
+
+  reset(toAlt);
+  var o9 = run('https://shop.example.com/r?v=1', true);
+  ok('Keep tabs open keeps the second tab, and closes the first',
+     o9 && o9.tabId === 2 && events.indexOf('remove 1') > -1 && events.indexOf('remove 2') === -1, [events, o9 && o9.tabId]);
+
+  // The debug log carries it as the worker sent it, and a worker that
+  // predates it leaves the key out rather than writing null.
+  var withIt = Object.assign(capture('v2', { fullPage: null }), { earlyCapture: o1 && o1.earlyCapture });
+  var none = Object.assign(capture('v0', { fullPage: null }), { earlyCapture: null });
+  var older = capture('v1', { fullPage: null });
+  var dl = buildDebugLog(abSections([none, older, withIt], []));
+  eq('the debug log exports it per capture',
+     JSON.stringify(dl.captures.map(function (c) { return c.earlyCapture; })),
+     '[null,null,{"matches":["*://shop.example.com/*","*://alt.example.com/*"],"reopened":"alt.example.com"}]');
+  eq('  and a capture from an older worker has no such key', JSON.stringify(dl.captures[1]).indexOf('earlyCapture'), -1);
 })();
 
 section('A/B error collector (ab-error-collector.js)');

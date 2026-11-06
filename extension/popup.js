@@ -11625,6 +11625,10 @@ function buildDebugLog(sections) {
       variantVerified: vdCaptureVerification(c),
       jsErrors: c.errors || [],
       consoleLineCount: (c.console || []).length,
+      // The document_start hooks behind those two, and whether a redirect to
+      // another host made the worker open the variant a second time. Missing
+      // (not null) when the worker predates it.
+      earlyCapture: c.earlyCapture,
       selectors: c.selectors || [],
     })),
     // Visual Diff is a sub-step of mode 2, never a mode of its own, so there is

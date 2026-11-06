@@ -29,6 +29,15 @@ A Chrome extension for building and running QA test scripts directly in your bro
 
 Feature changes by release, newest first. [`CHANGELOG.md`](CHANGELOG.md) has the reasoning behind each change and the evidence it was built on. The version is shown in the footer of the panel and is read from `extension/manifest.json`.
 
+### 0.7.29 — 2026-11-06
+
+**A/B**
+- **Fixed:** a variant that redirects to another host lost the console lines and JS errors it logged while its page was loading. Selenite now sees where the variant landed and opens it once more with that host covered too, at the cost of one more page load for that variant. An `http://` link that its server moves to `https://` no longer loses them either.
+
+**Visual Diff**
+- **Fixed:** an element with no text (an image, an icon, an empty input) is matched by what it shows before where it sits: its image, background image or accessible name, and its size. One block inserted above an image gallery used to pair every image with its neighbour and report seven wrong changes; it is now reported as the one added block. Two identical images on a page still match by position, as before.
+- Needs an extension reload: the worker code loads only then.
+
 ### 0.7.28 — 2026-11-05
 
 **Test Agent**

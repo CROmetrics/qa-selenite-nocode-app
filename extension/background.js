@@ -4223,16 +4223,37 @@ async function injectAbErrorCollector(tabId) {
 // tabs on the same host that load meanwhile get the same tag-only console hook,
 // as a followed tab already does (the browserLog branch keeps only the variant
 // tab's lines for the run), and an error list nothing reads.
+//
+// A variant does not always end up on the host it was opened on. Measured
+// 2026-10-16 in Chrome 155: a 302 to another host lost the parse-time line,
+// error and rejection in 5 of 5 runs (1 of 2 lines, 1 of 3 errors), and an
+// http:// URL its server sends on to https:// on the same host lost them too
+// (2 of 2), because a pattern carried the scheme. Patterns now use `*`, which
+// matches both. The other host can't be learned in time to register for it:
+// tabs.onUpdated reports the new URL only when the page commits and starts to
+// parse (tab.pendingUrl keeps the URL that was opened, polled every 2 ms), and
+// registering on that event missed the parse-time line in 5 of 5 loads, with
+// the final response held back 1.5 s or not. A HEAD from the worker follows
+// an HTTP redirect (5 of 5) but not a script's location.replace (0 of 5),
+// which is how a split-URL test sends a visitor on. So captureVariant opens a
+// variant that landed on an unregistered host once more, in a fresh tab, with
+// that host registered too. Through the real panel, 10 of 10 runs then had
+// every line and 3 of 3 errors for a cross-host 302, a script redirect and a
+// two-hop chain, at one more page load each.
 const AB_EARLY_CAPTURE_IDS = ['selenite-ab-early-bridge', 'selenite-ab-early-capture', 'selenite-ab-early-errors'];
 
-function abEarlyCaptureMatches(url) {
-  try {
-    const u = new URL(url);
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
-    return [`${u.protocol}//${u.hostname}/*`];
-  } catch (_) {
-    return null;
+// One pattern per http(s) host among `urls`, any scheme, or null for none.
+function abEarlyCaptureMatches(...urls) {
+  const matches = [];
+  for (const url of urls) {
+    try {
+      const u = new URL(url);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') continue;
+      const p = `*://${u.hostname}/*`;
+      if (!matches.includes(p)) matches.push(p);
+    } catch (_) {}
   }
+  return matches.length ? matches : null;
 }
 
 async function unregisterAbEarlyCapture() {
@@ -4243,9 +4264,10 @@ async function unregisterAbEarlyCapture() {
 }
 
 // Best-effort: without it the capture is what it was, the post-load injection.
-async function registerAbEarlyCapture(url) {
-  const matches = abEarlyCaptureMatches(url);
-  if (!matches) return false;
+// Returns the patterns now registered, or null.
+async function registerAbEarlyCapture(...urls) {
+  const matches = abEarlyCaptureMatches(...urls);
+  if (!matches) return null;
   await unregisterAbEarlyCapture();
   try {
     await chrome.scripting.registerContentScripts([
@@ -4254,9 +4276,9 @@ async function registerAbEarlyCapture(url) {
       { id: AB_EARLY_CAPTURE_IDS[1], matches, js: ['console-capture.js'], runAt: 'document_start', world: 'MAIN', allFrames: false, persistAcrossSessions: false },
       { id: AB_EARLY_CAPTURE_IDS[2], matches, js: ['ab-error-collector.js'], runAt: 'document_start', world: 'MAIN', allFrames: false, persistAcrossSessions: false },
     ]);
-    return true;
+    return matches;
   } catch (_) {
-    return false;
+    return null;
   }
 }
 
@@ -4277,19 +4299,45 @@ async function captureVariant(target, { settleMs, selectors, keepTabs, captureFo
     // finds it missing on every capture knows the worker predates the request
     // instead of reading "no audit" as "no issues".
     // { results, axeError, scopeError } | { error }
+    // The document_start hooks in force for the load that was captured, and
+    // the host that made captureVariant open the variant a second time:
+    // { matches, reopened: hostname | null } | null (nothing registered).
+    earlyCapture: null,
   };
   let tab = null;
   try {
-    await registerAbEarlyCapture(normalizeUrl(target.url));
-    tab = await chrome.tabs.create({ url: normalizeUrl(target.url), active: true, ...runTabWindow() });
-    _abCapture = { tabId: tab.id, lines: [] };
-    // Inject as early as possible, then again after load — both scripts are
-    // idempotent, and experiment scripts typically log after DOMContentLoaded,
-    // so the post-load injection is the one that matters on slow pages, and
-    // the only one on a page served from a host the early hook doesn't match
-    // (a redirect to another host).
-    try { await injectCapture(tab.id); await injectAbErrorCollector(tab.id); } catch (_) {}
+    const url = normalizeUrl(target.url);
+    const open = async () => {
+      const t = await chrome.tabs.create({ url, active: true, ...runTabWindow() });
+      _abCapture = { tabId: t.id, lines: [] };
+      // Inject as early as possible, then again after load — both scripts are
+      // idempotent, and experiment scripts typically log after DOMContentLoaded,
+      // so the post-load injection is the one that matters on slow pages, and
+      // the only one when Chrome refused the document_start registration.
+      try { await injectCapture(t.id); await injectAbErrorCollector(t.id); } catch (_) {}
+      return t;
+    };
+    let early = await registerAbEarlyCapture(url);
+    out.earlyCapture = early && { matches: early, reopened: null };
+    tab = await open();
     await waitForLoadTimeout(tab.id, 30000);
+    // Redirected to a host the hooks weren't registered for (see
+    // abEarlyCaptureMatches): its load-time lines and errors are gone, so open
+    // the variant again with both hosts registered, once. A fresh tab rather
+    // than tabs.update: its request is the first one's again (tabs.update sent
+    // Sec-Fetch-Site cross-site where tabs.create sent none), and a late line
+    // from the first tab can't reach the second one's buffer. The new tab
+    // opens before the first closes, so the window never empties.
+    if (early) {
+      const landed = (await chrome.tabs.get(tab.id)).url;
+      if (abEarlyCaptureMatches(url, landed).length > early.length && (early = await registerAbEarlyCapture(url, landed))) {
+        const first = tab;
+        tab = await open();
+        try { await chrome.tabs.remove(first.id); } catch (_) {}
+        out.earlyCapture = { matches: early, reopened: new URL(landed).hostname };
+        await waitForLoadTimeout(tab.id, 30000);
+      }
+    }
     try {
       await injectCapture(tab.id);
       await injectAbErrorCollector(tab.id);
